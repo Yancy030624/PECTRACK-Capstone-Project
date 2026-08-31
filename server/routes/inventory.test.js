@@ -331,6 +331,10 @@ describe('cashier proposes, admin approves (Phase 5, Step 6)', () => {
   let categoryId
   let productId
   let inventoryId
+  // A second product, needed because only ONE request may be PENDING per
+  // product at a time — so a test that wants two proposals open at once
+  // has to spread them across two products.
+  let otherProductId
   const createdUserIds = []
   const createdProductIds = []
 
@@ -383,6 +387,11 @@ describe('cashier proposes, admin approves (Phase 5, Step 6)', () => {
     createdProductIds.push(productId)
     await pool.query('UPDATE inventory SET stock_quantity = 12, min_stock_level = 3 WHERE product_id = $1', [productId])
     inventoryId = (await pool.query('SELECT inventory_id FROM inventory WHERE product_id = $1', [productId])).rows[0].inventory_id
+
+    const otherProductResponse = await fetch(`${baseUrl}/api/products`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ categoryId, name: `Request Test Roll ${runId}`, price: 20 }) })
+    otherProductId = (await otherProductResponse.json()).product.id
+    createdProductIds.push(otherProductId)
+    await pool.query('UPDATE inventory SET stock_quantity = 12, min_stock_level = 3 WHERE product_id = $1', [otherProductId])
   })
 
   after(async () => {
@@ -451,10 +460,84 @@ describe('cashier proposes, admin approves (Phase 5, Step 6)', () => {
     await fetch(`${baseUrl}/api/inventory/requests/${body.request.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'REJECTED' }) })
   })
 
+  // Approval applies the difference the cashier OBSERVED to current stock
+  // (Decision 2), which is only correct while ONE proposal is outstanding:
+  // two pending rows capture the same baseline, so approving both applies
+  // both deltas to it and compounds. The concurrent half matters because
+  // the route's own check is a SELECT then an INSERT — four cashiers at
+  // once used to produce four pending rows. Migration 004's partial unique
+  // index is what actually holds it.
+  test('a product may have only one pending request — a second is refused, serially and under concurrency', async () => {
+    const propose = (cookie, quantity) => fetch(`${baseUrl}/api/inventory/requests`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ productId, proposedStockQuantity: quantity, reason: 'Shelf recount' }) })
+    const pendingCount = async () => (await pool.query(`SELECT COUNT(*)::int AS n FROM inventory_change_requests WHERE product_id = $1 AND status = 'PENDING'`, [productId])).rows[0].n
+
+    const first = await propose(cashierCookie, 20)
+    assert.equal(first.status, 201)
+    const firstId = (await first.json()).request.id
+
+    // A different cashier gets the same refusal — the rule is per product,
+    // not per cashier. The message must NAME the cashier holding it open:
+    // GET /requests only shows a cashier their own rows, so without the
+    // name this refusal points at something the reader cannot look up.
+    const second = await propose(secondCashierCookie, 25)
+    assert.equal(second.status, 409)
+    assert.match((await second.json()).message, new RegExp(`^${cashier.name} already has a pending request`), 'the refusal must name whoever has the request open')
+    assert.equal(await pendingCount(), 1)
+
+    await fetch(`${baseUrl}/api/inventory/requests/${firstId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'REJECTED' }) })
+    assert.equal(await pendingCount(), 0, 'reviewing the first must free the product for a new proposal')
+
+    await pool.query(`UPDATE inventory_change_requests SET status = 'REJECTED' WHERE product_id = $1 AND status = 'PENDING'`, [productId])
+  })
+
+  // The check above only proves the route's friendly pre-check works. That
+  // pre-check is a SELECT followed by a separate INSERT, so it cannot be
+  // what enforces the rule — concurrent submissions can all read "nothing
+  // pending" and all proceed. Migration 004's partial unique index is the
+  // real guard, and this drives it directly through two transactions
+  // rather than through concurrent HTTP requests: firing four fetches and
+  // hoping they interleave passes with the index dropped, so it would
+  // prove nothing. Holding one transaction open makes the collision
+  // certain.
+  test('the database itself refuses a second pending row, even when the route\'s pre-check is bypassed', async () => {
+    const cashierId = (await pool.query('SELECT cashier_id FROM cashiers WHERE user_id = $1', [(await pool.query('SELECT user_id FROM users WHERE username = $1', [cashier.username])).rows[0].user_id])).rows[0].cashier_id
+    const insert = (client, quantity) => client.query(
+      `INSERT INTO inventory_change_requests (product_id, requested_by, request_type, observed_stock_quantity, proposed_stock_quantity, reason)
+       VALUES ($1, $2, 'INVENTORY', 12, $3, 'Concurrent recount')`,
+      [productId, cashierId, quantity],
+    )
+
+    const first = await pool.connect()
+    const second = await pool.connect()
+    try {
+      await first.query('BEGIN')
+      await second.query('BEGIN')
+
+      await insert(first, 20)
+      // Blocks on the index until `first` resolves, rather than failing
+      // immediately — so it is started, not awaited, until after the commit.
+      const contended = insert(second, 25)
+      await first.query('COMMIT')
+
+      await assert.rejects(contended, (error) => error.code === '23505' && error.constraint === 'inventory_change_requests_one_pending_per_product_idx', 'the second pending row must be refused by the unique index')
+      await second.query('ROLLBACK')
+    } finally {
+      first.release()
+      second.release()
+    }
+
+    const remaining = (await pool.query(`SELECT COUNT(*)::int AS n FROM inventory_change_requests WHERE product_id = $1 AND status = 'PENDING'`, [productId])).rows[0].n
+    assert.equal(remaining, 1, 'exactly one pending row may survive two concurrent inserts')
+    await pool.query(`UPDATE inventory_change_requests SET status = 'REJECTED' WHERE product_id = $1 AND status = 'PENDING'`, [productId])
+  })
+
   test('GET /api/inventory/requests scopes to the cashier\'s own requests, but shows admin everything', async () => {
+    // The two proposals go against DIFFERENT products on purpose: this
+    // test needs both open at the same time to compare what each role can
+    // see, and only one request may be PENDING per product.
     const first = await fetch(`${baseUrl}/api/inventory/requests`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ productId, proposedMinStockLevel: 4, reason: 'Raise the minimum' }) })
     const firstId = (await first.json()).request.id
-    const second = await fetch(`${baseUrl}/api/inventory/requests`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: secondCashierCookie }, body: JSON.stringify({ productId, proposedMinStockLevel: 6, reason: 'Different cashier, different request' }) })
+    const second = await fetch(`${baseUrl}/api/inventory/requests`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: secondCashierCookie }, body: JSON.stringify({ productId: otherProductId, proposedMinStockLevel: 6, reason: 'Different cashier, different request' }) })
     const secondId = (await second.json()).request.id
 
     const asFirstCashier = await fetch(`${baseUrl}/api/inventory/requests`, { headers: { Cookie: cashierCookie } })
@@ -542,6 +625,80 @@ describe('cashier proposes, admin approves (Phase 5, Step 6)', () => {
     assert.equal(movement.rows.length, 1)
     assert.equal(movement.rows[0].quantity_change, 8)
     assert.equal(movement.rows[0].reason, 'CORRECTION')
+  })
+
+  // The test above proves the observed-delta arithmetic across a WIDE gap
+  // (stock moved between proposing and reviewing). This one closes the
+  // NARROW gap inside the approval itself: read stock, compute a new
+  // absolute figure in JavaScript, write it back. Without a lock, a sale
+  // committing between that read and that write is clobbered by the
+  // absolute write — arithmetic cannot help when both values come from the
+  // same instant, so `FOR UPDATE` has to.
+  //
+  // Driven by holding a transaction open rather than firing concurrent
+  // requests and hoping they interleave: an uncommitted UPDATE on the
+  // inventory row makes the approval block on exactly the lock under test,
+  // so the outcome is the same every run. With the lock the approval sees
+  // 7 and lands on 15; without it, it reads the pre-sale 10 under MVCC and
+  // writes 18, silently eating the 3 units that sold.
+  // Polls until some backend in this database is genuinely parked waiting
+  // on a lock. Both the locked and unlocked versions of the route end up
+  // blocked — with FOR UPDATE on the SELECT, without it on the UPDATE —
+  // so this only synchronises the test; it does not by itself decide the
+  // outcome. What differs is WHAT each read before blocking, which is what
+  // the final stock figure exposes.
+  const waitForLockWait = async () => {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const waiting = await pool.query(`SELECT COUNT(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)
+      if (waiting.rows[0].n > 0) return true
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    return false
+  }
+
+  test('approving re-reads stock under a lock, so a sale committing mid-approval is not clobbered', async () => {
+    await pool.query('UPDATE inventory SET stock_quantity = 10 WHERE product_id = $1', [productId])
+
+    const created = await fetch(`${baseUrl}/api/inventory/requests`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ productId, proposedStockQuantity: 18, reason: 'Delivery received' }) })
+    const requestId = (await created.json()).request.id
+
+    const seller = await pool.connect()
+    let approval
+    try {
+      await seller.query('BEGIN')
+      // Three units sell, but the transaction is deliberately left open —
+      // the row is now locked and the change is invisible to everyone else.
+      await seller.query('UPDATE inventory SET stock_quantity = stock_quantity - 3 WHERE product_id = $1', [productId])
+
+      // Started, not awaited: this blocks inside the route on the locked row.
+      approval = fetch(`${baseUrl}/api/inventory/requests/${requestId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'APPROVED' }) })
+
+      // Committing immediately here would be a bug in the TEST: the
+      // approval might not have reached its read yet, so it would see the
+      // committed 7 either way and the assertion below would pass with or
+      // without the lock — which is exactly what happened on the first
+      // attempt at this test. Waiting until a backend is genuinely stuck
+      // on a lock is what guarantees the two paths diverge.
+      const blocked = await waitForLockWait()
+      assert.ok(blocked, 'the approval should be waiting on the seller\'s row lock before it commits')
+
+      await seller.query('COMMIT')
+    } finally {
+      seller.release()
+    }
+
+    assert.equal((await approval).status, 200)
+
+    const stock = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [productId])
+    assert.equal(stock.rows[0].stock_quantity, 15, 'must apply the +8 delta to the POST-SALE stock of 7, not the stale 10 it read before the sale committed')
+
+    // The movement must describe the change that actually happened. A
+    // clobbered write breaks this quietly: it would log +8 against a stock
+    // figure that moved by +11, so SUM(quantity_change) would stop
+    // reconciling to stock_quantity — the one invariant the ledger exists
+    // to uphold.
+    const movement = await pool.query('SELECT quantity_change FROM inventory_movements WHERE request_id = $1', [requestId])
+    assert.equal(movement.rows[0].quantity_change, 8, 'the movement must record the delta actually applied')
   })
 
   test('approving is refused with 409 if it would drive stock negative, and nothing is applied', async () => {

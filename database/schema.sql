@@ -326,6 +326,13 @@ CREATE INDEX order_details_order_id_idx ON order_details (order_id);
 CREATE INDEX payments_order_id_idx ON payments (order_id);
 CREATE INDEX deliveries_personnel_status_idx ON deliveries (delivery_personnel_id, status);
 CREATE INDEX inventory_change_requests_status_idx ON inventory_change_requests (status, created_at);
+-- At most one PENDING proposal per product. Approval applies the difference
+-- the cashier OBSERVED to current stock, and that arithmetic is only correct
+-- while a single proposal is outstanding — two pending rows share one
+-- observed baseline, so approving both compounds their deltas. Partial, so
+-- the APPROVED/REJECTED history a product accumulates is unaffected.
+CREATE UNIQUE INDEX inventory_change_requests_one_pending_per_product_idx
+  ON inventory_change_requests (product_id) WHERE status = 'PENDING';
 CREATE INDEX order_status_history_order_id_idx ON order_status_history (order_id, updated_at);
 CREATE INDEX inventory_movements_inventory_id_idx ON inventory_movements (inventory_id, created_at DESC);
 

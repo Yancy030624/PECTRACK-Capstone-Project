@@ -24,6 +24,10 @@ export function InventoryRequests({ user, inventory }) {
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
+  // Tracked separately from the text so a success and a failure don't get
+  // rendered with the same red styling — 'Request submitted.' in an error
+  // colour reads as though it failed.
+  const [messageFailed, setMessageFailed] = useState(false)
 
   const [proposeForm, setProposeForm] = useState(emptyProposeForm)
   const [proposeErrors, setProposeErrors] = useState({})
@@ -39,6 +43,7 @@ export function InventoryRequests({ user, inventory }) {
       setRequests(data.requests)
     } catch (error) {
       setMessage(error.message)
+      setMessageFailed(true)
     } finally {
       setLoading(false)
     }
@@ -63,10 +68,12 @@ export function InventoryRequests({ user, inventory }) {
       await apiPost('/api/inventory/requests', body)
       setProposeForm(emptyProposeForm)
       setMessage('Request submitted.')
+      setMessageFailed(false)
       await loadRequests()
     } catch (error) {
       setProposeErrors(error.errors ?? {})
       setMessage(error.message)
+      setMessageFailed(true)
     } finally {
       setProposeSubmitting(false)
     }
@@ -74,11 +81,13 @@ export function InventoryRequests({ user, inventory }) {
 
   const handleReview = async (requestId, status) => {
     setReviewingId(requestId)
+    setMessage('')
     try {
       await apiPatch(`/api/inventory/requests/${requestId}`, { status, reviewerNote: reviewNotes[requestId] || null })
       await loadRequests()
     } catch (error) {
       setMessage(error.message)
+      setMessageFailed(true)
     } finally {
       setReviewingId(null)
     }
@@ -86,7 +95,7 @@ export function InventoryRequests({ user, inventory }) {
 
   return (
     <div className="mt-6 space-y-6">
-      {message && <p role="status" className="rounded-lg bg-red-50 px-3 py-2 text-[10px] font-semibold text-red-700">{message}</p>}
+      {message && <p role="status" className={`rounded-lg px-3 py-2 text-[10px] font-semibold ${messageFailed ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-800'}`}>{message}</p>}
 
       {!isAdmin && (
         <div className="rounded-2xl border border-green-100 bg-white p-6">

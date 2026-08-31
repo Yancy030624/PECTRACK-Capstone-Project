@@ -28,6 +28,34 @@ const router = express.Router()
 const manualMovementReasons = new Set(['RESTOCK', 'SPOILAGE', 'CORRECTION'])
 const requestDecisions = new Set(['APPROVED', 'REJECTED'])
 const requestReasonMaxLength = 500
+// Describes whatever pending request is blocking this product, or null if
+// nothing is. Shared by the pre-check and the unique-violation catch in
+// POST /requests, so losing the race reads identically to being refused up
+// front.
+//
+// It NAMES the cashier who has the request open, because GET /requests
+// scopes a cashier to their own rows: without the name, the refusal points
+// at a request the reader is structurally unable to find, which is a dead
+// end rather than an error message. Naming a colleague is the right call
+// here — the two of them disagree about what is on one shelf, and settling
+// that means talking to each other.
+const describePendingRequest = async (productId) => {
+  const result = await pool.query(
+    `SELECT c.name FROM inventory_change_requests r
+      JOIN cashiers c ON c.cashier_id = r.requested_by
+      WHERE r.product_id = $1 AND r.status = 'PENDING'`,
+    [productId],
+  )
+  const row = result.rows[0]
+  // Null means the blocking request was reviewed between the failed write
+  // and this lookup — rare, but it must not become a crash or a message
+  // naming nobody.
+  if (!row) return null
+  return `${row.name} already has a pending request for this product. It needs to be reviewed before another can be submitted.`
+}
+// Used only when the lookup above comes back empty. Says the same thing
+// without a name rather than inventing one.
+const pendingRequestConflictMessage = 'This product already has a pending request. It needs to be reviewed before another can be submitted.'
 
 const mapInventoryRow = (row) => ({
   productId: row.product_id,
@@ -149,6 +177,30 @@ router.post('/requests', requireRole('CASHIER'), async (request, response) => {
   const inventoryRow = inventoryResult.rows[0]
   if (!inventoryRow) return response.status(404).json({ message: 'Product not found.' })
 
+  // Only ONE pending request per product at a time.
+  //
+  // Without this, two pending proposals for the same product each capture
+  // the SAME observed baseline, and approving both applies BOTH deltas to
+  // the same starting point — compounding into a figure nobody proposed.
+  // Concretely: stock 10, cashier proposes 18 (delta +8), then recounts
+  // and proposes 20 (observed still 10, delta +10). Approving both lands
+  // on 28, when the cashier's own latest belief was 20.
+  //
+  // Rejecting the second submission is the honest fix rather than trying
+  // to reconcile competing counts: two people disagreeing about what's on
+  // one shelf is a question for them to settle, not something arithmetic
+  // can resolve. The first request has to be reviewed (approved or
+  // rejected) before another can be raised.
+  //
+  // This is a friendly pre-check, NOT the enforcement — it reads on a
+  // pooled connection and the INSERT happens separately, so concurrent
+  // submissions can all find nothing pending and all proceed (measured:
+  // four cashiers at once produced four pending rows). Migration 004's
+  // partial unique index is what actually holds the line; the catch below
+  // turns the losing INSERT into the same 409 this returns.
+  const blocking = await describePendingRequest(productId)
+  if (blocking) return response.status(409).json({ message: blocking })
+
   // observed_stock_quantity is captured HERE, server-side, from the
   // CURRENT stock — never accepted from the client. A client-supplied
   // value could already be stale by the moment it's submitted (the
@@ -157,12 +209,24 @@ router.post('/requests', requireRole('CASHIER'), async (request, response) => {
   // makes it a trustworthy baseline for the delta calculation an approval
   // performs later (see PATCH /requests/:requestId, and Decision 2 in
   // PHASE5_PLAN.md).
-  const created = await pool.query(
-    `INSERT INTO inventory_change_requests (product_id, requested_by, request_type, observed_stock_quantity, proposed_stock_quantity, proposed_min_stock_level, reason)
-     VALUES ($1, $2, 'INVENTORY', $3, $4, $5, $6)
-     RETURNING request_id`,
-    [productId, cashierId, inventoryRow.stock_quantity, values.proposedStockQuantity ?? null, values.proposedMinStockLevel ?? null, reason],
-  )
+  let created
+  try {
+    created = await pool.query(
+      `INSERT INTO inventory_change_requests (product_id, requested_by, request_type, observed_stock_quantity, proposed_stock_quantity, proposed_min_stock_level, reason)
+       VALUES ($1, $2, 'INVENTORY', $3, $4, $5, $6)
+       RETURNING request_id`,
+      [productId, cashierId, inventoryRow.stock_quantity, values.proposedStockQuantity ?? null, values.proposedMinStockLevel ?? null, reason],
+    )
+  } catch (error) {
+    // 23505 on the one-pending-per-product index means another submission
+    // won the race between this route's pre-check and this INSERT. That's
+    // the same refusal, just discovered a moment later — so it gets the
+    // same message rather than a generic 500.
+    if (error.code === '23505' && error.constraint === 'inventory_change_requests_one_pending_per_product_idx') {
+      return response.status(409).json({ message: (await describePendingRequest(productId)) ?? pendingRequestConflictMessage })
+    }
+    throw error
+  }
 
   const full = await pool.query(`${changeRequestSelectQuery} WHERE r.request_id = $1`, [created.rows[0].request_id])
   return response.status(201).json({ request: mapChangeRequestRow(full.rows[0]) })
@@ -215,7 +279,23 @@ router.patch('/requests/:requestId', requireRole('ADMIN'), async (request, respo
     // A rejection needs nothing further — no inventory row is touched at
     // all. Only an approval applies anything.
     if (decision === 'APPROVED') {
-      const inventoryResult = await client.query('SELECT inventory_id, stock_quantity, min_stock_level FROM inventory WHERE product_id = $1', [changeRequest.product_id])
+      // FOR UPDATE is load-bearing, not decoration. Everything below is a
+      // read-modify-write: read current stock, compute a new absolute
+      // figure from it in JavaScript, write that figure back. Without the
+      // lock, an order committing in between would be silently clobbered
+      // by the absolute write — measured: stock 10, an order sells 3
+      // (genuinely 7), approving a +8 delta wrote 18 instead of 15, and
+      // those 3 units vanished.
+      //
+      // That is exactly the failure Decision 2 exists to prevent, just in
+      // a narrower window: between proposal and review it's handled by the
+      // observed-delta arithmetic, and between THIS read and THIS write it
+      // needs the row lock. FOR UPDATE holds the row until this
+      // transaction commits, so any concurrent order blocks and then
+      // re-evaluates its own relative deduction against the value written
+      // here. It also makes the min_stock_level write and the
+      // negative-stock guard below sound for the same reason.
+      const inventoryResult = await client.query('SELECT inventory_id, stock_quantity, min_stock_level FROM inventory WHERE product_id = $1 FOR UPDATE', [changeRequest.product_id])
       const inventoryRow = inventoryResult.rows[0]
 
       let newStockQuantity = inventoryRow.stock_quantity
@@ -291,9 +371,13 @@ router.patch('/:productId', requireRole('ADMIN'), async (request, response) => {
   const productId = parseId(request.params.productId)
   if (!productId) return response.status(404).json({ message: 'Product not found.' })
 
-  const existing = await pool.query('SELECT inventory_id, stock_quantity FROM inventory WHERE product_id = $1', [productId])
-  const current = existing.rows[0]
-  if (!current) return response.status(404).json({ message: 'Product not found.' })
+  // A cheap existence check so a bad product id 404s before doing any
+  // validation work. Deliberately NOT used for the ledger arithmetic below
+  // — it runs on a pooled connection outside any transaction, so by the
+  // time the write happens its stock_quantity is only a hint. The
+  // authoritative, locked read happens inside the transaction.
+  const existing = await pool.query('SELECT 1 FROM inventory WHERE product_id = $1', [productId])
+  if (!existing.rows[0]) return response.status(404).json({ message: 'Product not found.' })
 
   // Validates only the fields actually present in the body — a partial
   // update, same pattern as products.js's own PATCH.
@@ -334,6 +418,30 @@ router.patch('/:productId', requireRole('ADMIN'), async (request, response) => {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
+
+    // The authoritative read, INSIDE the transaction and holding the row
+    // until it commits. The existence check above deliberately doesn't
+    // supply this figure: it ran outside any transaction, so an order
+    // could sell through between it and the write below, and the ledger
+    // delta computed from it would then be wrong — measured: stock 20,
+    // an order sells 3 (genuinely 17), admin sets 25, and the movement
+    // logged +5 when stock actually moved +8. SUM(quantity_change) would
+    // no longer reconcile to stock_quantity, which is the one invariant
+    // the ledger exists to uphold.
+    //
+    // Note this locks the row but still writes stock_quantity ABSOLUTELY,
+    // unlike the relative deduction in routes/orders.js. That's correct
+    // for this route specifically: an admin typing 25 is stating "the
+    // shelf has 25", a fact about the world that supersedes whatever the
+    // system believed. The lock isn't there to preserve a concurrent
+    // order's arithmetic — it's there so the MOVEMENT ROW accurately
+    // describes the change that actually happened.
+    const locked = await client.query('SELECT inventory_id, stock_quantity FROM inventory WHERE product_id = $1 FOR UPDATE', [productId])
+    if (!locked.rows[0]) {
+      await client.query('ROLLBACK')
+      return response.status(404).json({ message: 'Product not found.' })
+    }
+    const current = locked.rows[0]
 
     // expiration_date is nullable and clearing it to NULL is a real, valid
     // edit — COALESCE alone can't distinguish "not sent" from "sent as
