@@ -15,6 +15,12 @@ CREATE TYPE delivery_status AS ENUM ('PENDING_ASSIGNMENT', 'ASSIGNED', 'OUT_FOR_
 CREATE TYPE change_request_status AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED');
 CREATE TYPE change_request_type AS ENUM ('INVENTORY', 'PRODUCT_DETAILS');
 CREATE TYPE proof_type AS ENUM ('PHOTO', 'SIGNATURE', 'CONFIRMATION');
+-- Why a stock movement happened. CORRECTION covers a physical recount in
+-- either direction, which is why inventory_movements.quantity_change is a
+-- signed number rather than a magnitude plus a separate direction flag.
+CREATE TYPE stock_movement_reason AS ENUM (
+  'ORDER_PLACED', 'ORDER_CANCELLED', 'RESTOCK', 'SPOILAGE', 'CORRECTION'
+);
 
 -- Keeps every updated_at column honest. Without this, those columns take
 -- their DEFAULT CURRENT_TIMESTAMP on INSERT and are then never touched
@@ -245,6 +251,12 @@ CREATE TABLE inventory_change_requests (
   product_id BIGINT NOT NULL REFERENCES products(product_id),
   requested_by BIGINT NOT NULL REFERENCES cashiers(cashier_id),
   request_type change_request_type NOT NULL,
+  -- What the system showed the cashier at the moment they proposed. Approval
+  -- applies the difference THEY observed (proposed - observed) to whatever
+  -- stock is current, rather than writing proposed_stock_quantity blindly —
+  -- which would erase anything that sold while the request sat pending.
+  -- NULL means "apply the absolute value", the behaviour before this existed.
+  observed_stock_quantity INTEGER CHECK (observed_stock_quantity >= 0),
   proposed_stock_quantity INTEGER CHECK (proposed_stock_quantity >= 0),
   proposed_min_stock_level INTEGER CHECK (proposed_min_stock_level >= 0),
   proposed_price NUMERIC(12, 2) CHECK (proposed_price >= 0),
@@ -260,6 +272,36 @@ CREATE TABLE inventory_change_requests (
     (request_type = 'INVENTORY' AND (proposed_stock_quantity IS NOT NULL OR proposed_min_stock_level IS NOT NULL))
     OR (request_type = 'PRODUCT_DETAILS' AND (proposed_price IS NOT NULL OR proposed_description IS NOT NULL OR proposed_availability_status IS NOT NULL))
   )
+);
+
+-- Every change to inventory.stock_quantity, and why it happened.
+--
+-- Without this, stock_quantity is a single mutable integer: when it is wrong
+-- — and it will be, that is normal for real stock — nothing in the system can
+-- answer WHY. Sales can be reconstructed from order_details, but spoilage,
+-- deliveries received, and manual corrections are recorded nowhere at all.
+-- That is also exactly the data restocking advice needs.
+--
+-- Same shape as order_status_history: never mutate the number on its own,
+-- always write a row alongside it saying what changed and what caused it.
+CREATE TABLE inventory_movements (
+  movement_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  inventory_id BIGINT NOT NULL REFERENCES inventory(inventory_id) ON DELETE CASCADE,
+  -- Typically exactly one of these is set — or neither, for a direct admin
+  -- edit. They let the ledger point at the cause rather than describe it.
+  order_id BIGINT REFERENCES orders(order_id),
+  request_id BIGINT REFERENCES inventory_change_requests(request_id),
+  -- users(user_id), not a role table: a movement can be caused by a customer
+  -- placing an order, a cashier, or an admin — the same reasoning as
+  -- order_status_history.updated_by.
+  changed_by BIGINT NOT NULL REFERENCES users(user_id),
+  -- Signed: negative removes stock, positive adds it. One signed column
+  -- rather than a magnitude plus a direction flag, because CORRECTION goes
+  -- either way and SUM() here must equal the net change to stock_quantity.
+  quantity_change INTEGER NOT NULL CHECK (quantity_change <> 0),
+  reason stock_movement_reason NOT NULL,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE report_logs (
@@ -285,6 +327,7 @@ CREATE INDEX payments_order_id_idx ON payments (order_id);
 CREATE INDEX deliveries_personnel_status_idx ON deliveries (delivery_personnel_id, status);
 CREATE INDEX inventory_change_requests_status_idx ON inventory_change_requests (status, created_at);
 CREATE INDEX order_status_history_order_id_idx ON order_status_history (order_id, updated_at);
+CREATE INDEX inventory_movements_inventory_id_idx ON inventory_movements (inventory_id, created_at DESC);
 
 -- Attach the set_updated_at() function defined at the top of this file to
 -- every table that carries an updated_at column. BEFORE UPDATE so the new

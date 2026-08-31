@@ -37,3 +37,4 @@ Each migration is written to be safe to run twice, so re-running one you've alre
 | --- | --- |
 | `001_updated_at_triggers.sql` | Adds a trigger so `updated_at` on `users`, `customers`, and `customer_addresses` is maintained automatically. Those columns were set once on insert and never updated, leaving them permanently equal to `created_at`. |
 | `002_otp_challenge_token.sql` | Adds `otp_codes.challenge_token`, which ties an admin's OTP back to the password step that issued it. Without it, `verify-otp` identified the account by username alone, so a valid SMS code was a complete admin login on its own. |
+| `003_inventory_movements.sql` | Adds the `inventory_movements` ledger recording every stock change and its cause, and `inventory_change_requests.observed_stock_quantity` so approving a stale proposal applies the difference the cashier observed rather than a stale absolute figure. Prepares for Phase 5 — see PHASE5_PLAN.md. |
