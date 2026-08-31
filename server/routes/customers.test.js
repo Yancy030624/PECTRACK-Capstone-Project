@@ -98,6 +98,22 @@ describe('customer record management', () => {
     assert.equal(deactivateAttempt.status, 403)
   })
 
+  // Regression: customers.updated_at took its DEFAULT on INSERT and was
+  // then never written again, so it permanently equalled created_at. It is
+  // now maintained by a database trigger (see database/migrations/
+  // 001_updated_at_triggers.sql), which also means this test fails loudly
+  // on any database where that migration hasn't been applied.
+  test('editing a customer advances updated_at but leaves created_at alone', async () => {
+    const before = (await pool.query('SELECT created_at, updated_at FROM customers WHERE user_id = $1', [targetCustomerId])).rows[0]
+
+    const response = await fetch(`${baseUrl}/api/customers/${targetCustomerId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ name: 'Timestamp Check' }) })
+    assert.equal(response.status, 200)
+
+    const after = (await pool.query('SELECT created_at, updated_at FROM customers WHERE user_id = $1', [targetCustomerId])).rows[0]
+    assert.equal(after.created_at.getTime(), before.created_at.getTime(), 'created_at must never move')
+    assert.ok(after.updated_at.getTime() > before.updated_at.getTime(), 'updated_at should reflect the edit — is migration 001 applied?')
+  })
+
   test('PATCH /api/customers/:id rejects an email already used by another customer', async () => {
     const response = await fetch(`${baseUrl}/api/customers/${targetCustomerId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ email: otherCustomer.email }) })
     assert.equal(response.status, 409)

@@ -16,6 +16,22 @@ CREATE TYPE change_request_status AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'C
 CREATE TYPE change_request_type AS ENUM ('INVENTORY', 'PRODUCT_DETAILS');
 CREATE TYPE proof_type AS ENUM ('PHOTO', 'SIGNATURE', 'CONFIRMATION');
 
+-- Keeps every updated_at column honest. Without this, those columns take
+-- their DEFAULT CURRENT_TIMESTAMP on INSERT and are then never touched
+-- again, so they permanently equal created_at — which is worse than not
+-- having them at all, because they look authoritative while being wrong.
+--
+-- Enforced by the database rather than by each UPDATE statement so it can
+-- never be forgotten: any UPDATE, from any route, written by anyone, in any
+-- future phase, maintains it automatically. The triggers themselves are
+-- attached at the bottom of this file, after the tables exist.
+CREATE FUNCTION set_updated_at() RETURNS trigger AS $$
+BEGIN
+  NEW.updated_at = CURRENT_TIMESTAMP;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE TABLE users (
   user_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   username VARCHAR(50) NOT NULL UNIQUE,
@@ -255,5 +271,21 @@ CREATE INDEX payments_order_id_idx ON payments (order_id);
 CREATE INDEX deliveries_personnel_status_idx ON deliveries (delivery_personnel_id, status);
 CREATE INDEX inventory_change_requests_status_idx ON inventory_change_requests (status, created_at);
 CREATE INDEX order_status_history_order_id_idx ON order_status_history (order_id, updated_at);
+
+-- Attach the set_updated_at() function defined at the top of this file to
+-- every table that carries an updated_at column. BEFORE UPDATE so the new
+-- value is written as part of the same row write, and FOR EACH ROW because
+-- the function works on NEW, which only exists per row.
+CREATE TRIGGER users_set_updated_at
+  BEFORE UPDATE ON users
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER customers_set_updated_at
+  BEFORE UPDATE ON customers
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER customer_addresses_set_updated_at
+  BEFORE UPDATE ON customer_addresses
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 COMMIT;
