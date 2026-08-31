@@ -26,6 +26,27 @@ export function parseCookies(header) {
   return cookies
 }
 
+// Deletes rows that can no longer be used for anything. Nothing depends on
+// this for correctness — findSessionUser already ignores expired sessions,
+// and verify-otp already ignores expired codes — but without it both tables
+// grow forever, since neither one ever removes a row on its own.
+//
+// Old OTP codes are kept for a grace period rather than deleted the moment
+// they expire, so a code involved in a support question ("I never got my
+// login working") is still there to look at shortly afterwards. They hold
+// only a SHA-256 hash of the code, never the code itself.
+//
+// Called from index.js on startup and hourly after that. It lives here
+// rather than in a route because it belongs to the same session/OTP
+// lifecycle the rest of this file owns.
+const expiredOtpGraceDays = 1
+
+export async function pruneExpiredAuthRows() {
+  const sessions = await pool.query('DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP')
+  const otpCodes = await pool.query(`DELETE FROM otp_codes WHERE expires_at <= CURRENT_TIMESTAMP - ($1 * INTERVAL '1 day')`, [expiredOtpGraceDays])
+  return { sessions: sessions.rowCount, otpCodes: otpCodes.rowCount }
+}
+
 export async function createSession(userId) {
   const sessionId = crypto.randomBytes(32).toString('base64url')
   const expiresAt = new Date(Date.now() + sessionDurationMs)

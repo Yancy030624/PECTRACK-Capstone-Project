@@ -69,6 +69,38 @@ export function parseCookies(header) {
   return cookies
 }
 
+// How long an expired OTP code is kept around before being deleted.
+const expiredOtpGraceDays = 1
+
+// Deletes rows that can no longer be used for anything.
+//
+// Note this is NOT a security fix, and it's worth being clear about why:
+// findSessionUser below already refuses any session whose expires_at has
+// passed, and verify-otp already refuses any expired code. An expired row
+// sitting in the table grants nobody anything. The problem is purely that
+// NOTHING EVER DELETES THEM — every login adds a session row and every
+// admin login adds an OTP row, and neither is ever removed unless the user
+// explicitly logs out. Over a semester of demos that's a table full of
+// dead rows slowing down every lookup for no reason.
+//
+// Old OTP codes get a grace period instead of being deleted the instant
+// they expire, so that a code involved in a support question ("my login
+// never worked yesterday") can still be inspected shortly afterwards. The
+// row only ever held a SHA-256 hash of the code, never the code itself, so
+// keeping it briefly costs nothing in safety.
+//
+// This lives here, next to createSession and findSessionUser, because it's
+// part of the same session/OTP lifecycle those functions own. It is CALLED
+// from index.js (on startup, then hourly) rather than app.js — see
+// indexExplanation.js for why that distinction matters to the tests.
+export async function pruneExpiredAuthRows() {
+  const sessions = await pool.query('DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP')
+  const otpCodes = await pool.query(`DELETE FROM otp_codes WHERE expires_at <= CURRENT_TIMESTAMP - ($1 * INTERVAL '1 day')`, [expiredOtpGraceDays])
+  // rowCount is how many rows the DELETE actually removed — returned so the
+  // caller can log something meaningful instead of a bare "done".
+  return { sessions: sessions.rowCount, otpCodes: otpCodes.rowCount }
+}
+
 // Called after a successful login to start a new session.
 export async function createSession(userId) {
   // 32 random bytes = 256 bits of entropy — this string IS the security
