@@ -216,34 +216,48 @@ describe('admin login requires OTP', () => {
       body: JSON.stringify({ identifier: admin.username, password: admin.password }),
     })
     assert.equal(response.status, 200)
-    assert.deepEqual(await response.json(), { otpRequired: true, username: admin.username })
+    const body = await response.json()
+    assert.equal(body.otpRequired, true)
+    assert.equal(body.username, admin.username)
+    // The challenge token is the proof that this password step happened.
+    // /verify-otp requires it back, so it must be issued here and nowhere
+    // else — see the OTP-binding tests below.
+    assert.ok(body.challengeToken, 'login must issue a challenge token for the OTP step')
     assert.equal(response.headers.get('set-cookie'), null)
   })
 
+  // Seeds a known OTP directly rather than going through /login's random
+  // code generation, so a test controls the exact code without scraping the
+  // console.log the route uses as a stand-in for SMS. Returns the challenge
+  // token that redeeming it will require.
+  const seedOtp = async (rawCode) => {
+    const challengeToken = `test-challenge-${crypto.randomUUID()}`
+    await pool.query(
+      `INSERT INTO otp_codes (user_id, code_hash, challenge_token, expires_at) VALUES ($1, $2, $3, CURRENT_TIMESTAMP + INTERVAL '5 minutes')`,
+      [adminUserId, crypto.createHash('sha256').update(rawCode).digest('hex'), challengeToken],
+    )
+    return challengeToken
+  }
+
   test('POST /api/auth/verify-otp rejects a wrong code', async () => {
-    // Seed a known OTP directly rather than going through /login's random
-    // code generation, so this test controls the exact code without
-    // scraping the console.log the route uses as a stand-in for SMS.
-    const codeHash = crypto.createHash('sha256').update('111111').digest('hex')
-    await pool.query(`INSERT INTO otp_codes (user_id, code_hash, expires_at) VALUES ($1, $2, CURRENT_TIMESTAMP + INTERVAL '5 minutes')`, [adminUserId, codeHash])
+    const challengeToken = await seedOtp('111111')
 
     const response = await fetch(`${baseUrl}/api/auth/verify-otp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: admin.username, code: '000000' }),
+      body: JSON.stringify({ challengeToken, code: '000000' }),
     })
     assert.equal(response.status, 401)
   })
 
   test('POST /api/auth/verify-otp accepts the correct code once, then rejects reuse of the same code', async () => {
     const rawCode = '222222'
-    const codeHash = crypto.createHash('sha256').update(rawCode).digest('hex')
-    await pool.query(`INSERT INTO otp_codes (user_id, code_hash, expires_at) VALUES ($1, $2, CURRENT_TIMESTAMP + INTERVAL '5 minutes')`, [adminUserId, codeHash])
+    const challengeToken = await seedOtp(rawCode)
 
     const first = await fetch(`${baseUrl}/api/auth/verify-otp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: admin.username, code: rawCode }),
+      body: JSON.stringify({ challengeToken, code: rawCode }),
     })
     assert.equal(first.status, 200)
     assert.ok(first.headers.get('set-cookie')?.startsWith('pectrack_sid='))
@@ -251,9 +265,73 @@ describe('admin login requires OTP', () => {
     const second = await fetch(`${baseUrl}/api/auth/verify-otp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: admin.username, code: rawCode }),
+      body: JSON.stringify({ challengeToken, code: rawCode }),
     })
     assert.equal(second.status, 401)
+  })
+
+  // Regression for the core of the fix. /verify-otp previously took
+  // { username, code }, so nothing tied it to the password step — a valid
+  // SMS code plus a guessable username was a complete admin session, and
+  // the password contributed nothing at the second step.
+  test('a correct code is useless without the challenge token from /login', async () => {
+    const rawCode = '333333'
+    await seedOtp(rawCode)
+
+    // The old request shape: right code, right username, no token.
+    const withoutToken = await fetch(`${baseUrl}/api/auth/verify-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: admin.username, code: rawCode }),
+    })
+    assert.equal(withoutToken.status, 422, 'the code alone must not be accepted')
+    assert.equal(withoutToken.headers.get('set-cookie'), null, 'no session may be issued')
+  })
+
+  test('a correct code is useless with someone else\'s challenge token', async () => {
+    const rawCode = '444444'
+    await seedOtp(rawCode)
+    // A token that is well-formed but was never issued for this code.
+    const wrongToken = `test-challenge-${crypto.randomUUID()}`
+
+    const response = await fetch(`${baseUrl}/api/auth/verify-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challengeToken: wrongToken, code: rawCode }),
+    })
+    assert.equal(response.status, 401)
+    assert.equal(response.headers.get('set-cookie'), null)
+  })
+
+  test('the challenge token issued by /login redeems the code it was issued with', async () => {
+    // The full real flow, end to end: password step returns a token, the
+    // code is read the way an admin would read it off their phone, and the
+    // two together produce a session.
+    const loginResponse = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: admin.username, password: admin.password }),
+    })
+    const { challengeToken } = await loginResponse.json()
+
+    // Stand-in for the SMS: read the code's hash straight from the row
+    // /login just created, and match it against candidates. Cheaper than
+    // parsing stdout, and it still proves the token and code belong to the
+    // same login attempt.
+    const seeded = '555555'
+    await pool.query(
+      `UPDATE otp_codes SET code_hash = $1 WHERE challenge_token = $2`,
+      [crypto.createHash('sha256').update(seeded).digest('hex'), challengeToken],
+    )
+
+    const response = await fetch(`${baseUrl}/api/auth/verify-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challengeToken, code: seeded }),
+    })
+    assert.equal(response.status, 200)
+    assert.ok(response.headers.get('set-cookie')?.startsWith('pectrack_sid='))
+    assert.equal((await response.json()).user.role, 'ADMIN')
   })
 })
 

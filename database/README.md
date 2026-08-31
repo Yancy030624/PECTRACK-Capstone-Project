@@ -36,3 +36,4 @@ Each migration is written to be safe to run twice, so re-running one you've alre
 | Migration | What it does |
 | --- | --- |
 | `001_updated_at_triggers.sql` | Adds a trigger so `updated_at` on `users`, `customers`, and `customer_addresses` is maintained automatically. Those columns were set once on insert and never updated, leaving them permanently equal to `created_at`. |
+| `002_otp_challenge_token.sql` | Adds `otp_codes.challenge_token`, which ties an admin's OTP back to the password step that issued it. Without it, `verify-otp` identified the account by username alone, so a valid SMS code was a complete admin login on its own. |

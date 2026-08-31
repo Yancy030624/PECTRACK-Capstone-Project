@@ -97,13 +97,33 @@ function hashOtpCode(code) {
   return crypto.createHash('sha256').update(code).digest('hex')
 }
 
+// Creates BOTH halves of the login challenge, which go to two different
+// places on purpose:
+//
+//   code           -> the admin's PHONE, by SMS. Proves possession of the
+//                     registered handset.
+//   challengeToken -> the BROWSER that just submitted a correct password.
+//                     Proves that step actually happened.
+//
+// /verify-otp requires both. That split is the entire point of a second
+// factor: neither the phone alone nor the password alone is a login, so
+// compromising just one of them isn't enough.
 async function createOtpCode(userId) {
   const code = generateOtpCode()
+  // Same size and generator as a session id (see lib/authExplanation.js).
+  // For the ~5 minutes the code lives, this token is a bearer secret —
+  // whoever holds it is treated as "the browser that passed the password
+  // step" — so it has to be unguessable, not merely unique. 32 random
+  // bytes is 256 bits of entropy; base64url makes it safe to put in JSON.
+  const challengeToken = crypto.randomBytes(32).toString('base64url')
   const expiresAt = new Date(Date.now() + otpCodeDurationMs)
-  await pool.query('INSERT INTO otp_codes (user_id, code_hash, expires_at) VALUES ($1, $2, $3)', [userId, hashOtpCode(code), expiresAt])
-  // Returns the RAW code (not the hash) — this is what needs to be texted
-  // to the admin. Only the hash gets persisted to the database.
-  return code
+  await pool.query('INSERT INTO otp_codes (user_id, code_hash, challenge_token, expires_at) VALUES ($1, $2, $3, $4)', [userId, hashOtpCode(code), challengeToken, expiresAt])
+  // Returns the RAW code (not the hash) — that's what needs to be texted to
+  // the admin. Only the hash is persisted, so a database leak doesn't hand
+  // anyone a usable code. The challenge token IS stored as-is, exactly like
+  // sessions.session_id: it's a short-lived handle, not a credential the
+  // user chose or reuses anywhere else.
+  return { code, challengeToken }
 }
 
 // --- Routes ---------------------------------------------------------------
@@ -366,10 +386,17 @@ router.post('/login', async (request, response) => {
   // logged to the console — see the TODO), and tell the frontend to show
   // a code-entry screen instead of the dashboard.
   if (user.user_type === 'ADMIN') {
-    const code = await createOtpCode(user.user_id)
+    const { code, challengeToken } = await createOtpCode(user.user_id)
     // TODO: send via SMS gateway (e.g. Semaphore, Movider) once an account is set up.
     console.log(`[DEV] OTP for admin "${user.username}": ${code} (would be sent by SMS)`)
-    return response.json({ otpRequired: true, username: user.username })
+    // This line is the ONLY place a challenge token is ever issued, and it
+    // sits AFTER the password check above — that position is what gives the
+    // token its meaning. Holding one is proof that a correct password was
+    // submitted, because there is no other way to obtain one.
+    //
+    // username is returned purely so the next screen can say who the code
+    // went to. /verify-otp neither needs nor accepts it any more.
+    return response.json({ otpRequired: true, username: user.username, challengeToken })
   }
 
   // Every other role: password was correct, no second factor needed —
@@ -393,42 +420,76 @@ router.post('/login', async (request, response) => {
 
 // POST /api/auth/verify-otp — the second half of admin login. Called by
 // the frontend after /login responds with { otpRequired: true }.
+//
+// ============================================================================
+// WHY THIS TAKES A CHALLENGE TOKEN AND NOT A USERNAME
+//
+// The original version of this route accepted { username, code }. It looked
+// reasonable, and every individual check in it was correct. The flaw was in
+// what it DIDN'T check.
+//
+// A second factor is supposed to mean "something you know (the password)
+// AND something you have (the phone)". But nothing in that request carried
+// any evidence of the first half. The password was verified over in /login,
+// which then simply... ended. This route started fresh, identified the
+// account from a username — which is public-ish and guessable — and issued
+// a full admin session to anyone who could supply a matching code.
+//
+// So in practice the password protected nothing at this step. Possession of
+// the SMS code alone was the entire login: a code glanced at on a lock
+// screen, forwarded, or read aloud was enough. The system had two steps but
+// only one factor.
+//
+// THE FIX. /login now generates a random challenge token at the moment the
+// password verifies, stores it on the OTP row, and returns it to that
+// browser. This route requires it back. Because the token is only ever
+// issued after a correct password, holding one is proof the first step
+// really happened — the two halves are now genuinely one flow.
+//
+// A SECOND, QUIETER IMPROVEMENT. Since the token identifies the OTP row,
+// and the row identifies the user, the username parameter is simply gone.
+// That's better than validating it would have been: an input that doesn't
+// exist can't be guessed, enumerated, or gotten wrong. When fixing a
+// security problem, removing an input usually beats checking it harder.
+// ============================================================================
 router.post('/verify-otp', async (request, response) => {
-  const username = normalize(request.body.username).toLowerCase()
+  const challengeToken = normalize(request.body.challengeToken)
   const code = normalize(request.body.code)
-  if (!username || !code) return response.status(422).json({ message: 'Enter the code sent to your phone.' })
+  if (!challengeToken || !code) return response.status(422).json({ message: 'Enter the code sent to your phone.' })
 
   // One shared response for every failure case, same enumeration-
   // prevention reasoning as the login route above.
   const invalidCodeResponse = { message: 'Invalid or expired code. Please sign in again.' }
 
-  // Only ever joins `admins` (not all four tables like login does) since
-  // this route only ever runs for ADMIN accounts — no COALESCE needed.
-  const userResult = await pool.query(
-    `SELECT u.user_id, u.username, u.user_type, u.is_active, a.name, a.email, a.contact_num
-     FROM users u
-     JOIN admins a ON a.user_id = u.user_id
-     WHERE LOWER(u.username) = $1 AND u.user_type = 'ADMIN'
-     LIMIT 1`,
-    [username],
-  )
-  const user = userResult.rows[0]
-  if (!user || !user.is_active) return response.status(401).json(invalidCodeResponse)
-
-  // Find this admin's most recent OTP that hasn't already been used
-  // (consumed_at IS NULL) and hasn't expired yet.
+  // ONE query where there used to be two, because the challenge token can
+  // do what the username did and more: it finds the exact OTP row AND the
+  // user it belongs to in a single lookup.
+  //
+  // JOIN admins (rather than the four-way COALESCE login uses) because this
+  // route only ever runs for ADMIN accounts — and the JOIN doubles as a
+  // re-confirmation that the account still IS an admin. is_active is
+  // re-checked below too, in case the account was disabled in the few
+  // minutes between the password step and this one.
   const otpResult = await pool.query(
-    `SELECT otp_id, code_hash, attempt_count
-     FROM otp_codes
-     WHERE user_id = $1 AND consumed_at IS NULL AND expires_at > CURRENT_TIMESTAMP
-     ORDER BY created_at DESC
+    `SELECT o.otp_id, o.code_hash, o.attempt_count,
+            u.user_id, u.username, u.user_type, u.is_active,
+            a.name, a.email, a.contact_num
+     FROM otp_codes o
+     JOIN users u ON u.user_id = o.user_id
+     JOIN admins a ON a.user_id = u.user_id
+     WHERE o.challenge_token = $1
+       AND o.consumed_at IS NULL
+       AND o.expires_at > CURRENT_TIMESTAMP
      LIMIT 1`,
-    [user.user_id],
+    [challengeToken],
   )
   const otp = otpResult.rows[0]
-  // No valid OTP row at all, or this one's already had too many wrong
-  // guesses against it — reject without even checking the code.
-  if (!otp || otp.attempt_count >= otpMaxAttempts) return response.status(401).json(invalidCodeResponse)
+  // No matching live OTP, account disabled since /login, or this code has
+  // already had too many wrong guesses — reject without checking the code.
+  // Note the WHERE above also handles the migration case: rows created
+  // before challenge_token existed have NULL there, and SQL equality
+  // against NULL is never true, so they can't be redeemed at all.
+  if (!otp || !otp.is_active || otp.attempt_count >= otpMaxAttempts) return response.status(401).json(invalidCodeResponse)
 
   if (otp.code_hash !== hashOtpCode(code)) {
     await pool.query('UPDATE otp_codes SET attempt_count = attempt_count + 1 WHERE otp_id = $1', [otp.otp_id])
@@ -439,6 +500,9 @@ router.post('/verify-otp', async (request, response) => {
   // again (even if it hasn't expired yet), then finally create the
   // session that /login deferred.
   await pool.query('UPDATE otp_codes SET consumed_at = CURRENT_TIMESTAMP WHERE otp_id = $1', [otp.otp_id])
+  // Reshaped into the same field names the response builder below expects,
+  // since it now all arrives from one joined row rather than two queries.
+  const user = { user_id: otp.user_id, username: otp.username, user_type: otp.user_type, name: otp.name, email: otp.email, contact_num: otp.contact_num }
   const sessionId = await createSession(user.user_id)
   response.cookie(sessionCookieName, sessionId, sessionCookieOptions)
   return response.json({ user: { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' '), email: user.email, contactNumber: user.contact_num } })

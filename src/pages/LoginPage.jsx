@@ -15,10 +15,17 @@ export function LoginPage({ onRegister, onLogin }) {
   const [showPassword, setShowPassword] = useState(false)
   // Store a validation error that can be announced to screen readers.
   const [error, setError] = useState('')
-  // Set once the server asks for a one-time code (admin accounts only) —
-  // holds the username the code applies to, and switches the form below
-  // from credentials to a code-entry step. Null means "not in that step."
-  const [pendingUsername, setPendingUsername] = useState(null)
+  // Set once the server asks for a one-time code (admin accounts only), and
+  // switches the form below from credentials to a code-entry step. Null
+  // means "not in that step."
+  //
+  // Holds two things: `username`, purely so the screen can say who the code
+  // was sent for, and `challengeToken` — the server's proof that the
+  // password step just succeeded. The token is what makes this a genuine
+  // second factor: /verify-otp needs it alongside the code, so an SMS code
+  // on its own can't sign anyone in. It deliberately lives in component
+  // state and nowhere else, so it disappears the moment this page unmounts.
+  const [pendingOtp, setPendingOtp] = useState(null)
   // Store what the person types into the verification-code field.
   const [otpCode, setOtpCode] = useState('')
 
@@ -36,7 +43,7 @@ export function LoginPage({ onRegister, onLogin }) {
       setError('')
       // Admin accounts don't get a session yet — the server wants a
       // verification code first. Everyone else is signed in immediately.
-      if (data.otpRequired) setPendingUsername(data.username)
+      if (data.otpRequired) setPendingOtp({ username: data.username, challengeToken: data.challengeToken })
       else onLogin(data.user)
     } catch (error) {
       setError(error.message)
@@ -52,7 +59,7 @@ export function LoginPage({ onRegister, onLogin }) {
       return
     }
     try {
-      const data = await apiPost('/api/auth/verify-otp', { username: pendingUsername, code: otpCode })
+      const data = await apiPost('/api/auth/verify-otp', { challengeToken: pendingOtp.challengeToken, code: otpCode })
       setError('')
       onLogin(data.user)
     } catch (error) {
@@ -62,7 +69,7 @@ export function LoginPage({ onRegister, onLogin }) {
 
   // Let the person back out of the code step and try signing in again.
   const cancelOtp = () => {
-    setPendingUsername(null)
+    setPendingOtp(null)
     setOtpCode('')
     setError('')
   }
@@ -87,9 +94,9 @@ export function LoginPage({ onRegister, onLogin }) {
             {/* Keep the credentials area bright and calm for easy scanning. */}
             <div className="min-h-142.5 bg-[#fffedc] p-7 sm:p-10 md:p-12">
               <div className="md:hidden"><Brand compact /></div>
-              {pendingUsername ? (
+              {pendingOtp ? (
                 <>
-                  <div className="mt-6 md:mt-8"><span className="rounded-full bg-lime-200 px-3 py-1.5 text-[10px] font-bold text-green-800">Verification Required</span><h2 className="mt-3 text-3xl font-extrabold leading-[1.05] text-[#271dc8]">Enter your<br />code</h2><p className="mt-2 text-[11px] font-medium text-stone-500">We sent a verification code to the phone on file for {pendingUsername}.</p></div>
+                  <div className="mt-6 md:mt-8"><span className="rounded-full bg-lime-200 px-3 py-1.5 text-[10px] font-bold text-green-800">Verification Required</span><h2 className="mt-3 text-3xl font-extrabold leading-[1.05] text-[#271dc8]">Enter your<br />code</h2><p className="mt-2 text-[11px] font-medium text-stone-500">We sent a verification code to the phone on file for {pendingOtp.username}.</p></div>
                   {/* Second factor for admin accounts: the code from /login must be verified before a session starts. */}
                   <form className="mt-6 space-y-3" onSubmit={handleOtpSubmit} noValidate>
                     <div><label htmlFor="otp-code" className="mb-1.5 block text-[11px] font-extrabold">Verification code</label><input id="otp-code" value={otpCode} onChange={(event) => setOtpCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" placeholder="123456" maxLength={6} className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-2.5 text-center text-lg font-bold tracking-[0.4em] shadow-sm outline-none transition focus:border-green-700 focus:ring-4 focus:ring-green-100" /></div>

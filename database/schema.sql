@@ -54,10 +54,24 @@ CREATE TABLE sessions (
 CREATE INDEX sessions_user_id_idx ON sessions (user_id);
 
 -- One-time codes for admin second-factor login (sent via SMS to admins.contact_num).
+--
+-- challenge_token is what ties the code back to the password step that
+-- issued it. /login returns the token only after the password checks out,
+-- and /verify-otp will not accept a code without it. Without this column a
+-- valid SMS code was a complete admin login on its own, since the endpoint
+-- identified the account by username — something anyone can guess — and
+-- never re-established that the password had been proved.
+--
+-- Nullable only so the column could be added to a table that already had
+-- rows (see migrations/002). A row with a NULL token can never be matched,
+-- since SQL equality against NULL is never true, so pre-existing codes
+-- became unusable rather than remaining usable under the old weaker rule —
+-- which is the safe direction to fail.
 CREATE TABLE otp_codes (
   otp_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
   code_hash TEXT NOT NULL,
+  challenge_token TEXT UNIQUE,
   expires_at TIMESTAMPTZ NOT NULL,
   consumed_at TIMESTAMPTZ,
   attempt_count SMALLINT NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),

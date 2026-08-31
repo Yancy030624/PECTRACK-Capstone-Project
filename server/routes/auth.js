@@ -29,11 +29,19 @@ function hashOtpCode(code) {
   return crypto.createHash('sha256').update(code).digest('hex')
 }
 
+// Returns BOTH halves of the challenge: the 6-digit code (which goes to the
+// admin's phone) and the challenge token (which goes to the browser that
+// just proved the password). Redeeming the code requires presenting both,
+// so the SMS on its own is not a login — see /verify-otp below.
 async function createOtpCode(userId) {
   const code = generateOtpCode()
+  // Same size and generator as a session id — this token is a bearer
+  // secret for the ~5 minutes the code is alive, so it has to be
+  // unguessable, not merely unique.
+  const challengeToken = crypto.randomBytes(32).toString('base64url')
   const expiresAt = new Date(Date.now() + otpCodeDurationMs)
-  await pool.query('INSERT INTO otp_codes (user_id, code_hash, expires_at) VALUES ($1, $2, $3)', [userId, hashOtpCode(code), expiresAt])
-  return code
+  await pool.query('INSERT INTO otp_codes (user_id, code_hash, challenge_token, expires_at) VALUES ($1, $2, $3, $4)', [userId, hashOtpCode(code), challengeToken, expiresAt])
+  return { code, challengeToken }
 }
 
 router.post('/register', async (request, response) => {
@@ -141,10 +149,14 @@ router.post('/login', async (request, response) => {
   await pool.query('UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE user_id = $1', [user.user_id])
 
   if (user.user_type === 'ADMIN') {
-    const code = await createOtpCode(user.user_id)
+    const { code, challengeToken } = await createOtpCode(user.user_id)
     // TODO: send via SMS gateway (e.g. Semaphore, Movider) once an account is set up.
     console.log(`[DEV] OTP for admin "${user.username}": ${code} (would be sent by SMS)`)
-    return response.json({ otpRequired: true, username: user.username })
+    // challengeToken is issued ONLY here, and only once the password above
+    // has verified — that's what makes it proof of the first step. username
+    // is returned purely so the next screen can say who the code was sent
+    // for; /verify-otp does not use it and no longer accepts it.
+    return response.json({ otpRequired: true, username: user.username, challengeToken })
   }
 
   const sessionId = await createSession(user.user_id)
@@ -152,33 +164,47 @@ router.post('/login', async (request, response) => {
   return response.json({ user: { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' '), email: user.email, contactNumber: user.contact_num } })
 })
 
+// Second step of the admin login. Requires BOTH the challenge token issued
+// by /login (proof the password was verified, held by the browser) and the
+// 6-digit code (proof of the phone). Presenting only one of them is not a
+// login.
+//
+// This endpoint used to take { username, code }. Nothing in that request
+// established that the password step had ever happened — the two halves of
+// the login shared no state — so a valid SMS code plus a guessable username
+// was a complete admin session, and the password contributed nothing here.
+//
+// Note there is no username parameter any more: the challenge token
+// identifies the OTP row, which identifies the user. That's strictly
+// better than validating a username, because it removes a guessable input
+// from the endpoint entirely rather than checking it.
 router.post('/verify-otp', async (request, response) => {
-  const username = normalize(request.body.username).toLowerCase()
+  const challengeToken = normalize(request.body.challengeToken)
   const code = normalize(request.body.code)
-  if (!username || !code) return response.status(422).json({ message: 'Enter the code sent to your phone.' })
+  if (!challengeToken || !code) return response.status(422).json({ message: 'Enter the code sent to your phone.' })
 
   const invalidCodeResponse = { message: 'Invalid or expired code. Please sign in again.' }
-  const userResult = await pool.query(
-    `SELECT u.user_id, u.username, u.user_type, u.is_active, a.name, a.email, a.contact_num
-     FROM users u
-     JOIN admins a ON a.user_id = u.user_id
-     WHERE LOWER(u.username) = $1 AND u.user_type = 'ADMIN'
-     LIMIT 1`,
-    [username],
-  )
-  const user = userResult.rows[0]
-  if (!user || !user.is_active) return response.status(401).json(invalidCodeResponse)
 
+  // One query instead of the previous two: find the live, unconsumed code
+  // for this token and pull the admin's profile along with it. Joining
+  // admins also re-confirms the account is still an admin, and is_active is
+  // re-checked below in case the account was disabled between the two
+  // steps.
   const otpResult = await pool.query(
-    `SELECT otp_id, code_hash, attempt_count
-     FROM otp_codes
-     WHERE user_id = $1 AND consumed_at IS NULL AND expires_at > CURRENT_TIMESTAMP
-     ORDER BY created_at DESC
+    `SELECT o.otp_id, o.code_hash, o.attempt_count,
+            u.user_id, u.username, u.user_type, u.is_active,
+            a.name, a.email, a.contact_num
+     FROM otp_codes o
+     JOIN users u ON u.user_id = o.user_id
+     JOIN admins a ON a.user_id = u.user_id
+     WHERE o.challenge_token = $1
+       AND o.consumed_at IS NULL
+       AND o.expires_at > CURRENT_TIMESTAMP
      LIMIT 1`,
-    [user.user_id],
+    [challengeToken],
   )
   const otp = otpResult.rows[0]
-  if (!otp || otp.attempt_count >= otpMaxAttempts) return response.status(401).json(invalidCodeResponse)
+  if (!otp || !otp.is_active || otp.attempt_count >= otpMaxAttempts) return response.status(401).json(invalidCodeResponse)
 
   if (otp.code_hash !== hashOtpCode(code)) {
     await pool.query('UPDATE otp_codes SET attempt_count = attempt_count + 1 WHERE otp_id = $1', [otp.otp_id])
@@ -186,6 +212,7 @@ router.post('/verify-otp', async (request, response) => {
   }
 
   await pool.query('UPDATE otp_codes SET consumed_at = CURRENT_TIMESTAMP WHERE otp_id = $1', [otp.otp_id])
+  const user = { user_id: otp.user_id, username: otp.username, user_type: otp.user_type, name: otp.name, email: otp.email, contact_num: otp.contact_num }
   const sessionId = await createSession(user.user_id)
   response.cookie(sessionCookieName, sessionId, sessionCookieOptions)
   return response.json({ user: { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' '), email: user.email, contactNumber: user.contact_num } })
