@@ -252,16 +252,67 @@ router.post('/login', async (request, response) => {
     if (user) {
       await pool.query(
         `UPDATE users
-         SET failed_login_attempts = failed_login_attempts + 1,
-             locked_until = CASE WHEN failed_login_attempts + 1 >= $2 THEN CURRENT_TIMESTAMP + ($3 * INTERVAL '1 minute') ELSE locked_until END
-         WHERE user_id = $1`,
+         SET failed_login_attempts = CASE WHEN locked_until IS NULL THEN failed_login_attempts + 1 ELSE 1 END,
+             locked_until = CASE
+               WHEN locked_until IS NULL AND failed_login_attempts + 1 >= $2 THEN CURRENT_TIMESTAMP + ($3 * INTERVAL '1 minute')
+               ELSE NULL
+             END
+         WHERE user_id = $1 AND (locked_until IS NULL OR locked_until <= CURRENT_TIMESTAMP)`,
         [user.user_id, lockAfterAttempts, lockDurationMinutes],
       )
-      // This CASE expression means: "if this failed attempt is the 5th
-      // (or more) in a row, set locked_until to 15 minutes from now;
-      // otherwise leave locked_until unchanged." This is what actually
-      // implements the account-lockout defense declared at the top of
-      // the file.
+      // This is what implements the account-lockout defense declared at
+      // the top of the file, and the exact shape of it matters — an
+      // earlier, simpler version of this query had a real vulnerability.
+      //
+      // THE BUG IT FIXES. The original was just:
+      //   SET failed_login_attempts = failed_login_attempts + 1,
+      //       locked_until = CASE WHEN failed_login_attempts + 1 >= $2
+      //                        THEN CURRENT_TIMESTAMP + 15 min
+      //                        ELSE locked_until END
+      //   WHERE user_id = $1
+      // with no restriction on WHICH rows it applied to. So every failed
+      // attempt pushed locked_until 15 minutes further into the future —
+      // INCLUDING attempts made while the account was already locked.
+      // Anyone who knew a username could therefore keep that account
+      // locked out FOREVER, just by looping wrong passwords faster than
+      // once every 15 minutes. A lockout meant to stop password guessing
+      // had become a way to deny a legitimate admin access to their own
+      // system. (Measured during a review: 7 failures set the lock, then
+      // 3 more moved the unlock time further out.)
+      //
+      // THE FIX, in two parts:
+      //
+      // 1. The WHERE clause. While locked_until is still in the future,
+      //    this UPDATE now matches NO ROWS AT ALL. Further guesses during
+      //    a lockout change nothing — they can neither raise the counter
+      //    nor postpone the unlock. The 15 minutes always run out.
+      //
+      // 2. The two CASE expressions. Because the WHERE clause already
+      //    guarantees the row is either never-locked or expired-locked,
+      //    each CASE only has to tell those two situations apart:
+      //      locked_until IS NULL -> no prior lock, so keep counting up,
+      //                              and lock once the count reaches the
+      //                              limit ($2, 5 attempts).
+      //      otherwise            -> a previous lock has just expired, so
+      //                              this failure begins a FRESH window:
+      //                              count restarts at 1, locked_until
+      //                              clears to NULL.
+      //
+      // That second branch exists for a subtle reason. If an expired lock
+      // left the counter sitting at 5, then the very next failure would
+      // satisfy "5 + 1 >= 5" and re-lock the account instantly — meaning
+      // a legitimate user who mistypes their password ONCE after waiting
+      // out a lockout gets locked out again for another 15 minutes. The
+      // reset makes the lockout punish sustained guessing, not a single
+      // typo.
+      //
+      // Note that `failed_login_attempts + 1 >= $2` reads the OLD column
+      // value: in Postgres, expressions on the right-hand side of SET see
+      // the row as it was BEFORE this UPDATE, not the value being
+      // assigned alongside them.
+      //
+      // Covered by the 'account lockout cannot be extended indefinitely'
+      // tests in routes/auth.test.js.
     }
     // 401 = Unauthorized. Same generic message regardless of the exact
     // reason, per the enumeration-prevention note above.

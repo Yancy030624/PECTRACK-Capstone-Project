@@ -89,11 +89,27 @@ router.post('/login', async (request, response) => {
   const invalidCredentials = !user || !user.is_active || (user.locked_until && new Date(user.locked_until) > new Date()) || !(await bcrypt.compare(password, user.password_hash))
   if (invalidCredentials) {
     if (user) {
+      // The WHERE clause is what stops an attacker from holding a known
+      // account locked out permanently: while locked_until is still in the
+      // future this UPDATE matches no rows at all, so further wrong
+      // guesses can neither increment the counter nor push the unlock time
+      // further away. Without it, every attempt during a lockout extended
+      // that lockout by another full window.
+      //
+      // Since the WHERE guarantees the row is either never-locked or
+      // expired-locked, the CASE only has to tell those two apart:
+      //   locked_until IS NULL -> no prior lock, keep counting up
+      //   otherwise            -> a lock just expired, so this failure
+      //                           starts a fresh window at 1 rather than
+      //                           re-locking the account on one typo.
       await pool.query(
         `UPDATE users
-         SET failed_login_attempts = failed_login_attempts + 1,
-             locked_until = CASE WHEN failed_login_attempts + 1 >= $2 THEN CURRENT_TIMESTAMP + ($3 * INTERVAL '1 minute') ELSE locked_until END
-         WHERE user_id = $1`,
+         SET failed_login_attempts = CASE WHEN locked_until IS NULL THEN failed_login_attempts + 1 ELSE 1 END,
+             locked_until = CASE
+               WHEN locked_until IS NULL AND failed_login_attempts + 1 >= $2 THEN CURRENT_TIMESTAMP + ($3 * INTERVAL '1 minute')
+               ELSE NULL
+             END
+         WHERE user_id = $1 AND (locked_until IS NULL OR locked_until <= CURRENT_TIMESTAMP)`,
         [user.user_id, lockAfterAttempts, lockDurationMinutes],
       )
     }

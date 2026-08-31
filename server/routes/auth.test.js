@@ -4,9 +4,9 @@
 // configured in .env. Run with: npm test
 //
 // Deliberately NOT covered here (kept out of scope for a "lightweight"
-// suite): the 5-attempt account lockout timing, rate limiting (not yet
-// implemented — deferred), and malformed-JSON handling (exercised
-// manually during Phase 2 review).
+// suite): rate limiting (not yet implemented — deferred) and
+// malformed-JSON handling (exercised manually during Phase 2 review).
+// The account lockout IS covered, in the last describe block below.
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
@@ -257,7 +257,89 @@ describe('admin login requires OTP', () => {
   })
 })
 
-// Runs once after every test in this file (both describe blocks above) has
+// Regression cover for the account lockout. Previously every failed
+// attempt pushed locked_until further into the future, INCLUDING attempts
+// made while the account was already locked — so anyone who knew a
+// username could keep that account locked out permanently just by looping
+// wrong passwords. Needs its own throwaway account because locking one out
+// is destructive.
+describe('account lockout cannot be extended indefinitely', () => {
+  let server
+  let baseUrl
+  let createdUserId
+
+  const victim = {
+    name: 'Lockout Victim',
+    username: `lockout_${runId}`,
+    email: `lockout_${runId}@example.com`,
+    contactNumber: randomContactNumber(),
+    password: 'Correct-Horse-Battery-9!',
+  }
+
+  const failLogin = () => fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: victim.username, password: 'definitely-the-wrong-password' }) })
+  const readLockState = async () => (await pool.query('SELECT failed_login_attempts, locked_until FROM users WHERE user_id = $1', [createdUserId])).rows[0]
+
+  before(async () => {
+    server = app.listen(0)
+    await new Promise((resolve) => server.once('listening', resolve))
+    baseUrl = `http://localhost:${server.address().port}`
+
+    await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...victim, confirmPassword: victim.password }) })
+    createdUserId = (await pool.query('SELECT user_id FROM users WHERE username = $1', [victim.username])).rows[0].user_id
+  })
+
+  after(async () => {
+    await deleteTestUser(createdUserId)
+    server.close()
+  })
+
+  test('five failures lock the account', async () => {
+    for (let attempt = 0; attempt < 5; attempt += 1) assert.equal((await failLogin()).status, 401)
+    const state = await readLockState()
+    assert.equal(state.failed_login_attempts, 5)
+    assert.ok(state.locked_until && new Date(state.locked_until) > new Date(), 'the account should now be locked')
+  })
+
+  test('further failures while locked neither extend the lock nor raise the counter', async () => {
+    const before = await readLockState()
+    for (let attempt = 0; attempt < 4; attempt += 1) await failLogin()
+    const after = await readLockState()
+
+    assert.equal(
+      new Date(after.locked_until).getTime(),
+      new Date(before.locked_until).getTime(),
+      'locked_until must not move — otherwise an attacker can hold the account locked forever',
+    )
+    assert.equal(after.failed_login_attempts, before.failed_login_attempts, 'the counter must not keep climbing during a lockout')
+  })
+
+  test('a successful login after the lock is lifted clears the counter', async () => {
+    // Expire the lock directly rather than waiting out the real 15 minutes.
+    await pool.query('UPDATE users SET locked_until = CURRENT_TIMESTAMP - INTERVAL \'1 minute\' WHERE user_id = $1', [createdUserId])
+
+    const response = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: victim.username, password: victim.password }) })
+    assert.equal(response.status, 200)
+
+    const state = await readLockState()
+    assert.equal(state.failed_login_attempts, 0)
+    assert.equal(state.locked_until, null)
+  })
+
+  test('one typo after a lock expires starts a fresh window instead of re-locking immediately', async () => {
+    // Put the account back into "was locked, lock has now expired" with the
+    // counter still at the limit — the exact state that used to re-lock on
+    // a single mistyped password.
+    await pool.query('UPDATE users SET failed_login_attempts = 5, locked_until = CURRENT_TIMESTAMP - INTERVAL \'1 minute\' WHERE user_id = $1', [createdUserId])
+
+    await failLogin()
+
+    const state = await readLockState()
+    assert.equal(state.failed_login_attempts, 1, 'the expired lock should reset the count, not carry it over')
+    assert.equal(state.locked_until, null, 'one typo after an expired lock must not re-lock the account')
+  })
+})
+
+// Runs once after every test in this file (all describe blocks above) has
 // finished — closing the pool any earlier would break whichever describe
 // block hasn't run its database queries yet.
 after(async () => {
