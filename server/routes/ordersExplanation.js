@@ -35,6 +35,18 @@ const router = express.Router()
 // rather than letting an invalid value reach Postgres as an enum-cast
 // error (a confusing 500).
 const validStatuses = new Set(['PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP', 'OUT_FOR_DELIVERY', 'COMPLETED', 'CANCELLED'])
+// Terminal: nothing moves OUT of these, for any role.
+const terminalStatuses = new Set(['COMPLETED', 'CANCELLED'])
+// The states a status change may be claimed FROM. Staff may move an order
+// out of any non-terminal state; a customer may only cancel one the kitchen
+// has not started on yet.
+//
+// DERIVED from validStatuses rather than written out by hand. The two lists
+// have to agree — a status that exists but appears in neither would be
+// silently unreachable — and deriving one from the other makes that
+// impossible to get wrong when a future phase adds, say, a DELIVERED status.
+const nonTerminalStatuses = [...validStatuses].filter((status) => !terminalStatuses.has(status))
+const customerClaimableStatuses = ['PLACED']
 const instructionsMaxLength = 500
 
 // Used for the LIST view (GET /) — a lighter shape than the full detail
@@ -481,17 +493,30 @@ router.patch('/:id', async (request, response) => {
   // ("no transition restrictions in this first pass") because there was
   // no real consequence to getting it wrong yet. Phase 5's stock restore
   // below is that consequence: without this rule, a cashier or admin
-  // could cycle the SAME order through CANCELLED more than once (nothing
-  // previously stopped a second PATCH with status: 'CANCELLED' on an
-  // already-cancelled order), and the restore logic below would credit
-  // its stock back again on every single attempt — inventing units that
-  // were never actually returned to the shelf.
+  // could cycle the SAME order through CANCELLED more than once, and the
+  // restore logic would credit its stock back again on every attempt —
+  // inventing units that were never returned to the shelf.
   //
-  // This check is what makes that restore SAFE to run unconditionally:
-  // an order can only ever transition INTO CANCELLED once, because a
-  // second attempt is rejected right here, before it ever reaches the
-  // transaction below.
-  if (order.status === 'CANCELLED' || order.status === 'COMPLETED') {
+  // BUT THIS CHECK IS NOT WHAT ENFORCES THAT. Read the next paragraph
+  // before trusting it, because the original version of this code trusted
+  // it and was wrong.
+  //
+  // The `order` row above was read with `pool.query`, on a pooled
+  // connection, outside any transaction. Its answer is a snapshot from a
+  // moment ago, and nothing holds it still. Several concurrent PATCH
+  // requests can therefore ALL read status 'PLACED', ALL conclude they
+  // may proceed, and ALL run the restore loop. Measured with six
+  // simultaneous cancels of one order for 4 units: stock went 46 -> 70,
+  // and the ledger gained six ORDER_CANCELLED rows for a single order.
+  // Twenty units invented from nothing — and because each restore also
+  // wrote its own movement row, SUM(quantity_change) still reconciled to
+  // stock_quantity, so the ledger CORROBORATED the phantom stock instead
+  // of exposing it.
+  //
+  // So this check earns its place only as a courtesy: it produces a clear,
+  // specific message in the ordinary uncontended case. The real guarantee
+  // is the conditional UPDATE at the top of the transaction below.
+  if (terminalStatuses.has(order.status)) {
     return response.status(409).json({ message: `This order is already ${order.status.toLowerCase()} and cannot be changed further.` })
   }
 
@@ -501,14 +526,58 @@ router.patch('/:id', async (request, response) => {
   try {
     await client.query('BEGIN')
 
+    // ----------------------------------------------------------------
+    // CLAIM THE TRANSITION FIRST — atomically, before touching stock.
+    //
+    // This conditional UPDATE, and not the friendly pre-check above, is
+    // what makes the transition happen AT MOST ONCE. The pattern is
+    // identical to the stock deduction in POST / and the request review in
+    // routes/inventory.js: put the condition you are relying on into the
+    // WHERE clause of the write itself, then check rowCount. The row lock
+    // Postgres takes for the UPDATE serializes the contenders, so exactly
+    // one transaction can match a given source status; every other one
+    // matches zero rows and rolls back having changed nothing.
+    //
+    // TWO DETAILS THAT MATTER.
+    //
+    // First, ORDER. This must come BEFORE the restore loop, not after it
+    // — the old code wrote the status at the very END of the transaction,
+    // which meant every concurrent request had already run its restore by
+    // the time the winner was decided. Claiming first means a loser exits
+    // before it can credit anything back.
+    //
+    // Second, the allowed SOURCE states are role-scoped, so this also
+    // re-enforces the customer's narrower "only from PLACED" rule under
+    // concurrency rather than trusting the stale read for it. A customer
+    // double-tapping cancel as a cashier confirms their order gets one
+    // clean outcome, not two conflicting ones.
+    // ----------------------------------------------------------------
+    const claimable = request.user.role === 'CUSTOMER' ? customerClaimableStatuses : nonTerminalStatuses
+    const claimed = await client.query(
+      `UPDATE orders
+          SET status = $1
+        WHERE order_id = $2
+          AND status = ANY($3::order_status[])
+      RETURNING status`,
+      [status, orderId, claimable],
+    )
+    if (claimed.rowCount === 0) {
+      await client.query('ROLLBACK')
+      // Deliberately vaguer than the pre-check's message. Reaching here
+      // means the state changed underneath this request while it was in
+      // flight, so naming a specific current status would be quoting a
+      // value that is itself already a moment old.
+      return response.status(409).json({ message: 'This order was updated by someone else — reload it and try again.' })
+    }
+
     // RESTORE ON THE TRANSITION, NOT THE STATE. This block runs when the
     // NEW status being set is CANCELLED — not "whenever order.status
-    // happens to equal CANCELLED" — because the terminal check above has
-    // already guaranteed this is the ONE AND ONLY time this particular
-    // order will ever make that transition. That guarantee is what
-    // removes the need for any extra "have we already restored this
-    // order's stock?" check here: there is structurally no way to reach
-    // this code a second time for the same order.
+    // happens to equal CANCELLED" — because the claim above has already
+    // guaranteed this is the ONE AND ONLY time this particular order will
+    // ever make that transition. That guarantee is what removes the need
+    // for any extra "have we already restored this order's stock?" check
+    // here: there is structurally no way to reach this code a second time
+    // for the same order.
     if (status === 'CANCELLED') {
       // ORDER BY product_id — the same deadlock-avoidance reasoning as
       // the sorted deduction loop in POST / above. A restore here and a
@@ -539,7 +608,12 @@ router.patch('/:id', async (request, response) => {
       }
     }
 
-    await client.query('UPDATE orders SET status = $1 WHERE order_id = $2', [status, orderId])
+    // orders.status was already written by the claim at the top of this
+    // transaction, so only the history row remains. Writing the history
+    // row here rather than up beside the claim keeps it on the same side
+    // of the restore loop as the COMMIT: if anything in that loop throws,
+    // the rollback takes the status change and the history row together,
+    // and no record survives claiming something happened that didn't.
     await client.query('INSERT INTO order_status_history (order_id, updated_by, status, note) VALUES ($1, $2, $3, $4)', [orderId, request.user.id, status, note])
     await client.query('COMMIT')
   } catch (error) {

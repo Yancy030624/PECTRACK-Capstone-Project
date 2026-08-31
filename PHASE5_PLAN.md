@@ -219,6 +219,37 @@ Making the transition the trigger is what makes it idempotent. Do not ship the
 restore logic without the terminal-status rule, or a week of demo cancellations
 will quietly inflate stock.
 
+> **Correction, found in review after Step 6.** The paragraph above is right
+> about *what* the rule must be and wrong about *what enforces it*. Checking
+> `order.status` with a `pool.query` before opening the transaction does not
+> make the transition happen once — that read is a snapshot nothing holds
+> still, so concurrent PATCHes all pass it and all restore. Measured with six
+> simultaneous cancels of one order for 4 units: stock 46 → 70, six
+> `ORDER_CANCELLED` rows for one order, and `SUM(quantity_change)` still
+> reconciling to the wrong number, so the ledger corroborated the phantom
+> stock rather than exposing it.
+>
+> The rule has to be claimed the same way Pattern A deducts — put the source
+> state in the WHERE clause of the status write itself, run it at the TOP of
+> the transaction before any stock moves, and treat `rowCount === 0` as the
+> 409:
+>
+> ```sql
+> UPDATE orders SET status = $1
+>  WHERE order_id = $2 AND status = ANY($3::order_status[])
+> RETURNING status
+> ```
+>
+> The general lesson, which applies to every remaining phase: **a read taken
+> outside the transaction can only produce a friendlier error message, never
+> a guarantee.** If correctness depends on a condition, that condition belongs
+> in the WHERE clause of the write, or behind `FOR UPDATE`, or in a database
+> constraint. Three separate Phase 5 defects were this same mistake wearing
+> different clothes — the cancel restore here, the read-modify-write in
+> request approval and direct stock edit (fixed with `FOR UPDATE`), and
+> one-pending-request-per-product (fixed with the partial unique index in
+> migration 004).
+
 ---
 
 ## Build order

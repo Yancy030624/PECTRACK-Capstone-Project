@@ -435,6 +435,49 @@ describe('order management', () => {
     assert.equal(rows[0].stock_quantity, 0, 'stock must land at exactly 0, never negative')
   })
 
+  // The mirror image of the race above, on the RESTORE side. Cancelling
+  // serially is already covered ("cancelling an already-cancelled order"),
+  // but that path is guarded by a status read taken outside the
+  // transaction — so it only proves the uncontended case. Six cancels at
+  // once previously all passed that read and all ran the restore loop,
+  // crediting the same order's stock back six times and writing six
+  // ORDER_CANCELLED rows for one order. The ledger still summed to
+  // stock_quantity, so the invented units looked corroborated rather than
+  // wrong. Fan-out is deliberately wider than 2 — the window is narrow
+  // enough that two requests usually serialize by themselves.
+  test('six simultaneous cancels of one order restore its stock exactly once', async () => {
+    await pool.query('UPDATE inventory SET stock_quantity = 50 WHERE product_id = $1', [stockTestProductId])
+
+    const createResponse = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: stockTestProductId, quantity: 4 }] }) })
+    const orderId = (await createResponse.json()).order.id
+    createdOrderIds.push(orderId)
+
+    const deducted = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [stockTestProductId])
+    assert.equal(deducted.rows[0].stock_quantity, 46)
+
+    const statuses = await Promise.all(Array.from({ length: 6 }, () =>
+      fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED' }) }).then((response) => response.status),
+    ))
+    assert.equal(statuses.filter((code) => code === 200).length, 1, 'exactly one cancel should win')
+    assert.equal(statuses.filter((code) => code === 409).length, 5, 'the other five should be refused, not silently applied')
+
+    const restored = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [stockTestProductId])
+    assert.equal(restored.rows[0].stock_quantity, 50, 'stock must return to exactly what it was, with no units invented')
+
+    const movements = await pool.query(`SELECT COUNT(*)::int AS n FROM inventory_movements WHERE order_id = $1 AND reason = 'ORDER_CANCELLED'`, [orderId])
+    assert.equal(movements.rows[0].n, 1, 'one cancellation means exactly one ORDER_CANCELLED movement row')
+
+    const history = await pool.query(`SELECT COUNT(*)::int AS n FROM order_status_history WHERE order_id = $1 AND status = 'CANCELLED'`, [orderId])
+    assert.equal(history.rows[0].n, 1, 'a refused cancel must not leave a history row claiming it happened')
+
+    // Every test in this suite shares one product. Restoring to 50 takes
+    // stock back above its minimum, which RESOLVES whatever alert an
+    // earlier test left open — and the alert test below asserts on the
+    // exact row count. Clearing them here leaves that test the clean slate
+    // it expects instead of a resolved row it has to account for.
+    await pool.query('DELETE FROM stock_alerts WHERE inventory_id = (SELECT inventory_id FROM inventory WHERE product_id = $1)', [stockTestProductId])
+  })
+
   // syncStockAlert itself is unit-tested thoroughly in lib/inventory.test.js
   // — this just confirms placing/cancelling an order actually WIRES INTO
   // it, the same way inventory.test.js confirms it for the direct-edit route.
