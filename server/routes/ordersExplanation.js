@@ -275,19 +275,15 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
       }
     }
 
-    // Computed ONCE, here, from the snapshotted prices — orders.total_amount
-    // is denormalized (not derived live from order_details by a query),
-    // so this is the one and only place it ever gets set. That's only
-    // safe because this app doesn't yet support editing an order's items
-    // after creation; if it did, every edit would need to recompute this
-    // the same way, or the two would drift out of sync.
-    const totalAmount = parsedItems.reduce((sum, item) => sum + Number(productsById.get(item.productId).price) * item.quantity, 0)
-
+    // total_amount is deliberately omitted here and set further down, after
+    // the line items exist to add up. It has DEFAULT 0 in the schema, so
+    // the row is valid in the meantime — and nothing outside this
+    // transaction can observe that intermediate state anyway.
     const orderResult = await client.query(
-      `INSERT INTO orders (customer_id, processed_by, order_type, instructions, total_amount)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO orders (customer_id, processed_by, order_type, instructions)
+       VALUES ($1, $2, $3, $4)
        RETURNING order_id`,
-      [customerId, processedBy, orderType, instructions, totalAmount.toFixed(2)],
+      [customerId, processedBy, orderType, instructions],
     )
     const orderId = orderResult.rows[0].order_id
 
@@ -296,13 +292,58 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
       await client.query('INSERT INTO order_details (order_id, product_id, quantity, unit_price) VALUES ($1, $2, $3, $4)', [orderId, item.productId, item.quantity, product.price])
     }
 
+    // THE TOTAL IS SUMMED BY POSTGRES, NOT BY JAVASCRIPT.
+    //
+    // The earlier version did this in JS before the INSERTs:
+    //   parsedItems.reduce((sum, item) => sum + Number(price) * qty, 0)
+    // then wrote .toFixed(2). It gave the right answer for realistic
+    // bakery numbers, so this is a hardening change, not a bug fix — but
+    // it's worth understanding both reasons it's better.
+    //
+    // 1. EXACTNESS. JavaScript numbers are binary floating point, where
+    //    0.1 + 0.2 === 0.30000000000000004. Rounding to 2dp at the end
+    //    hides that for small baskets, but the arithmetic is approximate
+    //    the whole way through. Postgres NUMERIC is exact decimal — it was
+    //    designed for money, which is exactly what this is.
+    //
+    // 2. ONE SOURCE OF TRUTH — the more important reason. orders.total_amount
+    //    is DENORMALIZED: it's a stored copy of something already implied
+    //    by the order_details rows. Any denormalized value can drift from
+    //    what it duplicates. Computing it in JS made it a PARALLEL
+    //    calculation that merely happened to agree with the rows being
+    //    written beside it; summing the rows themselves makes it a
+    //    FUNCTION of them, so it cannot disagree. Whatever was actually
+    //    stored is what the customer is charged.
+    //
+    // That second point is why this matters more later than it does now.
+    // Once orders become editable — or Phase 5 starts adjusting quantities
+    // against stock — keeping the total correct is just re-running this
+    // exact statement, rather than remembering to redo a calculation that
+    // lives somewhere else in JavaScript.
+    //
+    // COALESCE(..., 0) guards the empty case. An order always has items
+    // here (the handler rejects an empty list much earlier), but SUM over
+    // zero rows returns NULL, not 0 — and total_amount is NOT NULL.
+    const totalResult = await client.query(
+      `UPDATE orders
+       SET total_amount = (SELECT COALESCE(SUM(quantity * unit_price), 0) FROM order_details WHERE order_id = $1)
+       WHERE order_id = $1
+       RETURNING total_amount`,
+      [orderId],
+    )
+    // pg returns NUMERIC as a STRING — same precision reasoning as bigint —
+    // already formatted to the column's 2 decimal places. So this is the
+    // identical '136.50' shape the old toFixed(2) produced, and the API
+    // response doesn't change at all.
+    const totalAmount = totalResult.rows[0].total_amount
+
     // Every order gets an initial PLACED row in the audit trail, not just
     // a status column update — this is what GET /:id's statusHistory
     // shows as the very first entry.
     await client.query('INSERT INTO order_status_history (order_id, updated_by, status) VALUES ($1, $2, $3)', [orderId, request.user.id, 'PLACED'])
 
     await client.query('COMMIT')
-    return response.status(201).json({ message: 'Order placed.', order: { id: orderId, status: 'PLACED', totalAmount: totalAmount.toFixed(2) } })
+    return response.status(201).json({ message: 'Order placed.', order: { id: orderId, status: 'PLACED', totalAmount } })
   } catch (error) {
     await client.query('ROLLBACK')
     // No try/catch translation for a specific Postgres error code here,

@@ -192,13 +192,13 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
       }
     }
 
-    const totalAmount = parsedItems.reduce((sum, item) => sum + Number(productsById.get(item.productId).price) * item.quantity, 0)
-
+    // total_amount is left to its DEFAULT 0 here and filled in below, once
+    // the line items exist to add up.
     const orderResult = await client.query(
-      `INSERT INTO orders (customer_id, processed_by, order_type, instructions, total_amount)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO orders (customer_id, processed_by, order_type, instructions)
+       VALUES ($1, $2, $3, $4)
        RETURNING order_id`,
-      [customerId, processedBy, orderType, instructions, totalAmount.toFixed(2)],
+      [customerId, processedBy, orderType, instructions],
     )
     const orderId = orderResult.rows[0].order_id
 
@@ -207,10 +207,36 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
       await client.query('INSERT INTO order_details (order_id, product_id, quantity, unit_price) VALUES ($1, $2, $3, $4)', [orderId, item.productId, item.quantity, product.price])
     }
 
+    // The total is summed by Postgres in NUMERIC, from the rows that were
+    // just written, rather than in JavaScript.
+    //
+    // Two reasons. First, JS numbers are binary floating point, where 0.1 +
+    // 0.2 is famously 0.30000000000000004 — fine for a few bakery items
+    // rounded to 2dp, but it's money, and NUMERIC is exact by design.
+    //
+    // Second and more importantly, this makes the total a function of the
+    // stored line items instead of a parallel calculation that merely
+    // happens to agree with them. orders.total_amount is denormalized, so
+    // the risk was always that the two could drift apart. Summing the
+    // actual order_details rows means they cannot: whatever was really
+    // written is what gets charged. When order editing arrives, re-running
+    // exactly this statement is all that's needed to keep it true.
+    const totalResult = await client.query(
+      `UPDATE orders
+       SET total_amount = (SELECT COALESCE(SUM(quantity * unit_price), 0) FROM order_details WHERE order_id = $1)
+       WHERE order_id = $1
+       RETURNING total_amount`,
+      [orderId],
+    )
+    // pg returns NUMERIC as a string (same precision reasoning as bigint),
+    // already formatted to the column's 2 decimal places — so this is the
+    // same '136.50' shape the old toFixed(2) produced.
+    const totalAmount = totalResult.rows[0].total_amount
+
     await client.query('INSERT INTO order_status_history (order_id, updated_by, status) VALUES ($1, $2, $3)', [orderId, request.user.id, 'PLACED'])
 
     await client.query('COMMIT')
-    return response.status(201).json({ message: 'Order placed.', order: { id: orderId, status: 'PLACED', totalAmount: totalAmount.toFixed(2) } })
+    return response.status(201).json({ message: 'Order placed.', order: { id: orderId, status: 'PLACED', totalAmount } })
   } catch (error) {
     await client.query('ROLLBACK')
     throw error

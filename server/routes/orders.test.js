@@ -153,6 +153,31 @@ describe('order management', () => {
     assert.equal(rows[0].quantity, 3)
   })
 
+  // The stored total must equal the sum of the line items exactly.
+  // orders.total_amount is denormalized, so the risk is that it drifts from
+  // the rows it's supposed to represent — it's now summed by Postgres in
+  // NUMERIC from those very rows rather than calculated separately in
+  // JavaScript floating point.
+  test('the stored total is the exact sum of the order_details rows', async () => {
+    const response = await fetch(`${baseUrl}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: customerCookie },
+      body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 7 }] }),
+    })
+    assert.equal(response.status, 201)
+    const body = await response.json()
+    createdOrderIds.push(body.order.id)
+
+    assert.equal(body.order.totalAmount, '318.50') // 45.50 * 7, exactly
+
+    const { rows } = await pool.query(
+      `SELECT o.total_amount, (SELECT SUM(quantity * unit_price) FROM order_details WHERE order_id = o.order_id) AS items_total
+       FROM orders o WHERE o.order_id = $1`,
+      [body.order.id],
+    )
+    assert.equal(rows[0].total_amount, rows[0].items_total, 'stored total must match the line items it came from')
+  })
+
   // Regression: a productId past the BIGINT range is all digits, so it got
   // through the old Number()-based check and only failed once Postgres
   // rejected the literal — as a 500 rather than a validation error.
