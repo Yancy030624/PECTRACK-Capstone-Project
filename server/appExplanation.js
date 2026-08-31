@@ -45,6 +45,9 @@ import staffRouter from './routes/staff.js'
 // routes/customersExplanation.js.
 import categoriesRouter from './routes/categories.js'
 import customersRouter from './routes/customers.js'
+// Phase 5: inventory management (stock levels, low-stock detection). See
+// routes/inventoryExplanation.js and PHASE5_PLAN.md.
+import inventoryRouter from './routes/inventory.js'
 // Order management (create/list/detail/status) — see
 // routes/ordersExplanation.js.
 import ordersRouter from './routes/orders.js'
@@ -113,6 +116,10 @@ app.use('/api/staff', staffRouter)
 app.use('/api/categories', categoriesRouter)
 app.use('/api/products', productsRouter)
 app.use('/api/customers', customersRouter)
+// Phase 5: stock levels for admin/cashier only — no customer or delivery
+// role is admitted at all, unlike the mixed-visibility routers above. See
+// routes/inventoryExplanation.js.
+app.use('/api/inventory', inventoryRouter)
 // Order creation/listing/detail/status — see routes/ordersExplanation.js.
 // Excludes delivery personnel entirely for now (no "assigned to me"
 // concept exists until a later phase), and admin can't create orders

@@ -5,6 +5,7 @@ import { pool } from './db.js'
 import authRouter from './routes/auth.js'
 import categoriesRouter from './routes/categories.js'
 import customersRouter from './routes/customers.js'
+import inventoryRouter from './routes/inventory.js'
 import ordersRouter from './routes/orders.js'
 import productsRouter from './routes/products.js'
 import staffRouter from './routes/staff.js'
@@ -24,6 +25,7 @@ app.use('/api/staff', staffRouter)
 app.use('/api/categories', categoriesRouter)
 app.use('/api/products', productsRouter)
 app.use('/api/customers', customersRouter)
+app.use('/api/inventory', inventoryRouter)
 app.use('/api/orders', ordersRouter)
 
 app.use((error, _request, response, _next) => {

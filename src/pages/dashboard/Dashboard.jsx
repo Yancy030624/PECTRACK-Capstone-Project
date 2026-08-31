@@ -6,6 +6,7 @@ import { InventoryManagement } from './InventoryManagement.jsx'
 import { modules } from './modules.js'
 import { MyProfile } from './MyProfile.jsx'
 import { OrderManagement } from './OrderManagement.jsx'
+import { ProductManagement } from './ProductManagement.jsx'
 import { StaffManagement } from './StaffManagement.jsx'
 
 // Maps a module name to the component that renders its content. Modules
@@ -14,6 +15,7 @@ import { StaffManagement } from './StaffManagement.jsx'
 const moduleComponents = {
   ...Object.fromEntries(modules.map((module) => [module.name, DashboardHome])),
   'Staff Management': StaffManagement,
+  'Product Management': ProductManagement,
   'Inventory Management': InventoryManagement,
   'Customer Management': CustomerManagement,
   'My Profile': MyProfile,
