@@ -58,7 +58,7 @@ router.get('/:id', async (request, response) => {
 
   const orderResult = await pool.query(
     `SELECT o.order_id, o.customer_id, c.name AS customer_name, o.processed_by, ca.name AS cashier_name,
-            o.order_type, o.status, o.instructions, o.requested_fulfillment_time, o.requires_admin_approval,
+            o.order_type, o.status, o.instructions, o.requested_fulfillment_time,
             o.total_amount, o.order_date
      FROM orders o
      LEFT JOIN customers c ON c.customer_id = o.customer_id
@@ -108,7 +108,6 @@ router.get('/:id', async (request, response) => {
       status: order.status,
       instructions: order.instructions,
       requestedFulfillmentTime: order.requested_fulfillment_time,
-      requiresAdminApproval: order.requires_admin_approval,
       totalAmount: order.total_amount,
       orderDate: order.order_date,
       items: itemsResult.rows.map((row) => ({ productId: row.product_id, productName: row.product_name, quantity: row.quantity, unitPrice: row.unit_price })),
@@ -146,7 +145,15 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     }
     quantityByProductId.set(productId, (quantityByProductId.get(productId) ?? 0) + quantity)
   }
-  const parsedItems = [...quantityByProductId].map(([productId, quantity]) => ({ productId, quantity }))
+  // Sorted by productId so every transaction deducts stock in the same
+  // order across every order — see the deduction loop further down for
+  // why: two orders for the same items in opposite order ([bread,cake] vs
+  // [cake,bread]) could otherwise each hold a lock the other needs, and
+  // Postgres kills one as a deadlock. BigInt comparison because productId
+  // is a string that can exceed Number's safe integer range.
+  const parsedItems = [...quantityByProductId]
+    .map(([productId, quantity]) => ({ productId, quantity }))
+    .sort((a, b) => (BigInt(a.productId) < BigInt(b.productId) ? -1 : 1))
 
   // Resolve who this order belongs to and who's processing it, based on
   // the caller's own role — never trust a customerId claiming to be
@@ -204,7 +211,38 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
 
     for (const item of parsedItems) {
       const product = productsById.get(item.productId)
+
+      // Deduct with a CONDITIONAL update, never a plain decrement.
+      // inventory has CHECK (stock_quantity >= 0); a plain decrement
+      // relies on that CHECK to catch overselling, which fails INSIDE the
+      // query (error 23514) and would surface as a generic 500. The
+      // `AND stock_quantity >= $2` guard makes it fail the WHERE clause
+      // instead — rowCount === 0 becomes the "not enough stock" signal,
+      // race-free with no explicit locking, because the UPDATE itself
+      // takes the row lock. See PHASE5_PLAN.md, Pattern A, for the
+      // measured before/after (two 500s vs two clean 409s racing three
+      // buyers for the last 10 units).
+      const deducted = await client.query(
+        `UPDATE inventory
+            SET stock_quantity = stock_quantity - $2,
+                last_updated = CURRENT_TIMESTAMP
+          WHERE product_id = $1
+            AND stock_quantity >= $2
+        RETURNING inventory_id`,
+        [item.productId, item.quantity],
+      )
+      if (deducted.rowCount === 0) {
+        await client.query('ROLLBACK')
+        return response.status(409).json({ message: `Not enough stock for product ${item.productId}.`, errors: { items: `Not enough stock for product ${item.productId}.` } })
+      }
+
       await client.query('INSERT INTO order_details (order_id, product_id, quantity, unit_price) VALUES ($1, $2, $3, $4)', [orderId, item.productId, item.quantity, product.price])
+      // Records WHY stock moved, alongside the fact that it did — see
+      // PHASE5_PLAN.md, Decision 1. Negative because stock is leaving.
+      await client.query(
+        'INSERT INTO inventory_movements (inventory_id, order_id, changed_by, quantity_change, reason) VALUES ($1, $2, $3, $4, $5)',
+        [deducted.rows[0].inventory_id, orderId, request.user.id, -item.quantity, 'ORDER_PLACED'],
+      )
     }
 
     // The total is summed by Postgres in NUMERIC, from the rows that were
@@ -266,16 +304,53 @@ router.patch('/:id', async (request, response) => {
     if (status !== 'CANCELLED') return response.status(403).json({ message: 'You can only cancel your own order.' })
     if (order.status !== 'PLACED') return response.status(409).json({ message: 'This order can no longer be cancelled — it is already being processed.' })
   }
-  // Cashier/admin (the only other roles that reach this route — see the
-  // router-wide requireRole above): no transition restrictions in this
-  // first pass, kept deliberately simple rather than encoding a full
-  // state machine before there's a real workflow to validate it against.
+
+  // CANCELLED and COMPLETED are terminal — nothing moves out of them,
+  // for ANY role. This is what makes the stock restore below safe to run
+  // unconditionally on every transition into CANCELLED: an order can only
+  // ever make that transition ONCE, since a second attempt is rejected
+  // right here before it reaches the restore logic. Without this rule, a
+  // cashier/admin could cycle an order through CANCELLED more than once
+  // (nothing previously stopped that) and credit its stock back every
+  // time, inventing units that were never actually returned.
+  if (order.status === 'CANCELLED' || order.status === 'COMPLETED') {
+    return response.status(409).json({ message: `This order is already ${order.status.toLowerCase()} and cannot be changed further.` })
+  }
 
   const note = request.body.note == null ? null : String(request.body.note).trim().slice(0, instructionsMaxLength) || null
 
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
+
+    // Restoring stock is triggered by the TRANSITION into CANCELLED, not
+    // by the resulting state. The terminal-status check above guarantees
+    // this block runs at most once per order — a CANCELLED order can
+    // never reach here a second time — which is exactly what makes it
+    // safe to restore unconditionally rather than needing to check
+    // whether a restore already happened.
+    if (status === 'CANCELLED') {
+      // ORDER BY product_id for the same deadlock-avoidance reason the
+      // deduction loop in POST / sorts its items — a restore and a
+      // simultaneous placement touching overlapping products should
+      // always take their row locks in the same order.
+      const items = await client.query('SELECT product_id, quantity FROM order_details WHERE order_id = $1 ORDER BY product_id', [orderId])
+      for (const item of items.rows) {
+        // A plain increment is safe here with no conditional guard,
+        // unlike the deduction in POST / — adding stock back can never
+        // violate CHECK (stock_quantity >= 0), so there's no failure mode
+        // to detect.
+        const restored = await client.query(
+          'UPDATE inventory SET stock_quantity = stock_quantity + $2, last_updated = CURRENT_TIMESTAMP WHERE product_id = $1 RETURNING inventory_id',
+          [item.product_id, item.quantity],
+        )
+        await client.query(
+          'INSERT INTO inventory_movements (inventory_id, order_id, changed_by, quantity_change, reason) VALUES ($1, $2, $3, $4, $5)',
+          [restored.rows[0].inventory_id, orderId, request.user.id, item.quantity, 'ORDER_CANCELLED'],
+        )
+      }
+    }
+
     await client.query('UPDATE orders SET status = $1 WHERE order_id = $2', [status, orderId])
     await client.query('INSERT INTO order_status_history (order_id, updated_by, status, note) VALUES ($1, $2, $3, $4)', [orderId, request.user.id, status, note])
     await client.query('COMMIT')

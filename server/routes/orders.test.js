@@ -22,6 +22,7 @@ describe('order management', () => {
   let secondCustomerId
   let availableProductId
   let unavailableProductId
+  let stockTestProductId
   let categoryId
   const createdUserIds = []
   const createdProductIds = []
@@ -81,13 +82,34 @@ describe('order management', () => {
     const availableProduct = await fetch(`${baseUrl}/api/products`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ categoryId, name: `Order Test Bread ${runId}`, price: 45.5 }) })
     availableProductId = (await availableProduct.json()).product.id
     createdProductIds.push(availableProductId)
+    // A product's inventory row is created with stock_quantity 0 by
+    // default (see routes/products.js). Now that placing an order
+    // actually deducts stock (Phase 5, Step 3), every test in this file
+    // that places an order against this product needs it to have enough
+    // — seeded generously high so the whole file's worth of test orders
+    // can never run it out.
+    await pool.query('UPDATE inventory SET stock_quantity = 1000 WHERE product_id = $1', [availableProductId])
 
     const unavailableProduct = await fetch(`${baseUrl}/api/products`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ categoryId, name: `Order Test Discontinued ${runId}`, price: 30, availabilityStatus: false }) })
     unavailableProductId = (await unavailableProduct.json()).product.id
     createdProductIds.push(unavailableProductId)
+
+    // A SEPARATE product with a small, precisely controlled stock level —
+    // used by the stock-deduction/restoration tests below, which need to
+    // assert exact before/after quantities without accounting for what
+    // every other test in this file also did to availableProductId's
+    // stock.
+    const stockTestProduct = await fetch(`${baseUrl}/api/products`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ categoryId, name: `Order Test Stock Item ${runId}`, price: 20 }) })
+    stockTestProductId = (await stockTestProduct.json()).product.id
+    createdProductIds.push(stockTestProductId)
   })
 
   after(async () => {
+    // inventory_movements.order_id references orders(order_id) with no
+    // ON DELETE CASCADE (see database/migrations/003), so these rows must
+    // be cleared before the orders themselves are deleted below, or that
+    // DELETE fails on the foreign key.
+    await pool.query('DELETE FROM inventory_movements WHERE order_id = ANY($1)', [createdOrderIds]).catch(() => {})
     for (const orderId of createdOrderIds) {
       await pool.query('DELETE FROM order_status_history WHERE order_id = $1', [orderId]).catch(() => {})
       await pool.query('DELETE FROM order_details WHERE order_id = $1', [orderId]).catch(() => {})
@@ -302,6 +324,115 @@ describe('order management', () => {
       const write = await fetch(`${baseUrl}/api/orders/${badId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'CONFIRMED' }) })
       assert.equal(write.status, 404, `PATCH with id "${badId}"`)
     }
+  })
+
+  // --- Phase 5, Steps 3-4: stock deduction and restoration ---------------
+  // These use stockTestProductId (a dedicated product with its stock set
+  // explicitly at the start of each test) rather than availableProductId,
+  // so each assertion can check an EXACT before/after quantity without
+  // accounting for what every other test in this file also did to shared
+  // stock.
+
+  test('POST /api/orders rejects an order that exceeds available stock, and nothing is created', async () => {
+    await pool.query('UPDATE inventory SET stock_quantity = 5 WHERE product_id = $1', [stockTestProductId])
+
+    const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: stockTestProductId, quantity: 6 }] }) })
+    assert.equal(response.status, 409)
+
+    const { rows } = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [stockTestProductId])
+    assert.equal(rows[0].stock_quantity, 5, 'stock must be unchanged after a rejected order')
+
+    const orders = await pool.query(`SELECT 1 FROM order_details WHERE product_id = $1 AND quantity = 6`, [stockTestProductId])
+    assert.equal(orders.rows.length, 0, 'no order_details row should exist for the rejected order')
+  })
+
+  let stockTestOrderId
+
+  test('POST /api/orders deducts stock and writes a matching ORDER_PLACED movement', async () => {
+    await pool.query('UPDATE inventory SET stock_quantity = 20 WHERE product_id = $1', [stockTestProductId])
+
+    const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: stockTestProductId, quantity: 8 }] }) })
+    assert.equal(response.status, 201)
+    stockTestOrderId = (await response.json()).order.id
+    createdOrderIds.push(stockTestOrderId)
+
+    const { rows: stockRows } = await pool.query('SELECT inventory_id, stock_quantity FROM inventory WHERE product_id = $1', [stockTestProductId])
+    assert.equal(stockRows[0].stock_quantity, 12) // 20 - 8
+
+    const movements = await pool.query('SELECT quantity_change, reason, order_id FROM inventory_movements WHERE inventory_id = $1', [stockRows[0].inventory_id])
+    assert.equal(movements.rows.length, 1)
+    assert.equal(movements.rows[0].quantity_change, -8)
+    assert.equal(movements.rows[0].reason, 'ORDER_PLACED')
+    assert.equal(movements.rows[0].order_id, stockTestOrderId)
+  })
+
+  test('PATCH /api/orders/:id cancelling a PLACED order restores exactly what was deducted', async () => {
+    // Stock is 12 after the previous test (20 - 8).
+    const response = await fetch(`${baseUrl}/api/orders/${stockTestOrderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    assert.equal(response.status, 200)
+
+    const { rows: stockRows } = await pool.query('SELECT inventory_id, stock_quantity FROM inventory WHERE product_id = $1', [stockTestProductId])
+    assert.equal(stockRows[0].stock_quantity, 20, 'the full 8 units should be back')
+
+    const latestMovement = await pool.query('SELECT quantity_change, reason, order_id FROM inventory_movements WHERE inventory_id = $1 ORDER BY movement_id DESC LIMIT 1', [stockRows[0].inventory_id])
+    assert.equal(latestMovement.rows[0].quantity_change, 8)
+    assert.equal(latestMovement.rows[0].reason, 'ORDER_CANCELLED')
+    assert.equal(latestMovement.rows[0].order_id, stockTestOrderId)
+  })
+
+  test('an already-CANCELLED order rejects any further status change, and does not restore stock again', async () => {
+    const before = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [stockTestProductId])
+
+    const response = await fetch(`${baseUrl}/api/orders/${stockTestOrderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CONFIRMED' }) })
+    assert.equal(response.status, 409)
+
+    const after = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [stockTestProductId])
+    assert.equal(after.rows[0].stock_quantity, before.rows[0].stock_quantity, 'a rejected transition must not move stock')
+
+    // Attempting to cancel it a SECOND time is the scenario the terminal
+    // check exists for — without it, this would credit the same 8 units
+    // back again, inventing stock that was never actually returned.
+    const secondCancel = await fetch(`${baseUrl}/api/orders/${stockTestOrderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    assert.equal(secondCancel.status, 409)
+    const stillAfter = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [stockTestProductId])
+    assert.equal(stillAfter.rows[0].stock_quantity, before.rows[0].stock_quantity, 'stock must not be credited twice')
+  })
+
+  test('a COMPLETED order also rejects any further status change', async () => {
+    await pool.query('UPDATE inventory SET stock_quantity = 10 WHERE product_id = $1', [stockTestProductId])
+
+    const createResponse = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: stockTestProductId, quantity: 2 }] }) })
+    const orderId = (await createResponse.json()).order.id
+    createdOrderIds.push(orderId)
+
+    const completeResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'COMPLETED' }) })
+    assert.equal(completeResponse.status, 200)
+
+    const afterCompletion = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [stockTestProductId])
+    assert.equal(afterCompletion.rows[0].stock_quantity, 8, 'COMPLETED must not restore stock — the order was fulfilled, not cancelled')
+
+    const blockedResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    assert.equal(blockedResponse.status, 409)
+
+    const stillAfter = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [stockTestProductId])
+    assert.equal(stillAfter.rows[0].stock_quantity, 8, 'a rejected cancel-after-COMPLETED must not restore stock')
+  })
+
+  test('two simultaneous orders racing for the last unit: exactly one succeeds, stock never goes negative', async () => {
+    await pool.query('UPDATE inventory SET stock_quantity = 1 WHERE product_id = $1', [stockTestProductId])
+
+    const placeOne = () => fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: stockTestProductId, quantity: 1 }] }) })
+    const [first, second] = await Promise.all([placeOne(), placeOne()])
+    const statuses = [first.status, second.status].sort()
+    assert.deepEqual(statuses, [201, 409], 'exactly one of the two simultaneous orders should succeed')
+
+    // Whichever one succeeded, record its id for cleanup.
+    for (const response of [first, second]) {
+      if (response.status === 201) createdOrderIds.push((await response.json()).order.id)
+    }
+
+    const { rows } = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [stockTestProductId])
+    assert.equal(rows[0].stock_quantity, 0, 'stock must land at exactly 0, never negative')
   })
 
   test('routes reject delivery personnel entirely for now', async () => {

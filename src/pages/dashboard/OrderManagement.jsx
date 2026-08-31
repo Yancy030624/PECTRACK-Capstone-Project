@@ -161,14 +161,18 @@ export function OrderManagement({ user }) {
                 <p className="mt-1.5 text-right text-xs font-bold text-slate-800">Total: ₱{orderDetail.totalAmount}</p>
               </div>
 
-              <form className="space-y-2 border-t border-slate-100 pt-3" onSubmit={handleStatusSubmit}>
-                <label htmlFor="order-status" className="block text-[11px] font-extrabold">Update status</label>
-                <select id="order-status" value={statusChoice} onChange={(event) => setStatusChoice(event.target.value)} className="w-full rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700">
-                  {statusOptions.map((status) => <option key={status} value={status}>{status.replaceAll('_', ' ')}</option>)}
-                </select>
-                <input value={statusNote} onChange={(event) => setStatusNote(event.target.value)} placeholder="Optional note" className="w-full rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700" />
-                <button type="submit" disabled={statusSubmitting} className="rounded-xl bg-green-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60">{statusSubmitting ? 'Saving…' : 'Save status'}</button>
-              </form>
+              {orderDetail.status === 'CANCELLED' || orderDetail.status === 'COMPLETED' ? (
+                <p className="border-t border-slate-100 pt-3 text-xs text-slate-500">This order is {orderDetail.status.toLowerCase()} and can no longer be changed.</p>
+              ) : (
+                <form className="space-y-2 border-t border-slate-100 pt-3" onSubmit={handleStatusSubmit}>
+                  <label htmlFor="order-status" className="block text-[11px] font-extrabold">Update status</label>
+                  <select id="order-status" value={statusChoice} onChange={(event) => setStatusChoice(event.target.value)} className="w-full rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700">
+                    {statusOptions.map((status) => <option key={status} value={status}>{status.replaceAll('_', ' ')}</option>)}
+                  </select>
+                  <input value={statusNote} onChange={(event) => setStatusNote(event.target.value)} placeholder="Optional note" className="w-full rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700" />
+                  <button type="submit" disabled={statusSubmitting} className="rounded-xl bg-green-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60">{statusSubmitting ? 'Saving…' : 'Save status'}</button>
+                </form>
+              )}
 
               <div>
                 <p className="text-[11px] font-extrabold text-slate-500">Status history</p>
