@@ -1,6 +1,7 @@
 // Import state management for the stock list and the admin edit form.
 import { useEffect, useState } from 'react'
 import { apiGet, apiPatch } from '../../api/client.js'
+import { InventoryRequests } from './InventoryRequests.jsx'
 
 const emptyEditForm = { stockQuantity: '', minStockLevel: '', expirationDate: '', reason: '', note: '' }
 const reasonOptions = [
@@ -22,6 +23,14 @@ const reasonOptions = [
 // the catalog side.
 export function InventoryManagement({ user }) {
   const isAdmin = user.role === 'ADMIN'
+
+  // 'levels' vs 'requests' — kept as a simple tab within this one screen
+  // rather than a second nav entry. The cashier-propose/admin-approve
+  // workflow (InventoryRequests.jsx) is still part of the same Inventory
+  // Management module, not a separate one; splitting it into its own file
+  // was purely to keep this file from growing unmanageable, not to make
+  // it a distinct screen a user navigates to independently.
+  const [activeTab, setActiveTab] = useState('levels')
 
   const [inventory, setInventory] = useState([])
   const [loading, setLoading] = useState(true)
@@ -116,7 +125,14 @@ export function InventoryManagement({ user }) {
 
       {message && <p role="status" className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-[10px] font-semibold text-red-700">{message}</p>}
 
-      <div className="mt-6 rounded-2xl border border-green-100 bg-white p-6">
+      <div className="mt-6 flex gap-2">
+        <button type="button" onClick={() => setActiveTab('levels')} className={`rounded-full px-4 py-2 text-xs font-bold transition ${activeTab === 'levels' ? 'bg-green-700 text-white' : 'bg-green-50 text-green-800 hover:bg-green-100'}`}>Stock levels</button>
+        <button type="button" onClick={() => setActiveTab('requests')} className={`rounded-full px-4 py-2 text-xs font-bold transition ${activeTab === 'requests' ? 'bg-green-700 text-white' : 'bg-green-50 text-green-800 hover:bg-green-100'}`}>{isAdmin ? 'Change requests' : 'Propose a change'}</button>
+      </div>
+
+      {activeTab === 'requests' && <InventoryRequests user={user} inventory={inventory} />}
+
+      {activeTab === 'levels' && <div className="mt-6 rounded-2xl border border-green-100 bg-white p-6">
         {loading ? (
           <p className="text-sm text-slate-500">Loading…</p>
         ) : inventory.length === 0 ? (
@@ -194,7 +210,7 @@ export function InventoryManagement({ user }) {
             </table>
           </div>
         )}
-      </div>
+      </div>}
     </section>
   )
 }
