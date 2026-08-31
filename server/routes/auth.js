@@ -4,9 +4,9 @@ import crypto from 'node:crypto'
 import bcrypt from 'bcrypt'
 import express from 'express'
 import { pool } from '../db.js'
-import { bcryptRounds, findDuplicateAccount } from '../lib/accounts.js'
+import { bcryptRounds, findDuplicateAccount, roleTables } from '../lib/accounts.js'
 import { createSession, parseCookies, requireAuth, sessionCookieName, sessionCookieOptions } from '../lib/auth.js'
-import { normalize, validateAccountFields } from '../lib/validation.js'
+import { normalize, normalizeEmail, validateAccountFields, validateContactNumberField, validateEmailField, validateName } from '../lib/validation.js'
 
 const router = express.Router()
 
@@ -73,7 +73,9 @@ router.post('/login', async (request, response) => {
 
   const result = await pool.query(
     `SELECT u.user_id, u.username, u.password_hash, u.user_type, u.is_active, u.locked_until,
-            COALESCE(a.name, ca.name, c.name, d.name) AS name
+            COALESCE(a.name, ca.name, c.name, d.name) AS name,
+            COALESCE(a.email, ca.email, c.email, d.email) AS email,
+            COALESCE(a.contact_num, ca.contact_num, c.contact_num, d.contact_num) AS contact_num
      FROM users u
      LEFT JOIN admins a ON a.user_id = u.user_id
      LEFT JOIN cashiers ca ON ca.user_id = u.user_id
@@ -109,7 +111,7 @@ router.post('/login', async (request, response) => {
 
   const sessionId = await createSession(user.user_id)
   response.cookie(sessionCookieName, sessionId, sessionCookieOptions)
-  return response.json({ user: { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' ') } })
+  return response.json({ user: { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' '), email: user.email, contactNumber: user.contact_num } })
 })
 
 router.post('/verify-otp', async (request, response) => {
@@ -119,7 +121,7 @@ router.post('/verify-otp', async (request, response) => {
 
   const invalidCodeResponse = { message: 'Invalid or expired code. Please sign in again.' }
   const userResult = await pool.query(
-    `SELECT u.user_id, u.username, u.user_type, u.is_active, a.name
+    `SELECT u.user_id, u.username, u.user_type, u.is_active, a.name, a.email, a.contact_num
      FROM users u
      JOIN admins a ON a.user_id = u.user_id
      WHERE LOWER(u.username) = $1 AND u.user_type = 'ADMIN'
@@ -148,7 +150,7 @@ router.post('/verify-otp', async (request, response) => {
   await pool.query('UPDATE otp_codes SET consumed_at = CURRENT_TIMESTAMP WHERE otp_id = $1', [otp.otp_id])
   const sessionId = await createSession(user.user_id)
   response.cookie(sessionCookieName, sessionId, sessionCookieOptions)
-  return response.json({ user: { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' ') } })
+  return response.json({ user: { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' '), email: user.email, contactNumber: user.contact_num } })
 })
 
 router.post('/logout', async (request, response) => {
@@ -160,6 +162,88 @@ router.post('/logout', async (request, response) => {
 
 router.get('/me', requireAuth, (request, response) => {
   return response.json({ user: request.user })
+})
+
+// PATCH /api/auth/me — self-service profile editing. Works for ANY
+// authenticated role, editing whichever role table that user's own row
+// lives in — unlike routes/staff.js and routes/customers.js, which are
+// each scoped to an admin/cashier managing OTHER people's accounts.
+// Deliberately excludes username, role, and password — those aren't
+// "profile" fields and each has its own separate concern (identity,
+// authorization, security) that a plain profile edit shouldn't touch.
+router.patch('/me', requireAuth, async (request, response) => {
+  const currentResult = await pool.query('SELECT user_id, username, user_type FROM users WHERE user_id = $1', [request.user.id])
+  const current = currentResult.rows[0]
+  const table = roleTables[current.user_type]
+
+  const errors = {}
+  const updates = {}
+
+  if ('name' in request.body) {
+    const name = normalize(request.body.name)
+    const error = validateName(name)
+    if (error) errors.name = error
+    else updates.name = name
+  }
+  if ('email' in request.body) {
+    const email = normalizeEmail(request.body.email)
+    const error = validateEmailField(email)
+    if (error) errors.email = error
+    else updates.email = email
+  }
+  if ('contactNumber' in request.body) {
+    const contactNumber = normalize(request.body.contactNumber).replace(/[\s()-]/g, '')
+    const error = validateContactNumberField(contactNumber)
+    if (error) errors.contactNumber = error
+    else updates.contactNumber = contactNumber
+  }
+
+  if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
+  if (Object.keys(updates).length === 0) return response.status(422).json({ message: 'Provide at least one field to update.' })
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    if (updates.email !== undefined || updates.contactNumber !== undefined) {
+      const isDuplicate = await findDuplicateAccount(client, { username: current.username, email: updates.email ?? null, contactNumber: updates.contactNumber ?? null }, current.user_id)
+      if (isDuplicate) {
+        await client.query('ROLLBACK')
+        return response.status(409).json({ message: 'Another account already uses that email or contact number.' })
+      }
+    }
+    await client.query(
+      `UPDATE ${table} SET name = COALESCE($1, name), email = COALESCE($2, email), contact_num = COALESCE($3, contact_num) WHERE user_id = $4`,
+      [updates.name ?? null, updates.email ?? null, updates.contactNumber ?? null, current.user_id],
+    )
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    if (error.code === '23505') return response.status(409).json({ message: 'Another account already uses that email or contact number.' })
+    throw error
+  } finally {
+    client.release()
+  }
+
+  // Same 4-way role-table join used by login and requireAuth, kept
+  // inline here rather than shared — this call site only needs a plain
+  // lookup by a known, already-authenticated user_id, while the other
+  // two also handle credential checks or session validity, so they
+  // aren't quite the same query underneath the similar shape.
+  const refreshed = await pool.query(
+    `SELECT u.user_id, u.username, u.user_type,
+            COALESCE(a.name, ca.name, c.name, d.name) AS name,
+            COALESCE(a.email, ca.email, c.email, d.email) AS email,
+            COALESCE(a.contact_num, ca.contact_num, c.contact_num, d.contact_num) AS contact_num
+     FROM users u
+     LEFT JOIN admins a ON a.user_id = u.user_id
+     LEFT JOIN cashiers ca ON ca.user_id = u.user_id
+     LEFT JOIN customers c ON c.user_id = u.user_id
+     LEFT JOIN delivery_personnel d ON d.user_id = u.user_id
+     WHERE u.user_id = $1`,
+    [current.user_id],
+  )
+  const row = refreshed.rows[0]
+  return response.json({ user: { id: row.user_id, name: row.name, username: row.username, role: row.user_type.replaceAll('_', ' '), email: row.email, contactNumber: row.contact_num } })
 })
 
 export default router

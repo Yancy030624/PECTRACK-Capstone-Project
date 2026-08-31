@@ -136,6 +136,36 @@ describe('customer registration and session lifecycle', () => {
     assert.equal(body.user.username, customer.username)
   })
 
+  test('PATCH /api/auth/me requires authentication', async () => {
+    const response = await fetch(`${baseUrl}/api/auth/me`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Nope' }) })
+    assert.equal(response.status, 401)
+  })
+
+  test('PATCH /api/auth/me lets the logged-in customer edit their own name and contact number', async () => {
+    const newContactNumber = randomContactNumber()
+    const response = await fetch(`${baseUrl}/api/auth/me`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Cookie: sessionCookie },
+      body: JSON.stringify({ name: 'Renamed Self', contactNumber: newContactNumber }),
+    })
+    assert.equal(response.status, 200)
+    const body = await response.json()
+    assert.equal(body.user.name, 'Renamed Self')
+    assert.equal(body.user.username, customer.username, 'username must be unchanged — this endpoint never touches it')
+
+    // Re-fetch independently to confirm this was actually persisted, not
+    // just echoed back from the request.
+    const persisted = await pool.query('SELECT c.name, c.contact_num FROM customers c JOIN users u ON u.user_id = c.user_id WHERE u.username = $1', [customer.username])
+    assert.equal(persisted.rows[0].name, 'Renamed Self')
+    assert.equal(persisted.rows[0].contact_num, newContactNumber)
+  })
+
+  test('PATCH /api/auth/me rejects an invalid email', async () => {
+    const response = await fetch(`${baseUrl}/api/auth/me`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: sessionCookie }, body: JSON.stringify({ email: 'not-an-email' }) })
+    assert.equal(response.status, 422)
+    assert.ok((await response.json()).errors.email)
+  })
+
   test('POST /api/auth/logout ends the session', async () => {
     const logoutResponse = await fetch(`${baseUrl}/api/auth/logout`, { method: 'POST', headers: { Cookie: sessionCookie } })
     assert.equal(logoutResponse.status, 204)

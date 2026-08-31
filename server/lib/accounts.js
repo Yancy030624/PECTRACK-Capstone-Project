@@ -3,6 +3,18 @@
 
 export const bcryptRounds = 12
 
+// Maps every role to its profile table. Used by self-service profile
+// editing (PATCH /api/auth/me), which needs to update whichever table the
+// requesting user's own role lives in, regardless of which role that is —
+// unlike routes/staff.js's own narrower map, which deliberately only
+// covers the two roles an admin is allowed to create.
+export const roleTables = {
+  ADMIN: 'admins',
+  CASHIER: 'cashiers',
+  CUSTOMER: 'customers',
+  DELIVERY_PERSONNEL: 'delivery_personnel',
+}
+
 // Checked across every role table, not just one, because email uniqueness
 // isn't enforced by a single database-wide constraint — each role table
 // only has its OWN UNIQUE(email). Must run on the same `client` as the

@@ -94,7 +94,9 @@ async function findSessionUser(sessionId) {
     // cleanup step is needed for CORRECTNESS (expired rows just
     // accumulate in the table until something eventually prunes them).
     `SELECT u.user_id, u.username, u.user_type, u.is_active,
-            COALESCE(a.name, ca.name, c.name, d.name) AS name
+            COALESCE(a.name, ca.name, c.name, d.name) AS name,
+            COALESCE(a.email, ca.email, c.email, d.email) AS email,
+            COALESCE(a.contact_num, ca.contact_num, c.contact_num, d.contact_num) AS contact_num
      FROM sessions s
      JOIN users u ON u.user_id = s.user_id
      LEFT JOIN admins a ON a.user_id = u.user_id
@@ -109,7 +111,12 @@ async function findSessionUser(sessionId) {
   // unexpired while the account itself was deactivated since it was
   // issued (e.g. an admin disabled a cashier mid-shift).
   if (!user || !user.is_active) return null
-  return { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' ') }
+  // email/contact_num were added alongside PATCH /api/auth/me (Phase 4) —
+  // the self-service profile form needs the CURRENT values to pre-fill
+  // its fields, and this is the one place every authenticated request
+  // already resolves the full user record, so it's the natural place to
+  // carry them without a second round-trip.
+  return { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' '), email: user.email, contactNumber: user.contact_num }
 }
 
 // A "middleware" — a function with the (request, response, next) shape

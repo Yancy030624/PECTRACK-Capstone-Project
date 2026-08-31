@@ -7,4 +7,5 @@ export const modules = [
   { name: 'Inventory Management', icon: '▤', roles: ['ADMIN', 'CASHIER'] },
   { name: 'Payment & Billing', icon: '◫', roles: ['ADMIN', 'CUSTOMER', 'CASHIER'] },
   { name: 'Reporting & Analytics', icon: '⌁', roles: ['ADMIN', 'CASHIER'] },
+  { name: 'My Profile', icon: '◉', roles: ['ADMIN', 'CUSTOMER', 'CASHIER', 'DELIVERY PERSONNEL'] },
 ]

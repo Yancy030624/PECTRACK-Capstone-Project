@@ -36,7 +36,9 @@ export async function createSession(userId) {
 async function findSessionUser(sessionId) {
   const result = await pool.query(
     `SELECT u.user_id, u.username, u.user_type, u.is_active,
-            COALESCE(a.name, ca.name, c.name, d.name) AS name
+            COALESCE(a.name, ca.name, c.name, d.name) AS name,
+            COALESCE(a.email, ca.email, c.email, d.email) AS email,
+            COALESCE(a.contact_num, ca.contact_num, c.contact_num, d.contact_num) AS contact_num
      FROM sessions s
      JOIN users u ON u.user_id = s.user_id
      LEFT JOIN admins a ON a.user_id = u.user_id
@@ -48,7 +50,7 @@ async function findSessionUser(sessionId) {
   )
   const user = result.rows[0]
   if (!user || !user.is_active) return null
-  return { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' ') }
+  return { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' '), email: user.email, contactNumber: user.contact_num }
 }
 
 export async function requireAuth(request, response, next) {

@@ -39,6 +39,16 @@ import authRouter from './routes/auth.js'
 // Same idea, for the admin-only staff account routes added in Phase 3 —
 // see routes/staffExplanation.js.
 import staffRouter from './routes/staff.js'
+// Phase 4 additions: the product catalog (admin CRUD, everyone can view)
+// and admin/cashier-facing customer record management — see
+// routes/categoriesExplanation.js, routes/productsExplanation.js, and
+// routes/customersExplanation.js.
+import categoriesRouter from './routes/categories.js'
+import customersRouter from './routes/customers.js'
+// Order management (create/list/detail/status) — see
+// routes/ordersExplanation.js.
+import ordersRouter from './routes/orders.js'
+import productsRouter from './routes/products.js'
 
 // Create the Express application instance. Every route and middleware
 // attaches to this object.
@@ -95,6 +105,19 @@ app.use('/api/auth', authRouter)
 // not here, so this line looks identical to the one above even though
 // everything behind it requires being logged in as an admin.
 app.use('/api/staff', staffRouter)
+// Phase 4: catalog and customer-record routes. Unlike staffRouter,
+// categoriesRouter/productsRouter/customersRouter each mix open routes
+// (any logged-in user can GET) with admin-or-cashier-only ones — see
+// each file's own router.use(...) and per-route requireRole calls for
+// exactly where those lines are drawn.
+app.use('/api/categories', categoriesRouter)
+app.use('/api/products', productsRouter)
+app.use('/api/customers', customersRouter)
+// Order creation/listing/detail/status — see routes/ordersExplanation.js.
+// Excludes delivery personnel entirely for now (no "assigned to me"
+// concept exists until a later phase), and admin can't create orders
+// through it — see that file for why.
+app.use('/api/orders', ordersRouter)
 
 // --- Global error handler --------------------------------------------
 // Express recognizes this as error-handling middleware specifically

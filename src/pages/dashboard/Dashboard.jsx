@@ -1,8 +1,11 @@
 import { useState } from 'react'
 import { Brand } from '../../components/Brand.jsx'
+import { CustomerManagement } from './CustomerManagement.jsx'
 import { DashboardHome } from './DashboardHome.jsx'
 import { InventoryManagement } from './InventoryManagement.jsx'
 import { modules } from './modules.js'
+import { MyProfile } from './MyProfile.jsx'
+import { OrderManagement } from './OrderManagement.jsx'
 import { StaffManagement } from './StaffManagement.jsx'
 
 // Maps a module name to the component that renders its content. Modules
@@ -12,10 +15,13 @@ const moduleComponents = {
   ...Object.fromEntries(modules.map((module) => [module.name, DashboardHome])),
   'Staff Management': StaffManagement,
   'Inventory Management': InventoryManagement,
+  'Customer Management': CustomerManagement,
+  'My Profile': MyProfile,
+  'Order Management': OrderManagement,
 }
 
 // Render the protected shell and expose only modules the signed-in role can access.
-export function Dashboard({ user, onLogout }) {
+export function Dashboard({ user, onLogout, onUserUpdated }) {
   // Track which permitted module is currently active.
   const [activeModule, setActiveModule] = useState('Dashboard')
   // Calculate the navigation items for the signed-in role.
@@ -33,7 +39,7 @@ export function Dashboard({ user, onLogout }) {
         {/* Provide a horizontally scrollable mobile navigation alternative. */}
         <div className="absolute top-16.25 z-10 flex w-full gap-2 overflow-x-auto border-b border-green-100 bg-white p-3 md:hidden">{allowedModules.map((module) => <button type="button" key={module.name} onClick={() => setActiveModule(module.name)} className={`whitespace-nowrap rounded-full px-3 py-2 text-xs font-bold ${activeModule === module.name ? 'bg-green-700 text-white' : 'bg-green-50 text-green-800'}`}>{module.name}</button>)}</div>
         {/* Delegate the main content area entirely to the active module's own component. */}
-        <ActiveModuleComponent user={user} activeModule={activeModule} />
+        <ActiveModuleComponent user={user} activeModule={activeModule} onUserUpdated={onUserUpdated} />
       </div>
     </main>
   )

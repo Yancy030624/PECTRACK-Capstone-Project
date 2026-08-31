@@ -41,7 +41,7 @@ function App() {
   // Avoid flashing the login page while the session check is still in flight.
   if (checkingSession) return null
   // Show the protected dashboard once a session is confirmed.
-  if (user) return <Dashboard user={user} onLogout={handleLogout} />
+  if (user) return <Dashboard user={user} onLogout={handleLogout} onUserUpdated={setUser} />
   // Render the requested registration page when selected.
   if (page === 'register') return <RegistrationPage onLogin={() => setPage('login')} onRegister={() => setPage('register')} />
   // Render the login page by default.

@@ -24,8 +24,11 @@ import express from 'express'
 import { pool } from '../db.js'
 // bcryptRounds and findDuplicateAccount are shared with routes/staff.js
 // (Phase 3 added a second route that creates accounts) — see
-// lib/accountsExplanation.js.
-import { bcryptRounds, findDuplicateAccount } from '../lib/accounts.js'
+// lib/accountsExplanation.js. roleTables is new in Phase 4, used only by
+// PATCH /me below — routes/customers.js and routes/staff.js each already
+// know which single table they're working with, so only the generic
+// self-service route needs a full role → table lookup.
+import { bcryptRounds, findDuplicateAccount, roleTables } from '../lib/accounts.js'
 // Pulling in the shared session/cookie machinery from lib/auth.js — see
 // lib/authExplanation.js for how each of these works internally. This file
 // only needs to know WHAT they do, not HOW.
@@ -33,8 +36,12 @@ import { createSession, parseCookies, requireAuth, sessionCookieName, sessionCoo
 // normalize and validateAccountFields are also shared with routes/staff.js
 // — see lib/validationExplanation.js. This file used to define its own
 // validateRegistration() with the exact same rules; Phase 3 extracted it
-// once staff creation needed the identical checks.
-import { normalize, validateAccountFields } from '../lib/validation.js'
+// once staff creation needed the identical checks. The three validateX
+// functions (added in Phase 4) are the same regex checks broken into
+// individually-callable pieces — PATCH /me validates only whichever
+// fields were actually sent, so it can't use validateAccountFields
+// wholesale (that one requires a password every time).
+import { normalize, normalizeEmail, validateAccountFields, validateContactNumberField, validateEmailField, validateName } from '../lib/validation.js'
 
 // An Express Router — a mini sub-app. Every `router.METHOD(path, ...)`
 // below is relative to wherever this router gets mounted (index.js mounts
@@ -212,7 +219,9 @@ router.post('/login', async (request, response) => {
   // only one LEFT JOIN will have actually matched a row for this user.
   const result = await pool.query(
     `SELECT u.user_id, u.username, u.password_hash, u.user_type, u.is_active, u.locked_until,
-            COALESCE(a.name, ca.name, c.name, d.name) AS name
+            COALESCE(a.name, ca.name, c.name, d.name) AS name,
+            COALESCE(a.email, ca.email, c.email, d.email) AS email,
+            COALESCE(a.contact_num, ca.contact_num, c.contact_num, d.contact_num) AS contact_num
      FROM users u
      LEFT JOIN admins a ON a.user_id = u.user_id
      LEFT JOIN cashiers ca ON ca.user_id = u.user_id
@@ -284,11 +293,13 @@ router.post('/login', async (request, response) => {
   // frontend manually managing a token.
   response.cookie(sessionCookieName, sessionId, sessionCookieOptions)
   // Send back just enough info for the frontend to personalize the UI
-  // and gate access to role-specific screens. No password hash, no other
-  // sensitive fields. `user_type.replaceAll('_', ' ')` turns a
-  // DB-friendly value like "DELIVERY_PERSONNEL" into the more
-  // display-friendly "DELIVERY PERSONNEL" your React code checks against.
-  return response.json({ user: { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' ') } })
+  // and gate access to role-specific screens — plus email/contactNumber
+  // (added alongside PATCH /api/auth/me below) so the My Profile screen
+  // has something to pre-fill without a separate fetch. No password
+  // hash, obviously. `user_type.replaceAll('_', ' ')` turns a DB-friendly
+  // value like "DELIVERY_PERSONNEL" into the more display-friendly
+  // "DELIVERY PERSONNEL" your React code checks against.
+  return response.json({ user: { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' '), email: user.email, contactNumber: user.contact_num } })
 })
 
 // POST /api/auth/verify-otp — the second half of admin login. Called by
@@ -302,8 +313,10 @@ router.post('/verify-otp', async (request, response) => {
   // prevention reasoning as the login route above.
   const invalidCodeResponse = { message: 'Invalid or expired code. Please sign in again.' }
 
+  // Only ever joins `admins` (not all four tables like login does) since
+  // this route only ever runs for ADMIN accounts — no COALESCE needed.
   const userResult = await pool.query(
-    `SELECT u.user_id, u.username, u.user_type, u.is_active, a.name
+    `SELECT u.user_id, u.username, u.user_type, u.is_active, a.name, a.email, a.contact_num
      FROM users u
      JOIN admins a ON a.user_id = u.user_id
      WHERE LOWER(u.username) = $1 AND u.user_type = 'ADMIN'
@@ -339,7 +352,7 @@ router.post('/verify-otp', async (request, response) => {
   await pool.query('UPDATE otp_codes SET consumed_at = CURRENT_TIMESTAMP WHERE otp_id = $1', [otp.otp_id])
   const sessionId = await createSession(user.user_id)
   response.cookie(sessionCookieName, sessionId, sessionCookieOptions)
-  return response.json({ user: { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' ') } })
+  return response.json({ user: { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' '), email: user.email, contactNumber: user.contact_num } })
 })
 
 // POST /api/auth/logout
@@ -365,6 +378,109 @@ router.get('/me', requireAuth, (request, response) => {
   // requireAuth already attached the resolved user onto `request.user` —
   // this handler just echoes it back.
   return response.json({ user: request.user })
+})
+
+// PATCH /api/auth/me — self-service profile editing (Phase 4). The key
+// difference from routes/staff.js and routes/customers.js: those are an
+// admin/cashier editing SOMEONE ELSE's account and are scoped to specific
+// roles; this route is "edit your own account," works for every role
+// (admin, cashier, customer, delivery personnel alike), and deliberately
+// leaves out username, role, and password — a profile edit isn't the
+// right place to change your identity, your authorization level, or your
+// login secret; those are separate concerns with their own safeguards.
+router.patch('/me', requireAuth, async (request, response) => {
+  // request.user.id comes from the session (already authenticated) — but
+  // we need this user's role/username fresh from the users table to know
+  // which profile table to update and to run the duplicate check.
+  const currentResult = await pool.query('SELECT user_id, username, user_type FROM users WHERE user_id = $1', [request.user.id])
+  const current = currentResult.rows[0]
+  // roleTables[user_type] resolves e.g. 'CUSTOMER' → 'customers' — this
+  // is what makes the route generic across all four roles instead of
+  // needing four near-identical copies of this handler.
+  const table = roleTables[current.user_type]
+
+  const errors = {}
+  const updates = {}
+
+  // Same "only validate what was actually sent" pattern as the PATCH
+  // routes in routes/staff.js and routes/customers.js — this is a
+  // PARTIAL update, so submitting just { name: '...' } shouldn't require
+  // also resending a currently-valid email.
+  if ('name' in request.body) {
+    const name = normalize(request.body.name)
+    const error = validateName(name)
+    if (error) errors.name = error
+    else updates.name = name
+  }
+  if ('email' in request.body) {
+    const email = normalizeEmail(request.body.email)
+    const error = validateEmailField(email)
+    if (error) errors.email = error
+    else updates.email = email
+  }
+  if ('contactNumber' in request.body) {
+    const contactNumber = normalize(request.body.contactNumber).replace(/[\s()-]/g, '')
+    const error = validateContactNumberField(contactNumber)
+    if (error) errors.contactNumber = error
+    else updates.contactNumber = contactNumber
+  }
+
+  if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
+  if (Object.keys(updates).length === 0) return response.status(422).json({ message: 'Provide at least one field to update.' })
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    // Only bother checking uniqueness if email or contact number is
+    // actually changing — findDuplicateAccount's excludeUserId makes
+    // this safe against flagging the user's own current values as a
+    // "duplicate" of themselves. See lib/accountsExplanation.js.
+    if (updates.email !== undefined || updates.contactNumber !== undefined) {
+      const isDuplicate = await findDuplicateAccount(client, { username: current.username, email: updates.email ?? null, contactNumber: updates.contactNumber ?? null }, current.user_id)
+      if (isDuplicate) {
+        await client.query('ROLLBACK')
+        return response.status(409).json({ message: 'Another account already uses that email or contact number.' })
+      }
+    }
+    // COALESCE keeps whichever fields weren't sent unchanged — same
+    // pattern as the PATCH routes in routes/staff.js and
+    // routes/customers.js. `table` is interpolated directly (not a
+    // parameter) but is safe here for the same reason it's safe there:
+    // it only ever comes from the roleTables lookup above, never from
+    // request input.
+    await client.query(
+      `UPDATE ${table} SET name = COALESCE($1, name), email = COALESCE($2, email), contact_num = COALESCE($3, contact_num) WHERE user_id = $4`,
+      [updates.name ?? null, updates.email ?? null, updates.contactNumber ?? null, current.user_id],
+    )
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    if (error.code === '23505') return response.status(409).json({ message: 'Another account already uses that email or contact number.' })
+    throw error
+  } finally {
+    client.release()
+  }
+
+  // Re-fetch and return the same { id, name, username, role, email,
+  // contactNumber } shape login/verify-otp/GET-me all use, so the
+  // frontend can treat "the user object" as one consistent shape
+  // regardless of which endpoint produced it — MyProfile.jsx passes this
+  // straight into the app's user state via onUserUpdated.
+  const refreshed = await pool.query(
+    `SELECT u.user_id, u.username, u.user_type,
+            COALESCE(a.name, ca.name, c.name, d.name) AS name,
+            COALESCE(a.email, ca.email, c.email, d.email) AS email,
+            COALESCE(a.contact_num, ca.contact_num, c.contact_num, d.contact_num) AS contact_num
+     FROM users u
+     LEFT JOIN admins a ON a.user_id = u.user_id
+     LEFT JOIN cashiers ca ON ca.user_id = u.user_id
+     LEFT JOIN customers c ON c.user_id = u.user_id
+     LEFT JOIN delivery_personnel d ON d.user_id = u.user_id
+     WHERE u.user_id = $1`,
+    [current.user_id],
+  )
+  const row = refreshed.rows[0]
+  return response.json({ user: { id: row.user_id, name: row.name, username: row.username, role: row.user_type.replaceAll('_', ' '), email: row.email, contactNumber: row.contact_num } })
 })
 
 // Default export, paired with `import authRouter from './routes/auth.js'`
