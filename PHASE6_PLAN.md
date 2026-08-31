@@ -14,6 +14,13 @@ Every defect found in the Phase 5 review was one mistake wearing different
 clothes, and Phase 6 is full of places to repeat it. That mistake is restated
 as Pattern A below because it is the single most important thing in this file.
 
+`PHASES-RULES-PLANNING.md` is the authority on phase boundaries and the
+development rules; this document implements its **Phase 6 — PAYMENT**
+(payment records, payment status, cash payment, online payment, PayMongo
+integration, payment verification). Everything in that list is covered across
+Phase 6 and Phase 6.5 — see Decision 5 for why the split exists and where the
+line falls.
+
 ---
 
 ## Scope
@@ -31,8 +38,9 @@ as Pattern A below because it is the single most important thing in this file.
 
 **Explicitly out of scope for Phase 6**
 
-- **Live PayMongo API integration.** Deferred with the user's approval — see
-  Decision 5 for what Phase 6 builds in its place, and why.
+- **Live PayMongo API integration.** Moved to **Phase 6.5**, which follows
+  this one immediately — not dropped. See Decision 5 for the sequencing and
+  what Phase 6 leaves ready for it.
 - Delivery, proof of delivery, reporting, analytics, AI.
 - Partial refunds. A refund in Phase 6 reverses one whole payment row.
 - Discounts, vouchers, taxes, service charges. `total_amount` is the sum of
@@ -109,15 +117,23 @@ would be a schema change that buys nothing the allow-list does not already
 guarantee at the API boundary, and it would make adding a method later a
 migration instead of a one-line change.
 
-### Decision 5 — the live PayMongo integration is deferred (approved)
+### Decision 5 — PayMongo is built in Phase 6.5, immediately after this phase
 
-PROJECT_CONTEXT names "PayMongo / GCash" in the tech stack, so deferring it
-was a scope call for the user rather than the implementer. It was put to them
-directly and **approved**: Phase 6 builds the record layer, and the live
-gateway becomes its own later phase.
+`PHASES-RULES-PLANNING.md` scopes "Online payment" and "PayMongo
+integration" into Phase 6. **They are not being cut** — they are being
+sequenced second, as Phase 6.5, against a record layer that is already
+proven. Phase 6 plus Phase 6.5 together deliver the written Phase 6 in full.
 
-The three reasons behind that recommendation, kept here so the phase that
-eventually builds it knows what it is walking into:
+The reason is dependency order, not scope reduction. A gateway webhook's job
+is to *write a payment row*, so it needs the order lock (Pattern A), the
+overpayment guard (Pattern B), and the idempotency key (Pattern C) to
+already be correct and tested. Building it alongside them means debugging two
+unproven layers at once, through an endpoint that a localhost dev server
+cannot even receive a request on. It also runs straight into the rule "do
+not implement multiple large modules simultaneously".
+
+The three things Phase 6.5 walks into, recorded here so the phase that builds
+it is not surprised:
 
 1. A live gateway confirms payment by calling a **webhook** — a public HTTPS
    URL it can reach. A localhost dev server cannot receive one without a
@@ -136,13 +152,32 @@ the schema is already shaped for it. `payments.gateway_reference` is
 
 So GCash in Phase 6 means: the customer pays through GCash on their own
 phone, shows the cashier the reference number, and the cashier records it.
-The reference is stored in `gateway_reference`, and its `UNIQUE` constraint
-is what stops the same receipt being claimed twice.
+The reference goes in `gateway_reference`, whose `UNIQUE` constraint is what
+stops the same receipt being claimed twice.
 
-The one thing to preserve while implementing Phase 6: do not "simplify away"
-`gateway_reference`, `PENDING`, or `FAILED` just because nothing writes them
-yet. They are the seams the gateway phase attaches to, and Pattern C already
+**The one thing to preserve while implementing Phase 6:** do not "simplify
+away" `gateway_reference`, `PENDING`, or `FAILED` because nothing writes them
+yet. They are the exact seams Phase 6.5 attaches to, and Pattern C already
 depends on the first of them.
+
+#### What Phase 6.5 will add
+
+Sketched, not planned — it gets its own document, written the same way this
+one was. Recorded now so the boundary is a deliberate line rather than a
+vague "later":
+
+- `POST /api/payments/intent` — creates a `PENDING` row and returns the
+  PayMongo checkout URL.
+- `POST /api/payments/webhook` — unauthenticated by necessity, so it needs
+  signature verification against the PayMongo secret, replay protection, and
+  idempotency keyed on `gateway_reference`. It flips `PENDING` to `PAID` or
+  `FAILED` and must reuse the same overpayment guard, not a second copy of
+  it (rule: no duplicated business logic across routes).
+- A tunnel for local development, since a webhook cannot reach `localhost`.
+- Secrets in environment configuration only, never in frontend code.
+
+Everything above writes through the same `payments` table Phase 6 builds. No
+schema change is expected beyond migration 005.
 
 ### Decision 6 — `PENDING` and `FAILED` payment rows are reserved, not written
 
@@ -150,10 +185,15 @@ Every payment Phase 6 records is money that has **already changed hands** —
 cash in the drawer, or a GCash transfer the cashier can see. There is no
 waiting period, so every row is inserted as `PAID` directly.
 
-`PENDING` and `FAILED` exist for the gateway flow deferred in Decision 5, and
-stay unwritten until then. Document them as reserved in the migration, the
-same way `orders.requires_admin_approval` was documented in Phase 5 rather
-than deleted or quietly written with a meaningless value.
+`PENDING` and `FAILED` belong to the gateway flow, so Phase 6.5 is what
+starts writing them: an intent is created `PENDING` and the webhook resolves
+it to `PAID` or `FAILED`. Until then they stay unwritten and documented as
+reserved, the same way `orders.requires_admin_approval` was handled in Phase
+5 rather than deleted or quietly filled with a meaningless value.
+
+This is why Phase 6 must not narrow the `payment_status` enum or default rows
+to something else for convenience — a phase away, those two values carry the
+whole asynchronous flow.
 
 ### Decision 7 — `COMPLETED` requires the order to be fully paid
 
@@ -198,9 +238,15 @@ an order, a payment has exactly **one** status transition that ever matters
 
 ## Schema changes (migration 005)
 
-Both changes below are proposed and need approval before being applied, per
-rule 2. Write them into `database/migrations/005_payment_audit.sql` AND fold
-them into `database/schema.sql`, then add a row to the migration table in
+The rule is "do not change database tables, columns, relationships, or
+constraints without explaining why first". The two changes below are that
+explanation, and each states its reasoning inline rather than in a commit
+message nobody will read again. Neither change touches an existing
+relationship that other code depends on, and both are additive to how
+`payments` is read.
+
+Write them into `database/migrations/005_payment_audit.sql` AND fold them
+into `database/schema.sql`, then add a row to the migration table in
 `database/README.md`, per the convention in that file.
 
 All four Phase 6/7 tables (`payments`, `deliveries`, `delivery_proofs`,
@@ -363,6 +409,98 @@ collide with the next cash payment.
 
 ---
 
+## Data flow
+
+`PHASES-RULES-PLANNING.md` requires the data flow and the affected files to
+be explained before a significant feature is implemented. Both sections
+below exist for that, and they are also the fastest way for an implementer to
+see whether they have missed a call site.
+
+**Recording a payment** — the path that matters most, because it is the one
+with the race:
+
+```
+Cashier fills the payment form
+  -> POST /api/payments  { orderId, method, amount, gatewayReference? }
+     -> requireAuth, requireRole('CASHIER', 'ADMIN')
+     -> validate: method in {CASH, GCASH}, amount > 0, integer-safe id
+     -> BEGIN
+        -> SELECT ... FROM orders WHERE order_id = $1 FOR UPDATE   [Pattern A]
+           - 404 if missing, 409 if CANCELLED
+        -> INSERT INTO payments ... WHERE amount <= balance_due    [Pattern B]
+           - rowCount 0 -> ROLLBACK, 409 overpayment
+           - 23505 on gateway_reference -> ROLLBACK, 409 duplicate [Pattern C]
+        -> COMMIT
+     -> 201 { payment, balanceDue, isFullyPaid }
+  -> UI refetches the order; receipt view shows the new balance
+```
+
+**Completing an order** (Decision 7) — the balance check joins the Phase 5
+status claim inside the same transaction:
+
+```
+PATCH /api/orders/:id { status: 'COMPLETED' }
+  -> BEGIN
+     -> UPDATE orders SET status ... WHERE status = ANY(...)  [Phase 5 claim]
+        - rowCount 0 -> 409
+     -> SELECT balance due for this order            <- NEW, after the claim
+        - balance > 0 -> ROLLBACK, 409 "still owes"
+     -> INSERT order_status_history
+     -> COMMIT
+```
+
+**Cancelling a paid order** (Decision 8) — reuses the same claim, then the
+Phase 5 stock restore, then the refund:
+
+```
+PATCH /api/orders/:id { status: 'CANCELLED' }
+  -> BEGIN
+     -> claim the transition                          [Phase 5, unchanged]
+     -> SELECT paid total for this order              <- NEW
+        - paid > 0 AND role != ADMIN -> ROLLBACK, 409 "an admin must refund"
+     -> restore stock + inventory_movements           [Phase 5, unchanged]
+     -> UPDATE payments SET status='REFUNDED', refunded_by, refunded_at  <- NEW
+     -> INSERT order_status_history
+     -> COMMIT
+```
+
+Note the ordering in the last two: the balance and refund checks go **after**
+the status claim, never before it. Putting them before would mean reading a
+figure the claim has not yet frozen — the precise mistake the Phase 5 review
+corrected in three separate places.
+
+## Files affected
+
+**New**
+
+- `database/migrations/005_payment_audit.sql`
+- `server/routes/payments.js` + `server/routes/paymentsExplanation.js`
+- `server/routes/payments.test.js`
+- `server/lib/billing.js` + `server/lib/billingExplanation.js` — one shared
+  "what does this order owe" helper. It is needed by `POST /api/payments`,
+  `GET /api/orders/:id`, and both branches of `PATCH /api/orders/:id`, and
+  the rule "avoid duplicated business logic across routes" means it must not
+  be written four times. Model it on `lib/inventory.js`: takes a `client`, so
+  callers can run it inside their own transaction.
+- `src/pages/dashboard/PaymentBilling.jsx` (and a receipt component if it
+  grows past ~200 lines — see the inventory split)
+
+**Modified**
+
+- `database/schema.sql`, `database/README.md` — fold in migration 005
+- `server/app.js` — mount `/api/payments`
+- `server/routes/orders.js` + twin + tests — Decisions 7 and 8, inside the
+  existing transaction in `PATCH /:id`; payment summary on `GET /:id`
+- `src/pages/dashboard/Dashboard.jsx` — replace the `DashboardHome` fallback
+  for 'Payment & Billing'
+
+**Deliberately untouched**
+
+- `server/lib/inventory.js` and the Phase 5 stock paths. Phase 6 adds rules
+  *around* cancellation; it must not change how stock is restored.
+- `src/pages/dashboard/modules.js` — 'Payment & Billing' is already listed
+  with roles `ADMIN`, `CUSTOMER`, `CASHIER`.
+
 ## Build order
 
 Each step is independently testable, and the risky one sits in the middle.
@@ -456,9 +594,12 @@ not repeat that:
 Carried forward from Phase 5 and still true, plus the new ones this phase
 creates. These are documented trade-offs, not defects to be surprised by.
 
-- **No live payment gateway** (Decision 5). Until then, "paid" means a member
-  of staff asserted it. The `UNIQUE` reference stops the same receipt being
-  used twice, but nothing verifies the reference is real.
+- **No live payment gateway until Phase 6.5** (Decision 5). Between the two
+  phases, "paid" means a member of staff asserted it. The `UNIQUE` reference
+  stops the same receipt being recorded twice, but nothing verifies the
+  reference corresponds to a real GCash transfer. This is the one gap that
+  closes by design rather than by decision, and it is why Phase 6.5 follows
+  immediately rather than sitting at the end of the backlog.
 - **No partial refunds.** A refund reverses one whole payment row.
 - **No `inventory_movements` or `stock_alerts` read path.** Both tables are
   written correctly by Phase 5 and read by nothing. The live "Low stock"
