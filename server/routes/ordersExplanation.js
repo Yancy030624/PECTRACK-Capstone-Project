@@ -22,6 +22,9 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
+// Shared with routes/inventory.js — every place stock can change needs
+// the exact same low-stock rule. See lib/inventoryExplanation.js.
+import { syncStockAlert } from '../lib/inventory.js'
 // Shared id-shape validation — see lib/validationExplanation.js for why
 // every route that looks a record up by id has to run this first.
 import { parseId } from '../lib/validation.js'
@@ -339,13 +342,17 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
       // 23514" (two 500s); this pattern gives "sold | refused | refused"
       // (two clean 409s). Both land at the same correct final stock; only
       // what the customer sees differs.
+      // RETURNING stock_quantity and min_stock_level alongside inventory_id
+      // (not just inventory_id, which is all POST / originally needed) —
+      // syncStockAlert further down needs both to decide whether this
+      // deduction just pushed the product below its minimum.
       const deducted = await client.query(
         `UPDATE inventory
             SET stock_quantity = stock_quantity - $2,
                 last_updated = CURRENT_TIMESTAMP
           WHERE product_id = $1
             AND stock_quantity >= $2
-        RETURNING inventory_id`,
+        RETURNING inventory_id, stock_quantity, min_stock_level`,
         [item.productId, item.quantity],
       )
       if (deducted.rowCount === 0) {
@@ -366,6 +373,14 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
         'INSERT INTO inventory_movements (inventory_id, order_id, changed_by, quantity_change, reason) VALUES ($1, $2, $3, $4, $5)',
         [deducted.rows[0].inventory_id, orderId, request.user.id, -item.quantity, 'ORDER_PLACED'],
       )
+
+      // Phase 5, Step 5: opens (or leaves open — it won't duplicate) a
+      // low-stock alert if this deduction pushed the product to or below
+      // its minimum. See lib/inventoryExplanation.js for the full
+      // reasoning, including why "at most one open alert per product"
+      // matters here specifically — a popular item selling out across
+      // many small orders would otherwise generate one alert PER ORDER.
+      await syncStockAlert(client, { inventoryId: deducted.rows[0].inventory_id, stockQuantity: deducted.rows[0].stock_quantity, minStockLevel: deducted.rows[0].min_stock_level })
     }
 
     // THE TOTAL IS SUMMED BY POSTGRES, NOT BY JAVASCRIPT.
@@ -506,7 +521,7 @@ router.patch('/:id', async (request, response) => {
         // CHECK (stock_quantity >= 0) the way subtracting could, so
         // there's no overselling-style failure mode here to detect.
         const restored = await client.query(
-          'UPDATE inventory SET stock_quantity = stock_quantity + $2, last_updated = CURRENT_TIMESTAMP WHERE product_id = $1 RETURNING inventory_id',
+          'UPDATE inventory SET stock_quantity = stock_quantity + $2, last_updated = CURRENT_TIMESTAMP WHERE product_id = $1 RETURNING inventory_id, stock_quantity, min_stock_level',
           [item.product_id, item.quantity],
         )
         // The mirror image of the ORDER_PLACED row written in POST / —
@@ -516,6 +531,11 @@ router.patch('/:id', async (request, response) => {
           'INSERT INTO inventory_movements (inventory_id, order_id, changed_by, quantity_change, reason) VALUES ($1, $2, $3, $4, $5)',
           [restored.rows[0].inventory_id, orderId, request.user.id, item.quantity, 'ORDER_CANCELLED'],
         )
+        // The mirror image of the alert check in POST / too: restoring
+        // stock can just as easily bring a product back ABOVE its
+        // minimum as deducting can push it below, and that should close
+        // out an alert exactly as promptly as going low opened one.
+        await syncStockAlert(client, { inventoryId: restored.rows[0].inventory_id, stockQuantity: restored.rows[0].stock_quantity, minStockLevel: restored.rows[0].min_stock_level })
       }
     }
 

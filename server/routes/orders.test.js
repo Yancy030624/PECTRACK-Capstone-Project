@@ -435,6 +435,29 @@ describe('order management', () => {
     assert.equal(rows[0].stock_quantity, 0, 'stock must land at exactly 0, never negative')
   })
 
+  // syncStockAlert itself is unit-tested thoroughly in lib/inventory.test.js
+  // — this just confirms placing/cancelling an order actually WIRES INTO
+  // it, the same way inventory.test.js confirms it for the direct-edit route.
+  test('placing an order that drops stock to the minimum opens an alert; cancelling it resolves the alert', async () => {
+    await pool.query('UPDATE inventory SET stock_quantity = 5, min_stock_level = 3 WHERE product_id = $1', [stockTestProductId])
+    const inventoryId = (await pool.query('SELECT inventory_id FROM inventory WHERE product_id = $1', [stockTestProductId])).rows[0].inventory_id
+
+    const orderResponse = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: stockTestProductId, quantity: 2 }] }) }) // 5 - 2 = 3, at the minimum
+    assert.equal(orderResponse.status, 201)
+    const orderId = (await orderResponse.json()).order.id
+    createdOrderIds.push(orderId)
+
+    const opened = await pool.query('SELECT is_resolved FROM stock_alerts WHERE inventory_id = $1', [inventoryId])
+    assert.equal(opened.rows.length, 1)
+    assert.equal(opened.rows[0].is_resolved, false)
+
+    const cancelResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    assert.equal(cancelResponse.status, 200)
+
+    const resolved = await pool.query('SELECT is_resolved FROM stock_alerts WHERE inventory_id = $1', [inventoryId])
+    assert.equal(resolved.rows[0].is_resolved, true)
+  })
+
   test('routes reject delivery personnel entirely for now', async () => {
     const dpPasswordHash = await bcrypt.hash('Delivery-Password-9!', 4)
     const dpResult = await pool.query(`INSERT INTO users (username, password_hash, user_type) VALUES ($1, $2, 'DELIVERY_PERSONNEL') RETURNING user_id`, [`orderdp_${runId}`, dpPasswordHash])

@@ -11,6 +11,7 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
+import { syncStockAlert } from '../lib/inventory.js'
 import { parseId } from '../lib/validation.js'
 
 const router = express.Router()
@@ -228,7 +229,7 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
                 last_updated = CURRENT_TIMESTAMP
           WHERE product_id = $1
             AND stock_quantity >= $2
-        RETURNING inventory_id`,
+        RETURNING inventory_id, stock_quantity, min_stock_level`,
         [item.productId, item.quantity],
       )
       if (deducted.rowCount === 0) {
@@ -243,6 +244,10 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
         'INSERT INTO inventory_movements (inventory_id, order_id, changed_by, quantity_change, reason) VALUES ($1, $2, $3, $4, $5)',
         [deducted.rows[0].inventory_id, orderId, request.user.id, -item.quantity, 'ORDER_PLACED'],
       )
+      // Opens (or leaves open) a low-stock alert if this deduction pushed
+      // the product to or below its minimum. See lib/inventory.js — it
+      // won't duplicate an alert that's already open for this product.
+      await syncStockAlert(client, { inventoryId: deducted.rows[0].inventory_id, stockQuantity: deducted.rows[0].stock_quantity, minStockLevel: deducted.rows[0].min_stock_level })
     }
 
     // The total is summed by Postgres in NUMERIC, from the rows that were
@@ -341,13 +346,16 @@ router.patch('/:id', async (request, response) => {
         // violate CHECK (stock_quantity >= 0), so there's no failure mode
         // to detect.
         const restored = await client.query(
-          'UPDATE inventory SET stock_quantity = stock_quantity + $2, last_updated = CURRENT_TIMESTAMP WHERE product_id = $1 RETURNING inventory_id',
+          'UPDATE inventory SET stock_quantity = stock_quantity + $2, last_updated = CURRENT_TIMESTAMP WHERE product_id = $1 RETURNING inventory_id, stock_quantity, min_stock_level',
           [item.product_id, item.quantity],
         )
         await client.query(
           'INSERT INTO inventory_movements (inventory_id, order_id, changed_by, quantity_change, reason) VALUES ($1, $2, $3, $4, $5)',
           [restored.rows[0].inventory_id, orderId, request.user.id, item.quantity, 'ORDER_CANCELLED'],
         )
+        // Closes a low-stock alert if restoring this order's stock brought
+        // the product back above its minimum. See lib/inventory.js.
+        await syncStockAlert(client, { inventoryId: restored.rows[0].inventory_id, stockQuantity: restored.rows[0].stock_quantity, minStockLevel: restored.rows[0].min_stock_level })
       }
     }
 

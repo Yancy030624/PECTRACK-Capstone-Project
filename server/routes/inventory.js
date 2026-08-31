@@ -10,11 +10,13 @@
 //
 // See PHASE5_PLAN.md for the full design (the movement ledger, the
 // conditional-update deduction pattern, the observed-vs-proposed stock
-// change request shape) — this file now covers Steps 1 and 2 from that
-// plan: the read-only list, and admin editing stock directly.
+// change request shape) — this file now covers Steps 1, 2, and 5 from
+// that plan: the read-only list, admin editing stock directly, and
+// low-stock alerting.
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
+import { syncStockAlert } from '../lib/inventory.js'
 import { normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
@@ -114,13 +116,14 @@ router.patch('/:productId', requireRole('ADMIN'), async (request, response) => {
     // description/variant fields. stock_quantity and min_stock_level are
     // NOT NULL columns where an omitted field is never intentionally null,
     // so plain COALESCE is safe for those two.
-    await client.query(
+    const updated = await client.query(
       `UPDATE inventory
        SET stock_quantity = COALESCE($1, stock_quantity),
            min_stock_level = COALESCE($2, min_stock_level),
            expiration_date = CASE WHEN $3 THEN $4 ELSE expiration_date END,
            last_updated = CURRENT_TIMESTAMP
-       WHERE product_id = $5`,
+       WHERE product_id = $5
+       RETURNING stock_quantity, min_stock_level`,
       [values.stockQuantity ?? null, values.minStockLevel ?? null, 'expirationDate' in values, values.expirationDate ?? null, productId],
     )
 
@@ -141,6 +144,13 @@ router.patch('/:productId', requireRole('ADMIN'), async (request, response) => {
         )
       }
     }
+
+    // Called unconditionally, not just when stockQuantity changed — an
+    // admin editing minStockLevel ALONE can just as easily push the
+    // product across the low-stock threshold (e.g. raising the minimum
+    // above stock that was previously fine), and the alert needs to
+    // reflect the threshold that's actually in effect now.
+    await syncStockAlert(client, { inventoryId: current.inventory_id, stockQuantity: updated.rows[0].stock_quantity, minStockLevel: updated.rows[0].min_stock_level })
 
     await client.query('COMMIT')
   } catch (error) {

@@ -14,17 +14,24 @@
 // separate boolean), and delivery personnel have no inventory concern at
 // all. Mounted at /api/inventory in app.js.
 //
-// This file now implements Steps 1 and 2 of PHASE5_PLAN.md: the read-only
-// list, and admin editing stock directly with a movement-ledger row
-// alongside every change. See that document for the full design — the
-// conditional-update deduction pattern that keeps overselling from
-// crashing as a 500 (Step 3), and the observed-vs-proposed shape used by
-// the cashier-approval workflow (Step 6) that comes later.
+// This file now implements Steps 1, 2, and 5 of PHASE5_PLAN.md: the
+// read-only list, admin editing stock directly with a movement-ledger row
+// alongside every change, and low-stock alerting on every edit. See that
+// document for the full design — the conditional-update deduction pattern
+// that keeps overselling from crashing as a 500 (Step 3), and the
+// observed-vs-proposed shape used by the cashier-approval workflow
+// (Step 6) that comes later.
 // ============================================================================
 
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
+// syncStockAlert is shared with routes/orders.js — every place stock can
+// change (order placement/cancellation, and this file's direct edit)
+// needs the exact same low-stock rule applied the exact same way, so it
+// lives once in lib/inventory.js rather than being reimplemented here.
+// See that file for the full reasoning.
+import { syncStockAlert } from '../lib/inventory.js'
 import { normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
@@ -178,13 +185,20 @@ router.patch('/:productId', requireRole('ADMIN'), async (request, response) => {
     // stock_quantity and min_stock_level are NOT NULL columns where an
     // omitted field is never intentionally null, so plain COALESCE is
     // correct and simpler for those two.
-    await client.query(
+    // RETURNING the post-update figures rather than reading them back with
+    // a separate SELECT — cheaper, and immune to a theoretical race where
+    // something else touches this row between the UPDATE and a follow-up
+    // read (not possible here anyway, since both happen inside the same
+    // transaction, but RETURNING is the idiom that makes that true by
+    // construction rather than by reasoning about it).
+    const updated = await client.query(
       `UPDATE inventory
        SET stock_quantity = COALESCE($1, stock_quantity),
            min_stock_level = COALESCE($2, min_stock_level),
            expiration_date = CASE WHEN $3 THEN $4 ELSE expiration_date END,
            last_updated = CURRENT_TIMESTAMP
-       WHERE product_id = $5`,
+       WHERE product_id = $5
+       RETURNING stock_quantity, min_stock_level`,
       [values.stockQuantity ?? null, values.minStockLevel ?? null, 'expirationDate' in values, values.expirationDate ?? null, productId],
     )
 
@@ -209,6 +223,17 @@ router.patch('/:productId', requireRole('ADMIN'), async (request, response) => {
         )
       }
     }
+
+    // Called UNCONDITIONALLY here — not only when stockQuantity changed.
+    // That's deliberate: an admin editing minStockLevel ALONE can just as
+    // easily move the product across the low-stock line. Example: stock
+    // sits at 8 with a minimum of 10 (already low, alert open); the admin
+    // corrects the minimum down to 5 without touching stock at all — now
+    // 8 > 5, and the alert should close even though stock_quantity itself
+    // never moved. syncStockAlert re-evaluates against whatever the
+    // CURRENT threshold actually is, using the values this same UPDATE
+    // just returned.
+    await syncStockAlert(client, { inventoryId: current.inventory_id, stockQuantity: updated.rows[0].stock_quantity, minStockLevel: updated.rows[0].min_stock_level })
 
     await client.query('COMMIT')
   } catch (error) {

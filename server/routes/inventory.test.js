@@ -301,4 +301,22 @@ describe('editing stock directly', () => {
     assert.equal(latest.rows[0].quantity_change, -5) // 30 - 35
     assert.equal(latest.rows[0].reason, 'SPOILAGE')
   })
+
+  // syncStockAlert itself is unit-tested thoroughly in lib/inventory.test.js
+  // — this just confirms it's actually WIRED IN to this route (min level 5,
+  // stock is 30 going in from the previous test).
+  test('dropping stock to the minimum opens an alert; restoring it resolves the alert', async () => {
+    const dropResponse = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ stockQuantity: 5, reason: 'SPOILAGE' }) })
+    assert.equal(dropResponse.status, 200)
+
+    const opened = await pool.query('SELECT is_resolved FROM stock_alerts WHERE inventory_id = $1', [inventoryId])
+    assert.equal(opened.rows.length, 1)
+    assert.equal(opened.rows[0].is_resolved, false)
+
+    const restoreResponse = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ stockQuantity: 25, reason: 'RESTOCK' }) })
+    assert.equal(restoreResponse.status, 200)
+
+    const resolved = await pool.query('SELECT is_resolved FROM stock_alerts WHERE inventory_id = $1', [inventoryId])
+    assert.equal(resolved.rows[0].is_resolved, true)
+  })
 })
