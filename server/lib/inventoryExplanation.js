@@ -45,21 +45,43 @@ export async function syncStockAlert(client, { inventoryId, stockQuantity, minSt
 
   // At or below the minimum (stockQuantity <= minStockLevel — "at" counts
   // as low, not just "below", since sitting exactly on the line is still
-  // the moment to restock). Only write a NEW row if one isn't ALREADY
-  // open for this product — this SELECT is the entire mechanism behind
-  // the "at most one open alert" rule described above.
-  const existing = await client.query('SELECT 1 FROM stock_alerts WHERE inventory_id = $1 AND is_resolved = FALSE', [inventoryId])
-  if (existing.rowCount > 0) return
-
-  // The product's name is only needed for THIS one message, and only on
-  // this branch (opening a brand new alert) — every other path through
-  // this function never touches it. Fetching it here, lazily, rather than
-  // asking all three call sites to look it up and pass it in, keeps their
-  // code simpler: none of them otherwise need the product's name at the
-  // point they call this.
+  // the moment to restock).
+  //
+  // The product's name is only needed for the message text, and only on
+  // this branch — the healthy branch above never touches it. Fetching it
+  // here, lazily, rather than asking all three call sites to look it up
+  // and pass it in, keeps their code simpler: none of them otherwise need
+  // the product's name at the point they call this.
   const product = await client.query('SELECT p.product_name FROM inventory i JOIN products p ON p.product_id = i.product_id WHERE i.inventory_id = $1', [inventoryId])
-  await client.query(
-    'INSERT INTO stock_alerts (inventory_id, alert_message) VALUES ($1, $2)',
-    [inventoryId, `${product.rows[0].product_name} is low on stock: ${stockQuantity} remaining (minimum ${minStockLevel}).`],
+  const alertMessage = `${product.rows[0].product_name} is low on stock: ${stockQuantity} remaining (minimum ${minStockLevel}).`
+
+  // UPDATE-FIRST, INSERT-ONLY-IF-NOTHING-WAS-UPDATED. Two rules are being
+  // satisfied at once here, and it's worth separating them.
+  //
+  // Rule one, "at most one open alert per product": this UPDATE targets
+  // is_resolved = FALSE rows, and the INSERT below runs only when it
+  // matched nothing. So an already-open alert is never joined by a
+  // second one. That is what stops the flood described above.
+  //
+  // Rule two, "the open alert must stay TRUE". Simply returning early
+  // when an alert already existed — the obvious way to satisfy rule one —
+  // was wrong, because the message is written in the present tense: "is
+  // low on stock: 5 remaining". An alert opened when stock hit 5 and
+  // never touched again would still say 5 after stock fell to 1. The
+  // number an admin reads while deciding how urgently to restock would be
+  // the number from whenever the problem STARTED, not the number now.
+  // Refreshing the message in place keeps one row per problem AND keeps
+  // that row honest.
+  //
+  // Using rowCount to decide between update and insert (rather than a
+  // SELECT first) also means one fewer round trip, and no window between
+  // checking and acting — though the window would be harmless here
+  // anyway, since every caller holds the inventory row lock.
+  const refreshed = await client.query(
+    'UPDATE stock_alerts SET alert_message = $2 WHERE inventory_id = $1 AND is_resolved = FALSE',
+    [inventoryId, alertMessage],
   )
+  if (refreshed.rowCount > 0) return
+
+  await client.query('INSERT INTO stock_alerts (inventory_id, alert_message) VALUES ($1, $2)', [inventoryId, alertMessage])
 }

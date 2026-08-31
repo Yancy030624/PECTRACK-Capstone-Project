@@ -23,18 +23,31 @@ export async function syncStockAlert(client, { inventoryId, stockQuantity, minSt
     return
   }
 
-  // At or below the minimum. Only write a NEW row if one isn't already
-  // open for this product — this is the check that prevents the
-  // one-alert-per-order flood described above.
-  const existing = await client.query('SELECT 1 FROM stock_alerts WHERE inventory_id = $1 AND is_resolved = FALSE', [inventoryId])
-  if (existing.rowCount > 0) return
-
-  // The product name is only needed for this one message, so it's fetched
-  // here rather than asking every call site to plumb it through — none of
-  // the three callers otherwise need it at the point they call this.
+  // At or below the minimum. The product name is only needed for the
+  // message, so it's fetched here rather than asking every call site to
+  // plumb it through — none of the three callers otherwise need it.
   const product = await client.query('SELECT p.product_name FROM inventory i JOIN products p ON p.product_id = i.product_id WHERE i.inventory_id = $1', [inventoryId])
-  await client.query(
-    'INSERT INTO stock_alerts (inventory_id, alert_message) VALUES ($1, $2)',
-    [inventoryId, `${product.rows[0].product_name} is low on stock: ${stockQuantity} remaining (minimum ${minStockLevel}).`],
+  const alertMessage = `${product.rows[0].product_name} is low on stock: ${stockQuantity} remaining (minimum ${minStockLevel}).`
+
+  // If an alert is already open for this product, REFRESH its message
+  // rather than either inserting a duplicate or leaving it alone.
+  //
+  // Not inserting is what keeps the "at most one open alert per product"
+  // invariant — a popular item selling out across many small orders would
+  // otherwise generate one alert per order, burying the single actionable
+  // fact under near-identical duplicates.
+  //
+  // But leaving the message untouched was wrong too: it's phrased in the
+  // present tense ("is low on stock: 5 remaining"), so an alert opened at
+  // 5 and never updated would still claim 5 after stock fell to 1. The
+  // number an admin reads while deciding how urgently to restock would be
+  // the number from whenever the problem STARTED, not the number now.
+  // Updating in place keeps one row per problem AND keeps it truthful.
+  const refreshed = await client.query(
+    'UPDATE stock_alerts SET alert_message = $2 WHERE inventory_id = $1 AND is_resolved = FALSE',
+    [inventoryId, alertMessage],
   )
+  if (refreshed.rowCount > 0) return
+
+  await client.query('INSERT INTO stock_alerts (inventory_id, alert_message) VALUES ($1, $2)', [inventoryId, alertMessage])
 }

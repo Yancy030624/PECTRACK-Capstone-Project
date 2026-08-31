@@ -66,6 +66,24 @@ describe('syncStockAlert', () => {
     assert.equal(await openAlertCount(), 1, 'three low-stock calls in a row must still leave exactly one open alert')
   })
 
+  // Keeping ONE row open is only half the rule. The message is phrased in
+  // the present tense — "is low on stock: 5 remaining" — so an alert
+  // opened at 5 and never touched again would still claim 5 after stock
+  // fell to 1. The number an admin reads while deciding how urgently to
+  // restock would be the number from whenever the problem STARTED, not
+  // the number now. The count assertion above passes either way, so this
+  // is what actually pins the refresh.
+  test('the open alert\'s message is refreshed as stock falls further', async () => {
+    const openMessage = async () => (await pool.query('SELECT alert_message FROM stock_alerts WHERE inventory_id = $1 AND is_resolved = FALSE', [inventoryId])).rows[0].alert_message
+
+    await syncStockAlert(pool, { inventoryId, stockQuantity: 5, minStockLevel: 10 })
+    assert.match(await openMessage(), /5 remaining/)
+
+    await syncStockAlert(pool, { inventoryId, stockQuantity: 1, minStockLevel: 10 })
+    assert.equal(await openAlertCount(), 1, 'refreshing must not open a second alert')
+    assert.match(await openMessage(), /1 remaining/, 'the message must state stock as it is NOW, not where the problem began')
+  })
+
   test('climbing back above the minimum resolves the open alert', async () => {
     await syncStockAlert(pool, { inventoryId, stockQuantity: 2, minStockLevel: 5 })
     assert.equal(await openAlertCount(), 1)
