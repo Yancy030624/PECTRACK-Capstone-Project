@@ -116,6 +116,12 @@ export function validateAccountFields(body) {
 
   // --- Password checks (checked in order, most fundamental first) -----
 
+  // Computed once up front and reused by the "predictable password" check
+  // further down, rather than recomputing .toLowerCase() and .split('@')
+  // three times inside one condition.
+  const lowered = password.toLowerCase()
+  const emailName = String(email ?? '').split('@')[0]
+
   // bcrypt has a hard limit: it only looks at the first 72 BYTES of a
   // password (not characters — a single emoji or accented letter can be
   // several bytes). Anything beyond byte 72 is silently ignored by
@@ -134,7 +140,19 @@ export function validateAccountFields(body) {
   // guess once an attacker knows the username). This check applies just
   // as much when an admin is typing a password in for someone else, which
   // is why staff creation reuses this function rather than skipping it.
-  else if (commonPasswords.has(password.toLowerCase()) || password.toLowerCase().includes(username) || password.toLowerCase().includes(email.split('@')[0])) errors.password = 'Choose a less predictable password that does not contain your username or email name.'
+  //
+  // The `username &&` and `emailName &&` guards look redundant but fix a
+  // real bug. In JavaScript, ''.includes('') is TRUE — an empty string
+  // contains an empty string. So on a form submitted with the username or
+  // email left blank, this branch fired for EVERY password, no matter how
+  // strong, and the person saw a baffling "does not contain your username"
+  // error stacked on top of the real "username is required" one. A value
+  // that isn't there simply has nothing to compare against.
+  //
+  // String(email ?? '') matters for the same class of reason: this function
+  // is now also called by PATCH /api/auth/password, where the email comes
+  // from the session rather than a form, and .split() on undefined throws.
+  else if (commonPasswords.has(lowered) || (username && lowered.includes(username)) || (emailName && lowered.includes(emailName))) errors.password = 'Choose a less predictable password that does not contain your username or email name.'
 
   // Simple equality check — the classic "type your password twice" guard
   // against typos. Kept for staff creation too: an admin mistyping a

@@ -6,7 +6,7 @@ import express from 'express'
 import { pool } from '../db.js'
 import { bcryptRounds, findDuplicateAccount, roleTables } from '../lib/accounts.js'
 import { createSession, parseCookies, requireAuth, sessionCookieName, sessionCookieOptions } from '../lib/auth.js'
-import { normalize, normalizeEmail, validateAccountFields, validateContactNumberField, validateEmailField, validateName } from '../lib/validation.js'
+import { normalize, normalizeEmail, validateAccountFields, validateContactNumberField, validateEmailField, validateName, validatePasswordField } from '../lib/validation.js'
 
 const router = express.Router()
 
@@ -227,6 +227,59 @@ router.post('/logout', async (request, response) => {
 
 router.get('/me', requireAuth, (request, response) => {
   return response.json({ user: request.user })
+})
+
+// PATCH /api/auth/password — self-service password change, for any role.
+// Separate from PATCH /me on purpose: a password isn't a profile field. It
+// needs the current password re-proved, it has its own strength rules, and
+// it has a side effect none of the profile fields have (ending other
+// sessions), so folding it into the profile edit would make that endpoint
+// mean two quite different things.
+//
+// This closes a real gap rather than adding a nicety. Staff accounts are
+// created by an admin who chooses the initial password, and until now there
+// was no way for that staff member to ever change it — so every admin
+// permanently knew every cashier's and driver's password.
+router.patch('/password', requireAuth, async (request, response) => {
+  const currentPassword = String(request.body.currentPassword ?? '')
+  const newPassword = String(request.body.newPassword ?? '')
+  const confirmPassword = String(request.body.confirmPassword ?? '')
+
+  const result = await pool.query('SELECT user_id, username, password_hash FROM users WHERE user_id = $1', [request.user.id])
+  const user = result.rows[0]
+
+  // Re-prove the CURRENT password even though the caller is already signed
+  // in. A valid session alone must not be enough to change the password —
+  // otherwise anyone who got hold of a logged-in browser (a shared terminal
+  // at the bakery counter, a stolen cookie) could lock the real owner out
+  // of their own account permanently.
+  if (!currentPassword || !(await bcrypt.compare(currentPassword, user.password_hash))) {
+    return response.status(422).json({ message: 'Please correct the highlighted fields.', errors: { currentPassword: 'That is not your current password.' } })
+  }
+
+  const errors = {}
+  // Same strength rules as registration — a password chosen later should
+  // not be allowed to be weaker than one chosen at sign-up.
+  const passwordError = validatePasswordField(newPassword, { username: user.username, email: request.user.email })
+  if (passwordError) errors.newPassword = passwordError
+  else if (newPassword === currentPassword) errors.newPassword = 'Enter a new password that is different from your current one.'
+  if (newPassword !== confirmPassword) errors.confirmPassword = 'Passwords do not match.'
+  if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
+
+  const passwordHash = await bcrypt.hash(newPassword, bcryptRounds)
+  await pool.query('UPDATE users SET password_hash = $1 WHERE user_id = $2', [passwordHash, user.user_id])
+
+  // Sign out everywhere else. Sessions are independent of the password —
+  // they're rows keyed by a random id — so without this, changing a
+  // password after a compromise would leave the intruder's session working
+  // exactly as before, which is the opposite of what someone changing their
+  // password is trying to achieve.
+  //
+  // The caller's OWN session is deliberately kept (session_id != $2), so
+  // the person doing this isn't logged out of the page they're standing on.
+  const endedElsewhere = await pool.query('DELETE FROM sessions WHERE user_id = $1 AND session_id <> $2', [user.user_id, request.sessionId])
+
+  return response.json({ message: 'Password updated.', otherSessionsEnded: endedElsewhere.rowCount })
 })
 
 // PATCH /api/auth/me — self-service profile editing. Works for ANY

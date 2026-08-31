@@ -59,7 +59,15 @@ export function validateContactNumberField(contactNumber) {
 export function validatePasswordField(password, { username, email }) {
   if (Buffer.byteLength(password, 'utf8') > 72) return 'Password is too long. Use 72 bytes or fewer.'
   if (password.length < 12 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password) || !/[^A-Za-z0-9]/.test(password)) return 'Use at least 12 characters with uppercase, lowercase, number, and symbol.'
-  if (commonPasswords.has(password.toLowerCase()) || password.toLowerCase().includes(username) || password.toLowerCase().includes(email.split('@')[0])) return 'Choose a less predictable password that does not contain your username or email name.'
+
+  const lowered = password.toLowerCase()
+  const emailName = String(email ?? '').split('@')[0]
+  // The `username &&` / `emailName &&` guards matter: ''.includes('') is
+  // TRUE in JavaScript, so on a form submitted with an empty username or
+  // email this check used to fire for every password, adding a confusing
+  // "does not contain your username" error on top of the real blank-field
+  // one. An absent value simply has nothing to compare against.
+  if (commonPasswords.has(lowered) || (username && lowered.includes(username)) || (emailName && lowered.includes(emailName))) return 'Choose a less predictable password that does not contain your username or email name.'
 }
 
 export function validateAccountFields(body) {

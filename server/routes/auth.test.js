@@ -166,6 +166,76 @@ describe('customer registration and session lifecycle', () => {
     assert.ok((await response.json()).errors.email)
   })
 
+  // PATCH /api/auth/password — until this existed there was no way for
+  // anyone to change their own password, which meant an admin permanently
+  // knew the password of every staff account they created.
+  describe('changing your own password', () => {
+    const changePassword = (body, cookie = sessionCookie) =>
+      fetch(`${baseUrl}/api/auth/password`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(body) })
+
+    test('requires authentication', async () => {
+      const response = await fetch(`${baseUrl}/api/auth/password`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ currentPassword: 'x', newPassword: 'y', confirmPassword: 'y' }) })
+      assert.equal(response.status, 401)
+    })
+
+    // A valid session must not be enough on its own — otherwise anyone who
+    // got hold of a signed-in browser could lock the owner out for good.
+    test('rejects a wrong current password even though the session is valid', async () => {
+      const response = await changePassword({ currentPassword: 'not-my-password', newPassword: 'Brand-New-Password-1!', confirmPassword: 'Brand-New-Password-1!' })
+      assert.equal(response.status, 422)
+      assert.ok((await response.json()).errors.currentPassword)
+
+      // The old password must still work — nothing should have changed.
+      const stillWorks = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: customer.username, password: customer.password }) })
+      assert.equal(stillWorks.status, 200)
+    })
+
+    test('rejects a weak new password and a mismatched confirmation', async () => {
+      const weak = await changePassword({ currentPassword: customer.password, newPassword: 'short', confirmPassword: 'short' })
+      assert.equal(weak.status, 422)
+      assert.ok((await weak.json()).errors.newPassword)
+
+      const mismatched = await changePassword({ currentPassword: customer.password, newPassword: 'Brand-New-Password-1!', confirmPassword: 'Something-Else-1!' })
+      assert.equal(mismatched.status, 422)
+      assert.ok((await mismatched.json()).errors.confirmPassword)
+    })
+
+    test('rejects reusing the current password as the new one', async () => {
+      const response = await changePassword({ currentPassword: customer.password, newPassword: customer.password, confirmPassword: customer.password })
+      assert.equal(response.status, 422)
+      assert.ok((await response.json()).errors.newPassword)
+    })
+
+    test('changes the password, ends other sessions, and keeps the caller signed in', async () => {
+      // A second session for the same account, standing in for the same
+      // person signed in on another device — or an intruder.
+      const otherLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: customer.username, password: customer.password }) })
+      const otherCookie = otherLogin.headers.get('set-cookie').split(';')[0]
+      assert.equal((await fetch(`${baseUrl}/api/auth/me`, { headers: { Cookie: otherCookie } })).status, 200)
+
+      const newPassword = 'Rotated-Password-9!'
+      const response = await changePassword({ currentPassword: customer.password, newPassword, confirmPassword: newPassword })
+      assert.equal(response.status, 200)
+      assert.ok((await response.json()).otherSessionsEnded >= 1)
+
+      // The other device is signed out — otherwise changing a password
+      // after a compromise would leave the intruder's session working.
+      assert.equal((await fetch(`${baseUrl}/api/auth/me`, { headers: { Cookie: otherCookie } })).status, 401)
+      // ...but the caller's own session survives, so they aren't kicked out
+      // of the page they just used.
+      assert.equal((await fetch(`${baseUrl}/api/auth/me`, { headers: { Cookie: sessionCookie } })).status, 200)
+
+      // The old password no longer works and the new one does.
+      const oldPassword = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: customer.username, password: customer.password }) })
+      assert.equal(oldPassword.status, 401)
+      const withNew = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: customer.username, password: newPassword }) })
+      assert.equal(withNew.status, 200)
+
+      // Put it back, so the logout test below still has working credentials.
+      customer.password = newPassword
+    })
+  })
+
   test('POST /api/auth/logout ends the session', async () => {
     const logoutResponse = await fetch(`${baseUrl}/api/auth/logout`, { method: 'POST', headers: { Cookie: sessionCookie } })
     assert.equal(logoutResponse.status, 204)

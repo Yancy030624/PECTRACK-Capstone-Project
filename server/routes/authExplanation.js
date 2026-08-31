@@ -533,6 +533,89 @@ router.get('/me', requireAuth, (request, response) => {
   return response.json({ user: request.user })
 })
 
+// PATCH /api/auth/password — self-service password change, any role.
+//
+// WHY IT'S A SEPARATE ENDPOINT FROM PATCH /me. A password looks like just
+// another field on the profile form, but it behaves nothing like one: it
+// must re-prove the current value before changing, it has its own strength
+// rules, and it has a side effect none of the profile fields have (ending
+// other sessions). Folding it into /me would make that endpoint mean two
+// quite different things depending on which keys the body happened to have.
+//
+// WHY IT MATTERS THAT THIS EXISTS AT ALL. Until it did, nothing anywhere in
+// the system could change a password. Staff accounts are created by an
+// admin who picks the initial password (see routes/staff.js), and the
+// cashier or driver had no way to ever change it — so every admin
+// permanently knew every staff member's password, and a password suspected
+// of being compromised could not be rotated by its owner.
+router.patch('/password', requireAuth, async (request, response) => {
+  const currentPassword = String(request.body.currentPassword ?? '')
+  const newPassword = String(request.body.newPassword ?? '')
+  const confirmPassword = String(request.body.confirmPassword ?? '')
+
+  // request.user (from requireAuth) has the profile fields but deliberately
+  // NOT the password hash — findSessionUser never selects it. So the hash
+  // is fetched here, in the one place that legitimately needs it.
+  const result = await pool.query('SELECT user_id, username, password_hash FROM users WHERE user_id = $1', [request.user.id])
+  const user = result.rows[0]
+
+  // RE-PROVING THE CURRENT PASSWORD. The caller is already authenticated —
+  // requireAuth wouldn't have let them this far otherwise — so why ask
+  // again?
+  //
+  // Because a session and a password protect against different things. A
+  // session says "this browser was logged in at some point in the last
+  // seven days". That's fine for reading orders. It is NOT enough to hand
+  // over permanent control of the account: anyone who got hold of a
+  // signed-in browser (a shared terminal at the bakery counter, a borrowed
+  // laptop, a stolen cookie) could otherwise set a new password and lock
+  // the real owner out for good. Requiring the current password means an
+  // attacker needs the thing they most likely don't have.
+  //
+  // This is the same reasoning banks use when they ask for a PIN again
+  // before a transfer, even though you're already logged in.
+  if (!currentPassword || !(await bcrypt.compare(currentPassword, user.password_hash))) {
+    return response.status(422).json({ message: 'Please correct the highlighted fields.', errors: { currentPassword: 'That is not your current password.' } })
+  }
+
+  const errors = {}
+  // Reuses the exact same strength rules as registration and staff
+  // creation. A password chosen later shouldn't be allowed to be weaker
+  // than one chosen at sign-up — that would just be a loophole around the
+  // rules rather than a separate policy.
+  const passwordError = validatePasswordField(newPassword, { username: user.username, email: request.user.email })
+  if (passwordError) errors.newPassword = passwordError
+  // `else if` so a weak password reports the strength problem, not this —
+  // one clear reason at a time is easier to act on than two at once.
+  else if (newPassword === currentPassword) errors.newPassword = 'Enter a new password that is different from your current one.'
+  if (newPassword !== confirmPassword) errors.confirmPassword = 'Passwords do not match.'
+  if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
+
+  const passwordHash = await bcrypt.hash(newPassword, bcryptRounds)
+  await pool.query('UPDATE users SET password_hash = $1 WHERE user_id = $2', [passwordHash, user.user_id])
+
+  // ENDING OTHER SESSIONS. Sessions are rows in a table keyed by a random
+  // id (see lib/authExplanation.js) — they have no connection to the
+  // password whatsoever. Nothing about changing password_hash would, on its
+  // own, affect a session that already exists.
+  //
+  // That means without this line, someone changing their password BECAUSE
+  // they think it was compromised would achieve nothing: the intruder's
+  // session keeps working exactly as before, for up to seven more days.
+  // The single most common reason a person changes a password is to evict
+  // someone, so the change has to actually do that.
+  //
+  // `session_id <> $2` deliberately spares the caller's OWN session, so the
+  // person doing this isn't logged out of the page they're standing on —
+  // which would be confusing and would make them think it failed.
+  const endedElsewhere = await pool.query('DELETE FROM sessions WHERE user_id = $1 AND session_id <> $2', [user.user_id, request.sessionId])
+
+  // rowCount tells the UI how many devices were signed out, so it can say
+  // something concrete ("signed out on 2 other devices") rather than a bare
+  // "done" that leaves the person wondering whether it worked.
+  return response.json({ message: 'Password updated.', otherSessionsEnded: endedElsewhere.rowCount })
+})
+
 // PATCH /api/auth/me — self-service profile editing (Phase 4). The key
 // difference from routes/staff.js and routes/customers.js: those are an
 // admin/cashier editing SOMEONE ELSE's account and are scoped to specific
