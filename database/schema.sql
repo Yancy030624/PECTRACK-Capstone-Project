@@ -28,6 +28,28 @@ CREATE TABLE users (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE sessions (
+  session_id TEXT PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX sessions_user_id_idx ON sessions (user_id);
+
+-- One-time codes for admin second-factor login (sent via SMS to admins.contact_num).
+CREATE TABLE otp_codes (
+  otp_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  consumed_at TIMESTAMPTZ,
+  attempt_count SMALLINT NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX otp_codes_user_id_idx ON otp_codes (user_id);
+
 CREATE TABLE admins (
   admin_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id BIGINT NOT NULL UNIQUE REFERENCES users(user_id),
@@ -96,29 +118,35 @@ CREATE TABLE products (
   description TEXT,
   price NUMERIC(12, 2) NOT NULL CHECK (price >= 0),
   variant VARCHAR(100),
-  availability_status BOOLEAN NOT NULL DEFAULT TRUE,
-  UNIQUE (category_id, product_name, variant)
+  availability_status BOOLEAN NOT NULL DEFAULT TRUE
 );
+
+-- A plain UNIQUE(category_id, product_name, variant) would not catch duplicate
+-- rows when variant IS NULL, since NULL is never equal to NULL in a unique
+-- constraint. COALESCE folds that case into a single comparable value.
+CREATE UNIQUE INDEX products_category_name_variant_key
+  ON products (category_id, product_name, COALESCE(variant, ''));
 
 CREATE TABLE inventory (
   inventory_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   product_id BIGINT NOT NULL UNIQUE REFERENCES products(product_id) ON DELETE CASCADE,
   stock_quantity INTEGER NOT NULL DEFAULT 0 CHECK (stock_quantity >= 0),
   min_stock_level INTEGER NOT NULL DEFAULT 0 CHECK (min_stock_level >= 0),
+  expiration_date DATE,
   last_updated TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE orders (
   order_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  customer_id BIGINT NOT NULL REFERENCES customers(customer_id),
+  customer_id BIGINT REFERENCES customers(customer_id),
   processed_by BIGINT REFERENCES cashiers(cashier_id),
   address_id BIGINT REFERENCES customer_addresses(address_id),
   order_date TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   status order_status NOT NULL DEFAULT 'PLACED',
   order_type order_type NOT NULL,
   instructions TEXT,
-  delivery_address TEXT,
-  delivery_notes TEXT,
+  requested_fulfillment_time TIMESTAMPTZ,
+  requires_admin_approval BOOLEAN NOT NULL DEFAULT FALSE,
   total_amount NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (total_amount >= 0),
   CHECK (
     (order_type = 'PICKUP' AND address_id IS NULL)
@@ -131,7 +159,7 @@ CREATE TABLE order_details (
   order_id BIGINT NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,
   product_id BIGINT NOT NULL REFERENCES products(product_id),
   quantity INTEGER NOT NULL CHECK (quantity > 0),
-  status order_status NOT NULL DEFAULT 'PLACED',
+  unit_price NUMERIC(12, 2) NOT NULL CHECK (unit_price >= 0),
   UNIQUE (order_id, product_id)
 );
 
@@ -179,7 +207,9 @@ CREATE TABLE stock_alerts (
 );
 
 -- Added for cashier proposals. Only an approved request may be applied to the
--- product or inventory record by the backend service.
+-- product or inventory record by the backend service. Cashiers may only submit
+-- INVENTORY requests (stock_quantity/min_stock_level); PRODUCT_DETAILS requests
+-- (price/description/availability) are admin-only edits, not a cashier proposal.
 CREATE TABLE inventory_change_requests (
   request_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   product_id BIGINT NOT NULL REFERENCES products(product_id),
@@ -214,6 +244,7 @@ CREATE TABLE order_status_history (
   order_id BIGINT NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,
   updated_by BIGINT NOT NULL REFERENCES users(user_id),
   status order_status NOT NULL,
+  note TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
