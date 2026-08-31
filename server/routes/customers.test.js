@@ -108,6 +108,15 @@ describe('customer record management', () => {
     assert.equal(response.status, 404)
   })
 
+  // Regression: a malformed :id used to reach Postgres as an invalid
+  // bigint literal and come back as a 500 instead of a 404.
+  test('PATCH /api/customers/:id treats a malformed id as "not found"', async () => {
+    for (const badId of ['abc', 'undefined', '1.5', '99999999999999999999']) {
+      const response = await fetch(`${baseUrl}/api/customers/${badId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ name: 'Nobody' }) })
+      assert.equal(response.status, 404, `id "${badId}"`)
+    }
+  })
+
   test('PATCH /api/customers/:id lets an admin deactivate, which blocks the customer\'s next login', async () => {
     const deactivateResponse = await fetch(`${baseUrl}/api/customers/${targetCustomerId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ isActive: false }) })
     assert.equal(deactivateResponse.status, 200)

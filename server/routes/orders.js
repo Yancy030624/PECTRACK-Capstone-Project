@@ -11,6 +11,7 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
+import { parseId } from '../lib/validation.js'
 
 const router = express.Router()
 
@@ -51,17 +52,8 @@ router.get('/', async (request, response) => {
   return response.json({ orders: result.rows.map(mapOrderSummary) })
 })
 
-// A non-numeric :id (a typo'd URL, or literally the string "undefined"
-// from a frontend bug) would otherwise reach Postgres as an invalid
-// bigint literal and surface as a raw 500 — this treats it the same as
-// "no such order" instead, which is both a cleaner response and correct:
-// an id that can't possibly exist behaves exactly like one that doesn't.
-function parseOrderId(rawId) {
-  return /^\d+$/.test(rawId) ? rawId : null
-}
-
 router.get('/:id', async (request, response) => {
-  const orderId = parseOrderId(request.params.id)
+  const orderId = parseId(request.params.id)
   if (!orderId) return response.status(404).json({ message: 'Order not found.' })
 
   const orderResult = await pool.query(
@@ -133,15 +125,28 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
   const items = Array.isArray(request.body.items) ? request.body.items : []
   if (items.length === 0) return response.status(422).json({ message: 'Add at least one item to the order.', errors: { items: 'Add at least one item to the order.' } })
 
-  const parsedItems = []
+  // Accumulate into a Map keyed by productId rather than pushing one entry
+  // per submitted item. order_details has UNIQUE (order_id, product_id), so
+  // sending the same product twice would violate that constraint partway
+  // through the INSERT loop below and surface as a generic 500. Summing the
+  // quantities is also what a customer means when they add the same item to
+  // their cart twice, so this is the correct behaviour, not just a guard.
+  //
+  // parseId keeps productId a STRING (see lib/validation.js): product_id is
+  // a BIGINT, and a value past Number's safe range would otherwise reach
+  // Postgres as an out-of-range literal — another 500. Keeping it a string
+  // also means it already matches the string keys pg returns for bigint
+  // columns, so no conversion is needed at the lookup sites further down.
+  const quantityByProductId = new Map()
   for (const item of items) {
-    const productId = Number(item?.productId)
+    const productId = parseId(item?.productId)
     const quantity = Number(item?.quantity)
-    if (!productId || Number.isNaN(productId) || !Number.isInteger(quantity) || quantity <= 0) {
+    if (!productId || !Number.isInteger(quantity) || quantity <= 0) {
       return response.status(422).json({ message: 'Each item needs a valid productId and a positive whole-number quantity.', errors: { items: 'Each item needs a valid productId and a positive whole-number quantity.' } })
     }
-    parsedItems.push({ productId, quantity })
+    quantityByProductId.set(productId, (quantityByProductId.get(productId) ?? 0) + quantity)
   }
+  const parsedItems = [...quantityByProductId].map(([productId, quantity]) => ({ productId, quantity }))
 
   // Resolve who this order belongs to and who's processing it, based on
   // the caller's own role — never trust a customerId claiming to be
@@ -171,21 +176,23 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     // snapshot its CURRENT price — later price changes must never affect
     // an already-placed order.
     const productIds = parsedItems.map((item) => item.productId)
-    const productsResult = await client.query('SELECT product_id, price, availability_status FROM products WHERE product_id = ANY($1)', [productIds])
+    // ::bigint[] casts the array explicitly rather than leaving Postgres to
+    // infer a type for the string values parseId produced.
+    const productsResult = await client.query('SELECT product_id, price, availability_status FROM products WHERE product_id = ANY($1::bigint[])', [productIds])
     // pg returns bigint columns (product_id) as STRINGS, not numbers, to
-    // avoid precision loss for values beyond Number.MAX_SAFE_INTEGER —
-    // so the map is keyed by string, and every lookup below must convert
-    // item.productId (a JS number, from the validation above) to match.
+    // avoid precision loss for values beyond Number.MAX_SAFE_INTEGER — and
+    // parseId above kept item.productId a string for the same reason, so
+    // the map keys and the lookup keys already match with no conversion.
     const productsById = new Map(productsResult.rows.map((row) => [row.product_id, row]))
     for (const item of parsedItems) {
-      const product = productsById.get(String(item.productId))
+      const product = productsById.get(item.productId)
       if (!product || !product.availability_status) {
         await client.query('ROLLBACK')
         return response.status(422).json({ message: `Product ${item.productId} is not available.`, errors: { items: `Product ${item.productId} is not available.` } })
       }
     }
 
-    const totalAmount = parsedItems.reduce((sum, item) => sum + Number(productsById.get(String(item.productId)).price) * item.quantity, 0)
+    const totalAmount = parsedItems.reduce((sum, item) => sum + Number(productsById.get(item.productId).price) * item.quantity, 0)
 
     const orderResult = await client.query(
       `INSERT INTO orders (customer_id, processed_by, order_type, instructions, total_amount)
@@ -196,7 +203,7 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     const orderId = orderResult.rows[0].order_id
 
     for (const item of parsedItems) {
-      const product = productsById.get(String(item.productId))
+      const product = productsById.get(item.productId)
       await client.query('INSERT INTO order_details (order_id, product_id, quantity, unit_price) VALUES ($1, $2, $3, $4)', [orderId, item.productId, item.quantity, product.price])
     }
 
@@ -213,7 +220,7 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
 })
 
 router.patch('/:id', async (request, response) => {
-  const orderId = parseOrderId(request.params.id)
+  const orderId = parseId(request.params.id)
   if (!orderId) return response.status(404).json({ message: 'Order not found.' })
 
   const status = request.body.status

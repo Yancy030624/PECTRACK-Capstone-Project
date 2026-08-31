@@ -23,7 +23,7 @@ import { findDuplicateAccount } from '../lib/accounts.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
 // Same individual field validators PATCH /api/auth/me uses — see
 // lib/validationExplanation.js.
-import { normalize, normalizeEmail, validateContactNumberField, validateEmailField, validateName } from '../lib/validation.js'
+import { normalize, normalizeEmail, parseId, validateContactNumberField, validateEmailField, validateName } from '../lib/validation.js'
 
 const router = express.Router()
 
@@ -65,7 +65,19 @@ router.get('/', async (request, response) => {
 })
 
 router.patch('/:id', async (request, response) => {
-  const userId = request.params.id
+  // Validate the id's SHAPE before it reaches the database. user_id is a
+  // BIGINT, so a value like 'abc' (or the literal string 'undefined' from
+  // a frontend bug) makes the query itself fail inside Postgres, and that
+  // error escapes to app.js's handler as a generic 500 — "the service is
+  // broken" — when the honest answer is just "no such customer".
+  //
+  // This was originally missing here. routes/orders.js had its own local
+  // version of this check while products, customers, and staff did not,
+  // so all three returned 500s for a malformed id until a review caught
+  // it. The check now lives once in lib/validation.js and is shared.
+  const userId = parseId(request.params.id)
+  if (!userId) return response.status(404).json({ message: 'Customer not found.' })
+
   const current = await pool.query('SELECT u.user_id, u.username FROM users u JOIN customers c ON c.user_id = u.user_id WHERE u.user_id = $1', [userId])
   const target = current.rows[0]
   if (!target) return response.status(404).json({ message: 'Customer not found.' })

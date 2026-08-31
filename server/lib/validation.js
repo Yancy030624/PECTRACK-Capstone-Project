@@ -11,6 +11,31 @@ const commonPasswords = new Set(['password', 'password123', '12345678', 'qwerty1
 export const normalize = (value) => String(value ?? '').trim()
 export const normalizeEmail = (value) => normalize(value).toLowerCase()
 
+// Largest value a Postgres BIGINT can hold. Written as a BigInt literal
+// (the trailing n) because this number is bigger than Number can represent
+// exactly — comparing it as a plain number would silently round.
+const maxBigIntValue = 9223372036854775807n
+
+// Validates a database id that arrived as text — a :id route param, or a
+// productId inside a request body. Postgres rejects anything that isn't a
+// valid BIGINT literal (error 22P02 for 'abc', 22003 for a value past the
+// range above), and since those errors happen inside the query they'd
+// surface to the client as a generic 500 rather than "no such record".
+// Checking the shape up front lets the route answer 404/422 instead, which
+// is both cleaner AND correct: an id that could never exist behaves
+// exactly like one that doesn't.
+//
+// Returns the id as a STRING, never a Number. Bigint values can exceed
+// Number.MAX_SAFE_INTEGER, and pg already returns them as strings, so
+// staying in string form keeps comparisons consistent and avoids any
+// precision loss.
+export function parseId(rawId) {
+  const value = normalize(rawId)
+  if (!/^\d+$/.test(value)) return null
+  if (BigInt(value) > maxBigIntValue) return null
+  return value
+}
+
 // Each validator returns an error message string, or undefined when valid —
 // callers do `const error = validateX(value); if (error) errors.x = error`.
 

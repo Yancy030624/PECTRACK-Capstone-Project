@@ -17,6 +17,9 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
+// Shared id-shape validation — see lib/validationExplanation.js for why
+// every route that looks a record up by id has to run this first.
+import { parseId } from '../lib/validation.js'
 
 const router = express.Router()
 
@@ -70,15 +73,18 @@ router.get('/', async (request, response) => {
 // A non-numeric :id (a typo'd URL, or literally the string "undefined" —
 // this actually happened once, from a test bug during development) would
 // otherwise reach Postgres as an invalid bigint literal and surface as a
-// raw 500. This treats it the same as "no such order" instead, which is
+// raw 500. parseId treats it the same as "no such order" instead, which is
 // both a cleaner response and arguably more correct: an id that can't
 // possibly exist behaves exactly like one that doesn't.
-function parseOrderId(rawId) {
-  return /^\d+$/.test(rawId) ? rawId : null
-}
-
+//
+// This check used to live here as a local `parseOrderId` helper, which is
+// why orders was the ONLY router that handled it — a later review found
+// the same 500 sitting open in products, customers, and staff. It now
+// lives in lib/validation.js as `parseId` so every route shares one
+// implementation, and it additionally rejects ids that are all digits but
+// too large for a BIGINT column (see that file for the full reasoning).
 router.get('/:id', async (request, response) => {
-  const orderId = parseOrderId(request.params.id)
+  const orderId = parseId(request.params.id)
   if (!orderId) return response.status(404).json({ message: 'Order not found.' })
 
   const orderResult = await pool.query(
@@ -169,15 +175,46 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
   // Validate the SHAPE of every item before touching the database at
   // all — a malformed item anywhere in the array rejects the whole
   // request up front, rather than partially processing then failing.
-  const parsedItems = []
+  //
+  // Note this accumulates into a Map keyed by productId rather than
+  // pushing one entry per submitted item. That is deliberate, and it fixes
+  // a real bug: order_details has UNIQUE (order_id, product_id), so an
+  // order listing the same product twice used to violate that constraint
+  // partway through the INSERT loop further down. The transaction rolled
+  // back correctly, but the error escaped as a generic 500. And "the same
+  // product twice" is not an exotic input — it is exactly what a shopping
+  // cart sends when someone clicks "add to cart" on an item they already
+  // added.
+  //
+  // Summing the quantities is the RIGHT answer rather than merely a safe
+  // one: 1 of something plus 2 more of it is an order for 3, which is what
+  // the customer meant. Rejecting the request would have been defensible
+  // but worse for the person using it.
+  //
+  // parseId (not Number) keeps productId a STRING. Two reasons:
+  //   1. product_id is a BIGINT. A value past Number's safe range would
+  //      pass a Number-based check and only fail once Postgres rejected
+  //      the literal — as a 500, not a validation error.
+  //   2. pg returns bigint columns AS STRINGS, so keeping our ids in the
+  //      same form means the Map built below is keyed identically to the
+  //      values we look up with. An earlier version converted with
+  //      Number() here and had to convert back with String() at three
+  //      separate lookup sites — and missing one of those conversions was
+  //      itself a bug during development, because a Map keyed by the
+  //      string '7' never matches a lookup for the number 7.
+  const quantityByProductId = new Map()
   for (const item of items) {
-    const productId = Number(item?.productId)
+    const productId = parseId(item?.productId)
     const quantity = Number(item?.quantity)
-    if (!productId || Number.isNaN(productId) || !Number.isInteger(quantity) || quantity <= 0) {
+    // Number.isInteger rejects 1.5, NaN, and Infinity in one check —
+    // quantities are whole units of a baked good, never fractional.
+    if (!productId || !Number.isInteger(quantity) || quantity <= 0) {
       return response.status(422).json({ message: 'Each item needs a valid productId and a positive whole-number quantity.', errors: { items: 'Each item needs a valid productId and a positive whole-number quantity.' } })
     }
-    parsedItems.push({ productId, quantity })
+    quantityByProductId.set(productId, (quantityByProductId.get(productId) ?? 0) + quantity)
   }
+  // Flatten back to the array shape the rest of this handler expects.
+  const parsedItems = [...quantityByProductId].map(([productId, quantity]) => ({ productId, quantity }))
 
   // Resolve who this order belongs to and who's processing it, based on
   // the CALLER'S OWN role and session — never trust a customerId in the
@@ -212,17 +249,26 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     // available, and snapshot its CURRENT price — a price change made
     // after this order is placed must never retroactively affect it.
     const productIds = parsedItems.map((item) => item.productId)
-    const productsResult = await client.query('SELECT product_id, price, availability_status FROM products WHERE product_id = ANY($1)', [productIds])
+    // The ::bigint[] cast tells Postgres exactly what type the array holds
+    // instead of leaving it to infer one from the string values parseId
+    // produced.
+    const productsResult = await client.query('SELECT product_id, price, availability_status FROM products WHERE product_id = ANY($1::bigint[])', [productIds])
     // pg returns bigint columns (product_id) as STRINGS, not numbers, to
-    // avoid precision loss for values beyond Number.MAX_SAFE_INTEGER —
-    // so this map is keyed by string, and every lookup below converts
-    // item.productId (a JS number, from the validation above) to match.
-    // Getting this wrong was a real bug during development: without the
-    // String() conversion, every product silently looked "not found"
-    // even though the query itself returned the right rows.
+    // avoid precision loss for values beyond Number.MAX_SAFE_INTEGER — and
+    // parseId kept item.productId a string for the same reason, so this
+    // map's keys and the lookup keys below already match with no
+    // conversion at all.
+    //
+    // An earlier version converted ids to numbers during validation and
+    // then had to convert back with String() at each of the three lookup
+    // sites below. That was a real bug during development: miss one of
+    // those conversions and every product silently looks "not found", even
+    // though the query itself returned exactly the right rows — because a
+    // Map keyed by the string '7' never matches a lookup for the number 7.
+    // Keeping one type throughout removes the chance to get it wrong.
     const productsById = new Map(productsResult.rows.map((row) => [row.product_id, row]))
     for (const item of parsedItems) {
-      const product = productsById.get(String(item.productId))
+      const product = productsById.get(item.productId)
       if (!product || !product.availability_status) {
         await client.query('ROLLBACK')
         return response.status(422).json({ message: `Product ${item.productId} is not available.`, errors: { items: `Product ${item.productId} is not available.` } })
@@ -235,7 +281,7 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     // safe because this app doesn't yet support editing an order's items
     // after creation; if it did, every edit would need to recompute this
     // the same way, or the two would drift out of sync.
-    const totalAmount = parsedItems.reduce((sum, item) => sum + Number(productsById.get(String(item.productId)).price) * item.quantity, 0)
+    const totalAmount = parsedItems.reduce((sum, item) => sum + Number(productsById.get(item.productId).price) * item.quantity, 0)
 
     const orderResult = await client.query(
       `INSERT INTO orders (customer_id, processed_by, order_type, instructions, total_amount)
@@ -246,7 +292,7 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     const orderId = orderResult.rows[0].order_id
 
     for (const item of parsedItems) {
-      const product = productsById.get(String(item.productId))
+      const product = productsById.get(item.productId)
       await client.query('INSERT INTO order_details (order_id, product_id, quantity, unit_price) VALUES ($1, $2, $3, $4)', [orderId, item.productId, item.quantity, product.price])
     }
 
@@ -276,7 +322,7 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
 // second requireRole (which can only express "allowed" or "not", not
 // "allowed, but only for your own order, and only in this direction").
 router.patch('/:id', async (request, response) => {
-  const orderId = parseOrderId(request.params.id)
+  const orderId = parseId(request.params.id)
   if (!orderId) return response.status(404).json({ message: 'Order not found.' })
 
   const status = request.body.status

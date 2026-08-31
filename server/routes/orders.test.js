@@ -130,6 +130,39 @@ describe('order management', () => {
     assert.equal(response.status, 422)
   })
 
+  // Regression: order_details has UNIQUE (order_id, product_id), so the
+  // same product listed twice used to violate it partway through the
+  // INSERT loop and surface as a 500. Quantities are merged instead —
+  // which is also what a cart sending "add this again" actually means.
+  test('POST /api/orders merges repeated products instead of failing on the unique constraint', async () => {
+    const response = await fetch(`${baseUrl}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: customerCookie },
+      body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 1 }, { productId: availableProductId, quantity: 2 }] }),
+    })
+    assert.equal(response.status, 201)
+    const body = await response.json()
+    assert.equal(body.order.totalAmount, '136.50') // 45.50 * (1 + 2), not two separate rows
+    createdOrderIds.push(body.order.id)
+
+    const { rows } = await pool.query('SELECT quantity FROM order_details WHERE order_id = $1', [body.order.id])
+    assert.equal(rows.length, 1, 'the two entries should have become one row')
+    assert.equal(rows[0].quantity, 3)
+  })
+
+  // Regression: a productId past the BIGINT range is all digits, so it got
+  // through the old Number()-based check and only failed once Postgres
+  // rejected the literal — as a 500 rather than a validation error.
+  test('POST /api/orders rejects a productId too large to be a bigint', async () => {
+    const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: '99999999999999999999', quantity: 1 }] }) })
+    assert.equal(response.status, 422)
+  })
+
+  test('POST /api/orders rejects a non-numeric productId', async () => {
+    const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: 'abc', quantity: 1 }] }) })
+    assert.equal(response.status, 422)
+  })
+
   let customerOrderId
 
   test('POST /api/orders lets a customer place their own order with a correctly snapshotted total', async () => {
@@ -229,6 +262,18 @@ describe('order management', () => {
   test('PATCH /api/orders/:id rejects an invalid status value', async () => {
     const response = await fetch(`${baseUrl}/api/orders/${customerOrderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'NOT_A_REAL_STATUS' }) })
     assert.equal(response.status, 422)
+  })
+
+  // Regression: a malformed :id used to reach Postgres as an invalid
+  // bigint literal and come back as a 500. It should be indistinguishable
+  // from an order that simply doesn't exist.
+  test('a malformed :id is treated as "not found", never a server error', async () => {
+    for (const badId of ['abc', 'undefined', '1.5', '99999999999999999999']) {
+      const read = await fetch(`${baseUrl}/api/orders/${badId}`, { headers: { Cookie: adminCookie } })
+      assert.equal(read.status, 404, `GET with id "${badId}"`)
+      const write = await fetch(`${baseUrl}/api/orders/${badId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'CONFIRMED' }) })
+      assert.equal(write.status, 404, `PATCH with id "${badId}"`)
+    }
   })
 
   test('routes reject delivery personnel entirely for now', async () => {

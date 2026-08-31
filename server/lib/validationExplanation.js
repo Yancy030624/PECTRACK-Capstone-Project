@@ -26,6 +26,48 @@ export const normalize = (value) => String(value ?? '').trim()
 // same address when checking for duplicates or logging in.
 export const normalizeEmail = (value) => normalize(value).toLowerCase()
 
+// The largest value a Postgres BIGINT column can hold. The trailing `n`
+// makes this a BigInt literal rather than a normal number — necessary
+// because this value is larger than JavaScript's Number can represent
+// exactly, so writing it without the `n` would silently round it and make
+// the comparison below wrong.
+const maxBigIntValue = 9223372036854775807n
+
+// Validates a database id that arrived as TEXT — either a :id route
+// parameter (`/api/products/7` gives you the string '7') or a productId
+// inside a JSON request body.
+//
+// WHY this exists: all our primary keys are BIGINT. When Postgres is asked
+// to compare a BIGINT column against something that isn't a valid bigint
+// literal, the QUERY ITSELF fails:
+//   'abc'                  -> error 22P02, invalid input syntax
+//   '99999999999999999999' -> error 22003, value out of range
+// Those failures happen inside the database, so they bubble up to app.js's
+// global error handler and reach the user as a generic 500 — "the service
+// is broken" — when the honest answer is just "no such record". Any
+// frontend bug that puts `undefined` in a URL would trigger it.
+//
+// Checking the SHAPE of the id before querying lets each route answer with
+// a normal 404 (or 422 for a body field) instead. That's not merely
+// prettier: an id that could never exist behaves exactly like one that
+// doesn't, which is the truthful response.
+//
+// WHY it returns a string and never a Number: bigint values can exceed
+// Number.MAX_SAFE_INTEGER, where converting to a Number loses precision.
+// The pg driver already hands bigint columns back as strings for that same
+// reason, so keeping ids as strings end-to-end means our values and the
+// database's values are always directly comparable — no conversion at the
+// call sites, and no chance of a silently mangled id. (routes/orders.js
+// depends on exactly this when it keys a Map of products by id.)
+export function parseId(rawId) {
+  const value = normalize(rawId)
+  // Digits only — this also rejects '', '1.5', '-1', and ' 12 ' after trim.
+  if (!/^\d+$/.test(value)) return null
+  // Shape is fine but the number may still be too big for the column.
+  if (BigInt(value) > maxBigIntValue) return null
+  return value
+}
+
 // Runs every field from an account-creation form through checks BEFORE
 // anything touches the database. This is "server-side validation" — even
 // though the React form already checks some of this, a malicious user

@@ -185,6 +185,19 @@ describe('product catalog management', () => {
     const { rows } = await pool.query('SELECT 1 FROM inventory WHERE product_id = $1', [productId])
     assert.equal(rows.length, 0, 'inventory row should be cascade-deleted along with the product')
   })
+
+  // Regression: a malformed :id used to reach Postgres as an invalid
+  // bigint literal and come back as a 500 on all three handlers.
+  test('a malformed :id is treated as "not found" on read, update, and delete', async () => {
+    for (const badId of ['abc', 'undefined', '1.5', '99999999999999999999']) {
+      const read = await fetch(`${baseUrl}/api/products/${badId}`, { headers: { Cookie: adminCookie } })
+      assert.equal(read.status, 404, `GET with id "${badId}"`)
+      const update = await fetch(`${baseUrl}/api/products/${badId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ price: 10 }) })
+      assert.equal(update.status, 404, `PATCH with id "${badId}"`)
+      const remove = await fetch(`${baseUrl}/api/products/${badId}`, { method: 'DELETE', headers: { Cookie: adminCookie } })
+      assert.equal(remove.status, 404, `DELETE with id "${badId}"`)
+    }
+  })
 })
 
 after(async () => {

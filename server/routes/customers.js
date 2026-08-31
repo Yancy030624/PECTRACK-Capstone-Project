@@ -9,7 +9,7 @@ import express from 'express'
 import { pool } from '../db.js'
 import { findDuplicateAccount } from '../lib/accounts.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
-import { normalize, normalizeEmail, validateContactNumberField, validateEmailField, validateName } from '../lib/validation.js'
+import { normalize, normalizeEmail, parseId, validateContactNumberField, validateEmailField, validateName } from '../lib/validation.js'
 
 const router = express.Router()
 
@@ -40,7 +40,12 @@ router.get('/', async (request, response) => {
 })
 
 router.patch('/:id', async (request, response) => {
-  const userId = request.params.id
+  // A malformed id can never match a real customer, so it gets the same
+  // 404 as a nonexistent one — without this it would reach Postgres as an
+  // invalid bigint literal and surface as a generic 500 instead.
+  const userId = parseId(request.params.id)
+  if (!userId) return response.status(404).json({ message: 'Customer not found.' })
+
   const current = await pool.query('SELECT u.user_id, u.username FROM users u JOIN customers c ON c.user_id = u.user_id WHERE u.user_id = $1', [userId])
   const target = current.rows[0]
   if (!target) return response.status(404).json({ message: 'Customer not found.' })

@@ -17,7 +17,7 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
-import { normalize } from '../lib/validation.js'
+import { normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
 
@@ -108,7 +108,16 @@ router.get('/', async (request, response) => {
 })
 
 router.get('/:id', async (request, response) => {
-  const result = await pool.query(`${productSelectQuery} WHERE p.product_id = $1`, [request.params.id])
+  // product_id is a BIGINT, so an id that isn't a valid bigint literal
+  // makes the query fail inside Postgres and escape as a generic 500. All
+  // three handlers in this file (get, patch, delete) had that hole open
+  // until a review found it — parseId closes it by answering 404 instead,
+  // which is also the truthful answer: an id that could never exist
+  // behaves exactly like one that doesn't. See lib/validationExplanation.js.
+  const productId = parseId(request.params.id)
+  if (!productId) return response.status(404).json({ message: 'Product not found.' })
+
+  const result = await pool.query(`${productSelectQuery} WHERE p.product_id = $1`, [productId])
   const row = result.rows[0]
   // A customer asking for a hidden product gets the exact same 404 as a
   // genuinely nonexistent one — the response never confirms the product
@@ -158,7 +167,11 @@ router.post('/', requireRole('ADMIN'), async (request, response) => {
 })
 
 router.patch('/:id', requireRole('ADMIN'), async (request, response) => {
-  const existing = await pool.query('SELECT product_id FROM products WHERE product_id = $1', [request.params.id])
+  // Same id-shape guard as GET above — see that comment for why.
+  const productId = parseId(request.params.id)
+  if (!productId) return response.status(404).json({ message: 'Product not found.' })
+
+  const existing = await pool.query('SELECT product_id FROM products WHERE product_id = $1', [productId])
   if (!existing.rows[0]) return response.status(404).json({ message: 'Product not found.' })
 
   const { errors, values } = validateProductFields(request.body, { partial: true })
@@ -194,7 +207,7 @@ router.patch('/:id', requireRole('ADMIN'), async (request, response) => {
         values.variant ?? null,
         values.price ?? null,
         values.availabilityStatus ?? null,
-        request.params.id,
+        productId,
       ],
     )
   } catch (error) {
@@ -203,13 +216,17 @@ router.patch('/:id', requireRole('ADMIN'), async (request, response) => {
     throw error
   }
 
-  const updated = await pool.query(`${productSelectQuery} WHERE p.product_id = $1`, [request.params.id])
+  const updated = await pool.query(`${productSelectQuery} WHERE p.product_id = $1`, [productId])
   return response.json({ product: mapProductRow(updated.rows[0]) })
 })
 
 router.delete('/:id', requireRole('ADMIN'), async (request, response) => {
+  // Same id-shape guard as the two handlers above.
+  const productId = parseId(request.params.id)
+  if (!productId) return response.status(404).json({ message: 'Product not found.' })
+
   try {
-    const result = await pool.query('DELETE FROM products WHERE product_id = $1', [request.params.id])
+    const result = await pool.query('DELETE FROM products WHERE product_id = $1', [productId])
     if (result.rowCount === 0) return response.status(404).json({ message: 'Product not found.' })
     return response.status(204).end()
   } catch (error) {

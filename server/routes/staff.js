@@ -8,7 +8,7 @@ import express from 'express'
 import { pool } from '../db.js'
 import { bcryptRounds, findDuplicateAccount } from '../lib/accounts.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
-import { normalize, normalizeEmail, validateAccountFields, validateContactNumberField, validateEmailField, validateName } from '../lib/validation.js'
+import { normalize, normalizeEmail, parseId, validateAccountFields, validateContactNumberField, validateEmailField, validateName } from '../lib/validation.js'
 
 const router = express.Router()
 
@@ -99,7 +99,11 @@ router.post('/', async (request, response) => {
 // "deactivate and recreate" than an edit), and username isn't meant to
 // change once set.
 router.patch('/:id', async (request, response) => {
-  const userId = request.params.id
+  // Same reasoning as routes/customers.js — an id that can't be a valid
+  // bigint gets the "not found" answer rather than crashing the query.
+  const userId = parseId(request.params.id)
+  if (!userId) return response.status(404).json({ message: 'Staff account not found.' })
+
   const current = await pool.query(
     `SELECT u.user_id, u.username, u.user_type FROM users u WHERE u.user_id = $1 AND u.user_type IN ('CASHIER', 'DELIVERY_PERSONNEL')`,
     [userId],
