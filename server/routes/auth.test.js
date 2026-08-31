@@ -325,6 +325,38 @@ describe('account lockout cannot be extended indefinitely', () => {
     assert.equal(state.locked_until, null)
   })
 
+  // Regression: /login used to skip the bcrypt comparison entirely when no
+  // account matched, so a missing username answered in ~3ms while a real
+  // one took ~250ms. Both replies said "Invalid credentials", but the
+  // response TIME did not — a reliable way to discover which usernames are
+  // real, defeating the point of the identical error message.
+  //
+  // This is a timing test, so it compares MEDIANS over several samples and
+  // allows a generous margin. The gap it guards against was ~215ms; a
+  // correct implementation sits near zero.
+  test('a wrong password takes the same time whether or not the account exists', async () => {
+    const medianLoginMs = async (identifier) => {
+      const samples = []
+      for (let sample = 0; sample < 9; sample += 1) {
+        // Keep the account unlocked so this measures the password hash,
+        // not the (much faster) already-locked path.
+        await pool.query('UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE user_id = $1', [createdUserId])
+        const startedAt = process.hrtime.bigint()
+        await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier, password: 'definitely-the-wrong-password' }) })
+        samples.push(Number(process.hrtime.bigint() - startedAt) / 1e6)
+      }
+      return samples.sort((a, b) => a - b)[Math.floor(samples.length / 2)]
+    }
+
+    const existing = await medianLoginMs(victim.username)
+    const missing = await medianLoginMs(`no_such_user_${runId}`)
+
+    assert.ok(
+      Math.abs(existing - missing) < 100,
+      `login timing must not reveal whether an account exists (real ${existing.toFixed(1)}ms vs missing ${missing.toFixed(1)}ms)`,
+    )
+  })
+
   test('one typo after a lock expires starts a fresh window instead of re-locking immediately', async () => {
     // Put the account back into "was locked, lock has now expired" with the
     // counter still at the limit — the exact state that used to re-lock on

@@ -65,6 +65,19 @@ const otpCodeDurationMs = 5 * 60 * 1000
 // attempts per code closes that door.
 const otpMaxAttempts = 5
 
+// A real bcrypt hash of a value nobody can ever submit. It exists purely so
+// that /login always has SOMETHING to run bcrypt.compare against, even when
+// the username doesn't exist — see the long comment at its use site in
+// /login for why doing that work "for nothing" is the whole point.
+//
+// hashSync (not the async hash) because this runs once at module load,
+// before the server starts accepting requests, so there's no request being
+// blocked by it. Generating it instead of hardcoding a hash string means it
+// automatically uses whatever cost factor bcryptRounds is set to — if that
+// value is ever raised, this stays in step with the real hashes and keeps
+// taking the same amount of time as them.
+const dummyPasswordHash = bcrypt.hashSync('no-account-with-this-password', bcryptRounds)
+
 // --- OTP helpers (admin second factor) -------------------------------
 
 // crypto.randomInt(0, 1_000_000) gives 0–999999; padStart forces it to
@@ -233,18 +246,43 @@ router.post('/login', async (request, response) => {
   )
   const user = result.rows[0]
 
-  // This line deliberately checks ALL failure reasons together (no such
-  // user, inactive account, currently locked, OR wrong password) and
-  // always returns the SAME generic "Invalid credentials" message for
-  // every case. This is intentional: if the error message were different
-  // for "no such user" vs. "wrong password", an attacker could use that
-  // difference to figure out which usernames/emails actually exist in the
-  // system (a "user enumeration" vulnerability).
-  //
   // `await bcrypt.compare(...)` re-hashes the submitted password with the
-  // same salt stored in the hash and checks if it matches — this is how
-  // you "check" a bcrypt password; you never reverse the hash.
-  const invalidCredentials = !user || !user.is_active || (user.locked_until && new Date(user.locked_until) > new Date()) || !(await bcrypt.compare(password, user.password_hash))
+  // same salt stored in the hash and checks whether it matches — this is
+  // how you "check" a bcrypt password; you never reverse the hash.
+  //
+  // WHY THIS RUNS EVEN WHEN THERE IS NO ACCOUNT. The check below
+  // deliberately treats ALL failure reasons the same (no such user,
+  // inactive account, currently locked, wrong password) and returns one
+  // identical "Invalid credentials" message for every case — so that an
+  // attacker can't tell which usernames and emails are real.
+  //
+  // But a message is only half of what a response reveals. The original
+  // version of this code was a single || chain:
+  //
+  //   !user || !user.is_active || locked || !(await bcrypt.compare(...))
+  //
+  // and || SHORT-CIRCUITS: as soon as `!user` was true, JavaScript stopped
+  // and never reached the bcrypt call. bcrypt is deliberately slow — about
+  // 250ms at 12 rounds, which is the entire point of using it — so a
+  // request for a username that didn't exist came back in ~3ms while a real
+  // username took ~250ms. The words were identical; the CLOCK was not.
+  // Anyone could sort real accounts from fake ones just by timing the
+  // replies, which is precisely the attack the shared message was written
+  // to prevent. (Measured before the fix: a ~215ms gap. After: ~1.5ms.)
+  //
+  // The fix is to always do the same amount of work. When there's no
+  // account, `user?.password_hash ?? dummyPasswordHash` hands bcrypt a real
+  // throwaway hash to check against instead. It can never match — nobody
+  // can submit the string it was made from — but it burns the same ~250ms,
+  // so the response time carries no information either way.
+  //
+  // This is why the result is computed on its own line first rather than
+  // left inline in the || chain: the whole point is that it must NOT be
+  // skippable. `isLocked` is pulled out for the same reason — to keep the
+  // final condition readable now that it's no longer doing the work.
+  const passwordMatches = await bcrypt.compare(password, user?.password_hash ?? dummyPasswordHash)
+  const isLocked = Boolean(user?.locked_until && new Date(user.locked_until) > new Date())
+  const invalidCredentials = !user || !user.is_active || isLocked || !passwordMatches
 
   if (invalidCredentials) {
     // Only increment the failed-attempt counter if a real user was found —

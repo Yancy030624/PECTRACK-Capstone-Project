@@ -15,6 +15,12 @@ const lockDurationMinutes = 15
 const otpCodeDurationMs = 5 * 60 * 1000
 const otpMaxAttempts = 5
 
+// A real bcrypt hash of a value no one can submit, used only to give
+// /login something to compare against when there's no account. See the
+// comment at its use site for why that matters. Generated once at startup
+// rather than hardcoded so it always matches the current cost factor.
+const dummyPasswordHash = bcrypt.hashSync('no-account-with-this-password', bcryptRounds)
+
 function generateOtpCode() {
   return crypto.randomInt(0, 1_000_000).toString().padStart(6, '0')
 }
@@ -86,7 +92,23 @@ router.post('/login', async (request, response) => {
     [identifier],
   )
   const user = result.rows[0]
-  const invalidCredentials = !user || !user.is_active || (user.locked_until && new Date(user.locked_until) > new Date()) || !(await bcrypt.compare(password, user.password_hash))
+
+  // The bcrypt comparison runs on EVERY login attempt, including ones for
+  // usernames that don't exist — that's the point, and it's why the result
+  // is computed here instead of inline in the || chain below.
+  //
+  // bcrypt is deliberately slow (~250ms at 12 rounds). The previous version
+  // short-circuited, so a nonexistent or locked account skipped the hash
+  // entirely and answered in ~3ms while a real account took ~250ms. Both
+  // replies said "Invalid credentials", but the RESPONSE TIME didn't — and
+  // that difference is a reliable oracle for discovering which usernames
+  // and emails are real, which is exactly what the identical error message
+  // was written to prevent. Comparing against a throwaway hash when there's
+  // no account spends the same time either way, so the timing carries no
+  // information.
+  const passwordMatches = await bcrypt.compare(password, user?.password_hash ?? dummyPasswordHash)
+  const isLocked = Boolean(user?.locked_until && new Date(user.locked_until) > new Date())
+  const invalidCredentials = !user || !user.is_active || isLocked || !passwordMatches
   if (invalidCredentials) {
     if (user) {
       // The WHERE clause is what stops an attacker from holding a known
