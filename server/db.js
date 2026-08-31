@@ -3,6 +3,25 @@ import { config } from './config.js'
 
 const { Pool } = pg
 
+// By default, pg parses a DATE column into a JS Date object set to
+// LOCAL midnight of that calendar date — not UTC midnight, despite what
+// the type's own name suggests. That becomes a real bug the moment the
+// value is serialized: Express's response.json() calls .toISOString() on
+// any Date, which is always UTC, so a local midnight gets shifted by
+// whatever the server's UTC offset is. On this machine (UTC+8, fitting
+// for a bakery in Lucban, Quezon) an expiration_date of '2026-12-31'
+// round-tripped through the API as '2026-12-30T16:00:00.000Z' — the
+// WRONG calendar date, silently, with no error anywhere.
+//
+// A DATE column has no time-of-day or timezone component in Postgres —
+// it's just a calendar date. Overriding the parser to return the raw
+// 'YYYY-MM-DD' string pg already receives over the wire removes the
+// Date-object detour (and its implicit, ambiguous local-vs-UTC
+// assumption) entirely, for every DATE column in this app, not just
+// inventory.expiration_date. 1082 is Postgres's fixed OID for the date
+// type — `SELECT oid FROM pg_type WHERE typname = 'date'`.
+pg.types.setTypeParser(1082, (value) => value)
+
 export const pool = new Pool({
   host: config.db.host,
   port: config.db.port,
