@@ -202,13 +202,23 @@ CREATE TABLE order_details (
 CREATE TABLE payments (
   payment_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   order_id BIGINT NOT NULL REFERENCES orders(order_id),
-  recorded_by BIGINT REFERENCES cashiers(cashier_id),
+  -- users(user_id), not cashiers(cashier_id): an ADMIN can record a payment
+  -- and must be able to record a refund (PHASE6_PLAN.md, Decision 8), and
+  -- admins have no cashier_id. Same reasoning as order_status_history.
+  -- updated_by and inventory_movements.changed_by.
+  recorded_by BIGINT REFERENCES users(user_id),
   payment_method VARCHAR(50) NOT NULL,
   amount NUMERIC(12, 2) NOT NULL CHECK (amount >= 0),
   status payment_status NOT NULL DEFAULT 'PENDING',
   gateway_reference VARCHAR(255) UNIQUE,
   payment_date TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- A refund flips PAID -> REFUNDED. A payment has exactly one status
+  -- transition worth auditing, so three columns cover it completely
+  -- without a full history table (PHASE6_PLAN.md, Decision 8).
+  refunded_by BIGINT REFERENCES users(user_id),
+  refunded_at TIMESTAMPTZ,
+  refund_reason TEXT
 );
 
 CREATE TABLE deliveries (
@@ -335,6 +345,17 @@ CREATE UNIQUE INDEX inventory_change_requests_one_pending_per_product_idx
   ON inventory_change_requests (product_id) WHERE status = 'PENDING';
 CREATE INDEX order_status_history_order_id_idx ON order_status_history (order_id, updated_at);
 CREATE INDEX inventory_movements_inventory_id_idx ON inventory_movements (inventory_id, created_at DESC);
+-- At most one PENDING gateway-initiated payment per order (Phase 6.5 —
+-- PayMongo Checkout Sessions). A confirmed gateway payment cannot simply
+-- be refused if it would overpay the order the way the manual cash/GCash
+-- path can, because by then the customer's money has already moved
+-- (PHASE6.5_PLAN.md, Decision 9) — so a double-click creating two PENDING
+-- intents has to be stopped here, before either can be completed. Same
+-- partial-index shape as inventory_change_requests_one_pending_per_product_idx
+-- above, for the same reason: it must not touch the PAID/FAILED/REFUNDED
+-- history a payment row accumulates.
+CREATE UNIQUE INDEX payments_one_pending_per_order_idx
+  ON payments (order_id) WHERE status = 'PENDING';
 
 -- Attach the set_updated_at() function defined at the top of this file to
 -- every table that carries an updated_at column. BEFORE UPDATE so the new
