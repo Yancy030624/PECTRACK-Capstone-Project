@@ -112,7 +112,9 @@ Checked against the live database and the code, not assumed:
   word "analytics" will tempt you toward a trend line with a projection on
   it; do not. A chart of the last 30 days is reporting. The same chart with
   a dotted line extending into next week is Phase 9.
-- **New chart libraries.** Decision 8.
+- **Any charting beyond Chart.js itself.** No `react-chartjs-2` or other
+  wrapper, and no charting on figures the paper doesn't ask for a chart on
+  — see Decision 8.
 - **PDF export.** Needs a dependency (`pdfkit`/`puppeteer`) for a format
   nobody has asked for. CSV needs none.
 - **Materialized views, caching, or a reporting database.** At bakery
@@ -317,22 +319,37 @@ already being recorded and never looked at.
 Open `stock_alerts` (`is_resolved = FALSE`) become the "needs attention"
 list. This is the first time those rows are read by anything but a test.
 
-### Decision 8 — no charting library; bars are CSS
+### Decision 8 — Chart.js, because the approved thesis paper names it
 
-The reporting screen needs to show trends, and the reflex is
-`npm install recharts`. `PHASES-RULES-PLANNING.md` is explicit: do not add
-libraries without a clear reason. Phase 7 declined `multer` and read raw
-bytes with `express.raw()`; Phase 6.5 declined an SDK and called PayMongo
-with `fetch`.
+**Corrected from the original draft of this plan**, which reasoned from
+`PHASES-RULES-PLANNING.md`'s "do not add libraries without a clear reason"
+alone and concluded CSS bars needed no dependency. That reasoning was
+sound on its own terms but incomplete: it did not check `docs/PECTRACK.pdf`
+first. The paper's "Technologies to be Used" section names **Chart.js
+(Version 4.5)** explicitly, and states its purpose as generating "daily
+sales, revenue summaries, inventory statistics, and product performance
+charts" — Phase 8's scope, verbatim. That is the clear reason the rule
+asks for; it was just sitting in a different document. For a thesis
+system, matching a defended, diagrammed technology choice outweighs the
+bundle-size argument that would otherwise favor hand-rolled CSS bars.
 
-A bar chart here is a row of `<div>`s with a percentage height and a
-Tailwind background — roughly fifteen lines, no dependency, no bundle cost,
-and it matches the existing visual language exactly. Recharts is ~500kB for
-a handful of bars.
+So: **`chart.js` is a real dependency of this phase**, added to
+`package.json` as exactly that package — not `react-chartjs-2` or another
+wrapper, since the paper names the library itself and this codebase's
+existing pattern (`fetch` over an SDK, `express.raw()` over `multer`) is
+to avoid a convenience wrapper around a dependency already justified on
+its own. Wire it into React directly: a `<canvas>` ref, a `Chart` instance
+created in a `useEffect`, and `chart.destroy()` in that effect's cleanup
+(and before creating a replacement on data change) — Chart.js does not
+know when React unmounts or re-renders its canvas, and skipping the
+cleanup leaks one `Chart` instance per re-render, each still attached to
+a canvas no longer on the page.
 
-If a genuinely chart-shaped need appears later (overlaid series, zoom,
-tooltips on dense time series), that is a real reason and a separate
-decision. "It would look nicer" is not one yet.
+Used for the sales-over-time bucket chart (line or bar, matching
+`groupBy`) and the product-performance ranking (bar). Kept to those two:
+the paper justifies the library, not a chart on every number Phase 8
+computes — a single KPI like "today's collected" is still a plain figure,
+the same shape `DashboardHome`'s existing cards already use.
 
 ### Decision 9 — aggregate in SQL, and do not optimise anything yet
 
@@ -528,7 +545,8 @@ Staff pick a date range and a grouping, press Generate
   filters and pagination.
 - `src/pages/dashboard/Dashboard.jsx` — wire the new screen.
 - `src/pages/dashboard/DashboardHome.jsx` — Step 6, real numbers.
-- `package.json` — the new test file.
+- `package.json` — the new test file, and `chart.js` as a real dependency
+  (Decision 8 — named in `docs/PECTRACK.pdf`'s tech stack).
 
 **Deliberately untouched**
 
@@ -566,10 +584,12 @@ Grouped because both are small changes touching existing behaviour, and
 both need the *existing* suites re-run rather than just the new ones.
 
 **Step 6 — the screen, then `DashboardHome`.** `ReportingAnalytics.jsx`
-with CSS bars (Decision 8), then replace the fabricated `₱86,420` and its
-neighbours with real figures from `/api/reports/summary` for ADMIN and
-CASHIER. CSV export lands here too, last of all — if the phase has to be
-cut short, this is the piece that goes, and nothing else depends on it.
+with Chart.js for the sales and product-performance charts (Decision 8),
+then replace the fabricated `₱86,420` and its neighbours with real figures
+from `/api/reports/summary` for ADMIN and CASHIER — those stay plain
+figures, not charts. CSV export lands here too, last of all — if the phase
+has to be cut short, this is the piece that goes, and nothing else depends
+on it.
 
 ---
 
