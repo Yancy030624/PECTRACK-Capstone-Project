@@ -6,6 +6,7 @@ import { InventoryManagement } from './InventoryManagement.jsx'
 import { modules } from './modules.js'
 import { MyProfile } from './MyProfile.jsx'
 import { OrderManagement } from './OrderManagement.jsx'
+import { PaymentBilling } from './PaymentBilling.jsx'
 import { ProductManagement } from './ProductManagement.jsx'
 import { StaffManagement } from './StaffManagement.jsx'
 
@@ -20,6 +21,7 @@ const moduleComponents = {
   'Customer Management': CustomerManagement,
   'My Profile': MyProfile,
   'Order Management': OrderManagement,
+  'Payment & Billing': PaymentBilling,
 }
 
 // Render the protected shell and expose only modules the signed-in role can access.

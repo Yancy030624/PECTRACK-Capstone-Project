@@ -105,10 +105,18 @@ describe('order management', () => {
   })
 
   after(async () => {
-    // inventory_movements.order_id references orders(order_id) with no
-    // ON DELETE CASCADE (see database/migrations/003), so these rows must
-    // be cleared before the orders themselves are deleted below, or that
-    // DELETE fails on the foreign key.
+    // inventory_movements.order_id AND payments.order_id both reference
+    // orders(order_id) with no ON DELETE CASCADE (see database/migrations/
+    // 003 and PHASE6_PLAN.md's migration 005), so both must be cleared
+    // before the orders themselves are deleted below. Without this,
+    // DELETE FROM orders below silently fails (its own .catch swallows
+    // it), the order row survives, and the customer DELETE further down —
+    // which has no .catch — throws on the same foreign key. That throw
+    // happens before this hook's final `server.close()`, so the test
+    // server is never closed and the whole process hangs afterward rather
+    // than exiting, which is what actually surfaced this: not a stuck
+    // request, but a listening socket nothing ever closed.
+    await pool.query('DELETE FROM payments WHERE order_id = ANY($1)', [createdOrderIds]).catch(() => {})
     await pool.query('DELETE FROM inventory_movements WHERE order_id = ANY($1)', [createdOrderIds]).catch(() => {})
     for (const orderId of createdOrderIds) {
       await pool.query('DELETE FROM order_status_history WHERE order_id = $1', [orderId]).catch(() => {})
@@ -405,6 +413,13 @@ describe('order management', () => {
     const orderId = (await createResponse.json()).order.id
     createdOrderIds.push(orderId)
 
+    // Phase 6, Decision 7: COMPLETED now requires the order to be fully
+    // paid — 2 units at ₱20 each, so ₱40 clears it. Recording that is
+    // covered in depth by payments.test.js; here it's only a prerequisite
+    // for reaching COMPLETED at all.
+    const payResponse = await fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ orderId, method: 'CASH', amount: 40 }) })
+    assert.equal(payResponse.status, 201)
+
     const completeResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'COMPLETED' }) })
     assert.equal(completeResponse.status, 200)
 
@@ -416,6 +431,86 @@ describe('order management', () => {
 
     const stillAfter = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [stockTestProductId])
     assert.equal(stillAfter.rows[0].stock_quantity, 8, 'a rejected cancel-after-COMPLETED must not restore stock')
+  })
+
+  // Phase 6, Decision 7. The companion "a COMPLETED order also rejects any
+  // further status change" test above already proves the ALLOWED
+  // direction implicitly (it would fail with something other than 200 if
+  // this rule blocked it). This proves the REFUSED direction explicitly,
+  // and — just as importantly — that a refused attempt leaves the order's
+  // status completely unchanged: the balance check runs AFTER the claim
+  // inside the same transaction, so a 409 here must roll the claim's own
+  // status write back too, not just skip the stock/history side effects.
+  test('COMPLETED is refused while a balance is still owed, and the order status is left untouched', async () => {
+    await pool.query('UPDATE inventory SET stock_quantity = 10 WHERE product_id = $1', [stockTestProductId])
+
+    const createResponse = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: stockTestProductId, quantity: 2 }] }) })
+    const orderId = (await createResponse.json()).order.id
+    createdOrderIds.push(orderId)
+
+    // Total is ₱40; only ₱15 is paid, leaving a real balance.
+    const payResponse = await fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ orderId, method: 'CASH', amount: 15 }) })
+    assert.equal(payResponse.status, 201)
+
+    const completeResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'COMPLETED' }) })
+    assert.equal(completeResponse.status, 409)
+    assert.match((await completeResponse.json()).message, /still owes/)
+
+    const orderDetail = await fetch(`${baseUrl}/api/orders/${orderId}`, { headers: { Cookie: cashierCookie } }).then((response) => response.json())
+    assert.equal(orderDetail.order.status, 'PLACED', 'a refused COMPLETED must not leave the order half-transitioned')
+    assert.equal(orderDetail.order.payment.balanceDue, '25.00')
+
+    const history = await pool.query(`SELECT COUNT(*)::int AS n FROM order_status_history WHERE order_id = $1 AND status = 'COMPLETED'`, [orderId])
+    assert.equal(history.rows[0].n, 0, 'a refused transition must not leave a history row claiming it happened')
+  })
+
+  // Phase 6, Decision 8. Cancelling a PAID order is admin-only, because
+  // cancelling it means the bakery owes that money back. This covers all
+  // three roles against the SAME paid order: cashier and the customer
+  // themselves are both refused, and only an admin's cancel is both
+  // allowed AND actually refunds the payment (status, who, and when).
+  test('cancelling a paid order is refused for cashier and customer, but an admin may cancel it and the payment is refunded', async () => {
+    await pool.query('UPDATE inventory SET stock_quantity = 10 WHERE product_id = $1', [stockTestProductId])
+
+    const createResponse = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: stockTestProductId, quantity: 2 }] }) })
+    const orderId = (await createResponse.json()).order.id
+    createdOrderIds.push(orderId)
+
+    const payResponse = await fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ orderId, method: 'CASH', amount: 40 }) })
+    assert.equal(payResponse.status, 201)
+
+    const cashierAttempt = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    assert.equal(cashierAttempt.status, 409)
+    assert.match((await cashierAttempt.json()).message, /admin/)
+
+    // The order is still PLACED (both attempts above must have been fully
+    // rolled back), so the customer's OWN pre-transaction gate ("only from
+    // PLACED") does not block this attempt before it even reaches the new
+    // Decision 8 rule — this genuinely exercises the paid-order check, not
+    // just the pre-existing status restriction.
+    const customerAttempt = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    assert.equal(customerAttempt.status, 409)
+    assert.match((await customerAttempt.json()).message, /admin/)
+
+    const beforeAdminCancel = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [stockTestProductId])
+
+    const adminCancel = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Customer changed their mind' }) })
+    assert.equal(adminCancel.status, 200, 'an admin must be able to cancel a paid order')
+
+    // Phase 5's stock restore must still work unmodified alongside the
+    // new refund logic — Decision 8 adds a rule AROUND cancellation, not
+    // a replacement for what it already does.
+    const afterAdminCancel = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [stockTestProductId])
+    assert.equal(afterAdminCancel.rows[0].stock_quantity, beforeAdminCancel.rows[0].stock_quantity + 2, 'cancelling must still restore the 2 units, exactly as in Phase 5')
+
+    const orderDetail = await fetch(`${baseUrl}/api/orders/${orderId}`, { headers: { Cookie: adminCookie } }).then((response) => response.json())
+    assert.equal(orderDetail.order.status, 'CANCELLED')
+    assert.equal(orderDetail.order.payment.payments.length, 1)
+    const [payment] = orderDetail.order.payment.payments
+    assert.equal(payment.status, 'REFUNDED')
+    assert.equal(payment.refundedByName, 'Order Test Admin')
+    assert.ok(payment.refundedAt)
+    assert.equal(payment.refundReason, 'Customer changed their mind')
   })
 
   test('two simultaneous orders racing for the last unit: exactly one succeeds, stock never goes negative', async () => {

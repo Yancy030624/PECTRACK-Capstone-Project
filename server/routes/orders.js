@@ -10,6 +10,7 @@
 // Mounted at /api/orders in app.js.
 import express from 'express'
 import { pool } from '../db.js'
+import { billingListSql, getBillingSummary, mapBillingColumns } from '../lib/billing.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { syncStockAlert } from '../lib/inventory.js'
 import { parseId } from '../lib/validation.js'
@@ -37,11 +38,23 @@ const mapOrderSummary = (row) => ({
   status: row.status,
   totalAmount: row.total_amount,
   orderDate: row.order_date,
+  // Phase 6: what this order still owes, carried on the LIST as well as
+  // the detail. Without it, the only way to answer "which orders still owe
+  // money" — the question the Payment & Billing screen exists to answer —
+  // was to open every order in turn.
+  //
+  // The columns come from lib/billing.js rather than a SUM written out
+  // again here: one definition, two consumers. Restating it would be the
+  // duplication that module exists to prevent, and would have quietly
+  // reintroduced its amount_paid formatting fix in a place no test covers.
+  ...mapBillingColumns(row),
 })
 
-const orderSummarySelectQuery = `SELECT o.order_id, o.customer_id, c.name AS customer_name, o.order_type, o.status, o.total_amount, o.order_date
+const orderSummarySelectQuery = `SELECT o.order_id, o.customer_id, c.name AS customer_name, o.order_type, o.status, o.total_amount, o.order_date,
+            ${billingListSql.columns}
      FROM orders o
-     LEFT JOIN customers c ON c.customer_id = o.customer_id`
+     LEFT JOIN customers c ON c.customer_id = o.customer_id
+     ${billingListSql.join}`
 
 // Delivery personnel are excluded entirely for now — their real access
 // should be scoped to "orders assigned to my current deliveries," which
@@ -109,6 +122,12 @@ router.get('/:id', async (request, response) => {
     [order.order_id],
   )
 
+  // Phase 6: what this order has been paid, and what it still owes — see
+  // lib/billing.js. Fetched for every role: a customer's receipt needs it
+  // exactly as much as a cashier's does, and the same "customer sees only
+  // their own order" guard above already covers who may reach this far.
+  const payment = await getBillingSummary(pool, order.order_id)
+
   return response.json({
     order: {
       id: order.order_id,
@@ -123,6 +142,7 @@ router.get('/:id', async (request, response) => {
       orderDate: order.order_date,
       items: itemsResult.rows.map((row) => ({ productId: row.product_id, productName: row.product_name, quantity: row.quantity, unitPrice: row.unit_price })),
       statusHistory: historyResult.rows.map((row) => ({ status: row.status, note: row.note, updatedAt: row.updated_at, updatedByName: row.updated_by_name })),
+      payment,
     },
   })
 })
@@ -372,6 +392,47 @@ router.patch('/:id', async (request, response) => {
       return response.status(409).json({ message: 'This order was updated by someone else — reload it and try again.' })
     }
 
+    // PHASE 6, DECISION 7 — an order cannot be marked COMPLETED while
+    // money is still owed. This has to live INSIDE the transaction, AFTER
+    // the claim above, using the same client — reading the balance before
+    // the transaction (or before the claim) would be exactly the mistake
+    // the Phase 5 review corrected three times: a condition read outside
+    // the write it gates can only produce a friendlier message, never a
+    // guarantee. Because the claim already holds this order's row lock, no
+    // concurrent payment can be recorded against it while this check runs
+    // — POST /api/payments opens by locking the very same row, so it
+    // queues behind this transaction rather than racing it.
+    //
+    // isFullyPaid is a boolean computed IN Postgres (lib/billing.js) —
+    // never a NUMERIC string compared here in JavaScript.
+    if (status === 'COMPLETED') {
+      const billing = await getBillingSummary(client, orderId)
+      if (!billing.isFullyPaid) {
+        await client.query('ROLLBACK')
+        return response.status(409).json({ message: `This order still owes ₱${billing.balanceDue} — it can only be marked COMPLETED once it is fully paid.` })
+      }
+    }
+
+    // PHASE 6, DECISION 8 — cancelling a PAID order is admin-only, and
+    // refunds it. An order with no PAID payments cancels exactly as it
+    // did in Phase 5 (nothing below changes for that case). One with
+    // PAID payments may only be cancelled by an ADMIN, because cancelling
+    // it means the bakery owes that money back — a cashier or the
+    // customer themselves should not be able to trigger a refund alone.
+    //
+    // hasPayments is computed once here, under the same lock reasoning as
+    // the COMPLETED check above, and reused after the stock-restore loop
+    // below to decide whether the refund UPDATE has anything to do.
+    let hasPayments = false
+    if (status === 'CANCELLED') {
+      const billing = await getBillingSummary(client, orderId)
+      hasPayments = billing.hasPayments
+      if (hasPayments && request.user.role !== 'ADMIN') {
+        await client.query('ROLLBACK')
+        return response.status(409).json({ message: 'This order has already been paid — only an admin can cancel it, since doing so refunds the payment.' })
+      }
+    }
+
     // Restoring stock is triggered by the TRANSITION into CANCELLED, not
     // by the resulting state. The claim above guarantees this block runs
     // at most once per order — a second cancel can never get past it —
@@ -399,6 +460,28 @@ router.patch('/:id', async (request, response) => {
         // Closes a low-stock alert if restoring this order's stock brought
         // the product back above its minimum. See lib/inventory.js.
         await syncStockAlert(client, { inventoryId: restored.rows[0].inventory_id, stockQuantity: restored.rows[0].stock_quantity, minStockLevel: restored.rows[0].min_stock_level })
+      }
+
+      // PHASE 6, DECISION 8 (continued) — the refund itself. A status
+      // change on the EXISTING row, not a new negative one:
+      // payments.amount has CHECK (amount >= 0), so a negative row is
+      // impossible by design, and payment_status already has REFUNDED
+      // for precisely this. hasPayments was computed above, before the
+      // admin-only gate, so this only runs when there is genuinely
+      // something to refund.
+      //
+      // WHERE status = 'PAID' rather than an unconditional UPDATE: a
+      // payment can never have MORE than one meaningful transition
+      // (PAID -> REFUNDED), so this is naturally a no-op against any row
+      // that was never PAID in the first place — nothing here needs to
+      // filter payments by hand first.
+      if (hasPayments) {
+        await client.query(
+          `UPDATE payments
+              SET status = 'REFUNDED', refunded_by = $1, refunded_at = CURRENT_TIMESTAMP, refund_reason = $2
+            WHERE order_id = $3 AND status = 'PAID'`,
+          [request.user.id, note ?? 'Order cancelled.', orderId],
+        )
       }
     }
 

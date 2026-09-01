@@ -601,12 +601,41 @@ creates. These are documented trade-offs, not defects to be surprised by.
   closes by design rather than by decision, and it is why Phase 6.5 follows
   immediately rather than sitting at the end of the backlog.
 - **No partial refunds.** A refund reverses one whole payment row.
+- **A COMPLETED order cannot be refunded — decided, not overlooked.** The
+  review asked the question directly and the answer is a business rule:
+  once an order has been fulfilled and paid, it is final. `COMPLETED` is
+  terminal (Phase 5, Pattern C), so the only refund path is cancelling a
+  paid order before fulfilment (Decision 8), which is exactly the intent.
+  A customer complaining after pickup is handled at the counter, not by
+  the system reversing a completed sale. If that ever needs to change it
+  is a new decision with its own audit requirements, not a bug fix.
 - **No `inventory_movements` or `stock_alerts` read path.** Both tables are
   written correctly by Phase 5 and read by nothing. The live "Low stock"
   badge covers the user-facing need, but the *history* is unreachable, and it
-  is the data the planned AI restocking feature needs. Worth folding into an
-  early Phase 6 step or an explicit Phase 6.5 — the cost is one `GET` and one
-  panel.
+  is the data the planned AI restocking feature needs. Still open going into
+  Phase 6.5 — the cost is one `GET` and one panel.
+
+---
+
+## Closed in review (Phase 6 as built)
+
+Recorded so the next phase does not re-litigate them.
+
+- **`GET /api/orders` now carries each order's balance.** The plan only put
+  the `payment` object on `GET /api/orders/:id`, which meant answering
+  "which orders still owe money" — the Payment & Billing screen's whole
+  purpose — took one click per order. The list now selects the same money
+  columns, spliced in from `lib/billing.js` (`billingListSql`) rather than
+  a second `SUM` written out in `routes/orders.js`. That sharing is the
+  point: the hand-rolled version would have omitted the `::numeric(12,2)`
+  cast and shipped a second copy of an already-fixed formatting bug.
+- **Sub-centavo amounts are refused, not rounded to zero.** Validation
+  runs on the ROUNDED figure now. Validating the raw value let `0.001`
+  through and then stored it as `0.00` — the exact row Decision 3 forbids.
+- **An over-long `gateway_reference` is a 422, not a 500.** It is refused
+  rather than truncated: a reference is an identifier that must match one
+  real transaction, so a clipped one is a *different* reference occupying
+  the `UNIQUE` slot the real one needs.
 - **No CSRF tokens**, no per-IP rate limiting, no password reset, no audit
   trail on customer/staff edits, no pagination — all as documented at the end
   of Phase 5.
