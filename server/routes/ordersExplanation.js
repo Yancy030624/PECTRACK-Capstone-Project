@@ -1,10 +1,13 @@
 // ============================================================================
 // PECTRACK API — routes/orders.js (annotated for learning)
-// Order creation, listing, detail, and status updates. PICKUP orders only
-// for now — DELIVERY needs customer_addresses management, deliberately
-// deferred to a later pass (the orders CHECK constraint from Phase 1
-// requires address_id for DELIVERY and forbids it for PICKUP, so staying
-// PICKUP-only means this file never has to touch address_id at all).
+// Order creation, listing, detail, and status updates. Both PICKUP and
+// DELIVERY orders (Phase 7 — see PHASE7_PLAN.md). A DELIVERY order needs
+// an address_id (the orders CHECK constraint from Phase 1 requires it for
+// DELIVERY and forbids it for PICKUP) and a customer account (Decision 7
+// — walk-ins have nowhere on file to deliver to), and gets a deliveries
+// row created alongside it (Decision 3). deliveries.status is the source
+// of truth for where a delivery order stands; see routes/deliveries.js
+// and Decision 2 for the one-directional sync into orders.status.
 //
 // Admin is deliberately NOT able to create orders through this router —
 // orders.processed_by references cashiers(cashier_id) ONLY, not admins,
@@ -236,11 +239,11 @@ router.get('/:id', async (request, response) => {
 // the "orders.processed_by only references cashiers" reasoning at the
 // top of this file.
 router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) => {
-  // orderType defaults to PICKUP and is REJECTED if anything else is
-  // sent — an explicit, clear error rather than silently ignoring an
-  // unsupported DELIVERY request.
+  // orderType defaults to PICKUP; anything besides PICKUP or DELIVERY is
+  // REJECTED — an explicit, clear error rather than silently ignoring an
+  // unsupported value.
   const orderType = request.body.orderType ?? 'PICKUP'
-  if (orderType !== 'PICKUP') return response.status(422).json({ message: 'Delivery orders are not supported yet — pickup only for now.', errors: { orderType: 'Only PICKUP is currently supported.' } })
+  if (orderType !== 'PICKUP' && orderType !== 'DELIVERY') return response.status(422).json({ message: 'Enter a valid order type.', errors: { orderType: 'Enter a valid order type.' } })
 
   const instructions = request.body.instructions == null ? null : String(request.body.instructions).trim().slice(0, instructionsMaxLength)
   const items = Array.isArray(request.body.items) ? request.body.items : []
@@ -325,6 +328,30 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     // matching the guest/walk-in order design confirmed back in Phase 1.
   }
 
+  // ------------------------------------------------------------------
+  // PHASE 7, DECISION 7 — A DELIVERY ORDER NEEDS SOMEWHERE TO SEND IT.
+  //
+  // customer_addresses hangs off customers, and a walk-in order has
+  // customerId NULL (the guest-order design just above) — so a walk-in
+  // has no addresses to choose from and cannot be a delivery. Refused here
+  // with a clean 422 rather than letting the address lookup below fail
+  // into something confusing.
+  //
+  // The address must ALSO belong to THIS order's customer — verified
+  // server-side against the database, never trusted from the request
+  // body. Without this, a customer could send an order to someone ELSE's
+  // saved address just by passing its id, and a cashier could do it by
+  // accident acting on a customer's behalf.
+  // ------------------------------------------------------------------
+  let addressId = null
+  if (orderType === 'DELIVERY') {
+    if (!customerId) return response.status(422).json({ message: 'A delivery order needs a customer account — walk-in orders can only be picked up.', errors: { orderType: 'Delivery requires a customer account.' } })
+    addressId = parseId(request.body.addressId)
+    if (!addressId) return response.status(422).json({ message: 'Select a delivery address.', errors: { addressId: 'Select a delivery address.' } })
+    const addressCheck = await pool.query('SELECT address_id FROM customer_addresses WHERE address_id = $1 AND customer_id = $2 AND is_active = TRUE', [addressId, customerId])
+    if (!addressCheck.rows[0]) return response.status(422).json({ message: 'Selected address is not available.', errors: { addressId: 'Selected address is not available.' } })
+  }
+
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -365,12 +392,23 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     // the row is valid in the meantime — and nothing outside this
     // transaction can observe that intermediate state anyway.
     const orderResult = await client.query(
-      `INSERT INTO orders (customer_id, processed_by, order_type, instructions)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO orders (customer_id, processed_by, order_type, address_id, instructions)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING order_id`,
-      [customerId, processedBy, orderType, instructions],
+      [customerId, processedBy, orderType, addressId, instructions],
     )
     const orderId = orderResult.rows[0].order_id
+
+    // PHASE 7, DECISION 3 — the deliveries row is created WITH the order,
+    // in the SAME transaction, not lazily on first assignment.
+    // deliveries.status defaults to PENDING_ASSIGNMENT, which is exactly
+    // right: nothing has assigned this yet. Creating it lazily instead
+    // would mean a delivery order that exists but is invisible to the
+    // assignment queue until someone remembers it — the queue would be
+    // missing exactly the orders that most need to be in it.
+    if (orderType === 'DELIVERY') {
+      await client.query('INSERT INTO deliveries (order_id) VALUES ($1)', [orderId])
+    }
 
     for (const item of parsedItems) {
       const product = productsById.get(item.productId)
@@ -618,6 +656,34 @@ router.patch('/:id', async (request, response) => {
     }
 
     // ------------------------------------------------------------------
+    // PHASE 7, DECISION 2 — DELIVERIES.STATUS IS THE SOURCE OF TRUTH.
+    //
+    // order_status already contains OUT_FOR_DELIVERY. delivery_status
+    // contains its OWN OUT_FOR_DELIVERY too, plus DELIVERED and FAILED —
+    // two state machines describing one real-world process. If both were
+    // independently writable they WOULD drift: an order reading
+    // OUT_FOR_DELIVERY while its delivery row still says
+    // PENDING_ASSIGNMENT, with nothing able to say which is true. See
+    // routes/deliveries.js's Pattern F for the sync itself.
+    //
+    // If this order has a deliveries row AT ALL, it IS a delivery order —
+    // Decision 3 above creates one with EVERY delivery order, never
+    // lazily — and moving it to OUT_FOR_DELIVERY must go through the
+    // driver's own workflow, PATCH /api/deliveries/:id/status, not
+    // through here. Checked HERE, after the claim, inside the
+    // transaction — the exact same reasoning the COMPLETED check just
+    // below uses: a condition checked outside the write it gates is only
+    // ever a suggestion, never a guarantee.
+    // ------------------------------------------------------------------
+    if (status === 'OUT_FOR_DELIVERY') {
+      const deliveryCheck = await client.query('SELECT delivery_id FROM deliveries WHERE order_id = $1', [orderId])
+      if (deliveryCheck.rows[0]) {
+        await client.query('ROLLBACK')
+        return response.status(409).json({ message: 'This order\'s delivery status is managed through Delivery Management, not here.' })
+      }
+    }
+
+    // ------------------------------------------------------------------
     // PHASE 6, DECISION 7 — COMPLETED REQUIRES FULL PAYMENT.
     //
     // An order management system should not let staff mark an order
@@ -750,6 +816,30 @@ router.patch('/:id', async (request, response) => {
           [request.user.id, note ?? 'Order cancelled.', orderId],
         )
       }
+
+      // ------------------------------------------------------------------
+      // PHASE 7, DECISION 6 — CANCELLING AN ORDER MUST RESOLVE ITS
+      // DELIVERY ROW, in this SAME transaction.
+      //
+      // Without this, cancelling an order that is ASSIGNED or
+      // OUT_FOR_DELIVERY would leave that delivery row pointing at a
+      // cancelled order forever — it stays on some driver's "my
+      // deliveries" list, and the assignment queue slowly fills with work
+      // nobody should do. This is exactly the kind of cross-module
+      // interaction that gets missed when a phase adds a second workflow
+      // touching the same order; it is called out in the plan so it gets
+      // built, not discovered.
+      //
+      // NOT IN ('DELIVERED', 'FAILED') so an ALREADY-terminal delivery —
+      // the goods already arrived, or a prior failed attempt — is left
+      // alone. This only touches a delivery that was still genuinely in
+      // progress at the moment its order was cancelled.
+      // ------------------------------------------------------------------
+      await client.query(
+        `UPDATE deliveries SET status = 'FAILED'
+          WHERE order_id = $1 AND status NOT IN ('DELIVERED', 'FAILED')`,
+        [orderId],
+      )
     }
 
     // orders.status was already written by the claim at the top of this

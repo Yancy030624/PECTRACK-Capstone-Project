@@ -24,6 +24,9 @@ describe('order management', () => {
   let unavailableProductId
   let stockTestProductId
   let categoryId
+  let customerId
+  let customerAddressId
+  let secondCustomerAddressId
   const createdUserIds = []
   const createdProductIds = []
   const createdOrderIds = []
@@ -60,8 +63,9 @@ describe('order management', () => {
     cashierCookie = cashierLogin.headers.get('set-cookie').split(';')[0]
 
     await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...customer, confirmPassword: customer.password }) })
-    const customerRow = await pool.query('SELECT user_id FROM users WHERE username = $1', [customer.username])
+    const customerRow = await pool.query('SELECT user_id, (SELECT customer_id FROM customers WHERE user_id = users.user_id) AS customer_id FROM users WHERE username = $1', [customer.username])
     createdUserIds.push(customerRow.rows[0].user_id)
+    customerId = customerRow.rows[0].customer_id
     const customerLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: customer.username, password: customer.password }) })
     customerCookie = customerLogin.headers.get('set-cookie').split(';')[0]
 
@@ -71,6 +75,24 @@ describe('order management', () => {
     secondCustomerId = secondCustomerRow.rows[0].customer_id
     const secondCustomerLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: secondCustomer.username, password: secondCustomer.password }) })
     secondCustomerCookie = secondCustomerLogin.headers.get('set-cookie').split(';')[0]
+
+    // Phase 7 — a saved address for each of the two customers, one each is
+    // all these DELIVERY-order tests need. Inserted directly rather than
+    // through POST /api/addresses: that router has its own full test
+    // suite (addresses.test.js) already covering creation; here it's only
+    // a fixture.
+    const customerAddress = await pool.query(
+      `INSERT INTO customer_addresses (customer_id, recipient_name, contact_num, address_line_1, is_default)
+       VALUES ($1, 'Order Test Customer', $2, '1 Delivery St', TRUE) RETURNING address_id`,
+      [customerId, randomContactNumber()],
+    )
+    customerAddressId = customerAddress.rows[0].address_id
+    const secondCustomerAddress = await pool.query(
+      `INSERT INTO customer_addresses (customer_id, recipient_name, contact_num, address_line_1, is_default)
+       VALUES ($1, 'Second Order Test Customer', $2, '2 Delivery St', TRUE) RETURNING address_id`,
+      [secondCustomerId, randomContactNumber()],
+    )
+    secondCustomerAddressId = secondCustomerAddress.rows[0].address_id
 
     await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...walkInCustomer, confirmPassword: walkInCustomer.password }) })
     const walkInRow = await pool.query('SELECT user_id FROM users WHERE username = $1', [walkInCustomer.username])
@@ -118,6 +140,11 @@ describe('order management', () => {
     // request, but a listening socket nothing ever closed.
     await pool.query('DELETE FROM payments WHERE order_id = ANY($1)', [createdOrderIds]).catch(() => {})
     await pool.query('DELETE FROM inventory_movements WHERE order_id = ANY($1)', [createdOrderIds]).catch(() => {})
+    // deliveries.order_id references orders(order_id) with no ON DELETE
+    // CASCADE (Phase 7) — same reasoning as payments/inventory_movements
+    // just above: it must be cleared before the orders themselves, or the
+    // DELETE FROM orders below fails on this foreign key instead.
+    await pool.query('DELETE FROM deliveries WHERE order_id = ANY($1)', [createdOrderIds]).catch(() => {})
     for (const orderId of createdOrderIds) {
       await pool.query('DELETE FROM order_status_history WHERE order_id = $1', [orderId]).catch(() => {})
       await pool.query('DELETE FROM order_details WHERE order_id = $1', [orderId]).catch(() => {})
@@ -158,9 +185,143 @@ describe('order management', () => {
     assert.equal(rows.length, 0, 'no order should have been created')
   })
 
-  test('POST /api/orders rejects delivery orders — not supported yet', async () => {
-    const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ orderType: 'DELIVERY', items: [{ productId: availableProductId, quantity: 1 }] }) })
+  test('POST /api/orders rejects an invalid orderType', async () => {
+    const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ orderType: 'TELEPORT', items: [{ productId: availableProductId, quantity: 1 }] }) })
     assert.equal(response.status, 422)
+  })
+
+  // --- Phase 7: DELIVERY orders -------------------------------------------
+
+  // Decision 7 — a walk-in has customerId null and so has no saved
+  // addresses to choose from; a cashier placing a DELIVERY order MUST name
+  // a real customer.
+  test('POST /api/orders rejects a DELIVERY order with no customerId (walk-ins are pickup-only)', async () => {
+    const response = await fetch(`${baseUrl}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cashierCookie },
+      body: JSON.stringify({ orderType: 'DELIVERY', addressId: customerAddressId, items: [{ productId: availableProductId, quantity: 1 }] }),
+    })
+    assert.equal(response.status, 422)
+    const { rows } = await pool.query('SELECT COUNT(*)::int AS n FROM deliveries d JOIN orders o ON o.order_id = d.order_id WHERE o.customer_id IS NULL')
+    assert.equal(rows[0].n, 0, 'a refused walk-in delivery must not leave a deliveries row behind')
+  })
+
+  // Decision 7 (continued) — the address must belong to THIS order's
+  // customer. A customer must not be able to send an order to someone
+  // else's saved address by passing its id, and neither should a cashier
+  // acting on a customer's behalf.
+  test('POST /api/orders rejects a DELIVERY order using another customer\'s address', async () => {
+    const response = await fetch(`${baseUrl}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: customerCookie },
+      body: JSON.stringify({ orderType: 'DELIVERY', addressId: secondCustomerAddressId, items: [{ productId: availableProductId, quantity: 1 }] }),
+    })
+    assert.equal(response.status, 422)
+  })
+
+  test('POST /api/orders rejects a DELIVERY order with no addressId', async () => {
+    const response = await fetch(`${baseUrl}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: customerCookie },
+      body: JSON.stringify({ orderType: 'DELIVERY', items: [{ productId: availableProductId, quantity: 1 }] }),
+    })
+    assert.equal(response.status, 422)
+  })
+
+  let deliveryOrderId
+
+  // Decision 3 — the deliveries row is created WITH the order, in the same
+  // transaction, at PENDING_ASSIGNMENT. Not lazily on first assignment.
+  test('POST /api/orders creates exactly one deliveries row at PENDING_ASSIGNMENT for a DELIVERY order', async () => {
+    const response = await fetch(`${baseUrl}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: customerCookie },
+      body: JSON.stringify({ orderType: 'DELIVERY', addressId: customerAddressId, items: [{ productId: availableProductId, quantity: 2 }] }),
+    })
+    assert.equal(response.status, 201)
+    const body = await response.json()
+    deliveryOrderId = body.order.id
+    createdOrderIds.push(deliveryOrderId)
+
+    const detail = await fetch(`${baseUrl}/api/orders/${deliveryOrderId}`, { headers: { Cookie: customerCookie } }).then((r) => r.json())
+    assert.equal(detail.order.orderType, 'DELIVERY')
+
+    const { rows } = await pool.query('SELECT status, delivery_personnel_id, assigned_at FROM deliveries WHERE order_id = $1', [deliveryOrderId])
+    assert.equal(rows.length, 1, 'exactly one deliveries row')
+    assert.equal(rows[0].status, 'PENDING_ASSIGNMENT')
+    assert.equal(rows[0].delivery_personnel_id, null)
+    assert.equal(rows[0].assigned_at, null)
+  })
+
+  // Decision 3 (continued) — if stock deduction fails partway through the
+  // SAME transaction the deliveries row was inserted in, the whole thing
+  // rolls back together. No orphan deliveries row for an order that was
+  // itself refused.
+  test('POST /api/orders leaves no deliveries row behind when a DELIVERY order is refused for insufficient stock', async () => {
+    await pool.query('UPDATE inventory SET stock_quantity = 1 WHERE product_id = $1', [stockTestProductId])
+    const before = await pool.query('SELECT COUNT(*)::int AS n FROM deliveries d JOIN orders o ON o.order_id = d.order_id WHERE o.customer_id = $1', [customerId])
+
+    const response = await fetch(`${baseUrl}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: customerCookie },
+      body: JSON.stringify({ orderType: 'DELIVERY', addressId: customerAddressId, items: [{ productId: stockTestProductId, quantity: 5 }] }),
+    })
+    assert.equal(response.status, 409)
+
+    const after = await pool.query('SELECT COUNT(*)::int AS n FROM deliveries d JOIN orders o ON o.order_id = d.order_id WHERE o.customer_id = $1', [customerId])
+    assert.equal(after.rows[0].n, before.rows[0].n, 'a refused delivery order must not leave a deliveries row behind')
+  })
+
+  // Decision 2 — deliveries.status is the source of truth; orders.status
+  // is synced FROM it (routes/deliveries.js, Pattern F), never written to
+  // OUT_FOR_DELIVERY directly through this route. Without this refusal,
+  // the two could disagree with nothing able to say which is true.
+  test('PATCH /api/orders/:id refuses a manual OUT_FOR_DELIVERY on an order that has a delivery row', async () => {
+    const before = await pool.query('SELECT status FROM orders WHERE order_id = $1', [deliveryOrderId])
+    assert.equal(before.rows[0].status, 'PLACED')
+
+    const response = await fetch(`${baseUrl}/api/orders/${deliveryOrderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'OUT_FOR_DELIVERY' }) })
+    assert.equal(response.status, 409)
+
+    const after = await pool.query('SELECT status FROM orders WHERE order_id = $1', [deliveryOrderId])
+    assert.equal(after.rows[0].status, 'PLACED', 'a refused transition must leave the order status untouched')
+
+    const history = await pool.query(`SELECT COUNT(*)::int AS n FROM order_status_history WHERE order_id = $1 AND status = 'OUT_FOR_DELIVERY'`, [deliveryOrderId])
+    assert.equal(history.rows[0].n, 0, 'a refused transition must not leave a history row claiming it happened')
+  })
+
+  // Decision 6 — cancelling an order must resolve its delivery row, in the
+  // SAME transaction, so an ASSIGNED/OUT_FOR_DELIVERY delivery never keeps
+  // pointing at a cancelled order.
+  test('PATCH /api/orders/:id CANCELLED marks a non-terminal delivery row FAILED, and leaves an already-DELIVERED one alone', async () => {
+    // This order's delivery is still PENDING_ASSIGNMENT; move it to
+    // ASSIGNED directly, the same state a real assignment would leave it
+    // in — routes/deliveries.js's own assignment flow is covered by
+    // deliveries.test.js, this only needs the resulting state.
+    await pool.query(`UPDATE deliveries SET status = 'ASSIGNED', assigned_at = CURRENT_TIMESTAMP WHERE order_id = $1`, [deliveryOrderId])
+
+    const response = await fetch(`${baseUrl}/api/orders/${deliveryOrderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    assert.equal(response.status, 200)
+
+    const { rows } = await pool.query('SELECT status FROM deliveries WHERE order_id = $1', [deliveryOrderId])
+    assert.equal(rows[0].status, 'FAILED', 'an ASSIGNED delivery must be marked FAILED when its order is cancelled')
+
+    // A second delivery order, already DELIVERED before its order is
+    // cancelled (an odd but possible sequence — DELIVERED doesn't
+    // complete the order, Decision 4), must NOT have its terminal state
+    // overwritten by the cancellation.
+    const secondDelivery = await fetch(`${baseUrl}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: customerCookie },
+      body: JSON.stringify({ orderType: 'DELIVERY', addressId: customerAddressId, items: [{ productId: availableProductId, quantity: 1 }] }),
+    }).then((r) => r.json())
+    createdOrderIds.push(secondDelivery.order.id)
+    await pool.query(`UPDATE deliveries SET status = 'DELIVERED', delivered_at = CURRENT_TIMESTAMP WHERE order_id = $1`, [secondDelivery.order.id])
+
+    const cancelDelivered = await fetch(`${baseUrl}/api/orders/${secondDelivery.order.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    assert.equal(cancelDelivered.status, 200)
+    const stillDelivered = await pool.query('SELECT status FROM deliveries WHERE order_id = $1', [secondDelivery.order.id])
+    assert.equal(stillDelivered.rows[0].status, 'DELIVERED', 'an already-DELIVERED delivery must not be overwritten to FAILED by a later cancellation')
   })
 
   // Regression: order_details has UNIQUE (order_id, product_id), so the

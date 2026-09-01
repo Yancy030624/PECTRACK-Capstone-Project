@@ -7,7 +7,7 @@
     "dev": "vite",
     "server": "node --watch server/index.js",
     "start": "node server/index.js",
-    "test": "node --test server/lib/inventory.test.js server/lib/paymongo.test.js server/routes/auth.test.js server/routes/staff.test.js server/routes/categories.test.js server/routes/products.test.js server/routes/customers.test.js server/routes/orders.test.js server/routes/inventory.test.js server/routes/payments.test.js",
+    "test": "node --test server/lib/inventory.test.js server/lib/paymongo.test.js server/routes/auth.test.js server/routes/staff.test.js server/routes/categories.test.js server/routes/products.test.js server/routes/customers.test.js server/routes/orders.test.js server/routes/inventory.test.js server/routes/payments.test.js server/routes/addresses.test.js server/routes/deliveries.test.js",
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview"

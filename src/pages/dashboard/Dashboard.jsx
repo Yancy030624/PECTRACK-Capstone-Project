@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { Brand } from '../../components/Brand.jsx'
+import { AddressBook } from './AddressBook.jsx'
 import { CustomerManagement } from './CustomerManagement.jsx'
 import { DashboardHome } from './DashboardHome.jsx'
+import { DeliveryManagement } from './DeliveryManagement.jsx'
 import { InventoryManagement } from './InventoryManagement.jsx'
 import { modules } from './modules.js'
 import { MyProfile } from './MyProfile.jsx'
@@ -22,6 +24,8 @@ const moduleComponents = {
   'My Profile': MyProfile,
   'Order Management': OrderManagement,
   'Payment & Billing': PaymentBilling,
+  'Delivery Management': DeliveryManagement,
+  'Address Book': AddressBook,
 }
 
 // Render the protected shell and expose only modules the signed-in role can access.

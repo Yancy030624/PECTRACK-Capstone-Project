@@ -13,6 +13,10 @@ dist-ssr
 *.local
 .env
 
+# Phase 7 — proof-of-delivery files (server/lib/storage.js). Local disk
+# only; never committed.
+uploads
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

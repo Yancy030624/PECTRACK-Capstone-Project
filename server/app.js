@@ -2,9 +2,11 @@ import cors from 'cors'
 import express from 'express'
 import { config } from './config.js'
 import { pool } from './db.js'
+import addressesRouter from './routes/addresses.js'
 import authRouter from './routes/auth.js'
 import categoriesRouter from './routes/categories.js'
 import customersRouter from './routes/customers.js'
+import deliveriesRouter from './routes/deliveries.js'
 import inventoryRouter from './routes/inventory.js'
 import ordersRouter from './routes/orders.js'
 import paymentsRouter from './routes/payments.js'
@@ -38,6 +40,7 @@ app.get('/api/health', async (_request, response) => {
   response.json({ status: 'ok' })
 })
 
+app.use('/api/addresses', addressesRouter)
 app.use('/api/auth', authRouter)
 app.use('/api/staff', staffRouter)
 app.use('/api/categories', categoriesRouter)
@@ -46,10 +49,17 @@ app.use('/api/customers', customersRouter)
 app.use('/api/inventory', inventoryRouter)
 app.use('/api/orders', ordersRouter)
 app.use('/api/payments', paymentsRouter)
+app.use('/api/deliveries', deliveriesRouter)
 
 app.use((error, _request, response, _next) => {
   console.error(error)
   if (error.type === 'entity.parse.failed') return response.status(400).json({ message: 'Malformed JSON in request body.' })
+  // Both express.json()'s 10kb limit above and express.raw()'s 5mb proof-
+  // upload limit (routes/deliveries.js — Phase 7, Decision 8) throw this
+  // same error.type when a body exceeds its limit. Without this case it
+  // falls through to the generic 500 below — "the service is broken" —
+  // when the honest answer is "that file is too large."
+  if (error.type === 'entity.too.large') return response.status(413).json({ message: 'The uploaded file is too large.' })
   response.status(500).json({ message: 'The service could not process your request. Please try again later.' })
 })
 
