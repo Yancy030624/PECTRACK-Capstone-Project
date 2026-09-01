@@ -42,14 +42,18 @@ Checked against the live database and the code, not assumed:
   available here yet" placeholder for them, because `routes/orders.js`
   excludes the role anyway. Phase 7 is the first screen that role can
   actually use.
-- **`delivery_personnel` holds 5 stale rows, all named "Order Test DP".**
-  Confirmed as historical residue from `orders.test.js` runs that predate
-  the cleanup fix made during the Phase 6 work — a fresh run of that file
-  now leaves the count unchanged, so nothing is still leaking. They are
-  harmless today because nothing reads the table, but they WILL appear as
-  five identical drivers in Phase 7's "assign a driver" picker. Clear them
-  from the dev database before building Step 3, or the assignment screen
-  will look broken when it isn't.
+- **`delivery_personnel` is empty, and that is deliberate.** It briefly held
+  5 stale rows all named "Order Test DP" — residue from `orders.test.js`
+  runs predating the cleanup fix made during the Phase 6 work. The leak
+  itself was already fixed (a fresh run of that file left the count
+  unchanged), and the 5 rows plus their 5 orphaned user accounts and live
+  sessions were deleted during Phase 7 planning, after confirming nothing
+  in `deliveries`, `delivery_proofs`, `order_status_history`,
+  `inventory_movements` or `payments` referenced them.
+  **So Step 3 starts with no drivers in the database at all** — the
+  assignment picker will be legitimately empty until a real
+  `DELIVERY_PERSONNEL` account is created through `POST /api/staff`. Create
+  one first, or the assignment screen will look broken when it isn't.
 - **`POST /api/orders` refuses `DELIVERY` outright** with a 422, and the
   `orders` CHECK constraint requires `address_id` for `DELIVERY` and
   forbids it for `PICKUP`. Lifting that 422 is what starts this phase.
