@@ -55,15 +55,33 @@ describe('category management', () => {
     await new Promise((resolve) => server.close(resolve))
   })
 
-  test('GET /api/categories requires authentication', async () => {
+  // Was "GET /api/categories requires authentication" (asserted 401) until
+  // STOREFRONT_PLAN.md, Decision 2 made this route public — a public menu
+  // grouped by category needs the category names without a session. This
+  // is exactly the "existing test breaking is the change being visible"
+  // case the plan calls out: the behaviour change is deliberate, so the
+  // test now pins the NEW contract instead of being deleted.
+  test('GET /api/categories works for an anonymous caller — public since the storefront', async () => {
     const response = await fetch(`${baseUrl}/api/categories`)
-    assert.equal(response.status, 401)
+    assert.equal(response.status, 200)
+    assert.ok(Array.isArray((await response.json()).categories))
   })
 
   test('GET /api/categories works for a plain customer', async () => {
     const response = await fetch(`${baseUrl}/api/categories`, { headers: { Cookie: customerCookie } })
     assert.equal(response.status, 200)
     assert.ok(Array.isArray((await response.json()).categories))
+  })
+
+  test('an anonymous POST, PATCH, and DELETE are all still refused — only the read is public', async () => {
+    const post = await fetch(`${baseUrl}/api/categories`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: `Should Never Exist ${runId}` }) })
+    assert.equal(post.status, 401)
+
+    const patch = await fetch(`${baseUrl}/api/categories/999999999`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Nope' }) })
+    assert.equal(patch.status, 401)
+
+    const remove = await fetch(`${baseUrl}/api/categories/999999999`, { method: 'DELETE' })
+    assert.equal(remove.status, 401)
   })
 
   test('POST /api/categories rejects a non-admin', async () => {

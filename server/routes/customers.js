@@ -13,8 +13,19 @@ import { normalize, normalizeEmail, parseId, validateContactNumberField, validat
 
 const router = express.Router()
 
+// `id` is the USER id (u.user_id) — it's what this screen has always
+// keyed its own rows and PATCH /:id calls by. `customerId` is the
+// SEPARATE customers.customer_id — a different sequence entirely, and
+// the one POST /api/orders and GET /api/addresses?customerId= actually
+// want. The two can and do differ for the same person (verified live:
+// user_id 4868, customer_id 1914, one account) — added so a caller that
+// needs to place an order for someone on this list (COUNTER_ORDER_PLAN.md)
+// has the right id to send, rather than reaching for the only one that
+// used to be here and silently addressing the wrong customer once two
+// people's ids happen to cross.
 const mapCustomerRow = (row) => ({
   id: row.user_id,
+  customerId: row.customer_id,
   username: row.username,
   name: row.name,
   email: row.email,
@@ -23,7 +34,7 @@ const mapCustomerRow = (row) => ({
   createdAt: row.created_at,
 })
 
-const customerSelectQuery = `SELECT u.user_id, u.username, u.is_active, c.name, c.email, c.contact_num, c.created_at
+const customerSelectQuery = `SELECT u.user_id, u.username, u.is_active, c.customer_id, c.name, c.email, c.contact_num, c.created_at
      FROM users u
      JOIN customers c ON c.user_id = u.user_id`
 

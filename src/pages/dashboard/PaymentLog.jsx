@@ -1,4 +1,3 @@
-// Import state management for the flat payment ledger.
 import { useEffect, useState } from 'react'
 import { apiGet } from '../../api/client.js'
 
@@ -9,16 +8,6 @@ const statusStyles = {
   FAILED: 'bg-slate-100 text-slate-600',
 }
 
-// The second half of Payment & Billing's "a receipt view per order and a
-// payments list are two components, not one" split (PHASE6_PLAN.md) — kept
-// separate from PaymentBilling.jsx the same way InventoryRequests.jsx is
-// split out of InventoryManagement.jsx. Where the receipt view in
-// PaymentBilling.jsx is scoped to ONE order at a time, this is a flat,
-// chronological ledger across every order — GET /api/payments, not
-// GET /api/orders/:id.
-//
-// Read-only for every role: recording money changing hands only happens
-// from the receipt view (staff only), never here.
 export function PaymentLog({ user }) {
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
@@ -76,7 +65,7 @@ export function PaymentLog({ user }) {
                     {payment.status === 'REFUNDED' && payment.refundReason && <p className="mt-1 text-[10px] text-slate-400">"{payment.refundReason}"</p>}
                   </td>
                   <td className="py-3 pr-4 text-slate-600">{payment.status === 'REFUNDED' ? payment.refundedByName : payment.recordedByName}</td>
-                  <td className="py-3 pr-4 text-slate-500">{new Date(payment.status === 'REFUNDED' ? payment.refundedAt : payment.createdAt).toLocaleString()}</td>
+                  <td className="py-3 pr-4 text-slate-500">{new Date(payment.status === 'REFUNDED' ? payment.refundedAt : (payment.paymentDate ?? payment.createdAt)).toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>

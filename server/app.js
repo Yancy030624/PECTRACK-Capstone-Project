@@ -11,6 +11,7 @@ import inventoryRouter from './routes/inventory.js'
 import ordersRouter from './routes/orders.js'
 import paymentsRouter from './routes/payments.js'
 import productsRouter from './routes/products.js'
+import reportsRouter from './routes/reports.js'
 import staffRouter from './routes/staff.js'
 
 const app = express()
@@ -50,6 +51,7 @@ app.use('/api/inventory', inventoryRouter)
 app.use('/api/orders', ordersRouter)
 app.use('/api/payments', paymentsRouter)
 app.use('/api/deliveries', deliveriesRouter)
+app.use('/api/reports', reportsRouter)
 
 app.use((error, _request, response, _next) => {
   console.error(error)

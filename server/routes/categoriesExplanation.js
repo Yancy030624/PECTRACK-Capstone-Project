@@ -1,15 +1,16 @@
 // ============================================================================
 // PECTRACK API — routes/categories.js (annotated for learning)
 // Category management — the grouping products belong to (Breads, Cakes,
-// etc.). Any authenticated user can list them (products.js's create/edit
-// forms need this list, and eventually customers browsing by category
-// will too); only admins can create, rename, or delete one. Mounted at
+// etc.). Anyone can list them — including an anonymous storefront visitor,
+// since STOREFRONT_PLAN.md (Decision 2) — products.js's create/edit forms
+// need this list, and so does the public menu, grouping products by
+// category. Only admins can create, rename, or delete one. Mounted at
 // /api/categories in app.js.
 // ============================================================================
 
 import express from 'express'
 import { pool } from '../db.js'
-import { requireAuth, requireRole } from '../lib/auth.js'
+import { optionalAuth, requireAuth, requireRole } from '../lib/auth.js'
 import { normalize } from '../lib/validation.js'
 
 const router = express.Router()
@@ -30,15 +31,20 @@ function validateCategoryName(body) {
   return { name }
 }
 
-// Every route needs to be logged in; only the mutating ones also require
-// ADMIN — requireRole is applied per-route below, not router-wide, since
-// GET is intentionally open to every role.
-router.use(requireAuth)
-
-router.get('/', async (_request, response) => {
+// GET / used to sit behind the router-wide requireAuth below, same as
+// every other route in this file — "any authenticated user can list
+// categories." The storefront needed a caller with NO session to reach it
+// too, so it now takes optionalAuth directly and requireAuth's router-wide
+// gate moved to sit below it: everything mutating still needs a real
+// session, and ADMIN on top of that. Same shape as products.js's identical
+// change — see that file's own comment on why the LINE'S POSITION, not a
+// conditional inside requireAuth, is what draws this boundary.
+router.get('/', optionalAuth, async (_request, response) => {
   const result = await pool.query('SELECT category_id, category_name FROM categories ORDER BY category_name')
   return response.json({ categories: result.rows.map(mapCategoryRow) })
 })
+
+router.use(requireAuth)
 
 router.post('/', requireRole('ADMIN'), async (request, response) => {
   const { name, error } = validateCategoryName(request.body)

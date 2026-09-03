@@ -1,5 +1,3 @@
-// Import state management for the staff list, create-account form, and
-// per-row editing.
 import { useEffect, useState } from 'react'
 import { apiGet, apiPatch, apiPost } from '../../api/client.js'
 
@@ -123,7 +121,6 @@ export function StaffManagement() {
       <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-slate-900">Staff Management</h1>
       <p className="mt-2 text-sm text-slate-500">Create and review cashier and delivery-personnel accounts.</p>
 
-      {/* Create a new cashier or delivery-personnel account. */}
       <div className="mt-7 rounded-2xl border border-green-100 bg-white p-6">
         <h2 className="text-lg font-bold">New staff account</h2>
         <form className="mt-4 space-y-3" onSubmit={handleSubmit} noValidate>
@@ -175,8 +172,6 @@ export function StaffManagement() {
           <button type="submit" disabled={submitting} className="rounded-2xl bg-green-700 px-5 py-2.5 text-xs font-bold text-white shadow-md transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Creating account…' : 'Create account'}</button>
         </form>
       </div>
-
-      {/* Existing cashier and delivery-personnel accounts. */}
       <div className="mt-6 rounded-2xl border border-green-100 bg-white p-6">
         <h2 className="text-lg font-bold">Current staff</h2>
         {loading ? (

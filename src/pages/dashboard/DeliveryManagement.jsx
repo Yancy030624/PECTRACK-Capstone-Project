@@ -1,5 +1,3 @@
-// Import state management for the staff delivery queue, assignment, and
-// the admin-only retry action.
 import { useEffect, useState } from 'react'
 import { apiGet, apiPatch } from '../../api/client.js'
 import { MyDeliveries } from './MyDeliveries.jsx'
@@ -12,26 +10,10 @@ const statusStyles = {
   DELIVERED: 'bg-green-50 text-green-800',
   FAILED: 'bg-red-50 text-red-700',
 }
-
-// Dispatches Phase 7's single 'Delivery Management' nav entry (see
-// modules.js) to one of two completely different screens depending on
-// role, the same "one module, role decides the content" shape
-// Dashboard.jsx already uses for OrderManagement's customer/staff split.
-// A DELIVERY_PERSONNEL gets their own workflow — MyDeliveries.jsx — while
-// ADMIN/CASHIER get StaffDeliveryView below. Kept as a plain dispatcher
-// with NO hooks of its own: StaffDeliveryView holds all of the staff
-// view's state instead, so each rendered component has its own fixed,
-// unconditional hook order — an early return ahead of a useState call in
-// ONE component, switched by a prop that can change, is exactly the shape
-// React's rules of hooks exist to rule out.
 export function DeliveryManagement({ user }) {
   if (user.role === 'DELIVERY PERSONNEL') return <MyDeliveries user={user} />
   return <StaffDeliveryView user={user} />
 }
-
-// The staff side of Phase 7's Delivery Management module (see
-// PHASE7_PLAN.md) — the assignment queue and every delivery's state, for
-// ADMIN and CASHIER.
 function StaffDeliveryView({ user }) {
   const isAdmin = user.role === 'ADMIN'
 
@@ -88,12 +70,6 @@ function StaffDeliveryView({ user }) {
       setBusyId(null)
     }
   }
-
-  // Both admin recovery transitions share one handler, because from the
-  // screen's point of view they are one workflow in two steps: RECALL a
-  // delivery its driver can no longer finish (-> FAILED), then RETRY it
-  // back into the queue (-> PENDING_ASSIGNMENT) for someone else. Each
-  // has to say why; the backend refuses either without a note.
   const handleAdminTransition = async (deliveryId, status) => {
     const note = retryNotes[deliveryId]
     if (!note) {
@@ -192,13 +168,6 @@ function StaffDeliveryView({ user }) {
                     <button type="button" onClick={() => handleAdminTransition(delivery.id, 'PENDING_ASSIGNMENT')} disabled={busyId === delivery.id} className="rounded-lg border border-green-700 px-2.5 py-1.5 text-[10px] font-bold text-green-800 transition hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-60">Retry</button>
                   </div>
                 )}
-
-                {/* Every forward transition belongs to the ONE driver holding
-                    the delivery, so a driver who can no longer act — account
-                    deactivated, phone lost, left the job — used to strand it
-                    with no way for anyone to move or reassign it. Recalling
-                    it here fails the attempt, which puts it back in reach of
-                    the Retry control above. */}
                 {(delivery.status === 'ASSIGNED' || delivery.status === 'OUT_FOR_DELIVERY') && isAdmin && (
                   <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
                     <input value={retryNotes[delivery.id] ?? ''} onChange={(event) => setRetryNotes({ ...retryNotes, [delivery.id]: event.target.value })} placeholder="Why is this being recalled from its driver?" className="flex-1 rounded-lg border border-stone-200 px-2 py-1.5 text-[11px] outline-none focus:border-green-700" />

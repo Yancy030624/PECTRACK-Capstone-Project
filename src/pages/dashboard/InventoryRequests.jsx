@@ -1,4 +1,3 @@
-// Import state management for the propose form and the request list.
 import { useEffect, useState } from 'react'
 import { apiGet, apiPatch, apiPost } from '../../api/client.js'
 
@@ -8,25 +7,12 @@ const statusStyles = {
   APPROVED: 'bg-green-50 text-green-800',
   REJECTED: 'bg-red-50 text-red-700',
 }
-
-// Phase 5, Step 6 (see PHASE5_PLAN.md): the cashier-proposes/admin-approves
-// stock workflow. Kept as its own component rather than folded into
-// InventoryManagement.jsx, which the plan itself flagged as already large
-// enough to need splitting before adding more to it.
-//
-// A cashier can only PROPOSE here — never apply a change directly, that's
-// InventoryManagement.jsx's admin-only edit. An admin reviews everyone's
-// proposals; a cashier sees only their own, matching how the backend
-// scopes GET /api/inventory/requests by role.
 export function InventoryRequests({ user, inventory }) {
   const isAdmin = user.role === 'ADMIN'
 
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
-  // Tracked separately from the text so a success and a failure don't get
-  // rendered with the same red styling — 'Request submitted.' in an error
-  // colour reads as though it failed.
   const [messageFailed, setMessageFailed] = useState(false)
 
   const [proposeForm, setProposeForm] = useState(emptyProposeForm)
@@ -61,8 +47,6 @@ export function InventoryRequests({ user, inventory }) {
     setProposeErrors({})
     try {
       const body = { productId: proposeForm.productId, reason: proposeForm.reason }
-      // Only send a proposed field if the cashier actually filled it in —
-      // the backend requires at least one, but neither is forced.
       if (proposeForm.proposedStockQuantity !== '') body.proposedStockQuantity = Number(proposeForm.proposedStockQuantity)
       if (proposeForm.proposedMinStockLevel !== '') body.proposedMinStockLevel = Number(proposeForm.proposedMinStockLevel)
       await apiPost('/api/inventory/requests', body)

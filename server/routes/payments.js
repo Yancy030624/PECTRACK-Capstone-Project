@@ -23,6 +23,7 @@ import { config } from '../config.js'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { createCheckoutSession, PaymongoApiError, paymongoMinimumAmountCentavos, PaymongoWebhookVerificationError, verifyPaymongoWebhook } from '../lib/paymongo.js'
+import { dateRangeSql, parseDateRange } from '../lib/reporting.js'
 import { normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
@@ -37,6 +38,13 @@ const paymentMethods = new Set(['CASH', 'GCASH'])
 // column can be seen to agree, rather than a bare 255 sitting in a
 // condition with no stated connection to the schema.
 const gatewayReferenceMaxLength = 255
+// PHASE 8, DECISION 5 — payment_status mirrored here the same way
+// paymentMethods mirrors payment_method above, so GET / can validate a
+// ?status= filter without a round trip to the database just to ask "is
+// this a real status".
+const paymentStatuses = new Set(['PENDING', 'PAID', 'FAILED', 'CANCELLED', 'REFUNDED'])
+const defaultPaymentsLimit = 50
+const maxPaymentsLimit = 200
 
 const mapPaymentListRow = (row) => ({
   id: row.payment_id,
@@ -59,10 +67,18 @@ const mapPaymentListRow = (row) => ({
 // recorded_by is only ever a cashier or admin, refunded_by only ever an
 // admin, because those are the only roles the routes below ever let write
 // to those columns.
+//
+// COUNT(*) OVER() — no PARTITION BY — is evaluated over every row the
+// WHERE clause matched, BEFORE LIMIT/OFFSET trims the page down (that is
+// SQL's own logical order of operations, not a coincidence this query
+// relies on). Reading it off row 0 gives GET / (below) the true total
+// match count in the SAME round trip as the page of rows itself, rather
+// than a second COUNT(*) query against the same filters.
 const paymentListSelectQuery = `SELECT p.payment_id, p.order_id, o.status AS order_status, c.name AS customer_name,
             p.payment_method, p.amount, p.status, p.gateway_reference, p.payment_date, p.created_at,
             COALESCE(ra.name, rc.name) AS recorded_by_name,
-            p.refunded_at, p.refund_reason, fa.name AS refunded_by_name
+            p.refunded_at, p.refund_reason, fa.name AS refunded_by_name,
+            COUNT(*) OVER()::int AS full_count
        FROM payments p
        JOIN orders o ON o.order_id = p.order_id
        LEFT JOIN customers c ON c.customer_id = o.customer_id
@@ -198,15 +214,105 @@ router.post('/webhook', async (request, response) => {
 // POST /webhook above, registered before this line, is exempt.
 router.use(requireAuth, requireRole('ADMIN', 'CASHIER', 'CUSTOMER'))
 
+// PHASE 8, DECISION 5 — transaction history EXTENDS this existing
+// endpoint rather than becoming a second one under /api/reports. A new
+// GET /api/reports/transactions would have to restate this SELECT and its
+// role scoping, which is exactly the duplication PHASES-RULES-PLANNING.md
+// forbids ("avoid duplicated business logic across routes") — and worse,
+// two payment lists that could quietly drift on who is allowed to see
+// what. The role scoping below is UNCHANGED from before this phase: a
+// customer filtering their own history is a new feature; a customer
+// seeing anyone else's is the bug that scoping already prevented.
 router.get('/', async (request, response) => {
+  const filters = []
+  const params = []
+
   if (request.user.role === 'CUSTOMER') {
     const customerResult = await pool.query('SELECT customer_id FROM customers WHERE user_id = $1', [request.user.id])
-    const customerId = customerResult.rows[0]?.customer_id
-    const result = await pool.query(`${paymentListSelectQuery} WHERE o.customer_id = $1 ORDER BY p.created_at DESC`, [customerId])
-    return response.json({ payments: result.rows.map(mapPaymentListRow) })
+    params.push(customerResult.rows[0]?.customer_id)
+    filters.push(`o.customer_id = $${params.length}`)
   }
-  const result = await pool.query(`${paymentListSelectQuery} ORDER BY p.created_at DESC`)
-  return response.json({ payments: result.rows.map(mapPaymentListRow) })
+
+  // from/to are OPTIONAL here, unlike every route in routes/reports.js —
+  // this endpoint already existed and defaulted to "everything", and that
+  // default has to survive for any caller that doesn't ask for a range.
+  // Supplying either requires both, validated the exact same way every
+  // other report's range is (lib/reporting.js), so this can never
+  // silently disagree with /api/reports/sales at the boundaries.
+  if ('from' in request.query || 'to' in request.query) {
+    const { from, to, errors } = parseDateRange(request.query)
+    if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
+    params.push(from, to)
+    filters.push(dateRangeSql('p.payment_date', { fromParam: `$${params.length - 1}`, toParam: `$${params.length}` }))
+  }
+
+  if (request.query.method != null) {
+    const method = normalize(request.query.method).toUpperCase()
+    if (!paymentMethods.has(method)) return response.status(422).json({ message: 'Select cash or GCash.', errors: { method: 'Select cash or GCash.' } })
+    params.push(method)
+    filters.push(`p.payment_method = $${params.length}`)
+  }
+
+  if (request.query.status != null) {
+    const status = normalize(request.query.status).toUpperCase()
+    if (!paymentStatuses.has(status)) return response.status(422).json({ message: 'Enter a valid payment status.', errors: { status: 'Enter a valid payment status.' } })
+    params.push(status)
+    filters.push(`p.status = $${params.length}`)
+  }
+
+  // Capped, never rejected — an out-of-range limit is not worth a 422
+  // over, the same "forgiving" rule routes/reports.js's own parseLimit
+  // uses. This IS a behavior change from before Phase 8: this endpoint
+  // used to return every matching row with no limit at all.
+  const limit = Math.min(Math.max(Math.trunc(Number(request.query.limit)) || defaultPaymentsLimit, 1), maxPaymentsLimit)
+  const offset = Math.max(Math.trunc(Number(request.query.offset)) || 0, 0)
+  params.push(limit, offset)
+  const limitParam = params.length - 1
+  const offsetParam = params.length
+
+  const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : ''
+  const result = await pool.query(
+    `${paymentListSelectQuery}
+      ${whereClause}
+     ORDER BY p.created_at DESC
+     LIMIT $${limitParam} OFFSET $${offsetParam}`,
+    params,
+  )
+
+  // full_count is the SAME on every row (the window function has no
+  // PARTITION BY), so row 0 carries it whenever there is a row 0 at all.
+  //
+  // An EMPTY page has no row 0 to read it from, and that case is not one
+  // case but two: "nothing matches these filters" (total genuinely is 0)
+  // and "the filters still match plenty, this page just isn't one of
+  // them" (total is unchanged, the caller simply asked for an offset past
+  // the end). Reading 0 for the second one reports an empty payment
+  // history to someone whose history is not empty.
+  //
+  // Only that second case needs a second query, and it is reached only by
+  // an offset past the end — so the common path still gets its total in
+  // the same round trip as the rows, and nothing pays for this except the
+  // request that actually needs it.
+  let total = result.rows[0]?.full_count ?? 0
+  if (result.rows.length === 0 && offset > 0) {
+    // Every filter built above targets p.* or o.*, so the joins that only
+    // supply display names (customers, admins, cashiers) are not needed to
+    // count. A filter added later on any OTHER table must be joined here
+    // too, or this count and the page above will disagree.
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::int AS n
+         FROM payments p
+         JOIN orders o ON o.order_id = p.order_id
+        ${whereClause}`,
+      params.slice(0, -2),
+    )
+    total = countResult.rows[0].n
+  }
+  return response.json({
+    payments: result.rows.map(mapPaymentListRow),
+    total,
+    hasMore: offset + result.rows.length < total,
+  })
 })
 
 // POST /api/payments — cashier/admin only. A customer can VIEW their own

@@ -27,8 +27,33 @@ import { normalize, normalizeEmail, parseId, validateContactNumberField, validat
 
 const router = express.Router()
 
+// TWO ids on one person, and why BOTH are here.
+//
+// `id` is u.user_id — this screen has keyed its own rows by it since
+// before this comment existed, and PATCH /:id below still takes it.
+// `customerId` is c.customer_id — a SEPARATE PRIMARY KEY on the
+// `customers` table, its own sequence, unrelated in value to user_id
+// except by coincidence. Verified live against this project's own data:
+// one account, user_id 4868, customer_id 1914 — not off by a fixed
+// offset, not derivable from one another, just two different numbers
+// naming the same person.
+//
+// The reason this router now returns both: POST /api/orders and GET
+// /api/addresses?customerId= — the endpoints a cashier's own
+// order-taking screen calls (COUNTER_ORDER_PLAN.md) — want
+// customers.customer_id specifically, never user_id. Before this field
+// existed, the only id a caller could get from THIS list was the wrong
+// one for that purpose. With one customer in the database that mistake
+// fails loudly (a 422, "Selected customer does not exist"). With two
+// customers whose user_id and customer_id happen to cross — entirely
+// possible, since the two sequences advance independently — the SAME
+// mistake stops failing and starts silently attaching an order, its
+// money, and its delivery address to a different real person. Additive
+// only: `id` still means exactly what it always has, so
+// CustomerManagement.jsx, which only ever reads `.id`, needed no change.
 const mapCustomerRow = (row) => ({
   id: row.user_id,
+  customerId: row.customer_id,
   username: row.username,
   name: row.name,
   email: row.email,
@@ -41,7 +66,7 @@ const mapCustomerRow = (row) => ({
 // lookups elsewhere in this app — every row this router touches is
 // already known to be a customer, so there's no "which of four tables
 // matched" ambiguity to resolve.
-const customerSelectQuery = `SELECT u.user_id, u.username, u.is_active, c.name, c.email, c.contact_num, c.created_at
+const customerSelectQuery = `SELECT u.user_id, u.username, u.is_active, c.customer_id, c.name, c.email, c.contact_num, c.created_at
      FROM users u
      JOIN customers c ON c.user_id = u.user_id`
 

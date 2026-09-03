@@ -24,7 +24,7 @@ import { requireAuth, requireRole } from '../lib/auth.js'
 // The disk seam — see lib/storageExplanation.js. This file never touches
 // the filesystem directly; it only ever hands storage.js validated bytes
 // and a validated extension, and gets a storage_key back.
-import { deleteProofFile, proofFilePath, saveProofFile } from '../lib/storage.js'
+import { deleteFile, filePath, saveFile } from '../lib/storage.js'
 import { normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
@@ -439,7 +439,7 @@ router.post(
     // generated server-side). A value like '../../server/db.js' is stored
     // here as inert text, exactly as safe as any other string column.
     const fileName = normalize(request.query.fileName).slice(0, fileNameMaxLength) || `proof${extension}`
-    const storageKey = await saveProofFile(request.body, extension)
+    const storageKey = await saveFile(request.body, extension)
 
     // The cap lives in the WHERE clause of the INSERT itself rather than a
     // separate COUNT read — the same reasoning every other conditional
@@ -454,7 +454,7 @@ router.post(
       [deliveryId, personnelId, proofType, storageKey, fileName, contentType, maxProofsPerDelivery],
     )
     if (inserted.rowCount === 0) {
-      await deleteProofFile(storageKey)
+      await deleteFile(storageKey)
       return response.status(409).json({ message: `A delivery can hold at most ${maxProofsPerDelivery} proof files.` })
     }
     return response.status(201).json({ proof: mapProofRow(inserted.rows[0]) })
@@ -482,7 +482,7 @@ router.get('/:id/proof', async (request, response) => {
 
 // GET /api/deliveries/:id/proof/:proofId — the raw file bytes. Same
 // staff-see-any / driver-sees-own-only scoping as the listing above.
-// response.sendFile() streams the file directly — proofFilePath() is the
+// response.sendFile() streams the file directly — filePath() is the
 // only place in this file that ever turns a storage_key back into a real
 // filesystem path, and it only ever does so for a key this app itself
 // generated (see lib/storageExplanation.js).
@@ -514,7 +514,7 @@ router.get('/:id/proof/:proofId', async (request, response) => {
   // streaming before it failed; responding a second time on top of a
   // response already in flight would throw.
   response.type(proof.mime_type)
-  return response.sendFile(proofFilePath(proof.storage_key), (error) => {
+  return response.sendFile(filePath(proof.storage_key), (error) => {
     if (error && !response.headersSent) response.status(404).json({ message: 'This proof file is no longer available.' })
   })
 })

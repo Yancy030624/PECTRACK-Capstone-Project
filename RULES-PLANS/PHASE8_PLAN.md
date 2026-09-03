@@ -697,11 +697,36 @@ on "it returned an array".
   (`processed_by`, `delivery_personnel_id`) and the feature is real, but
   measuring individual staff has implications worth deciding deliberately
   rather than shipping because the join was easy.
-- **`DashboardHome`'s non-reporting roles keep placeholder numbers.**
-  Step 6 fixes ADMIN and CASHIER, who have reporting access. A customer's
-  "3 active orders" and a driver's "8 deliveries today" are still
-  fabricated afterwards, and both are now cheap to make real — noted so it
-  is a known omission rather than an oversight.
+- ~~`report_logs` is now write-only — the same gap Phase 8 just closed.~~
+  **Closed**, in CHECKOUT_PLAN.md's follow-on work: `GET /api/reports/logs`
+  (admin-only — `report_logs.generated_by` can never be a cashier's, so
+  the route carries its own `requireRole('ADMIN')` on top of the
+  router-wide guard) and a paginated "Report History" tab on the
+  Reporting screen, ADMIN-only there too. Reads the ledger, writes
+  nothing, the same discipline `GET /inventory` already follows for
+  `inventory_movements`. While fixing it, found and fixed the SAME class
+  of bug one level up: two of this file's own tests each created a test
+  category and never deleted it — the exact "Report Inventory/CSV
+  Category `<hex>`" mess a user later found cluttering Product
+  Management, regrowing by two rows on every subsequent `npm test` run
+  until the leak itself was closed.
+- **The CSV export carries its grouping but not its full provenance.** The
+  review made the first column self-describing (`Period (week)`) and the
+  date range travels in the filename, but the file records nothing about
+  *who* generated it or *when* — so a spreadsheet emailed on to someone
+  else has no way to be traced back to the `report_logs` row it created. A
+  title block would fix it and would also push the header off row 1 and
+  break a plain spreadsheet import, which is why it was not done. Worth
+  revisiting only if exports start being circulated.
+- ~~`DashboardHome`'s non-reporting roles keep placeholder numbers.~~
+  **Closed**, in CHECKOUT_PLAN.md's follow-on work: a customer's
+  fabricated "3 active orders" was retired when `modules.js` stopped
+  giving CUSTOMER a `Dashboard` module at all, and a driver's fabricated
+  "8 deliveries today" was retired the same way — `DELIVERY PERSONNEL`
+  no longer has a `Dashboard` module either, and lands on Delivery
+  Management (their real work queue) instead. `DashboardHome` is now
+  reached only by ADMIN and CASHIER, the two roles Step 6 already made
+  real, so there is no fabricated number left anywhere in it.
 - **Carried forward, still open:** PayMongo credentials are still not wired
   in, so the gateway path is unexercised against the real API (Phase 6.5);
   a `COMPLETED` order still cannot be refunded (a deliberate business rule

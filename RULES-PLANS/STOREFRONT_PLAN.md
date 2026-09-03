@@ -418,22 +418,34 @@ STAFF     -> dashboard, exactly as today
 
 **New**
 
-- `src/pages/storefront/StorefrontLayout.jsx` — shared header/footer shell
-- `src/pages/storefront/HomePage.jsx`
-- `src/pages/storefront/MenuPage.jsx`
-- `src/pages/storefront/AboutPage.jsx`
-- `src/pages/storefront/ContactPage.jsx`
+- `src/pages/customer-storefront/StorefrontLayout.jsx` — shared header/footer shell
+- `src/pages/customer-storefront/HomePage.jsx`
+- `src/pages/customer-storefront/MenuPage.jsx`
+- `src/pages/customer-storefront/AboutPage.jsx`
+- `src/pages/customer-storefront/ContactPage.jsx`
+- `database/migrations/007_product_image.sql` — Step 5
 - `STOREFRONT_PLAN.md` — this document
 
 **Modified**
 
 - `server/lib/auth.js` + twin — add `optionalAuth`
+- `server/lib/storage.js` + twin — renamed `saveProofFile`/`proofFilePath`/
+  `deleteProofFile` to `saveFile`/`filePath`/`deleteFile` once product
+  images became a second caller alongside `server/routes/deliveries.js` +
+  twin + test (Step 5) — mechanical rename, same mechanism, not a rewrite
 - `server/routes/products.js` + twin + `products.test.js` — public reads
+  (Step 2) and the image upload/serve/delete routes (Step 5)
 - `server/routes/categories.js` + twin + `categories.test.js` — public reads
 - `src/App.jsx` — routing, and Decision 8's landing rule
 - `src/components/Brand.jsx`, `src/components/WelcomePanel.jsx` — asset fix
 - `src/components/MarketingHeader.jsx` — real nav destinations
+- `src/components/HeaderIcon.jsx` — a `disabled` state for Decision 6's
+  visibly-inert cart/search icons
+- `src/pages/dashboard/ProductManagement.jsx` — the admin photo upload UI
 - `package.json` — `react-router-dom`
+
+Renamed post-plan, same content: `src/pages/storefront/` →
+`src/pages/customer-storefront/`.
 
 **Deliberately untouched**
 
@@ -462,9 +474,26 @@ re-verified here — it is the one existing flow this step can break.
 one that talks to an API; the other three are content. Build Menu first, so
 the API work from Step 2 is exercised early.
 
-**Step 5 — product images (separate approval).** Migration, ADMIN-only
-upload, admin UI, and the Menu swapping placeholders for photographs. Does
-not begin until Steps 1–4 are done and the schema change is approved.
+**Step 5 — product images.** Migration 007 (`products.image_key`), an
+ADMIN-only upload/replace/remove endpoint sharing `lib/storage.js` with
+Phase 7's proof-of-delivery photos (renamed `saveFile`/`filePath`/
+`deleteFile` once it gained a second caller), a public `GET
+/:id/image` that applies the exact same hidden-product rule `GET /:id`
+already does, and an admin upload UI in `ProductManagement.jsx`.
+
+**Done.** Real photos and prices came from the bakery's own price-list
+photos (`C:\Product-pics`, 40 images: two full poster sheets plus 38
+per-item marketing shots) — 41 products across 5 real categories (Breads,
+Ensaymada, Pastries & Sweet Rolls, Broas & Ladyfingers, Crackers &
+Biscuits), 39 of them photographed, replacing the stale test debris that
+had accumulated in `products`/`categories` from interrupted `npm test`
+runs. The bakery's real address and phone number, read off its own
+product packaging, replaced the placeholder contact details on the
+Contact page and the storefront footer. Two Pandesal rows (Big/Small)
+ship without a dedicated photo — the poster's grid photo is far lower
+resolution than the 38 individual shots, and a single blurry tile would
+have stood out against 39 sharp ones — and simply show the Menu's
+placeholder tile until better photos exist, exactly as designed.
 
 ---
 
@@ -532,8 +561,9 @@ unavailable product that must be absent. Never on a count, and never on
 ## Known gaps deliberately left open
 
 - **No cart, no checkout.** The next plan, and the natural one.
-- **No product photographs until Step 5**, and that step needs schema
-  approval before it starts.
+- **Two Pandesal variants (Big/Small) have no dedicated photo** — every
+  other product in the seeded catalog does. Genuinely blocked on a real
+  photo existing, not on any code.
 - **Contact is information, not a form** (Decision 7).
 - **Home and About copy is static in a component.** Editing the bakery's
   story means editing a file. A CMS is a real feature and nobody has asked

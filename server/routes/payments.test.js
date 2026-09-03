@@ -850,4 +850,157 @@ describe('payment & billing', () => {
     const order = await getOrder(orderId)
     assert.equal(order.payment.payments[0].recordedByName, cashier.name)
   })
+
+  // --- PHASE 8, DECISION 5 — filters and pagination on GET / -------------
+  //
+  // GET /api/payments is GLOBAL for staff — no scoping at all — and by
+  // this point in the file plenty of OTHER tests have already recorded
+  // real payments dated "now". So these tests avoid asserting an exact
+  // total against the whole table: they check for the PRESENCE or ABSENCE
+  // of one specific, known payment id in the returned list (safe
+  // regardless of how much else exists), or scope pagination to a FRESH
+  // customer created just for that test, whose payment count only this
+  // test ever adds to.
+  describe('GET /api/payments — filters and pagination', () => {
+    test('filtering by method narrows to just that method', async () => {
+      const cash = await createOrder(1)
+      await recordPayment({ orderId: cash.orderId, method: 'CASH', amount: 100 })
+      const gcash = await createOrder(1)
+      await recordPayment({ orderId: gcash.orderId, method: 'GCASH', amount: 100, gatewayReference: `filter-test-${crypto.randomUUID()}` })
+
+      const cashOnly = await (await fetch(`${baseUrl}/api/payments?method=CASH`, { headers: { Cookie: cashierCookie } })).json()
+      assert.ok(cashOnly.payments.some((p) => p.orderId === cash.orderId), 'the CASH payment must appear under method=CASH')
+      assert.ok(!cashOnly.payments.some((p) => p.orderId === gcash.orderId), 'the GCASH payment must not appear under method=CASH')
+
+      const gcashOnly = await (await fetch(`${baseUrl}/api/payments?method=GCASH`, { headers: { Cookie: cashierCookie } })).json()
+      assert.ok(gcashOnly.payments.some((p) => p.orderId === gcash.orderId))
+      assert.ok(!gcashOnly.payments.some((p) => p.orderId === cash.orderId))
+    })
+
+    test('rejects an invalid method or status', async () => {
+      const badMethod = await fetch(`${baseUrl}/api/payments?method=CHECK`, { headers: { Cookie: cashierCookie } })
+      assert.equal(badMethod.status, 422)
+      const badStatus = await fetch(`${baseUrl}/api/payments?status=MAYBE`, { headers: { Cookie: cashierCookie } })
+      assert.equal(badStatus.status, 422)
+    })
+
+    test('filtering by status narrows to just that status', async () => {
+      const paid = await createOrder(1)
+      await recordPayment({ orderId: paid.orderId, method: 'CASH', amount: 100 })
+
+      // POST / only ever inserts PAID rows (the file's own header explains
+      // why) — a PENDING row needs the same direct-SQL technique
+      // reports.test.js uses to exercise a status this route never writes.
+      const pending = await createOrder(1)
+      const pendingRow = await pool.query(
+        `INSERT INTO payments (order_id, recorded_by, payment_method, amount, status, gateway_reference)
+         VALUES ($1, (SELECT user_id FROM admins LIMIT 1), 'GCASH', 100, 'PENDING', $2) RETURNING payment_id`,
+        [pending.orderId, `filter-test-pending-${crypto.randomUUID()}`],
+      )
+      void pendingRow
+
+      const paidOnly = await (await fetch(`${baseUrl}/api/payments?status=PAID`, { headers: { Cookie: cashierCookie } })).json()
+      assert.ok(paidOnly.payments.some((p) => p.orderId === paid.orderId))
+      assert.ok(!paidOnly.payments.some((p) => p.orderId === pending.orderId))
+
+      const pendingOnly = await (await fetch(`${baseUrl}/api/payments?status=PENDING`, { headers: { Cookie: cashierCookie } })).json()
+      assert.ok(pendingOnly.payments.some((p) => p.orderId === pending.orderId))
+      assert.ok(!pendingOnly.payments.some((p) => p.orderId === paid.orderId))
+    })
+
+    test('filtering by date range narrows correctly, and from/to compose with method', async () => {
+      const inRange = await createOrder(1)
+      const payInRange = await recordPayment({ orderId: inRange.orderId, method: 'CASH', amount: 100 })
+      const inRangePaymentId = (await payInRange.json()).payment.id
+      await pool.query('UPDATE payments SET payment_date = $1 WHERE payment_id = $2', ['2024-06-15 10:00:00+08', inRangePaymentId])
+
+      const outOfRange = await createOrder(1)
+      const payOutOfRange = await recordPayment({ orderId: outOfRange.orderId, method: 'CASH', amount: 100 })
+      const outOfRangePaymentId = (await payOutOfRange.json()).payment.id
+      await pool.query('UPDATE payments SET payment_date = $1 WHERE payment_id = $2', ['2024-07-01 10:00:00+08', outOfRangePaymentId])
+
+      const filtered = await (await fetch(`${baseUrl}/api/payments?from=2024-06-01&to=2024-06-30`, { headers: { Cookie: cashierCookie } })).json()
+      assert.ok(filtered.payments.some((p) => p.id === inRangePaymentId))
+      assert.ok(!filtered.payments.some((p) => p.id === outOfRangePaymentId))
+    })
+
+    test('from without to (or vice versa) is a 422 — a date filter requires both', async () => {
+      const onlyFrom = await fetch(`${baseUrl}/api/payments?from=2024-06-01`, { headers: { Cookie: cashierCookie } })
+      assert.equal(onlyFrom.status, 422)
+      const onlyTo = await fetch(`${baseUrl}/api/payments?to=2024-06-30`, { headers: { Cookie: cashierCookie } })
+      assert.equal(onlyTo.status, 422)
+    })
+
+    // The filters must not become a side door around the existing role
+    // scoping: a customer applying a filter that would ALSO match another
+    // customer's payment must still see only their own.
+    test('a customer\'s filters still only ever surface their own payments', async () => {
+      const mine = await createOrder(1, customerCookie)
+      await recordPayment({ orderId: mine.orderId, method: 'CASH', amount: 100 })
+
+      const theirsOrder = await createOrder(1, secondCustomerCookie)
+      await recordPayment({ orderId: theirsOrder.orderId, method: 'CASH', amount: 100 })
+
+      const response = await (await fetch(`${baseUrl}/api/payments?method=CASH`, { headers: { Cookie: customerCookie } })).json()
+      assert.ok(response.payments.some((p) => p.orderId === mine.orderId))
+      assert.ok(!response.payments.some((p) => p.orderId === theirsOrder.orderId), 'a method filter must not surface another customer\'s payment')
+    })
+
+    test('pagination returns a correct total and hasMore, scoped to a fresh customer', async () => {
+      const paginationCustomer = { name: 'Pagination Customer', username: `paytest_page_${runId}`, email: `paytest_page_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+      await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...paginationCustomer, confirmPassword: paginationCustomer.password }) })
+      const paginationUserRow = await pool.query('SELECT user_id FROM users WHERE username = $1', [paginationCustomer.username])
+      createdUserIds.push(paginationUserRow.rows[0].user_id)
+      const paginationLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: paginationCustomer.username, password: paginationCustomer.password }) })
+      const paginationCookie = paginationLogin.headers.get('set-cookie').split(';')[0]
+
+      for (let i = 0; i < 3; i += 1) {
+        const order = await createOrder(1, paginationCookie)
+        await recordPayment({ orderId: order.orderId, method: 'CASH', amount: 100 })
+      }
+
+      const firstPage = await (await fetch(`${baseUrl}/api/payments?limit=2&offset=0`, { headers: { Cookie: paginationCookie } })).json()
+      assert.equal(firstPage.payments.length, 2)
+      assert.equal(firstPage.total, 3)
+      assert.equal(firstPage.hasMore, true)
+
+      const secondPage = await (await fetch(`${baseUrl}/api/payments?limit=2&offset=2`, { headers: { Cookie: paginationCookie } })).json()
+      assert.equal(secondPage.payments.length, 1)
+      assert.equal(secondPage.total, 3)
+      assert.equal(secondPage.hasMore, false)
+
+      // PAST THE END. total comes from COUNT(*) OVER(), which is read off
+      // row 0 — and an empty page has no row 0 to read it from. "No rows
+      // returned" is genuinely ambiguous between "nothing matches these
+      // filters" (total really is 0) and "the filters still match, this
+      // page just isn't one of them" (total is unchanged), and reporting
+      // 0 for the second case tells the caller the history is empty when
+      // it is not.
+      const pastEnd = await (await fetch(`${baseUrl}/api/payments?limit=2&offset=99`, { headers: { Cookie: paginationCookie } })).json()
+      assert.equal(pastEnd.payments.length, 0, 'an offset past the end returns no rows')
+      assert.equal(pastEnd.total, 3, 'total must still report every matching payment, even when this page is empty')
+      assert.equal(pastEnd.hasMore, false)
+    })
+
+    test('an empty result really is total 0 when nothing matches — the past-the-end fix must not invent a count', async () => {
+      const emptyCustomer = { name: 'Empty History Customer', username: `paytest_empty_${runId}`, email: `paytest_empty_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+      await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...emptyCustomer, confirmPassword: emptyCustomer.password }) })
+      const emptyUserRow = await pool.query('SELECT user_id FROM users WHERE username = $1', [emptyCustomer.username])
+      createdUserIds.push(emptyUserRow.rows[0].user_id)
+      const emptyLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: emptyCustomer.username, password: emptyCustomer.password }) })
+      const emptyCookie = emptyLogin.headers.get('set-cookie').split(';')[0]
+
+      const firstPage = await (await fetch(`${baseUrl}/api/payments?limit=2&offset=0`, { headers: { Cookie: emptyCookie } })).json()
+      assert.equal(firstPage.payments.length, 0)
+      assert.equal(firstPage.total, 0, 'a customer with no payments at all has a total of 0')
+
+      const pastEnd = await (await fetch(`${baseUrl}/api/payments?limit=2&offset=50`, { headers: { Cookie: emptyCookie } })).json()
+      assert.equal(pastEnd.total, 0, 'paging past the end of an genuinely empty history is still 0')
+    })
+
+    test('an oversized limit is capped, not rejected', async () => {
+      const response = await fetch(`${baseUrl}/api/payments?limit=999999`, { headers: { Cookie: cashierCookie } })
+      assert.equal(response.status, 200, 'an oversized limit must be capped, not refused')
+    })
+  })
 })

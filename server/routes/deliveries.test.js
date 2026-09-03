@@ -8,7 +8,7 @@ import { after, before, describe, test } from 'node:test'
 import bcrypt from 'bcrypt'
 import app from '../app.js'
 import { pool } from '../db.js'
-import { proofFilePath } from '../lib/storage.js'
+import { filePath } from '../lib/storage.js'
 
 const runId = crypto.randomUUID().slice(0, 8)
 const randomContactNumber = () => `09${Math.floor(100000000 + Math.random() * 899999999)}`
@@ -485,7 +485,7 @@ describe('delivery management', () => {
       const key = (await pool.query('SELECT storage_key FROM delivery_proofs WHERE delivery_id = $1', [deliveryId])).rows[0].storage_key
       assert.match(key, /^[0-9a-f-]{36}\.jpg$/, 'and still get a server-generated key with the right extension')
       const fs = await import('node:fs/promises')
-      await fs.unlink(proofFilePath(key)).catch(() => {})
+      await fs.unlink(filePath(key)).catch(() => {})
     }
   })
 
@@ -508,16 +508,16 @@ describe('delivery management', () => {
     // "no unexpected files exist" is not a thing any single test can
     // honestly assert — "this request added none" is.
     const fs = await import('node:fs/promises')
-    const before = new Set(await fs.readdir(proofFilePath('')).catch(() => []))
+    const before = new Set(await fs.readdir(filePath('')).catch(() => []))
     assert.equal((await upload(deliveryId)).status, 409, 'the 6th upload must be refused')
-    const after = await fs.readdir(proofFilePath('')).catch(() => [])
+    const after = await fs.readdir(filePath('')).catch(() => [])
     const leaked = after.filter((file) => !before.has(file))
     assert.deepEqual(leaked, [], 'a rejected upload must clean up the bytes it already wrote')
 
     const keys = (await pool.query('SELECT storage_key FROM delivery_proofs WHERE delivery_id = $1', [deliveryId])).rows.map((r) => r.storage_key)
     assert.equal(keys.length, 5, 'and must not have been written to the database either')
 
-    for (const key of keys) await fs.unlink(proofFilePath(key)).catch(() => {})
+    for (const key of keys) await fs.unlink(filePath(key)).catch(() => {})
   })
 
   // Deliberately a delivery with ZERO proofs on it, so a 409 here can only
@@ -555,7 +555,7 @@ describe('delivery management', () => {
     // Delete the bytes out from under the row, leaving the row behind.
     const key = (await pool.query('SELECT storage_key FROM delivery_proofs WHERE proof_id = $1', [proofId])).rows[0].storage_key
     const fs = await import('node:fs/promises')
-    await fs.unlink(proofFilePath(key))
+    await fs.unlink(filePath(key))
 
     const response = await fetch(`${baseUrl}/api/deliveries/${deliveryId}/proof/${proofId}`, { headers: { Cookie: adminCookie } })
     assert.equal(response.status, 404, 'a missing file must be a clean 404')
@@ -640,14 +640,14 @@ describe('delivery management', () => {
     assert.ok(!storageKey.includes('..'), 'the storage key must never contain a path-traversal sequence')
 
     const fs = await import('node:fs/promises')
-    const written = await fs.readFile(proofFilePath(storageKey))
+    const written = await fs.readFile(filePath(storageKey))
     assert.deepEqual(written, tinyJpegBytes, 'the uploaded bytes must land at the UUID path inside uploads/')
 
     // The real target of the attack — server/db.js — must be untouched.
     const afterContent = await fs.readFile(new URL('../db.js', import.meta.url), 'utf8')
     assert.equal(afterContent, beforeContent, 'a path-traversal file_name must never write outside uploads/')
 
-    await fs.unlink(proofFilePath(storageKey)).catch(() => {})
+    await fs.unlink(filePath(storageKey)).catch(() => {})
   })
 
   test('a successful proof upload is listed for staff and the uploading driver, and its bytes are fetchable', async () => {
@@ -674,7 +674,7 @@ describe('delivery management', () => {
 
     const storageKey = (await pool.query('SELECT storage_key FROM delivery_proofs WHERE proof_id = $1', [proofId])).rows[0].storage_key
     const fs = await import('node:fs/promises')
-    await fs.unlink(proofFilePath(storageKey)).catch(() => {})
+    await fs.unlink(filePath(storageKey)).catch(() => {})
   })
 })
 

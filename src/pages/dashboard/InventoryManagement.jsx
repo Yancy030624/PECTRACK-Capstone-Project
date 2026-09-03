@@ -1,4 +1,3 @@
-// Import state management for the stock list and the admin edit form.
 import { useEffect, useState } from 'react'
 import { apiGet, apiPatch } from '../../api/client.js'
 import { InventoryRequests } from './InventoryRequests.jsx'
@@ -9,27 +8,8 @@ const reasonOptions = [
   { value: 'SPOILAGE', label: 'Spoilage / waste' },
   { value: 'CORRECTION', label: 'Correction (recount)' },
 ]
-
-// Admin/cashier screen: current stock levels, plus (admin only) directly
-// editing them. Phase 5, Steps 1–2 (see PHASE5_PLAN.md). Deducting on order
-// placement, low-stock alerts, and the cashier-propose/admin-approve
-// workflow are later steps in that same plan, not yet built — a cashier can
-// currently only VIEW stock here, not change it.
-//
-// Deliberately a SEPARATE screen from ProductManagement.jsx (categories +
-// product details) even though both ultimately describe a product: stock
-// numbers change constantly and for different reasons than a product's
-// name or price, and change history/alerts belong with the stock side, not
-// the catalog side.
 export function InventoryManagement({ user }) {
   const isAdmin = user.role === 'ADMIN'
-
-  // 'levels' vs 'requests' — kept as a simple tab within this one screen
-  // rather than a second nav entry. The cashier-propose/admin-approve
-  // workflow (InventoryRequests.jsx) is still part of the same Inventory
-  // Management module, not a separate one; splitting it into its own file
-  // was purely to keep this file from growing unmanageable, not to make
-  // it a distinct screen a user navigates to independently.
   const [activeTab, setActiveTab] = useState('levels')
 
   const [inventory, setInventory] = useState([])
@@ -69,25 +49,12 @@ export function InventoryManagement({ user }) {
     setEditingProductId(null)
     setEditOriginal(null)
   }
-
-  // True only once the person has actually typed a different stock figure
-  // — used both to decide whether to send stockQuantity at all, and to
-  // show the reason field only when it's actually required. Comparing
-  // against editOriginal (captured at the moment editing started) rather
-  // than the live list means this stays correct even if a background
-  // refresh changes `inventory` while the form is open.
   const stockQuantityChanged = editOriginal && String(editOriginal.stockQuantity) !== editForm.stockQuantity
 
   const saveEdit = async (event, item) => {
     event.preventDefault()
     setEditSubmitting(true)
     setEditErrors({})
-
-    // Only include a field in the request if it actually changed. This
-    // matters most for stockQuantity: the backend requires a `reason`
-    // whenever stockQuantity is present in the body at all, so sending it
-    // unconditionally would force picking a reason even for a pure
-    // minStockLevel edit that never touched stock.
     const body = {}
     if (stockQuantityChanged) {
       body.stockQuantity = Number(editForm.stockQuantity)

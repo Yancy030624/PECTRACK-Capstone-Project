@@ -92,6 +92,28 @@ describe('customer record management', () => {
     assert.ok((await asCashier.json()).customers.some((customer) => customer.id === targetCustomerId))
   })
 
+  // COUNTER_ORDER_PLAN.md, Decision 3 — `id` (user_id) and `customerId`
+  // (customers.customer_id) are two DIFFERENT numbers naming the same
+  // person, verified here against the database's own row rather than
+  // trusted to just look right. A caller that needs to place an order or
+  // fetch addresses for someone on this list wants customerId — sending
+  // `id` there is the exact mistake this field exists to prevent.
+  test('each customer carries BOTH id (user_id) and customerId (customers.customer_id) — the real row\'s value, not a guess', async () => {
+    const response = await fetch(`${baseUrl}/api/customers?search=Findable`, { headers: { Cookie: adminCookie } })
+    const found = (await response.json()).customers.find((customer) => customer.id === targetCustomerId)
+    assert.ok(found, 'the target customer must be in the results')
+    assert.ok(found.customerId, 'customerId must be present')
+
+    const realRow = await pool.query('SELECT customer_id FROM customers WHERE user_id = $1', [targetCustomerId])
+    assert.equal(found.customerId, realRow.rows[0].customer_id, 'customerId must be the row\'s actual customers.customer_id')
+    // Not a tautology: user_id and customer_id are independent sequences
+    // (users is shared across every role; customers is its own table), so
+    // asserting they differ here is what would have caught this bug
+    // before it shipped, if user_id and customer_id had happened to be
+    // sequential integers that could quietly line up.
+    assert.notEqual(String(found.customerId), String(found.id), 'user_id and customer_id are different sequences, not aliases of the same number')
+  })
+
   test('PATCH /api/customers/:id lets a cashier edit profile fields but not isActive', async () => {
     const editResponse = await fetch(`${baseUrl}/api/customers/${targetCustomerId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ name: 'Renamed By Cashier' }) })
     assert.equal(editResponse.status, 200)

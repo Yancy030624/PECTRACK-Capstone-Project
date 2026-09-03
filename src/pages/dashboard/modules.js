@@ -5,10 +5,35 @@
 // which was a misnomer once Phase 5 introduced actual stock management.
 // Relabelled to 'Product Management' to match what that screen has always
 // done, freeing the name for the real inventory (stock level) screen below.
+// A customer's dashboard nav intentionally looks different from staff's —
+// see the comment above the CUSTOMER-only entries below for why.
 export const modules = [
-  { name: 'Dashboard', icon: '▦', roles: ['ADMIN', 'CUSTOMER', 'CASHIER', 'DELIVERY PERSONNEL'] },
+  // ADMIN/CASHIER only. A customer's own landing screen is 'My Orders'
+  // (Dashboard.jsx defaults them there directly) — the generic admin-style
+  // "Dashboard" overview never had real content for a customer role to
+  // begin with (see DashboardHome.jsx's own history), and the storefront
+  // itself is already a customer's real landing page, reachable from
+  // anywhere via the header — a second, INTERNAL landing page one level
+  // deeper was a redundant stop, not a second front door.
+  //
+  // DELIVERY PERSONNEL was removed for the same reason (CHECKOUT_PLAN.md
+  // follow-on work) — their 'Dashboard' only ever showed a fabricated
+  // "8 deliveries today" (DashboardHome.jsx's old roleMetrics), since the
+  // real numbers live in Reporting & Analytics, which that role can't
+  // reach. Delivery Management is a driver's actual work queue and is now
+  // where they land instead (Dashboard.jsx's defaultModuleFor) — the same
+  // "send them to real content, not a placeholder" call already made for
+  // customers.
+  { name: 'Dashboard', icon: '▦', roles: ['ADMIN', 'CASHIER'] },
   { name: 'Staff Management', icon: '☺', roles: ['ADMIN'] },
-  { name: 'Order Management', icon: '□', roles: ['ADMIN', 'CUSTOMER', 'CASHIER', 'DELIVERY PERSONNEL'] },
+  // Staff manage every order; a customer only ever needs their own — two
+  // different screens with two different names, not one screen wearing
+  // two labels. Both map to the SAME component (OrderManagement.jsx,
+  // Dashboard.jsx's moduleComponents), which dispatches on role
+  // internally — the exact shape Delivery Management already established
+  // for ADMIN/CASHIER vs DELIVERY PERSONNEL below.
+  { name: 'Order Management', icon: '□', roles: ['ADMIN', 'CASHIER'] },
+  { name: 'My Orders', icon: '□', roles: ['CUSTOMER'] },
   { name: 'Customer Management', icon: '♙', roles: ['ADMIN', 'CASHIER'] },
   { name: 'Product Management', icon: '▤', roles: ['ADMIN', 'CASHIER'] },
   { name: 'Inventory Management', icon: '⛁', roles: ['ADMIN', 'CASHIER'] },
@@ -16,11 +41,12 @@ export const modules = [
   // Phase 7 (see PHASE7_PLAN.md) — one nav entry shared by three roles.
   // ADMIN/CASHIER get the assignment queue; DELIVERY PERSONNEL get their
   // own workflow instead — DeliveryManagement.jsx dispatches between the
-  // two based on role, the same shape Order Management already uses.
+  // two based on role, the same shape Order Management now also uses.
   { name: 'Delivery Management', icon: '⛟', roles: ['ADMIN', 'CASHIER', 'DELIVERY PERSONNEL'] },
-  // Also Phase 7 — a customer's own saved delivery addresses. CUSTOMER
-  // only, the same self-service shape as My Profile below.
-  { name: 'Address Book', icon: '⌂', roles: ['CUSTOMER'] },
   { name: 'Reporting & Analytics', icon: '⌁', roles: ['ADMIN', 'CASHIER'] },
   { name: 'My Profile', icon: '◉', roles: ['ADMIN', 'CUSTOMER', 'CASHIER', 'DELIVERY PERSONNEL'] },
+  // No separate 'Address Book' entry any more — a customer's saved
+  // delivery addresses moved INTO My Profile as a tab (MyProfile.jsx),
+  // alongside their profile details and password. One place for
+  // "everything about my account" instead of two.
 ]

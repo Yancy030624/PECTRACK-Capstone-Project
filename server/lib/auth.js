@@ -83,6 +83,25 @@ export async function requireAuth(request, response, next) {
   next()
 }
 
+// STOREFRONT_PLAN.md, Decision 2 — the public catalogue's ONLY entry point
+// into the auth system. Unlike requireAuth, a missing or invalid session is
+// not an error here: it just means request.user stays undefined, and the
+// route itself decides what an anonymous caller may see (in practice,
+// products.js and categories.js treat "no user" the same as CUSTOMER —
+// the most restricted view that already exists, never a new one).
+//
+// Reuses findSessionUser rather than a second query, so "what counts as a
+// valid session" can never drift between the two middlewares.
+export async function optionalAuth(request, response, next) {
+  const sessionId = parseCookies(request.headers.cookie)[sessionCookieName]
+  const user = sessionId ? await findSessionUser(sessionId) : null
+  if (user) {
+    request.user = user
+    request.sessionId = sessionId
+  }
+  next()
+}
+
 // Restricts a route to specific roles. Must run after requireAuth (needs
 // request.user already set). Roles are compared against the same
 // space-separated display format requireAuth attaches to request.user.role

@@ -10,7 +10,7 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
-import { deleteProofFile, proofFilePath, saveProofFile } from '../lib/storage.js'
+import { deleteFile, filePath, saveFile } from '../lib/storage.js'
 import { normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
@@ -388,7 +388,7 @@ router.post(
     // generated server-side). A value like '../../server/db.js' is stored
     // here as inert text, exactly as safe as any other string column.
     const fileName = normalize(request.query.fileName).slice(0, fileNameMaxLength) || `proof${extension}`
-    const storageKey = await saveProofFile(request.body, extension)
+    const storageKey = await saveFile(request.body, extension)
 
     // The cap lives in the WHERE clause of the INSERT itself rather than a
     // separate COUNT read — the same reasoning every other conditional
@@ -403,7 +403,7 @@ router.post(
       [deliveryId, personnelId, proofType, storageKey, fileName, contentType, maxProofsPerDelivery],
     )
     if (inserted.rowCount === 0) {
-      await deleteProofFile(storageKey)
+      await deleteFile(storageKey)
       return response.status(409).json({ message: `A delivery can hold at most ${maxProofsPerDelivery} proof files.` })
     }
     return response.status(201).json({ proof: mapProofRow(inserted.rows[0]) })
@@ -455,7 +455,7 @@ router.get('/:id/proof/:proofId', async (request, response) => {
   // have started streaming before failing, and a second response then
   // would throw on top of the first.
   response.type(proof.mime_type)
-  return response.sendFile(proofFilePath(proof.storage_key), (error) => {
+  return response.sendFile(filePath(proof.storage_key), (error) => {
     if (error && !response.headersSent) response.status(404).json({ message: 'This proof file is no longer available.' })
   })
 })

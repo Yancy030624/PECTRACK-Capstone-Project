@@ -1,15 +1,8 @@
-// Import state management for the category/product lists and their forms.
-import { useEffect, useState } from 'react'
-import { apiDelete, apiGet, apiPatch, apiPost } from '../../api/client.js'
+import { useEffect, useRef, useState } from 'react'
+import { apiDelete, apiGet, apiPatch, apiPost, apiUpload } from '../../api/client.js'
 
 const emptyProductForm = { categoryId: '', name: '', description: '', price: '', variant: '', availabilityStatus: true }
 
-// Phase 4 scope: the product catalog itself (categories + products), admin
-// full CRUD, everyone else read-only. Stock quantity, min stock level, and
-// the cashier-proposes/admin-approves workflow live in InventoryManagement.jsx
-// instead (Phase 5) — this screen was originally named/labelled
-// "Inventory Management" before that screen existed, which became a
-// misnomer once it did. Renamed to match what it has always actually done.
 export function ProductManagement({ user }) {
   const isAdmin = user.role === 'ADMIN'
 
@@ -162,6 +155,53 @@ export function ProductManagement({ user }) {
     }
   }
 
+  // --- Product photos (STOREFRONT_PLAN.md, Decision 5) --------------------
+  // One shared hidden file input rather than one per row: a native
+  // <input type="file"> can't be styled into the small icon-button this
+  // table wants, so each row's "Photo" button just remembers ITS product
+  // id and clicks the one hidden input — the standard way to put a custom
+  // trigger in front of a file picker.
+  const fileInputRef = useRef(null)
+  const [pendingImageProductId, setPendingImageProductId] = useState(null)
+  const [uploadingImageProductId, setUploadingImageProductId] = useState(null)
+
+  const triggerPhotoUpload = (productId) => {
+    setPendingImageProductId(productId)
+    fileInputRef.current?.click()
+  }
+
+  const handlePhotoSelected = async (event) => {
+    const file = event.target.files?.[0]
+    // Always reset the input's own value, success or not — selecting the
+    // SAME file twice in a row otherwise fires no change event the second
+    // time, since the input's value never actually changed.
+    event.target.value = ''
+    const productId = pendingImageProductId
+    setPendingImageProductId(null)
+    if (!file || !productId) return
+
+    setUploadingImageProductId(productId)
+    setMessage('')
+    try {
+      await apiUpload(`/api/products/${productId}/image`, file)
+      await loadAll()
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setUploadingImageProductId(null)
+    }
+  }
+
+  const removePhoto = async (product) => {
+    if (!window.confirm(`Remove the photo for "${product.name}"? The Menu will show a placeholder until a new one is uploaded.`)) return
+    try {
+      await apiDelete(`/api/products/${product.id}/image`)
+      await loadAll()
+    } catch (error) {
+      setMessage(error.message)
+    }
+  }
+
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 pt-24 sm:px-7 md:pt-9">
       <p className="text-sm font-semibold text-green-700">{user.role} PORTAL</p>
@@ -252,15 +292,19 @@ export function ProductManagement({ user }) {
       {/* Product list */}
       <div className="mt-6 rounded-2xl border border-green-100 bg-white p-6">
         <h2 className="text-lg font-bold">Products</h2>
+        {/* One shared, invisible file input for every row's photo button —
+            see triggerPhotoUpload above for why one input, not one per row. */}
+        <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePhotoSelected} className="hidden" />
         {loading ? (
           <p className="mt-4 text-sm text-slate-500">Loading…</p>
         ) : products.length === 0 ? (
           <p className="mt-4 text-sm text-slate-500">No products yet.</p>
         ) : (
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-175 text-left text-xs">
+            <table className="w-full min-w-200 text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-100 text-slate-400">
+                  <th className="py-2 pr-4 font-bold">Photo</th>
                   <th className="py-2 pr-4 font-bold">Name</th>
                   <th className="py-2 pr-4 font-bold">Category</th>
                   <th className="py-2 pr-4 font-bold">Variant</th>
@@ -273,6 +317,9 @@ export function ProductManagement({ user }) {
                 {products.map((product) =>
                   editingProductId === product.id ? (
                     <tr key={product.id}>
+                      <td className="py-3 pr-4">
+                        {product.imageUrl ? <img src={product.imageUrl} alt="" className="h-12 w-12 rounded-lg object-cover" /> : <div className="grid h-12 w-12 place-items-center rounded-lg bg-stone-100 text-lg">🥐</div>}
+                      </td>
                       <td className="py-3 pr-4"><input value={editingProduct.name} onChange={(event) => updateEditingProductField('name', event.target.value)} className="w-full rounded-lg border border-stone-200 px-2 py-1.5 text-xs outline-none focus:border-green-700" />{editingProductErrors.name && <p className="mt-1 text-[10px] font-medium text-red-700">{editingProductErrors.name}</p>}</td>
                       <td className="py-3 pr-4">
                         <select value={editingProduct.categoryId} onChange={(event) => updateEditingProductField('categoryId', event.target.value)} className="w-full rounded-lg border border-stone-200 px-2 py-1.5 text-xs outline-none focus:border-green-700">
@@ -291,6 +338,17 @@ export function ProductManagement({ user }) {
                     </tr>
                   ) : (
                     <tr key={product.id}>
+                      <td className="py-3 pr-4">
+                        {product.imageUrl ? <img src={product.imageUrl} alt="" className="h-12 w-12 rounded-lg object-cover" /> : <div className="grid h-12 w-12 place-items-center rounded-lg bg-stone-100 text-lg">🥐</div>}
+                        {isAdmin && (
+                          <div className="mt-1 flex flex-col items-start gap-0.5">
+                            <button type="button" onClick={() => triggerPhotoUpload(product.id)} disabled={uploadingImageProductId === product.id} className="text-[10px] font-bold text-green-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60">
+                              {uploadingImageProductId === product.id ? 'Uploading…' : product.imageUrl ? 'Change' : 'Upload'}
+                            </button>
+                            {product.imageUrl && <button type="button" onClick={() => removePhoto(product)} className="text-[10px] font-bold text-red-700 hover:underline">Remove</button>}
+                          </div>
+                        )}
+                      </td>
                       <td className="py-3 pr-4 font-semibold text-slate-800">{product.name}</td>
                       <td className="py-3 pr-4 text-slate-600">{product.categoryName}</td>
                       <td className="py-3 pr-4 text-slate-600">{product.variant ?? '—'}</td>

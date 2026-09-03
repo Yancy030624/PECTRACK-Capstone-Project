@@ -1,5 +1,3 @@
-// Import state management for the driver's own delivery list and its
-// per-delivery actions (status transitions, proof upload).
 import { useEffect, useState } from 'react'
 import { apiGet, apiPatch, apiUpload } from '../../api/client.js'
 
@@ -8,21 +6,11 @@ const statusStyles = {
   OUT_FOR_DELIVERY: 'bg-teal-50 text-teal-800',
 }
 
-// The delivery personnel's own screen — PHASE7_PLAN.md, Decision 9: every
-// delivery shown here is already scoped server-side to THIS driver
-// (GET /api/deliveries/mine, Pattern H), so nothing in this component
-// needs its own ownership check. Split out from DeliveryManagement.jsx
-// (which renders this in place of the staff view for this role) for the
-// same reason InventoryRequests.jsx is its own file: two audiences, two
-// components, sharing one nav entry.
 export function MyDeliveries({ user }) {
   const [deliveries, setDeliveries] = useState([])
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
   const [messageFailed, setMessageFailed] = useState(false)
-
-  // Keyed by delivery id, so one delivery's in-flight action never
-  // disables the buttons on another.
   const [busyId, setBusyId] = useState(null)
   const [failNotes, setFailNotes] = useState({})
   const [proofFiles, setProofFiles] = useState({})

@@ -1,9 +1,12 @@
-// Category management. Any authenticated user can list categories (needed
-// for the product form's dropdown and eventual browsing); only admins can
-// create, rename, or delete one. Mounted at /api/categories in app.js.
+// Category management. Anyone — including an anonymous storefront visitor
+// — can list categories (needed for the product form's dropdown AND public
+// menu browsing, STOREFRONT_PLAN.md Decision 2: category names carry
+// nothing private, the same reasoning as the public product read in
+// products.js); only admins can create, rename, or delete one. Mounted at
+// /api/categories in app.js.
 import express from 'express'
 import { pool } from '../db.js'
-import { requireAuth, requireRole } from '../lib/auth.js'
+import { optionalAuth, requireAuth, requireRole } from '../lib/auth.js'
 import { normalize } from '../lib/validation.js'
 
 const router = express.Router()
@@ -16,13 +19,14 @@ function validateCategoryName(body) {
   return { name }
 }
 
-// Every route needs to be logged in; only the mutating ones also require ADMIN.
-router.use(requireAuth)
-
-router.get('/', async (_request, response) => {
+// GET / is public (optionalAuth); requireAuth only starts gating below it —
+// every mutating route still needs a real session, and needs ADMIN on top.
+router.get('/', optionalAuth, async (_request, response) => {
   const result = await pool.query('SELECT category_id, category_name FROM categories ORDER BY category_name')
   return response.json({ categories: result.rows.map(mapCategoryRow) })
 })
+
+router.use(requireAuth)
 
 router.post('/', requireRole('ADMIN'), async (request, response) => {
   const { name, error } = validateCategoryName(request.body)

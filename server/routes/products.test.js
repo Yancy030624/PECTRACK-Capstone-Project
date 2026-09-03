@@ -201,6 +201,216 @@ describe('product catalog management', () => {
       assert.equal(remove.status, 404, `DELETE with id "${badId}"`)
     }
   })
+
+  // STOREFRONT_PLAN.md, Decision 2 — GET / and GET /:id must behave for a
+  // caller with NO session cookie at all exactly the way they behave for a
+  // CUSTOMER, and every write route must still refuse one outright. This
+  // is the exposure surface the whole plan is organised around, so it gets
+  // its own dedicated products (never toggled by another test) and asserts
+  // on KNOWN PRODUCTS BY NAME rather than a count or "it returned an
+  // array" — the plan's own warning is that a broken endpoint returning
+  // nothing at all would pass a count-based assertion just as happily as a
+  // correct one.
+  describe('the public storefront catalogue (anonymous callers)', () => {
+    let publicAvailableId
+    let publicHiddenId
+
+    before(async () => {
+      const available = await fetch(`${baseUrl}/api/products`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
+        body: JSON.stringify({ categoryId, name: `Public Loaf ${runId}`, description: 'Available to everyone', price: 45, variant: 'Whole' }),
+      })
+      publicAvailableId = (await available.json()).product.id
+      createdProductIds.push(publicAvailableId)
+
+      const hidden = await fetch(`${baseUrl}/api/products`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
+        body: JSON.stringify({ categoryId, name: `Hidden Loaf ${runId}`, price: 45, availabilityStatus: false }),
+      })
+      publicHiddenId = (await hidden.json()).product.id
+      createdProductIds.push(publicHiddenId)
+    })
+
+    test('an anonymous GET / returns 200 and includes the available product', async () => {
+      const response = await fetch(`${baseUrl}/api/products`)
+      assert.equal(response.status, 200)
+      const { products } = await response.json()
+      assert.ok(products.some((product) => product.id === publicAvailableId), 'the available product must be present')
+      assert.ok(!products.some((product) => product.id === publicHiddenId), 'the hidden product must be absent')
+    })
+
+    test('the anonymous response is field-identical to what a CUSTOMER sees for the same product', async () => {
+      const anonymous = await (await fetch(`${baseUrl}/api/products/${publicAvailableId}`)).json()
+      const asCustomer = await (await fetch(`${baseUrl}/api/products/${publicAvailableId}`, { headers: { Cookie: customerCookie } })).json()
+      assert.deepEqual(anonymous.product, asCustomer.product, 'anonymous must see exactly the CUSTOMER view — not a new, separate one')
+    })
+
+    // Guards against a field ever being ADDED to mapProductRow without
+    // someone consciously deciding it is safe to publish. stock lives on
+    // `inventory`, never on `products`, so this also proves the two tables
+    // were never accidentally joined together for this response.
+    test('the public response carries no stock or cost field, by name', async () => {
+      const { product } = await (await fetch(`${baseUrl}/api/products/${publicAvailableId}`)).json()
+      assert.deepEqual(Object.keys(product).sort(), ['availabilityStatus', 'categoryId', 'categoryName', 'description', 'id', 'imageUrl', 'name', 'price', 'variant'])
+      for (const forbidden of ['stockQuantity', 'stock_quantity', 'cost', 'minStockLevel', 'min_stock_level']) {
+        assert.ok(!(forbidden in product), `product must not carry a "${forbidden}" field`)
+      }
+    })
+
+    test('an anonymous GET /:id for a hidden product is 404, never 403 and never the product', async () => {
+      const response = await fetch(`${baseUrl}/api/products/${publicHiddenId}`)
+      assert.equal(response.status, 404)
+    })
+
+    test('an anonymous POST, PATCH, and DELETE are all still refused — the write boundary did not move', async () => {
+      const post = await fetch(`${baseUrl}/api/products`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ categoryId, name: `Should Never Exist ${runId}`, price: 10 }) })
+      assert.equal(post.status, 401)
+
+      const patch = await fetch(`${baseUrl}/api/products/${publicAvailableId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ price: 1 }) })
+      assert.equal(patch.status, 401)
+
+      const remove = await fetch(`${baseUrl}/api/products/${publicAvailableId}`, { method: 'DELETE' })
+      assert.equal(remove.status, 401)
+
+      // And the product must be provably untouched by the refused writes.
+      const stillThere = await (await fetch(`${baseUrl}/api/products/${publicAvailableId}`)).json()
+      assert.equal(stillThere.product.price, '45.00')
+    })
+
+    test('CASHIER and ADMIN are unaffected — they still see the hidden product too', async () => {
+      const asCashier = await (await fetch(`${baseUrl}/api/products`, { headers: { Cookie: cashierCookie } })).json()
+      assert.ok(asCashier.products.some((product) => product.id === publicHiddenId), 'cashier must still see the hidden product')
+
+      const asAdmin = await (await fetch(`${baseUrl}/api/products`, { headers: { Cookie: adminCookie } })).json()
+      assert.ok(asAdmin.products.some((product) => product.id === publicHiddenId), 'admin must still see the hidden product')
+    })
+  })
+
+  // STOREFRONT_PLAN.md, Decision 5 — product photos. Same upload shape as
+  // deliveries.js's proof-of-delivery route (the file was RENAMED, not
+  // duplicated, when this became its second caller), tested the same way.
+  describe('product images', () => {
+    const tinyJpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0xff, 0xd9])
+    const tinyPng = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    let imageProductId
+    let hiddenImageProductId
+
+    before(async () => {
+      const available = await fetch(`${baseUrl}/api/products`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ categoryId, name: `Image Test Loaf ${runId}`, price: 30 }) })
+      imageProductId = (await available.json()).product.id
+      createdProductIds.push(imageProductId)
+
+      const hidden = await fetch(`${baseUrl}/api/products`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ categoryId, name: `Hidden Image Test Loaf ${runId}`, price: 30, availabilityStatus: false }) })
+      hiddenImageProductId = (await hidden.json()).product.id
+      createdProductIds.push(hiddenImageProductId)
+    })
+
+    test('a product with no photo yet reports imageUrl: null', async () => {
+      const { product } = await (await fetch(`${baseUrl}/api/products/${imageProductId}`, { headers: { Cookie: adminCookie } })).json()
+      assert.equal(product.imageUrl, null)
+    })
+
+    test('POST /:id/image is refused for a cashier and a customer — ADMIN only', async () => {
+      const asCashier = await fetch(`${baseUrl}/api/products/${imageProductId}/image`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Cookie: cashierCookie }, body: tinyJpeg })
+      assert.equal(asCashier.status, 403)
+      const asCustomer = await fetch(`${baseUrl}/api/products/${imageProductId}/image`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Cookie: customerCookie }, body: tinyJpeg })
+      assert.equal(asCustomer.status, 403)
+    })
+
+    test('an unsupported content type is a clean 422, never a 500', async () => {
+      const response = await fetch(`${baseUrl}/api/products/${imageProductId}/image`, { method: 'POST', headers: { 'Content-Type': 'text/plain', Cookie: adminCookie }, body: 'not an image' })
+      assert.equal(response.status, 422)
+    })
+
+    test('an admin can upload a photo, and it becomes fetchable by anyone', async () => {
+      const upload = await fetch(`${baseUrl}/api/products/${imageProductId}/image`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Cookie: adminCookie }, body: tinyJpeg })
+      const uploadBody = await upload.json()
+      assert.equal(upload.status, 201, `upload must succeed: ${JSON.stringify(uploadBody)}`)
+
+      const { product: refetched } = await (await fetch(`${baseUrl}/api/products/${imageProductId}`)).json()
+      assert.match(refetched.imageUrl, new RegExp(`/api/products/${imageProductId}/image$`))
+
+      // Fetchable ANONYMOUSLY — a product photo is exactly as public as
+      // the product itself (Decision 5), no cookie sent at all here.
+      const download = await fetch(`${baseUrl}${refetched.imageUrl}`)
+      assert.equal(download.status, 200)
+      assert.match(download.headers.get('content-type'), /image\/jpeg/)
+      const bytes = Buffer.from(await download.arrayBuffer())
+      assert.deepEqual(bytes, tinyJpeg, 'the exact bytes uploaded must be the exact bytes served back')
+    })
+
+    test('uploading a second photo replaces the first — old bytes are gone, new bytes are served', async () => {
+      const first = await fetch(`${baseUrl}/api/products/${imageProductId}/image`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Cookie: adminCookie }, body: tinyJpeg })
+      assert.equal(first.status, 201)
+      const firstUrl = (await (await fetch(`${baseUrl}/api/products/${imageProductId}`)).json()).product.imageUrl
+
+      const second = await fetch(`${baseUrl}/api/products/${imageProductId}/image`, { method: 'POST', headers: { 'Content-Type': 'image/png', Cookie: adminCookie }, body: tinyPng })
+      assert.equal(second.status, 201)
+      const secondUrl = (await (await fetch(`${baseUrl}/api/products/${imageProductId}`)).json()).product.imageUrl
+
+      // Same product, same URL shape (it's keyed by product id, not by
+      // upload) — what changed is what that URL now serves.
+      assert.equal(firstUrl, secondUrl)
+      const served = await fetch(`${baseUrl}${secondUrl}`)
+      assert.match(served.headers.get('content-type'), /image\/png/)
+      assert.deepEqual(Buffer.from(await served.arrayBuffer()), tinyPng, 'the OLD jpeg must be gone, not just shadowed')
+    })
+
+    test('DELETE /:id/image removes the photo — the product reverts to imageUrl: null, and the file 404s', async () => {
+      const upload = await fetch(`${baseUrl}/api/products/${imageProductId}/image`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Cookie: adminCookie }, body: tinyJpeg })
+      assert.equal(upload.status, 201)
+      const imageUrl = (await (await fetch(`${baseUrl}/api/products/${imageProductId}`)).json()).product.imageUrl
+
+      const removed = await fetch(`${baseUrl}/api/products/${imageProductId}/image`, { method: 'DELETE', headers: { Cookie: adminCookie } })
+      assert.equal(removed.status, 204)
+
+      const { product } = await (await fetch(`${baseUrl}/api/products/${imageProductId}`)).json()
+      assert.equal(product.imageUrl, null)
+
+      const stillThere = await fetch(`${baseUrl}${imageUrl}`)
+      assert.equal(stillThere.status, 404, 'the old URL must not keep serving a file the product no longer references')
+    })
+
+    // The same "an anonymous or CUSTOMER caller gets a 404, never a
+    // confirmation" rule GET /:id already applies to the product row
+    // itself (tested above) — the image route must apply it too, or a
+    // photo would leak confirmation of a product's existence that the
+    // product endpoint itself was careful never to give.
+    test('a hidden product\'s image is a 404 for anonymous and CUSTOMER, but visible to staff', async () => {
+      const upload = await fetch(`${baseUrl}/api/products/${hiddenImageProductId}/image`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Cookie: adminCookie }, body: tinyJpeg })
+      assert.equal(upload.status, 201)
+      const imageUrl = `/api/products/${hiddenImageProductId}/image`
+
+      const anonymous = await fetch(`${baseUrl}${imageUrl}`)
+      assert.equal(anonymous.status, 404)
+      const asCustomer = await fetch(`${baseUrl}${imageUrl}`, { headers: { Cookie: customerCookie } })
+      assert.equal(asCustomer.status, 404)
+      const asAdmin = await fetch(`${baseUrl}${imageUrl}`, { headers: { Cookie: adminCookie } })
+      assert.equal(asAdmin.status, 200)
+    })
+
+    test('deleting a product with a photo cleans up its file — a later request for the id-scoped URL is 404, not a leaked file', async () => {
+      const created = await fetch(`${baseUrl}/api/products`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ categoryId, name: `Deletable Image Test Loaf ${runId}`, price: 15 }) })
+      const deletableId = (await created.json()).product.id
+      const upload = await fetch(`${baseUrl}/api/products/${deletableId}/image`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Cookie: adminCookie }, body: tinyJpeg })
+      assert.equal(upload.status, 201)
+
+      const deleted = await fetch(`${baseUrl}/api/products/${deletableId}`, { method: 'DELETE', headers: { Cookie: adminCookie } })
+      assert.equal(deleted.status, 204)
+
+      // The product itself is gone, so its own image route now 404s
+      // through the "no such product" branch — this cannot prove the FILE
+      // was deleted from disk (nothing can ask for it by product id any
+      // more), but it does prove the delete path completed without
+      // throwing on the cleanup step, which is what deleteFile's
+      // `force: true` — the same guard delivery proof cleanup relies on —
+      // exists to guarantee.
+      const afterDelete = await fetch(`${baseUrl}/api/products/${deletableId}/image`)
+      assert.equal(afterDelete.status, 404)
+    })
+  })
 })
 
 after(async () => {

@@ -16,11 +16,20 @@
 
 import express from 'express'
 import { pool } from '../db.js'
-import { requireAuth, requireRole } from '../lib/auth.js'
+import { optionalAuth, requireAuth, requireRole } from '../lib/auth.js'
+import { deleteFile, filePath, saveFile } from '../lib/storage.js'
 import { normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
 
+// STOREFRONT_PLAN.md, Decision 5 — imageUrl is DERIVED, never the raw
+// storage_key. The frontend has exactly one thing to do with it: point an
+// <img src> at it, so the translation from "a random UUID this server
+// wrote to disk" to "a URL that fetches it" happens exactly once, here,
+// rather than every caller having to know the shape of that URL itself.
+// null means "no photo yet" — render the Menu's placeholder tile — never
+// an empty string, which would leave the frontend unable to tell "no
+// photo" apart from "a photo whose key happens to be blank".
 const mapProductRow = (row) => ({
   id: row.product_id,
   categoryId: row.category_id,
@@ -30,14 +39,30 @@ const mapProductRow = (row) => ({
   price: row.price,
   variant: row.variant,
   availabilityStatus: row.availability_status,
+  imageUrl: row.image_key ? `/api/products/${row.product_id}/image` : null,
 })
 
 // Always JOINs categories so every product response carries the
 // human-readable category name, not just its id — saves the frontend a
-// second lookup to render a product row.
-const productSelectQuery = `SELECT p.product_id, p.category_id, c.category_name, p.product_name, p.description, p.price, p.variant, p.availability_status
+// second lookup to render a product row. image_key is selected here too
+// (not looked up separately per row) purely so mapProductRow above never
+// has to make a second trip to the database just to decide imageUrl.
+const productSelectQuery = `SELECT p.product_id, p.category_id, c.category_name, p.product_name, p.description, p.price, p.variant, p.availability_status, p.image_key
      FROM products p
      JOIN categories c ON c.category_id = p.category_id`
+
+// The SAME shape deliveries.js's own allowedProofMimeTypes uses, for the
+// identical reason: this Map IS the validation. express.raw({ type:
+// [...allowedImageMimeTypes.keys()] }) below refuses any request whose
+// Content-Type isn't one of these three before the route handler even
+// runs, and the value each key maps to is what Pattern G derives the
+// stored file's extension from — never anything the client named it.
+const allowedImageMimeTypes = new Map([
+  ['image/jpeg', '.jpg'],
+  ['image/png', '.png'],
+  ['image/webp', '.webp'],
+])
+const imageUploadLimit = '5mb'
 
 // One validator handles both POST (partial: false — every field is
 // required) and PATCH (partial: true — only validate whatever was
@@ -95,19 +120,35 @@ function validateProductFields(body, { partial }) {
   return { errors, values }
 }
 
-router.use(requireAuth)
-
-router.get('/', async (request, response) => {
+// STOREFRONT_PLAN.md, Decision 2 — GET / and GET /:id became the public
+// storefront's catalogue read. Before the storefront, EVERY route in this
+// file sat behind one `router.use(requireAuth)` at the top — that line has
+// now moved down to sit ONLY above the write routes, and these two GET
+// routes take `optionalAuth` directly instead.
+//
+// Why not just make requireAuth itself optional, or add an `if (isPublic)`
+// branch inside it? Because the position of a middleware in this list IS
+// the security boundary (Pattern M in the plan) — a reader scanning this
+// file top to bottom can see exactly which routes need a session by
+// whether they're above or below `router.use(requireAuth)`, the same way
+// routes/payments.js's webhook route is registered above ITS auth gate for
+// the identical reason. Burying "is this route actually public" inside a
+// conditional would make that fact invisible from the route list.
+router.get('/', optionalAuth, async (request, response) => {
   // Customers only ever see products currently open for ordering; admin
   // and cashier see the full catalog, including unavailable items, since
-  // they need to manage/monitor it.
-  const restrictToAvailable = request.user.role === 'CUSTOMER'
+  // they need to manage/monitor it. An anonymous storefront visitor gets
+  // the SAME restricted branch as a CUSTOMER — `!request.user` is the only
+  // change from before this endpoint was public, and it deliberately reuses
+  // the existing, most-restrictive branch rather than adding a new one that
+  // could quietly diverge from it later (Pattern L in the plan).
+  const restrictToAvailable = !request.user || request.user.role === 'CUSTOMER'
   const query = restrictToAvailable ? `${productSelectQuery} WHERE p.availability_status = TRUE ORDER BY p.product_name` : `${productSelectQuery} ORDER BY p.product_name`
   const result = await pool.query(query)
   return response.json({ products: result.rows.map(mapProductRow) })
 })
 
-router.get('/:id', async (request, response) => {
+router.get('/:id', optionalAuth, async (request, response) => {
   // product_id is a BIGINT, so an id that isn't a valid bigint literal
   // makes the query fail inside Postgres and escape as a generic 500. All
   // three handlers in this file (get, patch, delete) had that hole open
@@ -119,13 +160,56 @@ router.get('/:id', async (request, response) => {
 
   const result = await pool.query(`${productSelectQuery} WHERE p.product_id = $1`, [productId])
   const row = result.rows[0]
-  // A customer asking for a hidden product gets the exact same 404 as a
-  // genuinely nonexistent one — the response never confirms the product
-  // exists at all, matching the "hide unavailable items" rule fully
-  // rather than just filtering them out of the list view.
-  if (!row || (request.user.role === 'CUSTOMER' && !row.availability_status)) return response.status(404).json({ message: 'Product not found.' })
+  // An anonymous or CUSTOMER caller asking for a hidden product gets the
+  // exact same 404 as a genuinely nonexistent one — the response never
+  // confirms the product exists at all, matching the "hide unavailable
+  // items" rule fully rather than just filtering them out of the list view.
+  if (!row || ((!request.user || request.user.role === 'CUSTOMER') && !row.availability_status)) return response.status(404).json({ message: 'Product not found.' })
   return response.json({ product: mapProductRow(row) })
 })
+
+// GET /api/products/:id/image — public, exactly as public as the product
+// data it illustrates. A photo is not a more sensitive fact than the name
+// and price already sitting beside it in GET /:id's own response, so this
+// route makes the SAME hidden-product decision that route already makes,
+// rather than inventing a second rule for "is this image visible."
+router.get('/:id/image', optionalAuth, async (request, response) => {
+  const productId = parseId(request.params.id)
+  if (!productId) return response.status(404).json({ message: 'Product not found.' })
+
+  const result = await pool.query('SELECT image_key, availability_status FROM products WHERE product_id = $1', [productId])
+  const row = result.rows[0]
+  // Four ways to end up here with nothing to serve: no such product, a
+  // product with no photo yet, or a hidden product being asked about by
+  // an anonymous visitor or a CUSTOMER — all collapse to the SAME 404,
+  // for the same "don't confirm what a stranger can't already see" reason
+  // GET /:id already applies to the product row itself.
+  if (!row || !row.image_key || ((!request.user || request.user.role === 'CUSTOMER') && !row.availability_status)) {
+    return response.status(404).json({ message: 'Image not found.' })
+  }
+
+  // The extension IS the content type here — Pattern G means the stored
+  // key is a UUID this server generated from an already-validated mime
+  // type, so reading the extension back off the key is reading something
+  // this server itself wrote, not trusting anything new. That is why this
+  // needs no separate "mime_type" column the way delivery_proofs has one:
+  // proof files come with caller-supplied metadata worth keeping; this
+  // file's own name already carries everything response.type() needs.
+  response.type(filePath(row.image_key).split('.').pop())
+  return response.sendFile(filePath(row.image_key), (error) => {
+    // Same guard deliveries.js's own proof download uses: the row and the
+    // file CAN disagree (a hand-cleaned uploads/, a restored backup), and
+    // without this callback that ENOENT reaches app.js as a generic 500 —
+    // "the service is broken" — when the honest answer is simpler.
+    if (error && !response.headersSent) response.status(404).json({ message: 'Image not found.' })
+  })
+})
+
+// Everything below here still needs a real session — only the two catalogue
+// reads and the image read above are public. See the comment above them
+// for why this line's POSITION (not a conditional inside requireAuth) is
+// what draws that line.
+router.use(requireAuth)
 
 router.post('/', requireRole('ADMIN'), async (request, response) => {
   const { errors, values } = validateProductFields(request.body, { partial: false })
@@ -220,14 +304,88 @@ router.patch('/:id', requireRole('ADMIN'), async (request, response) => {
   return response.json({ product: mapProductRow(updated.rows[0]) })
 })
 
+// POST /api/products/:id/image — ADMIN only (STOREFRONT_PLAN.md, Decision
+// 5). The SAME upload shape deliveries.js's proof-of-delivery route uses,
+// on purpose: raw bytes read by express.raw() (never JSON — a photo isn't
+// text), an extension derived from the ALREADY-validated Content-Type
+// (never a client-supplied filename), and a server-generated storage key
+// via lib/storage.js — the module this file now shares a second caller
+// with.
+router.post(
+  '/:id/image',
+  requireRole('ADMIN'),
+  express.raw({ type: [...allowedImageMimeTypes.keys()], limit: imageUploadLimit }),
+  async (request, response) => {
+    const productId = parseId(request.params.id)
+    if (!productId) return response.status(404).json({ message: 'Product not found.' })
+
+    // Same normalization deliveries.js documents at length: express.raw()
+    // matches a Content-Type via `type-is`, which PARSES it (so
+    // 'image/jpeg; charset=binary' still gets read as a Buffer), while a
+    // bare Map.get() below needs an exact, lowercase match — so the
+    // header is trimmed to its bare media type first, or a perfectly
+    // legal variant would be read in full and then rejected here anyway.
+    const contentType = String(request.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase()
+    const extension = allowedImageMimeTypes.get(contentType)
+    if (!extension || !Buffer.isBuffer(request.body) || request.body.length === 0) {
+      return response.status(422).json({ message: 'Upload a JPEG, PNG, or WEBP image.', errors: { file: 'Upload a JPEG, PNG, or WEBP image.' } })
+    }
+
+    const existing = await pool.query('SELECT image_key FROM products WHERE product_id = $1', [productId])
+    if (!existing.rows[0]) return response.status(404).json({ message: 'Product not found.' })
+
+    const storageKey = await saveFile(request.body, extension)
+    await pool.query('UPDATE products SET image_key = $1 WHERE product_id = $2', [storageKey, productId])
+
+    // The OLD file is deleted only AFTER the new one is written and the row
+    // updated — ordering that matters: a crash between saveFile and here
+    // leaves one orphaned file on disk (harmless, just wasted space), where
+    // deleting first and then crashing before the write would leave the
+    // product pointing at nothing at all.
+    const oldKey = existing.rows[0].image_key
+    if (oldKey) await deleteFile(oldKey)
+
+    const updated = await pool.query(`${productSelectQuery} WHERE p.product_id = $1`, [productId])
+    return response.status(201).json({ product: mapProductRow(updated.rows[0]) })
+  },
+)
+
+// DELETE /api/products/:id/image — ADMIN only. Reverts a product back to
+// the Menu's placeholder tile without touching the product row itself —
+// deliberately a SEPARATE action from PATCH /:id, which never accepts an
+// image_key field at all (validateProductFields above has no branch for
+// it), so a photo can only ever be attached or removed through these two
+// dedicated, byte-handling routes, never smuggled through the JSON one.
+router.delete('/:id/image', requireRole('ADMIN'), async (request, response) => {
+  const productId = parseId(request.params.id)
+  if (!productId) return response.status(404).json({ message: 'Product not found.' })
+
+  const existing = await pool.query('SELECT image_key FROM products WHERE product_id = $1', [productId])
+  if (!existing.rows[0]) return response.status(404).json({ message: 'Product not found.' })
+  if (!existing.rows[0].image_key) return response.status(404).json({ message: 'This product has no image to remove.' })
+
+  await pool.query('UPDATE products SET image_key = NULL WHERE product_id = $1', [productId])
+  await deleteFile(existing.rows[0].image_key)
+  return response.status(204).end()
+})
+
 router.delete('/:id', requireRole('ADMIN'), async (request, response) => {
   // Same id-shape guard as the two handlers above.
   const productId = parseId(request.params.id)
   if (!productId) return response.status(404).json({ message: 'Product not found.' })
 
+  // Read before delete — not because the DELETE below needs it, but
+  // because a file sitting on disk has to be cleaned up by SOMEONE, and
+  // the row about to be deleted is the only place that still remembers
+  // which file (if any) was ever attached to this product. Once the
+  // DELETE below succeeds, that knowledge is gone for good — so it has to
+  // be captured before, not after.
+  const existing = await pool.query('SELECT image_key FROM products WHERE product_id = $1', [productId])
+
   try {
     const result = await pool.query('DELETE FROM products WHERE product_id = $1', [productId])
     if (result.rowCount === 0) return response.status(404).json({ message: 'Product not found.' })
+    if (existing.rows[0]?.image_key) await deleteFile(existing.rows[0].image_key)
     return response.status(204).end()
   } catch (error) {
     // 23503 = foreign_key_violation. Both order_details.product_id and

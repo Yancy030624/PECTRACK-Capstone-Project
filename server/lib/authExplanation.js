@@ -170,6 +170,38 @@ export async function requireAuth(request, response, next) {
   next()
 }
 
+// STOREFRONT_PLAN.md, Decision 2 — the ONE new piece of auth infrastructure
+// the storefront needed, and deliberately as small a change as possible.
+//
+// Every route in this app before the storefront answered a binary question:
+// is this request logged in, yes or no? requireAuth enforces "no" as a hard
+// stop. But a public product catalogue needs a THIRD outcome — "maybe, and
+// that's fine" — because the SAME route (GET /api/products) has to serve
+// both an anonymous browser and a signed-in customer, and decide per-request
+// what each one gets to see.
+//
+// optionalAuth is requireAuth with its one refusal deleted. Same cookie
+// parse, same findSessionUser lookup (never a second query — if these two
+// ever checked sessions differently, "logged in" could mean two different
+// things depending on which middleware ran), but a missing or invalid
+// session just leaves request.user unset instead of responding 401. The
+// route itself is where "what does an anonymous caller see" gets decided —
+// see products.js, which treats "no request.user" identically to a
+// CUSTOMER, on purpose: reusing the MOST RESTRICTED existing view rather
+// than inventing a new "public" one that could quietly drift from it.
+export async function optionalAuth(request, response, next) {
+  const sessionId = parseCookies(request.headers.cookie)[sessionCookieName]
+  const user = sessionId ? await findSessionUser(sessionId) : null
+  // Only set request.user when a real session resolved — an invalid or
+  // expired cookie must look EXACTLY like no cookie at all to the route
+  // below, never like a half-authenticated state that needs its own branch.
+  if (user) {
+    request.user = user
+    request.sessionId = sessionId
+  }
+  next()
+}
+
 // requireAuth answers "is this request logged in at all?" — AUTHENTICATION.
 // requireRole answers a different question — "is this specific logged-in
 // user allowed to do THIS?" — AUTHORIZATION. It must run after requireAuth

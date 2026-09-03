@@ -1,5 +1,3 @@
-// Import state management for the order list, selected receipt, and the
-// record-payment form.
 import { useEffect, useState } from 'react'
 import { apiGet, apiPost } from '../../api/client.js'
 import { PaymentLog } from './PaymentLog.jsx'
@@ -12,19 +10,6 @@ const paymentStatusStyles = {
   FAILED: 'bg-slate-100 text-slate-600',
 }
 
-// Payment & Billing (Phase 6, Step 5 — see PHASE6_PLAN.md). 'Billing' vs
-// 'Payment log' is the same simple-tab shape InventoryManagement.jsx uses
-// for 'Stock levels' vs 'Change requests': one screen, two views of
-// related data, split into separate files (this one plus PaymentLog.jsx)
-// purely to keep either from growing unmanageable — not because they are
-// separate modules a user navigates to independently.
-//
-// The Billing tab reuses the SAME order list every role already sees in
-// Order Management (GET /api/orders is already scoped: a customer gets
-// only their own), then opens a receipt for whichever order is selected
-// (GET /api/orders/:id, which now carries a `payment` object). Recording a
-// payment is admin/cashier only — a customer's view is read-only, exactly
-// like their relationship to order status itself.
 export function PaymentBilling({ user }) {
   const isStaff = user.role === 'ADMIN' || user.role === 'CASHIER'
 
@@ -74,14 +59,6 @@ export function PaymentBilling({ user }) {
   }
 
   const [gcashSubmitting, setGcashSubmitting] = useState(false)
-
-  // Phase 6.5 (see PHASE6.5_PLAN.md) — the live-gateway counterpart to the
-  // manual "Record a payment" form below. Redirects the WHOLE page rather
-  // than opening PayMongo's checkout in a fresh tab or an iframe: the
-  // checkout_url is a page PayMongo itself serves and fully controls (this
-  // app never sees the customer's GCash credentials), so there is nothing
-  // for an iframe to add except a confusing nested-page experience, and a
-  // new tab risks the customer never returning to this one at all.
   const handlePayWithGCash = async () => {
     setGcashSubmitting(true)
     setMessage('')
@@ -89,15 +66,9 @@ export function PaymentBilling({ user }) {
       const data = await apiPost('/api/payments/intent', { orderId: selectedOrderId })
       window.location.href = data.checkoutUrl
     } catch (error) {
-      // 503 ("not configured yet") reads fine as-is — the backend's own
-      // message already says what to do instead (pay by cash or a GCash
-      // reference at the counter). No special-casing needed here.
       setMessage(error.message)
       setGcashSubmitting(false)
     }
-    // No `finally` resetting gcashSubmitting to false on the success path
-    // — the page is about to navigate away entirely, so there is no button
-    // left to re-enable.
   }
 
   const handlePaymentSubmit = async (event) => {
@@ -118,16 +89,7 @@ export function PaymentBilling({ user }) {
     }
   }
 
-  // Staff may keep recording payments right up until the balance is
-  // fully cleared, and never against a cancelled order — matching
-  // routes/payments.js's own CANCELLED guard exactly, so the form simply
-  // never appears for a state the backend would refuse anyway.
   const canRecordPayment = isStaff && orderDetail && orderDetail.status !== 'CANCELLED' && !orderDetail.payment.isFullyPaid
-  // A customer may pay their OWN order online, same condition as staff
-  // recording one manually — this app has no separate "is this a walk-in
-  // order with no online account" concept the backend enforces here (a
-  // customer viewing this screen at all already implies they're signed
-  // in), so the shared canRecordPayment condition covers both roles.
   const canPayOnline = canRecordPayment || (orderDetail && orderDetail.status !== 'CANCELLED' && !orderDetail.payment.isFullyPaid && user.role === 'CUSTOMER')
 
   return (
@@ -146,7 +108,6 @@ export function PaymentBilling({ user }) {
       {activeTab === 'log' && <PaymentLog user={user} />}
 
       {activeTab === 'billing' && <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-        {/* Order list */}
         <div className="rounded-2xl border border-green-100 bg-white p-6">
           <h2 className="text-lg font-bold">{isStaff ? 'All orders' : 'Your orders'}</h2>
           {loading ? (
@@ -171,12 +132,7 @@ export function PaymentBilling({ user }) {
                       <td className="py-3 pr-4 font-semibold text-slate-800">#{order.id}</td>
                       {isStaff && <td className="py-3 pr-4 text-slate-600">{order.customerName ?? 'Walk-in'}</td>}
                       <td className="py-3 pr-4 text-slate-600">₱{order.totalAmount}</td>
-                      {/* The column this screen exists for: which orders
-                          still owe money, without opening each one. A
-                          cancelled order shows a dash rather than a figure,
-                          for the same reason the receipt does — nothing can
-                          be paid against it, so a balance there would read
-                          as a debt that cannot be settled. */}
+
                       <td className="py-3 pr-4">
                         {order.status === 'CANCELLED'
                           ? <span className="text-slate-400">—</span>
@@ -192,8 +148,6 @@ export function PaymentBilling({ user }) {
             </div>
           )}
         </div>
-
-        {/* Selected order's receipt */}
         <div className="rounded-2xl border border-green-100 bg-white p-6">
           <h2 className="text-lg font-bold">Receipt</h2>
           {!selectedOrderId ? (
@@ -222,15 +176,7 @@ export function PaymentBilling({ user }) {
               <div className="rounded-xl bg-[#fbfbdc] p-4 text-xs text-green-950">
                 <div className="flex items-center justify-between"><span>Total</span><span className="font-bold">₱{orderDetail.payment.totalAmount}</span></div>
                 <div className="mt-1 flex items-center justify-between"><span>Paid</span><span className="font-bold">₱{orderDetail.payment.amountPaid}</span></div>
-                {/* A cancelled order deliberately does NOT show a balance.
-                    The backend figure is factually right — a refund moves
-                    its payments to REFUNDED, so nothing counts as paid and
-                    the full total reads as outstanding — but presenting
-                    that as "Balance due" on a cancelled order tells the
-                    customer they still owe money for something nobody can
-                    pay for (routes/payments.js refuses payment on a
-                    cancelled order outright). The number is correct; the
-                    label was the lie. */}
+     
                 {orderDetail.status === 'CANCELLED' ? (
                   <p className="mt-2 rounded-full bg-red-50 px-2.5 py-1 text-center text-[10px] font-bold text-red-700">{orderDetail.payment.payments.some((payment) => payment.status === 'REFUNDED') ? 'Cancelled — payment refunded' : 'Cancelled — nothing was paid'}</p>
                 ) : (

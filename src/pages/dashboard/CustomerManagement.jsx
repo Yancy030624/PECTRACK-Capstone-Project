@@ -1,10 +1,6 @@
-// Import state management for the customer list, search, and inline edits.
 import { useEffect, useState } from 'react'
 import { apiGet, apiPatch } from '../../api/client.js'
 
-// Admin/cashier screen: search, view, and edit customer records. No create
-// form here — every customer comes from self-registration. Deactivating an
-// account is admin-only (enforced by the backend, hidden here for cashier).
 export function CustomerManagement({ user }) {
   const isAdmin = user.role === 'ADMIN'
 
