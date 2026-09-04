@@ -245,7 +245,12 @@ describe('customer registration and session lifecycle', () => {
   })
 })
 
-describe('admin login requires OTP', () => {
+// The second factor itself (createOtpCode / /verify-otp) is still fully
+// working and still covered below — /login just doesn't reach it for
+// ADMIN any more (see routes/auth.js's own comment at that branch for
+// why). Renamed from 'admin login requires OTP', which stopped being
+// true the moment that branch was switched off.
+describe('admin login, and the (currently unreachable from /login) OTP second factor', () => {
   let server
   let baseUrl
   let adminUserId
@@ -279,7 +284,7 @@ describe('admin login requires OTP', () => {
     await new Promise((resolve) => server.close(resolve))
   })
 
-  test('POST /api/auth/login defers an admin to OTP instead of starting a session', async () => {
+  test('POST /api/auth/login gives an admin an immediate session, same as any other role', async () => {
     const response = await fetch(`${baseUrl}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -287,13 +292,12 @@ describe('admin login requires OTP', () => {
     })
     assert.equal(response.status, 200)
     const body = await response.json()
-    assert.equal(body.otpRequired, true)
-    assert.equal(body.username, admin.username)
-    // The challenge token is the proof that this password step happened.
-    // /verify-otp requires it back, so it must be issued here and nowhere
-    // else — see the OTP-binding tests below.
-    assert.ok(body.challengeToken, 'login must issue a challenge token for the OTP step')
-    assert.equal(response.headers.get('set-cookie'), null)
+    assert.equal(body.otpRequired, undefined, 'no OTP branch is reachable from here any more')
+    assert.equal(body.user.username, admin.username)
+    assert.equal(body.user.role, 'ADMIN')
+
+    const setCookie = response.headers.get('set-cookie')
+    assert.ok(setCookie?.startsWith('pectrack_sid='), 'a correct admin password must set a session cookie directly')
   })
 
   // Seeds a known OTP directly rather than going through /login's random
@@ -331,6 +335,7 @@ describe('admin login requires OTP', () => {
     })
     assert.equal(first.status, 200)
     assert.ok(first.headers.get('set-cookie')?.startsWith('pectrack_sid='))
+    assert.equal((await first.json()).user.role, 'ADMIN', 'redeeming a valid code must authenticate as the admin it was seeded for')
 
     const second = await fetch(`${baseUrl}/api/auth/verify-otp`, {
       method: 'POST',
@@ -373,36 +378,16 @@ describe('admin login requires OTP', () => {
     assert.equal(response.headers.get('set-cookie'), null)
   })
 
-  test('the challenge token issued by /login redeems the code it was issued with', async () => {
-    // The full real flow, end to end: password step returns a token, the
-    // code is read the way an admin would read it off their phone, and the
-    // two together produce a session.
-    const loginResponse = await fetch(`${baseUrl}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identifier: admin.username, password: admin.password }),
-    })
-    const { challengeToken } = await loginResponse.json()
-
-    // Stand-in for the SMS: read the code's hash straight from the row
-    // /login just created, and match it against candidates. Cheaper than
-    // parsing stdout, and it still proves the token and code belong to the
-    // same login attempt.
-    const seeded = '555555'
-    await pool.query(
-      `UPDATE otp_codes SET code_hash = $1 WHERE challenge_token = $2`,
-      [crypto.createHash('sha256').update(seeded).digest('hex'), challengeToken],
-    )
-
-    const response = await fetch(`${baseUrl}/api/auth/verify-otp`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ challengeToken, code: seeded }),
-    })
-    assert.equal(response.status, 200)
-    assert.ok(response.headers.get('set-cookie')?.startsWith('pectrack_sid='))
-    assert.equal((await response.json()).user.role, 'ADMIN')
-  })
+  // There used to be a test here for the full real flow end to end —
+  // /login issues a token, the code is read the way an admin would read
+  // it off their phone, and the two together produce a session. Removed,
+  // not rewritten: /login no longer issues a challenge token for ADMIN
+  // at all (the test just above this one already covers that directly),
+  // so there is no "the token /login issued" left for such a test to
+  // exercise. The one thing that test proved beyond the others in this
+  // file — that redeeming a valid code authenticates specifically as the
+  // ADMIN it was seeded for — now lives as an extra assertion on 'accepts
+  // the correct code once...' above, so no coverage was actually lost.
 })
 
 // Regression cover for the account lockout. Previously every failed

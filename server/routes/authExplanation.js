@@ -1,8 +1,13 @@
 // ============================================================================
 // PECTRACK API — routes/auth.js (annotated for learning)
-// The actual HTTP endpoints for registration, login (including the admin
-// OTP second factor), logout, and the current-session check. Mounted at
-// /api/auth in index.js — see indexExplanation.js for what mounting means.
+// The actual HTTP endpoints for registration, login, logout, and the
+// current-session check. Mounted at /api/auth in index.js — see
+// indexExplanation.js for what mounting means.
+//
+// Admin login's second factor (createOtpCode / /verify-otp, both further
+// down) is currently unused by /login itself — see the comment at that
+// route's own ADMIN branch for why it was switched off, and why the
+// second-factor code was left in place rather than deleted.
 //
 // A note before you read the routes below: this app runs Express 5
 // (see package.json). Express 5 automatically catches a rejected promise
@@ -41,7 +46,7 @@ import { createSession, parseCookies, requireAuth, sessionCookieName, sessionCoo
 // individually-callable pieces — PATCH /me validates only whichever
 // fields were actually sent, so it can't use validateAccountFields
 // wholesale (that one requires a password every time).
-import { normalize, normalizeEmail, validateAccountFields, validateContactNumberField, validateEmailField, validateName } from '../lib/validation.js'
+import { normalize, normalizeEmail, validateAccountFields, validateContactNumberField, validateEmailField, validateName, validatePasswordField } from '../lib/validation.js'
 
 // An Express Router — a mini sub-app. Every `router.METHOD(path, ...)`
 // below is relative to wherever this router gets mounted (index.js mounts
@@ -97,6 +102,12 @@ function hashOtpCode(code) {
   return crypto.createHash('sha256').update(code).digest('hex')
 }
 
+// Currently called from nowhere — /login's own ADMIN branch that used to
+// call this was removed (see the comment at that call site, further
+// down). Left in place, not deleted, because the plan is a real
+// SMS-backed second factor later, not "no OTP ever" — this is what that
+// will call again.
+//
 // Creates BOTH halves of the login challenge, which go to two different
 // places on purpose:
 //
@@ -381,26 +392,24 @@ router.post('/login', async (request, response) => {
   // clear any lock, so the next login attempt starts with a clean slate.
   await pool.query('UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE user_id = $1', [user.user_id])
 
-  // Admins get a second factor before a session is issued. Instead of
-  // logging them in here, generate an OTP, "send" it (currently just
-  // logged to the console — see the TODO), and tell the frontend to show
-  // a code-entry screen instead of the dashboard.
-  if (user.user_type === 'ADMIN') {
-    const { code, challengeToken } = await createOtpCode(user.user_id)
-    // TODO: send via SMS gateway (e.g. Semaphore, Movider) once an account is set up.
-    console.log(`[DEV] OTP for admin "${user.username}": ${code} (would be sent by SMS)`)
-    // This line is the ONLY place a challenge token is ever issued, and it
-    // sits AFTER the password check above — that position is what gives the
-    // token its meaning. Holding one is proof that a correct password was
-    // submitted, because there is no other way to obtain one.
-    //
-    // username is returned purely so the next screen can say who the code
-    // went to. /verify-otp neither needs nor accepts it any more.
-    return response.json({ otpRequired: true, username: user.username, challengeToken })
-  }
-
-  // Every other role: password was correct, no second factor needed —
-  // start the session immediately.
+  // ADMIN used to branch here: generate an OTP, "send" it (which only
+  // ever meant logging it to the server's own console — there was no SMS
+  // gateway behind the TODO that used to sit on this line), and hand the
+  // frontend { otpRequired: true } so it would show a code-entry screen
+  // instead of the dashboard.
+  //
+  // Deliberately switched off for now. A code only the person running
+  // the server can already see is not a real second factor — it's an
+  // extra click that happens to require the same access as the account
+  // it's "protecting". Every role, admin included, now gets a session
+  // immediately on a correct password, same as CASHIER/CUSTOMER/
+  // DELIVERY_PERSONNEL always have below.
+  //
+  // Reversible in one step, on purpose: createOtpCode above, the
+  // otp_codes table, and /verify-otp further down are all still here and
+  // still fully working, untouched by this change. Wiring in a real SMS
+  // gateway later means restoring the three-line branch this comment
+  // replaced, not rebuilding a second factor from nothing.
   const sessionId = await createSession(user.user_id)
   // response.cookie(...) builds a Set-Cookie response header. The browser
   // receiving this response stores the cookie and will automatically

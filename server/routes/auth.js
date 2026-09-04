@@ -1,5 +1,7 @@
-// Registration, login (with admin OTP second factor), logout, and the
-// current-session check. Mounted at /api/auth in index.js.
+// Registration, login, logout, and the current-session check. Mounted at
+// /api/auth in index.js. Admin login's second factor (createOtpCode /
+// /verify-otp, further down) is currently unused by /login itself — see
+// the comment at that route's own ADMIN branch for why.
 import crypto from 'node:crypto'
 import bcrypt from 'bcrypt'
 import express from 'express'
@@ -29,6 +31,11 @@ function hashOtpCode(code) {
   return crypto.createHash('sha256').update(code).digest('hex')
 }
 
+// Currently called from nowhere — /login's own ADMIN branch that used to
+// call this was removed (see the comment at that call site). Left in
+// place, not deleted, because the plan is a real SMS-backed second
+// factor later, not "no OTP ever" — this is what that will call again.
+//
 // Returns BOTH halves of the challenge: the 6-digit code (which goes to the
 // admin's phone) and the challenge token (which goes to the browser that
 // just proved the password). Redeeming the code requires presenting both,
@@ -148,17 +155,20 @@ router.post('/login', async (request, response) => {
 
   await pool.query('UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE user_id = $1', [user.user_id])
 
-  if (user.user_type === 'ADMIN') {
-    const { code, challengeToken } = await createOtpCode(user.user_id)
-    // TODO: send via SMS gateway (e.g. Semaphore, Movider) once an account is set up.
-    console.log(`[DEV] OTP for admin "${user.username}": ${code} (would be sent by SMS)`)
-    // challengeToken is issued ONLY here, and only once the password above
-    // has verified — that's what makes it proof of the first step. username
-    // is returned purely so the next screen can say who the code was sent
-    // for; /verify-otp does not use it and no longer accepts it.
-    return response.json({ otpRequired: true, username: user.username, challengeToken })
-  }
-
+  // ADMIN used to require a second factor here (createOtpCode + a
+  // {otpRequired: true} response, forcing a trip through /verify-otp
+  // below) — deliberately switched off for now: there is no SMS gateway
+  // wired in yet, so the code was only ever readable from the server's
+  // own console, which made every admin login a two-step process for no
+  // real second factor. Every role, admin included, now gets a session
+  // immediately on a correct password, same as CASHIER/CUSTOMER/
+  // DELIVERY_PERSONNEL below.
+  //
+  // Nothing else was touched to make this reversible in one step later:
+  // createOtpCode, the otp_codes table, and /verify-otp (just below)
+  // are all still here, untouched and still fully working — re-adding a
+  // real second factor (once an SMS gateway exists) is restoring the
+  // three-line branch this comment replaced, not rebuilding the feature.
   const sessionId = await createSession(user.user_id)
   response.cookie(sessionCookieName, sessionId, sessionCookieOptions)
   return response.json({ user: { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' '), email: user.email, contactNumber: user.contact_num } })

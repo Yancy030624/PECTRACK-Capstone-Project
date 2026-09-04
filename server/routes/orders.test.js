@@ -179,10 +179,18 @@ describe('order management', () => {
   })
 
   test('POST /api/orders rejects an unavailable product', async () => {
+    // Scoped to THIS test's own customer, by count rather than a global
+    // total_amount match — orders.js:238-243 rejects an unavailable
+    // product before any order row is written, and a global
+    // `total_amount = 30.00` check has no way to tell "nothing was
+    // created" apart from "something else in the database, created by
+    // a real order or a demo seed, happens to total exactly ₱30" — which
+    // it can, plenty of single-item orders land on a round number.
+    const before = await pool.query('SELECT COUNT(*)::int AS n FROM orders WHERE customer_id = $1', [customerId])
     const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: unavailableProductId, quantity: 1 }] }) })
     assert.equal(response.status, 422)
-    const { rows } = await pool.query('SELECT 1 FROM orders WHERE customer_id IS NOT NULL AND total_amount = 30.00')
-    assert.equal(rows.length, 0, 'no order should have been created')
+    const after = await pool.query('SELECT COUNT(*)::int AS n FROM orders WHERE customer_id = $1', [customerId])
+    assert.equal(after.rows[0].n, before.rows[0].n, 'no order should have been created')
   })
 
   test('POST /api/orders rejects an invalid orderType', async () => {
