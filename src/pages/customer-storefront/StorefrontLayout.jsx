@@ -1,13 +1,25 @@
-import { Outlet } from 'react-router-dom'
+import { useState } from 'react'
+import { Outlet, useNavigate } from 'react-router-dom'
 import { Brand } from '../../components/Brand.jsx'
+import { LoginModal } from '../../components/LoginModal.jsx'
 import { MarketingHeader } from '../../components/MarketingHeader.jsx'
 
-export function StorefrontLayout({ user }) {
+// Owns the sign-in pop-up because only the storefront header opens one —
+// the dashboard has no use for it. `openLogin` reaches routed pages via
+// Outlet context (read with useOutletContext()) so a guest's "Sign in to
+// order" button on the Menu can open the same modal without a prop drilled
+// through every storefront route.
+export function StorefrontLayout({ user, onLogin }) {
+  const navigate = useNavigate()
+  const [loginOpen, setLoginOpen] = useState(false)
+  const openLogin = () => setLoginOpen(true)
+  const closeLogin = () => setLoginOpen(false)
+
   return (
     <div className="flex min-h-screen flex-col bg-[#f5f7f2] text-stone-900">
-      <MarketingHeader user={user} />
+      <MarketingHeader user={user} onOpenLogin={openLogin} />
       <main className="flex-1">
-        <Outlet />
+        <Outlet context={{ openLogin }} />
       </main>
       <footer className="border-t border-green-100 bg-[#fffedc] px-4 py-10 sm:px-7">
         <div className="mx-auto flex max-w-6xl flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
@@ -29,6 +41,12 @@ export function StorefrontLayout({ user }) {
         </div>
         <p className="mx-auto mt-8 max-w-6xl text-[10px] text-stone-400">© {new Date().getFullYear()} Pecto's Bakery — PECTRACK Order Management System.</p>
       </footer>
+      <LoginModal
+        open={loginOpen}
+        onClose={closeLogin}
+        onLogin={onLogin}
+        onRegister={() => { closeLogin(); navigate('/register') }}
+      />
     </div>
   )
 }

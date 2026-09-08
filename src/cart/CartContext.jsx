@@ -1,8 +1,8 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 
 const CartContext = createContext(null)
 
-const storageKeyFor = (userId) => `pectrack.cart.${userId ?? 'guest'}`
+const storageKeyFor = (userId) => `pectrack.cart.${userId}`
 
 function readCart(key) {
   try {
@@ -23,39 +23,22 @@ function writeCart(key, lines) {
   }
 }
 
-function removeCart(key) {
-  try {
-    localStorage.removeItem(key)
-  } catch {
-  }
-}
-const canHaveCart = (user) => !user || user.role === 'CUSTOMER'
+// Signing in no longer costs a visitor their page (the login pop-up keeps
+// them where they were), so the sign-in wall moved back to the product
+// card and only a CUSTOMER ever has a cart to fill. See
+// UI_REVISIONS_PLAN.md Decision 6 for why this reverses CHECKOUT_PLAN.md's
+// original guest-cart decision.
+const canHaveCart = (user) => user?.role === 'CUSTOMER'
 
 export function CartProvider({ user, children }) {
-  const [lines, setLines] = useState(() => (canHaveCart(user) ? readCart(storageKeyFor(user?.id)) : []))
-  const previousUserId = useRef(user?.id ?? null)
+  const [lines, setLines] = useState(() => (canHaveCart(user) ? readCart(storageKeyFor(user.id)) : []))
 
   useEffect(() => {
-    const wasSignedOut = previousUserId.current == null
-    const isNowSignedIn = user?.id != null
-
-    if (!canHaveCart(user)) {
-      setLines([])
-    } else if (wasSignedOut && isNowSignedIn) {
-      const guestKey = storageKeyFor(null)
-      const guestLines = readCart(guestKey)
-      const ownKey = storageKeyFor(user.id)
-      const ownLines = readCart(ownKey)
-      setLines(ownLines.length === 0 && guestLines.length > 0 ? guestLines : ownLines)
-      removeCart(guestKey)
-    } else {
-      setLines(readCart(storageKeyFor(user?.id)))
-    }
-    previousUserId.current = user?.id ?? null
+    setLines(canHaveCart(user) ? readCart(storageKeyFor(user.id)) : [])
   }, [user?.id, user?.role])
   useEffect(() => {
     if (!canHaveCart(user)) return
-    writeCart(storageKeyFor(user?.id), lines)
+    writeCart(storageKeyFor(user.id), lines)
   }, [lines, user?.id, user?.role])
 
   const addItem = (productId, quantity = 1) => {

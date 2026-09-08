@@ -83,7 +83,7 @@ function StaffOrderManagement({ user }) {
   }
 
   return (
-    <section className="min-w-0 flex-1 px-4 pb-10 pt-24 sm:px-7 md:pt-9">
+    <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
       <p className="text-sm font-semibold text-green-700">{user.role} PORTAL</p>
       <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-slate-900">Order Management</h1>
       <p className="mt-2 text-sm text-slate-500">{isCashier ? 'Take an order at the counter, or manage every order already placed.' : 'Every order placed, pickup and delivery.'}</p>
@@ -252,7 +252,7 @@ function CustomerOrders({ user }) {
   const loading = orders === null
 
   return (
-    <section className="min-w-0 flex-1 px-4 pb-10 pt-24 sm:px-7 md:pt-9">
+    <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
       <p className="text-sm font-semibold text-green-700">{user.role} PORTAL</p>
       <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-slate-900">My Orders</h1>
       <p className="mt-2 text-sm text-slate-500">Everything you've ordered, and where it stands right now.</p>

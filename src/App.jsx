@@ -16,14 +16,12 @@ import { StorefrontLayout } from './pages/customer-storefront/StorefrontLayout.j
 
 const staffRoles = new Set(['ADMIN', 'CASHIER', 'DELIVERY PERSONNEL'])
 function landingPathFor(user) {
-  return staffRoles.has(user?.role) ? '/dashboard' : '/'
+  if (staffRoles.has(user?.role)) return '/dashboard'
+  if (user?.role === 'CUSTOMER') return '/menu'
+  return '/'
 }
 function RequireAuth({ user, children }) {
   if (!user) return <Navigate to="/login" replace />
-  return children
-}
-function RequireCustomerOrGuest({ user, children }) {
-  if (user && user.role !== 'CUSTOMER') return <Navigate to="/dashboard" replace />
   return children
 }
 
@@ -102,12 +100,12 @@ function App() {
           <Route path="/login" element={<LoginRoute user={user} onLogin={setUser} />} />
           <Route path="/register" element={<RegisterRoute user={user} />} />
           <Route path="/dashboard" element={<RequireAuth user={user}><Dashboard user={user} onLogout={handleLogout} onUserUpdated={setUser} /></RequireAuth>} />
-          <Route element={<StorefrontLayout user={user} />}>
+          <Route element={<StorefrontLayout user={user} onLogin={setUser} />}>
             <Route path="/" element={<HomePage />} />
             <Route path="/menu" element={<MenuPage user={user} />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/contact" element={<ContactPage />} />
-            <Route path="/cart" element={<RequireCustomerOrGuest user={user}><CartPage user={user} /></RequireCustomerOrGuest>} />
+            <Route path="/cart" element={<RequireCustomer user={user}><CartPage /></RequireCustomer>} />
             <Route path="/checkout" element={<RequireCustomer user={user}><CheckoutPage /></RequireCustomer>} />
             <Route path="/order-placed/:orderId" element={<RequireCustomer user={user}><OrderPlacedPage /></RequireCustomer>} />
           </Route>

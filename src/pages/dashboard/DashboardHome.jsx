@@ -12,7 +12,7 @@ export function DashboardHome({ user, activeModule }) {
   const pendingCount = summary ? summary.lowStockAlertsTotal + summary.deliveriesNeedingAttention : '—'
 
   return (
-    <section className="min-w-0 flex-1 px-4 pb-10 pt-24 sm:px-7 md:pt-9">
+    <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
       <p className="text-sm font-semibold text-green-700">{user.role} PORTAL</p>
       <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-slate-900">{activeModule}</h1>
       <p className="mt-2 text-sm text-slate-500">Welcome back, {user.name}. Here is what needs your attention today.</p>

@@ -126,6 +126,19 @@ backend does calculation.
 
 ### Decision 3 — anonymous visitors may build a cart; only signed-in customers may check out
 
+> **Superseded by `UI_REVISIONS_PLAN.md` Decision 6 (2026-09-05).** The
+> adviser panel asked for the sign-in wall to sit at the product card, not
+> the checkout button — so a guest can no longer build a cart at all; only
+> a signed-in CUSTOMER can. That is not a reopening of this decision's core
+> position (guest *checkout* stays closed, for the reason below) — it is a
+> reversal of the narrower "but a guest may still fill a cart" carve-out
+> this decision added on top of it, which the new login pop-up
+> (`UI_REVISIONS_PLAN.md` Decision 1) makes unnecessary: signing in no
+> longer costs a visitor their page, so there is no longer a cart's worth
+> of state worth protecting behind a guest key. `CartContext.jsx`'s guest
+> adoption logic was deleted, not merely disabled. The text below is left
+> as-is for its still-correct reasoning on guest *checkout*.
+
 This extends `STOREFRONT_PLAN.md` Decision 3 rather than reopening it.
 **Guest checkout stays closed**, for the reason already recorded there:
 `POST /api/orders` deducts real stock, and opening it to unauthenticated

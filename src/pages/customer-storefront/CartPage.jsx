@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { apiGet } from '../../api/client.js'
 import { useCart } from '../../cart/CartContext.jsx'
 
-export function CartPage({ user }) {
+export function CartPage() {
   const { lines, setQuantity, removeItem } = useCart()
   const [products, setProducts] = useState(null)
   const [message, setMessage] = useState('')
@@ -75,9 +75,7 @@ export function CartPage({ user }) {
             </div>
             <div className="flex items-center gap-3">
               <Link to="/menu" className="text-xs font-bold text-green-800 hover:underline">Continue shopping</Link>
-              {user
-                ? <Link to="/checkout" className="rounded-full bg-green-700 px-6 py-3 text-xs font-bold text-white shadow-md transition hover:bg-green-800">Proceed to checkout</Link>
-                : <Link to="/login?returnTo=/checkout" className="rounded-full bg-green-700 px-6 py-3 text-xs font-bold text-white shadow-md transition hover:bg-green-800">Sign in to checkout</Link>}
+              <Link to="/checkout" className="rounded-full bg-green-700 px-6 py-3 text-xs font-bold text-white shadow-md transition hover:bg-green-800">Proceed to checkout</Link>
             </div>
           </div>
         </>

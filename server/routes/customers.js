@@ -1,6 +1,9 @@
-// Admin/cashier-facing customer record management. Per the thesis: admin
-// has full access (list, search, edit, activate/deactivate); cashier can
-// search, view, and edit customer details, but not deactivate an account.
+// Admin/cashier-facing customer record management. Admin has full access
+// (list, search, edit, activate/deactivate); cashier is read-only — they
+// can list and search, but every write below is admin-only. The read stays
+// open to CASHIER because the counter-order screen (NewOrderForm.jsx)
+// looks a customer up here to attach one to an order, and a DELIVERY order
+// is impossible without one — see the comment on router.use below.
 // Every customer comes from self-registration (routes/auth.js's
 // /register) — there's no create-customer capability here, confirmed
 // intentional. A customer editing their OWN profile is a different
@@ -38,6 +41,11 @@ const customerSelectQuery = `SELECT u.user_id, u.username, u.is_active, c.custom
      FROM users u
      JOIN customers c ON c.user_id = u.user_id`
 
+// CASHIER stays admitted here even though PATCH below is ADMIN-only — this
+// guard covers GET too, and NewOrderForm.jsx's counter-order screen fetches
+// this list to attach a customer to an order (required for DELIVERY).
+// Tightening this to ADMIN-only would silently take delivery orders down
+// at the counter, not just this screen. See UI_REVISIONS_PLAN.md Decision 12.
 router.use(requireAuth, requireRole('ADMIN', 'CASHIER'))
 
 router.get('/', async (request, response) => {
@@ -50,7 +58,11 @@ router.get('/', async (request, response) => {
   return response.json({ customers: result.rows.map(mapCustomerRow) })
 })
 
-router.patch('/:id', async (request, response) => {
+// ADMIN only — a cashier can look a customer up (the router-wide guard
+// above) but not change their record, full stop; there's no partial case
+// where a cashier reaches this handler any more, so the field edit and the
+// isActive toggle no longer need separate role checks of their own.
+router.patch('/:id', requireRole('ADMIN'), async (request, response) => {
   // A malformed id can never match a real customer, so it gets the same
   // 404 as a nonexistent one — without this it would reach Postgres as an
   // invalid bigint literal and surface as a generic 500 instead.
@@ -83,9 +95,6 @@ router.patch('/:id', async (request, response) => {
     else updates.contactNumber = contactNumber
   }
   if ('isActive' in request.body) {
-    // Only admin gets this — matches the thesis giving admin "full
-    // access" while cashier's role is limited to editing profile details.
-    if (request.user.role !== 'ADMIN') return response.status(403).json({ message: 'Only an admin can activate or deactivate a customer account.' })
     if (typeof request.body.isActive !== 'boolean') errors.isActive = 'isActive must be true or false.'
     else updates.isActive = request.body.isActive
   }

@@ -114,13 +114,22 @@ describe('customer record management', () => {
     assert.notEqual(String(found.customerId), String(found.id), 'user_id and customer_id are different sequences, not aliases of the same number')
   })
 
-  test('PATCH /api/customers/:id lets a cashier edit profile fields but not isActive', async () => {
-    const editResponse = await fetch(`${baseUrl}/api/customers/${targetCustomerId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ name: 'Renamed By Cashier' }) })
-    assert.equal(editResponse.status, 200)
-    assert.equal((await editResponse.json()).customer.name, 'Renamed By Cashier')
+  // UI_REVISIONS_PLAN.md Decision 12 — Customer Management is read-only for
+  // CASHIER; only ADMIN may edit a customer record or its isActive flag.
+  // The router-wide guard above still admits CASHIER for GET (asserted by
+  // 'GET /api/customers?search finds a customer by name for both admin and
+  // cashier' above) — that assertion is the regression guard for the
+  // counter-order screen (NewOrderForm.jsx), which needs the read to stay
+  // open even though the write here does not.
+  test('PATCH /api/customers/:id rejects a cashier for any field, including a plain profile edit', async () => {
+    const editAttempt = await fetch(`${baseUrl}/api/customers/${targetCustomerId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ name: 'Renamed By Cashier' }) })
+    assert.equal(editAttempt.status, 403)
 
     const deactivateAttempt = await fetch(`${baseUrl}/api/customers/${targetCustomerId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ isActive: false }) })
     assert.equal(deactivateAttempt.status, 403)
+
+    const unchanged = await pool.query('SELECT name FROM customers WHERE user_id = $1', [targetCustomerId])
+    assert.equal(unchanged.rows[0].name, targetCustomer.name, 'a rejected PATCH must not have changed anything')
   })
 
   // Regression: customers.updated_at took its DEFAULT on INSERT and was

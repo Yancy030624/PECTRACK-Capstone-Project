@@ -1,1 +1,93 @@
 @import "tailwindcss";
+
+/* ---------------------------------------------------------------------
+ * Design tokens (UI_AUDIT.md C1 — "there is no design token layer")
+ *
+ * Before this block, every colour in the app was either a raw Tailwind
+ * palette class (green-700, slate-500) or a hard-coded hex
+ * (#fffedc, #291dcc, ...) picked independently by whoever wrote that
+ * screen. The audit found the same green as #26752a AND #449947 AND
+ * green-700 in different files. An @theme block is Tailwind v4's
+ * mechanism for naming a value once so every screen can share it, and it
+ * is also the seam a finalised Figma re-skins through later — change a
+ * value here and every component that uses the token follows, without
+ * touching component files.
+ *
+ * IMPORTANT — v4 semantics: @theme custom properties ADD new utilities,
+ * they do not replace the default palette. Adding --color-brand-600
+ * creates bg-brand-600 alongside bg-green-700, bg-slate-500, etc. — it
+ * does not remove or redefine them. That is what makes Stage 0 safe to
+ * ship with no visual change: existing classes across 30+ files keep
+ * resolving exactly as before, and screens opt into the new tokens only
+ * when they are deliberately converted (Stage 1+), not automatically.
+ *
+ * Values are lifted from the app's existing identity (the logo green,
+ * the storefront's cream) rather than invented, per UI_AUDIT.md's DESIGN
+ * SYSTEM section — this is a consolidation of what PECTRACK already
+ * looks like.
+ * --------------------------------------------------------------------- */
+@theme {
+  /* ---- Brand: the bakery green, from the storefront header rule ---- */
+  --color-brand-50:  #eef5ec;
+  --color-brand-100: #d6e8d4;
+  --color-brand-500: #33883a;
+  --color-brand-600: #26752a;   /* primary actions, active nav */
+  --color-brand-700: #1d5a21;   /* hover */
+  --color-brand-900: #123a15;
+
+  /* ---- Accent: the wordmark gold. Secondary, never a default button ---- */
+  --color-accent-50:  #fdf6e3;
+  --color-accent-100: #f9e9bf;
+  --color-accent-500: #c98a12;
+  --color-accent-600: #b97600;
+
+  /* ---- Surfaces: warm, bakery-appropriate ---- */
+  --color-surface:      #ffffff;  /* cards, tables */
+  --color-surface-sunk:  #f7f6ef; /* app background */
+  --color-surface-warm:  #fffdf0; /* highlight panels (replaces #fffedc/#fbfbdc) */
+
+  /* ---- Neutrals: ONE warm ramp. Replaces the stone/slate mix (M8) ---- */
+  --color-ink-900: #1c1b17;  /* headings */
+  --color-ink-700: #3d3b34;  /* body */
+  --color-ink-500: #6b6860;  /* secondary */
+  --color-ink-400: #8c8880;  /* placeholder, disabled */
+  --color-line-200: #e4e2d8; /* borders */
+  --color-line-100: #f0efe8; /* dividers */
+
+  /* ---- Status: the existing semantics, centralised (H7) ---- */
+  --color-status-wait-bg:    #fef3c7;  --color-status-wait-fg:    #92400e;
+  --color-status-active-bg:  #dbeafe;  --color-status-active-fg:  #1e40af;
+  --color-status-transit-bg: #ccfbf1;  --color-status-transit-fg: #115e59;
+  --color-status-done-bg:    #dcfce7;  --color-status-done-fg:    #166534;
+  --color-status-fail-bg:    #fee2e2;  --color-status-fail-fg:    #991b1b;
+  --color-status-idle-bg:    #f1f0ea;  --color-status-idle-fg:    #57534e;
+
+  /* ---- Radius: three tiers, assigned by role (H4) ---- */
+  --radius-control: 0.375rem;  /* 6px  — buttons, inputs, badges-square */
+  --radius-panel:   0.625rem;  /* 10px — cards, tables, modals */
+  /* rounded-full stays, for pills and avatars ONLY */
+
+  /* ---- Shadow: two tiers (M5) ---- */
+  --shadow-raised:  0 1px 2px rgb(28 27 23 / 0.06), 0 1px 3px rgb(28 27 23 / 0.04);
+  --shadow-overlay: 0 8px 24px rgb(28 27 23 / 0.14);
+}
+
+/* ---------------------------------------------------------------------
+ * Global focus-visible ring (UI_AUDIT.md H5)
+ *
+ * The audit counted 43 focus styles across 198 interactive elements
+ * (~22%) — most buttons, links, and table-row click targets had no
+ * visible focus state at all. Rather than add a focus class to each of
+ * the other ~155 elements by hand (and rely on every future one
+ * remembering to), set one rule in the base layer so every focusable
+ * element gets a visible ring by default. `:focus-visible` (not `:focus`)
+ * means it only shows for keyboard/assistive-tech navigation, not for a
+ * mouse click — so this is the one intentional visual change in Stage 0,
+ * and only on keyboard focus.
+ * --------------------------------------------------------------------- */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-brand-600);
+    outline-offset: 2px;
+  }
+}

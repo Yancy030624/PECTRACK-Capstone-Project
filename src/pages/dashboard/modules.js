@@ -34,8 +34,19 @@ export const modules = [
   // for ADMIN/CASHIER vs DELIVERY PERSONNEL below.
   { name: 'Order Management', icon: '□', roles: ['ADMIN', 'CASHIER'] },
   { name: 'My Orders', icon: '□', roles: ['CUSTOMER'] },
+  // Read-only for CASHIER (CustomerManagement.jsx hides Edit/Deactivate
+  // for anyone but ADMIN, and customers.js:53's PATCH route backs that up
+  // server-side) — a cashier still needs to look a customer up to attach
+  // one to a delivery order, but only ADMIN may change a customer's
+  // record. See UI_REVISIONS_PLAN.md Decision 12.
   { name: 'Customer Management', icon: '♙', roles: ['ADMIN', 'CASHIER'] },
-  { name: 'Product Management', icon: '▤', roles: ['ADMIN', 'CASHIER'] },
+  // ADMIN only — every write in products.js is already admin-gated, so a
+  // cashier opening this screen previously saw a catalogue where every
+  // button failed. They already see products (with prices) inside the
+  // order screen and stock levels in Inventory Management, so the screen
+  // was redundant for them, not merely restricted. See
+  // UI_REVISIONS_PLAN.md Decision 13.
+  { name: 'Product Management', icon: '▤', roles: ['ADMIN'] },
   { name: 'Inventory Management', icon: '⛁', roles: ['ADMIN', 'CASHIER'] },
   { name: 'Payment & Billing', icon: '◫', roles: ['ADMIN', 'CUSTOMER', 'CASHIER'] },
   // Phase 7 (see PHASE7_PLAN.md) — one nav entry shared by three roles.
