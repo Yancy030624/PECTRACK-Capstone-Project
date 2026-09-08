@@ -1,19 +1,34 @@
 import { useEffect, useState } from 'react'
 import { apiGet, apiPatch } from '../../api/client.js'
+import { Alert } from '../../components/ui/Alert.jsx'
+import { Button } from '../../components/ui/Button.jsx'
+import { Card } from '../../components/ui/Card.jsx'
+import { EmptyState } from '../../components/ui/EmptyState.jsx'
+import { Input } from '../../components/ui/Input.jsx'
+import { Select } from '../../components/ui/Select.jsx'
+import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { MyDeliveries } from './MyDeliveries.jsx'
 
 const statusOptions = ['PENDING_ASSIGNMENT', 'ASSIGNED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED']
-const statusStyles = {
-  PENDING_ASSIGNMENT: 'bg-amber-50 text-amber-800',
-  ASSIGNED: 'bg-blue-50 text-blue-800',
-  OUT_FOR_DELIVERY: 'bg-teal-50 text-teal-800',
-  DELIVERED: 'bg-green-50 text-green-800',
-  FAILED: 'bg-red-50 text-red-700',
-}
+
 export function DeliveryManagement({ user }) {
   if (user.role === 'DELIVERY PERSONNEL') return <MyDeliveries user={user} />
   return <StaffDeliveryView user={user} />
 }
+
+// Stage 5 (RULES-PLANS/UI_AUDIT.md) — this is the staff half of the
+// delivery role (ADMIN/CASHIER's assignment queue); MyDeliveries.jsx is the
+// driver's mobile-first half. H7's local statusStyles is gone in favour of
+// the shared <StatusBadge>, and the hand-rolled inputs/buttons are now
+// Button/Input/Select from the kit, matching PaymentBilling/
+// InventoryRequests. This screen stays desktop-oriented (it's a staff
+// assignment queue, not a field tool) but the existing flex-wrap layout
+// already keeps it from breaking at narrow widths, so nothing structural
+// changed there.
+//
+// Untouched: the status transition rules/order and the one-directional
+// deliveries.status -> orders.status sync (PHASE7_PLAN.md). This is
+// presentation only.
 function StaffDeliveryView({ user }) {
   const isAdmin = user.role === 'ADMIN'
 
@@ -112,77 +127,87 @@ function StaffDeliveryView({ user }) {
 
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      <p className="text-sm font-semibold text-green-700">{user.role} PORTAL</p>
-      <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-slate-900">Delivery Management</h1>
-      <p className="mt-2 text-sm text-slate-500">Assign drivers to delivery orders and track each one through to delivered. No GPS tracking — this is a status workflow, not a live map.</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
+      <h1 className="mt-1 text-2xl font-semibold text-ink-900">Delivery Management</h1>
+      <p className="mt-2 text-sm text-ink-500">Assign drivers to delivery orders and track each one through to delivered. No GPS tracking — this is a status workflow, not a live map.</p>
 
-      {message && <p role="status" className={`mt-4 rounded-lg px-3 py-2 text-[10px] font-semibold ${messageFailed ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-800'}`}>{message}</p>}
+      {message && (
+        <div className="mt-4">
+          <Alert variant={messageFailed ? 'error' : 'success'}>{message}</Alert>
+        </div>
+      )}
 
-      <div className="mt-7 rounded-2xl border border-green-100 bg-white p-6">
+      <Card className="mt-6 p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-bold">Deliveries</h2>
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700">
-            <option value="">All statuses</option>
-            {statusOptions.map((status) => <option key={status} value={status}>{status.replaceAll('_', ' ')}</option>)}
-          </select>
+          <h2 className="text-lg font-semibold text-ink-900">Deliveries</h2>
+          <div className="w-full sm:w-56">
+            <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="">All statuses</option>
+              {statusOptions.map((status) => <option key={status} value={status}>{status.replaceAll('_', ' ')}</option>)}
+            </Select>
+          </div>
         </div>
 
         {loading ? (
-          <p className="mt-4 text-sm text-slate-500">Loading…</p>
+          <p className="mt-4 text-sm text-ink-500">Loading…</p>
         ) : deliveries.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-500">No deliveries match this filter.</p>
+          <EmptyState title="No deliveries match this filter." />
         ) : (
           <ul className="mt-4 space-y-4">
             {deliveries.map((delivery) => (
-              <li key={delivery.id} className="rounded-xl border border-slate-100 p-4 text-xs">
+              <li key={delivery.id} className="rounded-panel border border-line-200 p-4 text-sm">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
-                    <p className="font-semibold text-slate-800">Order #{delivery.orderId} · {delivery.customerName ?? 'Customer'} · ₱{delivery.totalAmount}</p>
-                    <p className="mt-1 text-slate-600">{delivery.address.recipientName} · {delivery.address.contactNumber}</p>
-                    <p className="mt-0.5 text-slate-500">
+                    <p className="font-semibold text-ink-900">Order #{delivery.orderId} · {delivery.customerName ?? 'Customer'} · <span className="tabular-nums">₱{delivery.totalAmount}</span></p>
+                    <p className="mt-1 text-ink-600">{delivery.address.recipientName} · {delivery.address.contactNumber}</p>
+                    <p className="mt-0.5 text-xs text-ink-500">
                       {delivery.address.addressLine1}{delivery.address.addressLine2 && `, ${delivery.address.addressLine2}`}
                       {delivery.address.barangay && `, ${delivery.address.barangay}`}, {delivery.address.municipality}, {delivery.address.province}
                     </p>
-                    <p className="mt-1 text-slate-500">
+                    <p className="mt-1 text-xs text-ink-500">
                       Order status: {delivery.orderStatus.replaceAll('_', ' ')}
                       {delivery.deliveryPersonnelName && ` · Driver: ${delivery.deliveryPersonnelName}`}
                     </p>
-                    {delivery.note && <p className="mt-0.5 text-slate-500">Note: "{delivery.note}"</p>}
+                    {delivery.note && <p className="mt-0.5 text-xs text-ink-500">Note: "{delivery.note}"</p>}
                   </div>
-                  <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${statusStyles[delivery.status] ?? 'bg-slate-100 text-slate-700'}`}>{delivery.status.replaceAll('_', ' ')}</span>
+                  <StatusBadge status={delivery.status} />
                 </div>
 
                 {delivery.status === 'PENDING_ASSIGNMENT' && (
-                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
-                    <select value={assignChoice[delivery.id] ?? ''} onChange={(event) => setAssignChoice({ ...assignChoice, [delivery.id]: event.target.value })} className="rounded-lg border border-stone-200 px-2 py-1.5 text-[11px] outline-none focus:border-green-700">
-                      <option value="">Select a driver…</option>
-                      {personnel.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
-                    </select>
-                    <button type="button" onClick={() => handleAssign(delivery.id)} disabled={busyId === delivery.id || !assignChoice[delivery.id]} className="rounded-lg bg-green-700 px-2.5 py-1.5 text-[10px] font-bold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60">Assign</button>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line-100 pt-3">
+                    <div className="min-w-40 flex-1">
+                      <Select value={assignChoice[delivery.id] ?? ''} onChange={(event) => setAssignChoice({ ...assignChoice, [delivery.id]: event.target.value })}>
+                        <option value="">Select a driver…</option>
+                        {personnel.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
+                      </Select>
+                    </div>
+                    <Button type="button" size="sm" onClick={() => handleAssign(delivery.id)} disabled={busyId === delivery.id || !assignChoice[delivery.id]}>Assign</Button>
                   </div>
                 )}
 
                 {delivery.status === 'FAILED' && isAdmin && (
-                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
-                    <input value={retryNotes[delivery.id] ?? ''} onChange={(event) => setRetryNotes({ ...retryNotes, [delivery.id]: event.target.value })} placeholder="Why is this being retried?" className="flex-1 rounded-lg border border-stone-200 px-2 py-1.5 text-[11px] outline-none focus:border-green-700" />
-                    <button type="button" onClick={() => handleAdminTransition(delivery.id, 'PENDING_ASSIGNMENT')} disabled={busyId === delivery.id} className="rounded-lg border border-green-700 px-2.5 py-1.5 text-[10px] font-bold text-green-800 transition hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-60">Retry</button>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line-100 pt-3">
+                    <Input value={retryNotes[delivery.id] ?? ''} onChange={(event) => setRetryNotes({ ...retryNotes, [delivery.id]: event.target.value })} placeholder="Why is this being retried?" className="flex-1" />
+                    <Button type="button" size="sm" variant="secondary" onClick={() => handleAdminTransition(delivery.id, 'PENDING_ASSIGNMENT')} disabled={busyId === delivery.id}>Retry</Button>
                   </div>
                 )}
                 {(delivery.status === 'ASSIGNED' || delivery.status === 'OUT_FOR_DELIVERY') && isAdmin && (
-                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
-                    <input value={retryNotes[delivery.id] ?? ''} onChange={(event) => setRetryNotes({ ...retryNotes, [delivery.id]: event.target.value })} placeholder="Why is this being recalled from its driver?" className="flex-1 rounded-lg border border-stone-200 px-2 py-1.5 text-[11px] outline-none focus:border-green-700" />
-                    <button type="button" onClick={() => handleAdminTransition(delivery.id, 'FAILED')} disabled={busyId === delivery.id} className="rounded-lg bg-red-50 px-2.5 py-1.5 text-[10px] font-bold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60">Recall from driver</button>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line-100 pt-3">
+                    <Input value={retryNotes[delivery.id] ?? ''} onChange={(event) => setRetryNotes({ ...retryNotes, [delivery.id]: event.target.value })} placeholder="Why is this being recalled from its driver?" className="flex-1" />
+                    <Button type="button" size="sm" variant="destructive" onClick={() => handleAdminTransition(delivery.id, 'FAILED')} disabled={busyId === delivery.id}>Recall from driver</Button>
                   </div>
                 )}
 
                 {delivery.proofCount > 0 && (
-                  <div className="mt-3 border-t border-slate-100 pt-3">
-                    <button type="button" onClick={() => toggleProofs(delivery.id)} className="text-[11px] font-bold text-green-800 hover:underline">{expandedProofsId === delivery.id ? 'Hide' : 'View'} proof of delivery ({delivery.proofCount})</button>
+                  <div className="mt-3 border-t border-line-100 pt-3">
+                    <Button type="button" size="sm" variant="ghost" className="px-0 text-brand-700" onClick={() => toggleProofs(delivery.id)}>
+                      {expandedProofsId === delivery.id ? 'Hide' : 'View'} proof of delivery ({delivery.proofCount})
+                    </Button>
                     {expandedProofsId === delivery.id && (
                       <div className="mt-2 flex flex-wrap gap-2">
                         {(proofsById[delivery.id] ?? []).map((proof) => (
                           <a key={proof.id} href={`/api/deliveries/${delivery.id}/proof/${proof.id}`} target="_blank" rel="noreferrer">
-                            <img src={`/api/deliveries/${delivery.id}/proof/${proof.id}`} alt={proof.fileName} className="h-20 w-20 rounded-lg border border-slate-200 object-cover" />
+                            <img src={`/api/deliveries/${delivery.id}/proof/${proof.id}`} alt={proof.fileName} className="h-20 w-20 rounded-control border border-line-200 object-cover" />
                           </a>
                         ))}
                       </div>
@@ -193,7 +218,7 @@ function StaffDeliveryView({ user }) {
             ))}
           </ul>
         )}
-      </div>
+      </Card>
     </section>
   )
 }

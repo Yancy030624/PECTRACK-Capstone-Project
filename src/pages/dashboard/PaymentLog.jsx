@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react'
 import { apiGet } from '../../api/client.js'
+import { Alert } from '../../components/ui/Alert.jsx'
+import { Card } from '../../components/ui/Card.jsx'
+import { EmptyState } from '../../components/ui/EmptyState.jsx'
+import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
+import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 
-const statusStyles = {
-  PAID: 'bg-green-50 text-green-800',
-  REFUNDED: 'bg-red-50 text-red-700',
-  PENDING: 'bg-amber-50 text-amber-800',
-  FAILED: 'bg-slate-100 text-slate-600',
-}
-
+// Stage 4 (RULES-PLANS/UI_AUDIT.md) — H7 called this file's statusStyles
+// out by name: byte-identical to PaymentBilling.jsx's own copy under a
+// different name. Both now read the one shared <StatusBadge> map instead.
+// C3's role="status" 10px error paragraph is <Alert variant="error">.
+// Amount is now <Td numeric> — right-aligned, tabular-nums — per the
+// audit's specific complaint that peso columns didn't line up. Which
+// payments load, for which role, is unchanged.
 export function PaymentLog({ user }) {
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
@@ -27,51 +32,58 @@ export function PaymentLog({ user }) {
     loadPayments()
   }, [])
 
+  const isCustomer = user.role === 'CUSTOMER'
+  const caption = isCustomer ? 'Your payments' : 'All payments'
+
   return (
-    <div className="mt-6 rounded-2xl border border-green-100 bg-white p-6">
-      <h2 className="text-lg font-bold">{user.role === 'CUSTOMER' ? 'Your payments' : 'All payments'}</h2>
+    <Card className="mt-6 p-6">
+      <h2 className="text-lg font-semibold text-ink-900">{caption}</h2>
 
-      {message && <p role="status" className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-[10px] font-semibold text-red-700">{message}</p>}
-
-      {loading ? (
-        <p className="mt-4 text-sm text-slate-500">Loading…</p>
-      ) : payments.length === 0 ? (
-        <p className="mt-4 text-sm text-slate-500">No payments recorded yet.</p>
-      ) : (
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-175 text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-100 text-slate-400">
-                <th className="py-2 pr-4 font-bold">Order</th>
-                {user.role !== 'CUSTOMER' && <th className="py-2 pr-4 font-bold">Customer</th>}
-                <th className="py-2 pr-4 font-bold">Method</th>
-                <th className="py-2 pr-4 font-bold">Amount</th>
-                <th className="py-2 pr-4 font-bold">Reference</th>
-                <th className="py-2 pr-4 font-bold">Status</th>
-                <th className="py-2 pr-4 font-bold">Recorded by</th>
-                <th className="py-2 pr-4 font-bold">When</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {payments.map((payment) => (
-                <tr key={payment.id}>
-                  <td className="py-3 pr-4 font-semibold text-slate-800">#{payment.orderId}</td>
-                  {user.role !== 'CUSTOMER' && <td className="py-3 pr-4 text-slate-600">{payment.customerName ?? 'Walk-in'}</td>}
-                  <td className="py-3 pr-4 text-slate-600">{payment.method}</td>
-                  <td className="py-3 pr-4 text-slate-600">₱{payment.amount}</td>
-                  <td className="py-3 pr-4 text-slate-500">{payment.gatewayReference ?? '—'}</td>
-                  <td className="py-3 pr-4">
-                    <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${statusStyles[payment.status] ?? 'bg-slate-100 text-slate-700'}`}>{payment.status}</span>
-                    {payment.status === 'REFUNDED' && payment.refundReason && <p className="mt-1 text-[10px] text-slate-400">"{payment.refundReason}"</p>}
-                  </td>
-                  <td className="py-3 pr-4 text-slate-600">{payment.status === 'REFUNDED' ? payment.refundedByName : payment.recordedByName}</td>
-                  <td className="py-3 pr-4 text-slate-500">{new Date(payment.status === 'REFUNDED' ? payment.refundedAt : (payment.paymentDate ?? payment.createdAt)).toLocaleString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {message && (
+        <div className="mt-4">
+          <Alert variant="error">{message}</Alert>
         </div>
       )}
-    </div>
+
+      {loading ? (
+        <p className="mt-4 text-sm text-ink-500">Loading…</p>
+      ) : payments.length === 0 ? (
+        <EmptyState title="No payments recorded yet" />
+      ) : (
+        <div className="mt-4">
+          <Table caption={caption}>
+            <Thead>
+              <Tr className="hover:bg-transparent">
+                <Th>Order</Th>
+                {!isCustomer && <Th>Customer</Th>}
+                <Th>Method</Th>
+                <Th align="right">Amount</Th>
+                <Th>Reference</Th>
+                <Th>Status</Th>
+                <Th>Recorded by</Th>
+                <Th>When</Th>
+              </Tr>
+            </Thead>
+            <Tbody>
+              {payments.map((payment) => (
+                <Tr key={payment.id}>
+                  <Td className="font-semibold text-ink-900">#{payment.orderId}</Td>
+                  {!isCustomer && <Td>{payment.customerName ?? 'Walk-in'}</Td>}
+                  <Td>{payment.method}</Td>
+                  <Td numeric>₱{payment.amount}</Td>
+                  <Td className="text-ink-500">{payment.gatewayReference ?? '—'}</Td>
+                  <Td>
+                    <StatusBadge status={payment.status} />
+                    {payment.status === 'REFUNDED' && payment.refundReason && <p className="mt-1 text-xs text-ink-400">"{payment.refundReason}"</p>}
+                  </Td>
+                  <Td>{payment.status === 'REFUNDED' ? payment.refundedByName : payment.recordedByName}</Td>
+                  <Td className="text-ink-500">{new Date(payment.status === 'REFUNDED' ? payment.refundedAt : (payment.paymentDate ?? payment.createdAt)).toLocaleString()}</Td>
+                </Tr>
+              ))}
+            </Tbody>
+          </Table>
+        </div>
+      )}
+    </Card>
   )
 }

@@ -1,15 +1,33 @@
 import { useEffect, useState } from 'react'
 import { apiGet, apiPost } from '../../api/client.js'
+import { Alert } from '../../components/ui/Alert.jsx'
+import { Button } from '../../components/ui/Button.jsx'
+import { Card } from '../../components/ui/Card.jsx'
+import { EmptyState } from '../../components/ui/EmptyState.jsx'
+import { Field } from '../../components/ui/Field.jsx'
+import { Input } from '../../components/ui/Input.jsx'
+import { Select } from '../../components/ui/Select.jsx'
+import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
+import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { PaymentLog } from './PaymentLog.jsx'
 
 const emptyPaymentForm = { method: 'CASH', amount: '', gatewayReference: '' }
-const paymentStatusStyles = {
-  PAID: 'bg-green-50 text-green-800',
-  REFUNDED: 'bg-red-50 text-red-700',
-  PENDING: 'bg-amber-50 text-amber-800',
-  FAILED: 'bg-slate-100 text-slate-600',
-}
 
+// Stage 4 (RULES-PLANS/UI_AUDIT.md) — the money screen. paymentStatusStyles
+// (byte-identical to PaymentLog.jsx's own copy — H7) is gone in favour of
+// the shared <StatusBadge>; the role="status" error paragraph at 10px
+// (C3) is <Alert variant="error">; the three input shapes (H3) are
+// Input/Select/Field; the rounded-full tab pills are Button. Peso columns
+// in the orders table now use <Td numeric> — the audit's specific
+// complaint that currency didn't line up.
+//
+// Nothing about payment recording, the cash/GCash split, or refund rules
+// changed (RULES-PLANS/PHASE6_PLAN.md) — this is presentation only.
+// handlePaymentSubmit still builds its request body the same way it did
+// before: gatewayReference is only added when the method is GCASH, never
+// spread unconditionally from state (see RULES-PLANS/UI_AUDIT.md's note
+// on DB-default fields — sending '' for an omitted optional field fails
+// validation even though the field itself is fine to leave out).
 export function PaymentBilling({ user }) {
   const isStaff = user.role === 'ADMIN' || user.role === 'CASHIER'
 
@@ -76,6 +94,9 @@ export function PaymentBilling({ user }) {
     setPaymentSubmitting(true)
     setPaymentErrors({})
     try {
+      // Unchanged: gatewayReference only goes in the body for GCASH — a
+      // DB-default field left in the body as '' for CASH would fail
+      // validation even though omitting it is fine.
       const body = { orderId: selectedOrderId, method: paymentForm.method, amount: Number(paymentForm.amount) }
       if (paymentForm.method === 'GCASH') body.gatewayReference = paymentForm.gatewayReference
       await apiPost('/api/payments', body)
@@ -92,145 +113,213 @@ export function PaymentBilling({ user }) {
   const canRecordPayment = isStaff && orderDetail && orderDetail.status !== 'CANCELLED' && !orderDetail.payment.isFullyPaid
   const canPayOnline = canRecordPayment || (orderDetail && orderDetail.status !== 'CANCELLED' && !orderDetail.payment.isFullyPaid && user.role === 'CUSTOMER')
 
+  const tabs = [
+    { key: 'billing', label: 'Billing' },
+    { key: 'log', label: 'Payment log' },
+  ]
+
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      <p className="text-sm font-semibold text-green-700">{user.role} PORTAL</p>
-      <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-slate-900">Payment & Billing</h1>
-      <p className="mt-2 text-sm text-slate-500">{isStaff ? 'Record payments and review what each order still owes.' : 'Your orders, what you\'ve paid, and what you still owe.'}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
+      <h1 className="mt-1 text-2xl font-semibold text-ink-900">Payment & Billing</h1>
+      <p className="mt-2 text-sm text-ink-500">{isStaff ? 'Record payments and review what each order still owes.' : "Your orders, what you've paid, and what you still owe."}</p>
 
-      {message && <p role="status" className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-[10px] font-semibold text-red-700">{message}</p>}
+      {message && (
+        <div className="mt-4">
+          <Alert variant="error">{message}</Alert>
+        </div>
+      )}
 
       <div className="mt-6 flex gap-2">
-        <button type="button" onClick={() => setActiveTab('billing')} className={`rounded-full px-4 py-2 text-xs font-bold transition ${activeTab === 'billing' ? 'bg-green-700 text-white' : 'bg-green-50 text-green-800 hover:bg-green-100'}`}>Billing</button>
-        <button type="button" onClick={() => setActiveTab('log')} className={`rounded-full px-4 py-2 text-xs font-bold transition ${activeTab === 'log' ? 'bg-green-700 text-white' : 'bg-green-50 text-green-800 hover:bg-green-100'}`}>Payment log</button>
+        {tabs.map((tab) => (
+          <Button type="button" key={tab.key} size="sm" variant={activeTab === tab.key ? 'primary' : 'secondary'} onClick={() => setActiveTab(tab.key)}>
+            {tab.label}
+          </Button>
+        ))}
       </div>
 
       {activeTab === 'log' && <PaymentLog user={user} />}
 
-      {activeTab === 'billing' && <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-        <div className="rounded-2xl border border-green-100 bg-white p-6">
-          <h2 className="text-lg font-bold">{isStaff ? 'All orders' : 'Your orders'}</h2>
-          {loading ? (
-            <p className="mt-4 text-sm text-slate-500">Loading…</p>
-          ) : orders.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-500">No orders yet.</p>
-          ) : (
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full min-w-125 text-left text-xs">
-                <thead>
-                  <tr className="border-b border-slate-100 text-slate-400">
-                    <th className="py-2 pr-4 font-bold">Order</th>
-                    {isStaff && <th className="py-2 pr-4 font-bold">Customer</th>}
-                    <th className="py-2 pr-4 font-bold">Total</th>
-                    <th className="py-2 pr-4 font-bold">Owed</th>
-                    <th className="py-2 pr-4 font-bold">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {orders.map((order) => (
-                    <tr key={order.id} onClick={() => openOrder(order.id)} className={`cursor-pointer transition hover:bg-green-50 ${selectedOrderId === order.id ? 'bg-green-50' : ''}`}>
-                      <td className="py-3 pr-4 font-semibold text-slate-800">#{order.id}</td>
-                      {isStaff && <td className="py-3 pr-4 text-slate-600">{order.customerName ?? 'Walk-in'}</td>}
-                      <td className="py-3 pr-4 text-slate-600">₱{order.totalAmount}</td>
-
-                      <td className="py-3 pr-4">
-                        {order.status === 'CANCELLED'
-                          ? <span className="text-slate-400">—</span>
-                          : order.isFullyPaid
-                            ? <span className="rounded-full bg-green-50 px-2.5 py-1 text-[10px] font-bold text-green-800">Paid</span>
-                            : <span className="font-semibold text-red-700">₱{order.balanceDue}</span>}
-                      </td>
-                      <td className="py-3 pr-4 text-slate-600">{order.status.replaceAll('_', ' ')}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-        <div className="rounded-2xl border border-green-100 bg-white p-6">
-          <h2 className="text-lg font-bold">Receipt</h2>
-          {!selectedOrderId ? (
-            <p className="mt-4 text-sm text-slate-500">Select an order to view its receipt.</p>
-          ) : detailLoading ? (
-            <p className="mt-4 text-sm text-slate-500">Loading…</p>
-          ) : orderDetail ? (
-            <div className="mt-4 space-y-4">
-              <div className="text-xs text-slate-600">
-                <p><strong className="text-slate-800">Order #{orderDetail.id}</strong> · {orderDetail.status.replaceAll('_', ' ')}</p>
-                <p className="mt-1">Customer: {orderDetail.customerName ?? 'Walk-in'}</p>
+      {activeTab === 'billing' && (
+        <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+          <Card className="p-6">
+            <h2 className="text-lg font-semibold text-ink-900">{isStaff ? 'All orders' : 'Your orders'}</h2>
+            {loading ? (
+              <p className="mt-4 text-sm text-ink-500">Loading…</p>
+            ) : orders.length === 0 ? (
+              <EmptyState title="No orders yet" />
+            ) : (
+              <div className="mt-4">
+                <Table caption={isStaff ? 'All orders' : 'Your orders'}>
+                  <Thead>
+                    <Tr className="hover:bg-transparent">
+                      <Th>Order</Th>
+                      {isStaff && <Th>Customer</Th>}
+                      <Th align="right">Total</Th>
+                      <Th align="right">Owed</Th>
+                      <Th>Status</Th>
+                    </Tr>
+                  </Thead>
+                  <Tbody>
+                    {orders.map((order) => (
+                      // C2 fix carried over from Stage 3: the row's onClick
+                      // stays a mouse convenience, the first cell also
+                      // carries a real <button> so the row is reachable and
+                      // operable by keyboard.
+                      <Tr key={order.id} onClick={() => openOrder(order.id)} className={`cursor-pointer ${selectedOrderId === order.id ? 'bg-brand-50' : ''}`}>
+                        <Td>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              openOrder(order.id)
+                            }}
+                            aria-label={`Open order #${order.id}`}
+                            className="font-semibold text-ink-900 hover:underline focus-visible:underline"
+                          >
+                            #{order.id}
+                          </button>
+                        </Td>
+                        {isStaff && <Td>{order.customerName ?? 'Walk-in'}</Td>}
+                        <Td numeric>₱{order.totalAmount}</Td>
+                        <Td numeric>
+                          {order.status === 'CANCELLED' ? (
+                            <span className="text-ink-400">—</span>
+                          ) : order.isFullyPaid ? (
+                            <StatusBadge status="PAID" label="Paid" />
+                          ) : (
+                            <span className="font-semibold text-status-fail-fg">₱{order.balanceDue}</span>
+                          )}
+                        </Td>
+                        <Td>
+                          <StatusBadge status={order.status} />
+                        </Td>
+                      </Tr>
+                    ))}
+                  </Tbody>
+                </Table>
               </div>
+            )}
+          </Card>
 
-              <div>
-                <p className="text-[11px] font-extrabold text-slate-500">Items</p>
-                <ul className="mt-1.5 divide-y divide-slate-100 text-xs">
-                  {orderDetail.items.map((item) => (
-                    <li key={item.productId} className="flex items-center justify-between py-1.5">
-                      <span>{item.productName} × {item.quantity}</span>
-                      <span className="text-slate-500">₱{item.unitPrice}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+          <Card className="p-6">
+            <h2 className="text-lg font-semibold text-ink-900">Receipt</h2>
+            {!selectedOrderId ? (
+              <p className="mt-4 text-sm text-ink-500">Select an order to view its receipt.</p>
+            ) : detailLoading ? (
+              <p className="mt-4 text-sm text-ink-500">Loading…</p>
+            ) : orderDetail ? (
+              <div className="mt-4 space-y-4">
+                <div className="text-xs text-ink-600">
+                  <p>
+                    <strong className="text-ink-900">Order #{orderDetail.id}</strong> · {orderDetail.status.replaceAll('_', ' ')}
+                  </p>
+                  <p className="mt-1">Customer: {orderDetail.customerName ?? 'Walk-in'}</p>
+                </div>
 
-              <div className="rounded-xl bg-[#fbfbdc] p-4 text-xs text-green-950">
-                <div className="flex items-center justify-between"><span>Total</span><span className="font-bold">₱{orderDetail.payment.totalAmount}</span></div>
-                <div className="mt-1 flex items-center justify-between"><span>Paid</span><span className="font-bold">₱{orderDetail.payment.amountPaid}</span></div>
-     
-                {orderDetail.status === 'CANCELLED' ? (
-                  <p className="mt-2 rounded-full bg-red-50 px-2.5 py-1 text-center text-[10px] font-bold text-red-700">{orderDetail.payment.payments.some((payment) => payment.status === 'REFUNDED') ? 'Cancelled — payment refunded' : 'Cancelled — nothing was paid'}</p>
-                ) : (
-                  <>
-                    <div className="mt-1 flex items-center justify-between border-t border-green-200 pt-1"><span>Balance due</span><span className="font-bold">₱{orderDetail.payment.balanceDue}</span></div>
-                    {orderDetail.payment.isFullyPaid && <p className="mt-2 rounded-full bg-green-100 px-2.5 py-1 text-center text-[10px] font-bold text-green-800">Fully paid</p>}
-                  </>
-                )}
-              </div>
-
-              {orderDetail.payment.payments.length > 0 && (
                 <div>
-                  <p className="text-[11px] font-extrabold text-slate-500">Payments</p>
-                  <ul className="mt-1.5 space-y-1.5 text-xs text-slate-600">
-                    {orderDetail.payment.payments.map((payment) => (
-                      <li key={payment.id} className="flex items-center justify-between">
-                        <span>{payment.method} · ₱{payment.amount} {payment.gatewayReference && <span className="text-slate-400">({payment.gatewayReference})</span>}</span>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${paymentStatusStyles[payment.status] ?? 'bg-slate-100 text-slate-700'}`}>{payment.status}</span>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Items</p>
+                  <ul className="mt-1.5 divide-y divide-line-100 text-sm">
+                    {orderDetail.items.map((item) => (
+                      <li key={item.productId} className="flex items-center justify-between py-1.5">
+                        <span>
+                          {item.productName} × {item.quantity}
+                        </span>
+                        <span className="text-ink-500 tabular-nums">₱{item.unitPrice}</span>
                       </li>
                     ))}
                   </ul>
                 </div>
-              )}
 
-              {canPayOnline && (
-                <div className="border-t border-slate-100 pt-3">
-                  <button type="button" onClick={handlePayWithGCash} disabled={gcashSubmitting} className="w-full rounded-xl bg-[#0074E4] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#005bb5] disabled:cursor-not-allowed disabled:opacity-60">{gcashSubmitting ? 'Redirecting to GCash…' : 'Pay with GCash'}</button>
-                  <p className="mt-1.5 text-[10px] text-slate-400">You'll be taken to PayMongo's secure checkout page. If you just paid and this still shows a balance, refresh in a moment — confirmation can take a few seconds.</p>
-                </div>
-              )}
+                <div className="rounded-panel border border-line-200 bg-surface-warm p-4 text-sm text-ink-900">
+                  <div className="flex items-center justify-between">
+                    <span>Total</span>
+                    <span className="font-semibold tabular-nums">₱{orderDetail.payment.totalAmount}</span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between">
+                    <span>Paid</span>
+                    <span className="font-semibold tabular-nums">₱{orderDetail.payment.amountPaid}</span>
+                  </div>
 
-              {canRecordPayment && (
-                <form className="space-y-2 border-t border-slate-100 pt-3" onSubmit={handlePaymentSubmit}>
-                  <p className="text-[11px] font-extrabold">Record a payment</p>
-                  <select value={paymentForm.method} onChange={(event) => setPaymentForm({ ...paymentForm, method: event.target.value })} className="w-full rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700">
-                    <option value="CASH">Cash</option>
-                    <option value="GCASH">GCash</option>
-                  </select>
-                  {paymentErrors.method && <p className="text-[10px] font-medium text-red-700">{paymentErrors.method}</p>}
-                  <input value={paymentForm.amount} onChange={(event) => setPaymentForm({ ...paymentForm, amount: event.target.value })} inputMode="decimal" placeholder="Amount" className="w-full rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700" />
-                  {paymentErrors.amount && <p className="text-[10px] font-medium text-red-700">{paymentErrors.amount}</p>}
-                  {paymentForm.method === 'GCASH' && (
+                  {orderDetail.status === 'CANCELLED' ? (
+                    <p className="mt-2 rounded-full bg-status-fail-bg px-2.5 py-1 text-center text-[10px] font-semibold uppercase tracking-wide text-status-fail-fg">
+                      {orderDetail.payment.payments.some((payment) => payment.status === 'REFUNDED') ? 'Cancelled — payment refunded' : 'Cancelled — nothing was paid'}
+                    </p>
+                  ) : (
                     <>
-                      <input value={paymentForm.gatewayReference} onChange={(event) => setPaymentForm({ ...paymentForm, gatewayReference: event.target.value })} placeholder="GCash reference number" className="w-full rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700" />
-                      {paymentErrors.gatewayReference && <p className="text-[10px] font-medium text-red-700">{paymentErrors.gatewayReference}</p>}
+                      <div className="mt-1 flex items-center justify-between border-t border-line-200 pt-1">
+                        <span>Balance due</span>
+                        <span className="font-semibold tabular-nums">₱{orderDetail.payment.balanceDue}</span>
+                      </div>
+                      {orderDetail.payment.isFullyPaid && (
+                        <p className="mt-2 rounded-full bg-status-done-bg px-2.5 py-1 text-center text-[10px] font-semibold uppercase tracking-wide text-status-done-fg">Fully paid</p>
+                      )}
                     </>
                   )}
-                  <button type="submit" disabled={paymentSubmitting} className="rounded-xl bg-green-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60">{paymentSubmitting ? 'Recording…' : 'Record payment'}</button>
-                </form>
-              )}
-            </div>
-          ) : null}
+                </div>
+
+                {orderDetail.payment.payments.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Payments</p>
+                    <ul className="mt-1.5 space-y-1.5 text-sm text-ink-600">
+                      {orderDetail.payment.payments.map((payment) => (
+                        <li key={payment.id} className="flex items-center justify-between gap-2">
+                          <span>
+                            {payment.method} · <span className="tabular-nums">₱{payment.amount}</span> {payment.gatewayReference && <span className="text-ink-400">({payment.gatewayReference})</span>}
+                          </span>
+                          <StatusBadge status={payment.status} />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {canPayOnline && (
+                  <div className="border-t border-line-100 pt-3">
+                    {/* GCash's own brand blue, not one of the four Button
+                        variants — kept as a plain button on our tokens
+                        (radius, weight, disabled state, the global focus
+                        ring) rather than forcing a fifth colour into the
+                        Button primitive for one call site. */}
+                    <button
+                      type="button"
+                      onClick={handlePayWithGCash}
+                      disabled={gcashSubmitting}
+                      className="w-full rounded-control bg-[#0074E4] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#005bb5] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {gcashSubmitting ? 'Redirecting to GCash…' : 'Pay with GCash'}
+                    </button>
+                    <p className="mt-1.5 text-xs text-ink-500">You'll be taken to PayMongo's secure checkout page. If you just paid and this still shows a balance, refresh in a moment — confirmation can take a few seconds.</p>
+                  </div>
+                )}
+
+                {canRecordPayment && (
+                  <form className="space-y-3 border-t border-line-100 pt-3" onSubmit={handlePaymentSubmit}>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Record a payment</p>
+                    <Field label="Method" error={paymentErrors.method}>
+                      <Select value={paymentForm.method} onChange={(event) => setPaymentForm({ ...paymentForm, method: event.target.value })}>
+                        <option value="CASH">Cash</option>
+                        <option value="GCASH">GCash</option>
+                      </Select>
+                    </Field>
+                    <Field label="Amount" error={paymentErrors.amount}>
+                      <Input value={paymentForm.amount} onChange={(event) => setPaymentForm({ ...paymentForm, amount: event.target.value })} inputMode="decimal" placeholder="Amount" />
+                    </Field>
+                    {paymentForm.method === 'GCASH' && (
+                      <Field label="GCash reference number" error={paymentErrors.gatewayReference}>
+                        <Input value={paymentForm.gatewayReference} onChange={(event) => setPaymentForm({ ...paymentForm, gatewayReference: event.target.value })} placeholder="GCash reference number" />
+                      </Field>
+                    )}
+                    <Button type="submit" size="sm" disabled={paymentSubmitting}>
+                      {paymentSubmitting ? 'Recording…' : 'Record payment'}
+                    </Button>
+                  </form>
+                )}
+              </div>
+            ) : null}
+          </Card>
         </div>
-      </div>}
+      )}
     </section>
   )
 }

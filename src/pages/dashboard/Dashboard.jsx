@@ -167,7 +167,11 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
             every module page as `pt-24`/`md:pt-9`; each module's own
             <section> keeps only its ordinary side/bottom padding. */}
         <main className="min-w-0 flex-1 pt-6 sm:pt-8 md:overflow-y-auto">
-          <ActiveModuleComponent user={user} activeModule={activeModule} onUserUpdated={onUserUpdated} />
+          {/* onNavigate === setActiveModule, so a module page (currently
+              only DashboardHome — see its M2 fix, UI_AUDIT.md) can switch
+              to another permitted module the same way the sidebar/mobile
+              nav above does, instead of faking a link that goes nowhere. */}
+          <ActiveModuleComponent user={user} activeModule={activeModule} onUserUpdated={onUserUpdated} onNavigate={setActiveModule} />
         </main>
       </div>
     </div>

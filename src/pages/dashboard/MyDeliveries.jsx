@@ -1,11 +1,35 @@
 import { useEffect, useState } from 'react'
 import { apiGet, apiPatch, apiUpload } from '../../api/client.js'
+import { Alert } from '../../components/ui/Alert.jsx'
+import { Button } from '../../components/ui/Button.jsx'
+import { Card } from '../../components/ui/Card.jsx'
+import { EmptyState } from '../../components/ui/EmptyState.jsx'
+import { Input } from '../../components/ui/Input.jsx'
+import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 
-const statusStyles = {
-  ASSIGNED: 'bg-blue-50 text-blue-800',
-  OUT_FOR_DELIVERY: 'bg-teal-50 text-teal-800',
-}
-
+// Stage 5 (RULES-PLANS/UI_AUDIT.md) — the delivery role's only screen, and
+// the only one in the app worked standing up, on a phone, one-handed. H7's
+// local statusStyles here only listed ASSIGNED/OUT_FOR_DELIVERY, so
+// DELIVERED/FAILED silently fell back to an unstyled grey pill even though
+// a driver can reach both — gone in favour of the shared <StatusBadge>,
+// whose map already covers all five delivery statuses.
+//
+// Everything else is a mobile-first pass: every action a driver taps is
+// size="touch" (44px — the DESIGN SYSTEM's touch-critical ramp) and full
+// width, the card's main action ("Start delivery" / "Mark delivered") is
+// the biggest, first thing below the fold, and the proof-of-delivery file
+// input — previously a raw `<input type="file" className="text-[11px]">`
+// — now has a properly sized native picker plus an explicit, labelled
+// upload button. It intentionally has no `capture="environment"`: that
+// attribute opens the camera directly and drops the gallery option on
+// Android Chrome, which breaks the (common) case where the driver already
+// took the photo before opening this screen.
+//
+// Untouched: the upload contract (apiUpload still posts the file's raw
+// bytes and MIME type to ?proofType=…&fileName=…, per PHASE7_PLAN.md
+// Decision 8) and the status transition rules/order (PHASE7_PLAN.md's
+// one-directional deliveries.status -> orders.status sync). This is
+// presentation only.
 export function MyDeliveries({ user }) {
   const [deliveries, setDeliveries] = useState([])
   const [loading, setLoading] = useState(true)
@@ -69,64 +93,106 @@ export function MyDeliveries({ user }) {
 
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      <p className="text-sm font-semibold text-green-700">{user.role} PORTAL</p>
-      <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-slate-900">My Deliveries</h1>
-      <p className="mt-2 text-sm text-slate-500">Deliveries currently assigned to you. No GPS tracking — this is a workflow checklist, not a map.</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
+      <h1 className="mt-1 text-2xl font-semibold text-ink-900">My Deliveries</h1>
+      <p className="mt-2 text-sm text-ink-500">Deliveries currently assigned to you. No GPS tracking — this is a workflow checklist, not a map.</p>
 
-      {message && <p role="status" className={`mt-4 rounded-lg px-3 py-2 text-[10px] font-semibold ${messageFailed ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-800'}`}>{message}</p>}
+      {message && (
+        <div className="mt-4">
+          <Alert variant={messageFailed ? 'error' : 'success'}>{message}</Alert>
+        </div>
+      )}
 
-      <div className="mt-7 rounded-2xl border border-green-100 bg-white p-6">
-        <h2 className="text-lg font-bold">Assigned to you</h2>
-        {loading ? (
-          <p className="mt-4 text-sm text-slate-500">Loading…</p>
-        ) : deliveries.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-500">Nothing assigned right now.</p>
-        ) : (
-          <ul className="mt-4 space-y-4">
-            {deliveries.map((delivery) => (
-              <li key={delivery.id} className="rounded-xl border border-slate-100 p-4 text-xs">
+      <h2 className="mt-6 text-lg font-semibold text-ink-900">Assigned to you</h2>
+
+      {loading ? (
+        <p className="mt-4 text-sm text-ink-500">Loading…</p>
+      ) : deliveries.length === 0 ? (
+        <div className="mt-4">
+          <EmptyState title="Nothing assigned right now." />
+        </div>
+      ) : (
+        <ul className="mt-4 space-y-4">
+          {deliveries.map((delivery) => (
+            <li key={delivery.id}>
+              <Card className="p-4 text-sm sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
-                    <p className="font-semibold text-slate-800">Order #{delivery.orderId} · {delivery.customerName ?? 'Customer'}</p>
-                    <p className="mt-1 text-slate-600">{delivery.address.recipientName} · {delivery.address.contactNumber}</p>
-                    <p className="mt-0.5 text-slate-500">
+                    <p className="font-semibold text-ink-900">Order #{delivery.orderId} · {delivery.customerName ?? 'Customer'}</p>
+                    <p className="mt-1 text-ink-600">{delivery.address.recipientName} · {delivery.address.contactNumber}</p>
+                    <p className="mt-0.5 text-xs text-ink-500">
                       {delivery.address.addressLine1}{delivery.address.addressLine2 && `, ${delivery.address.addressLine2}`}
                       {delivery.address.barangay && `, ${delivery.address.barangay}`}, {delivery.address.municipality}, {delivery.address.province}
                       {delivery.address.postalCode && ` ${delivery.address.postalCode}`}
                     </p>
-                    {delivery.address.deliveryNotes && <p className="mt-0.5 text-slate-500">Note: "{delivery.address.deliveryNotes}"</p>}
-                    <p className="mt-1 text-slate-500">Order total: ₱{delivery.totalAmount}</p>
+                    {delivery.address.deliveryNotes && <p className="mt-0.5 text-xs text-ink-500">Note: "{delivery.address.deliveryNotes}"</p>}
+                    <p className="mt-1 text-xs text-ink-500">Order total: <span className="tabular-nums">₱{delivery.totalAmount}</span></p>
                   </div>
-                  <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${statusStyles[delivery.status] ?? 'bg-slate-100 text-slate-700'}`}>{delivery.status.replaceAll('_', ' ')}</span>
+                  <StatusBadge status={delivery.status} />
                 </div>
 
                 {delivery.status === 'ASSIGNED' && (
-                  <div className="mt-3 border-t border-slate-100 pt-3">
-                    <button type="button" onClick={() => setStatus(delivery.id, 'OUT_FOR_DELIVERY')} disabled={busyId === delivery.id} className="rounded-lg bg-green-700 px-3 py-1.5 text-[10px] font-bold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60">Start delivery</button>
+                  <div className="mt-4 border-t border-line-100 pt-4">
+                    <Button type="button" size="touch" className="w-full" onClick={() => setStatus(delivery.id, 'OUT_FOR_DELIVERY')} disabled={busyId === delivery.id}>
+                      {busyId === delivery.id ? 'Starting…' : 'Start delivery'}
+                    </Button>
                   </div>
                 )}
 
                 {delivery.status === 'OUT_FOR_DELIVERY' && (
-                  <div className="mt-3 space-y-3 border-t border-slate-100 pt-3">
+                  <div className="mt-4 space-y-4 border-t border-line-100 pt-4">
                     <div>
-                      <label htmlFor={`proof-${delivery.id}`} className="mb-1.5 block text-[11px] font-extrabold">Proof of delivery photo{delivery.proofCount > 0 ? ` (${delivery.proofCount} uploaded)` : ''}</label>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <input id={`proof-${delivery.id}`} type="file" accept="image/jpeg,image/png" onChange={(event) => setProofFiles({ ...proofFiles, [delivery.id]: event.target.files[0] ?? null })} className="text-[11px]" />
-                        <button type="button" onClick={() => handleUploadProof(delivery.id)} disabled={busyId === delivery.id || !proofFiles[delivery.id]} className="rounded-lg border border-green-700 px-2.5 py-1.5 text-[10px] font-bold text-green-800 transition hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-60">Upload photo</button>
-                      </div>
+                      <label htmlFor={`proof-${delivery.id}`} className="mb-1.5 block text-xs font-semibold text-ink-700">
+                        Proof of delivery photo{delivery.proofCount > 0 ? ` (${delivery.proofCount} uploaded)` : ''}
+                      </label>
+                      <input
+                        id={`proof-${delivery.id}`}
+                        type="file"
+                        accept="image/jpeg,image/png"
+                        onChange={(event) => setProofFiles({ ...proofFiles, [delivery.id]: event.target.files[0] ?? null })}
+                        className="block w-full text-xs text-ink-600 file:mr-3 file:h-11 file:cursor-pointer file:rounded-control file:border-0 file:bg-brand-50 file:px-4 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100"
+                      />
+                      <Button
+                        type="button"
+                        size="touch"
+                        variant="secondary"
+                        className="mt-2 w-full"
+                        onClick={() => handleUploadProof(delivery.id)}
+                        disabled={busyId === delivery.id || !proofFiles[delivery.id]}
+                      >
+                        {proofFiles[delivery.id] ? `Upload "${proofFiles[delivery.id].name}"` : 'Upload photo'}
+                      </Button>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button type="button" onClick={() => setStatus(delivery.id, 'DELIVERED')} disabled={busyId === delivery.id} className="rounded-lg bg-green-700 px-3 py-1.5 text-[10px] font-bold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60">Mark delivered</button>
-                      <input value={failNotes[delivery.id] ?? ''} onChange={(event) => setFailNotes({ ...failNotes, [delivery.id]: event.target.value })} placeholder="Reason, if it failed" className="flex-1 rounded-lg border border-stone-200 px-2 py-1.5 text-[11px] outline-none focus:border-green-700" />
-                      <button type="button" onClick={() => setStatus(delivery.id, 'FAILED', failNotes[delivery.id])} disabled={busyId === delivery.id} className="rounded-lg bg-red-50 px-2.5 py-1.5 text-[10px] font-bold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60">Mark failed</button>
+
+                    <Button type="button" size="touch" className="w-full" onClick={() => setStatus(delivery.id, 'DELIVERED')} disabled={busyId === delivery.id}>
+                      {busyId === delivery.id ? 'Marking delivered…' : 'Mark delivered'}
+                    </Button>
+
+                    <div>
+                      <Input
+                        value={failNotes[delivery.id] ?? ''}
+                        onChange={(event) => setFailNotes({ ...failNotes, [delivery.id]: event.target.value })}
+                        placeholder="Reason, if it failed"
+                        aria-label={`Reason order #${delivery.orderId}'s delivery failed`}
+                      />
+                      <Button
+                        type="button"
+                        size="touch"
+                        variant="destructive"
+                        className="mt-2 w-full"
+                        onClick={() => setStatus(delivery.id, 'FAILED', failNotes[delivery.id])}
+                        disabled={busyId === delivery.id}
+                      >
+                        Mark failed
+                      </Button>
                     </div>
                   </div>
                 )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+              </Card>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   )
 }

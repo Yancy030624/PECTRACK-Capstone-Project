@@ -1,12 +1,35 @@
 import { useEffect, useState } from 'react'
 import { apiGet, apiPatch, apiPost } from '../../api/client.js'
+import { Alert } from '../../components/ui/Alert.jsx'
+import { Button } from '../../components/ui/Button.jsx'
+import { Card } from '../../components/ui/Card.jsx'
+import { EmptyState } from '../../components/ui/EmptyState.jsx'
+import { Field } from '../../components/ui/Field.jsx'
+import { Input } from '../../components/ui/Input.jsx'
+import { Select } from '../../components/ui/Select.jsx'
+import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 
 const emptyProposeForm = { productId: '', proposedStockQuantity: '', proposedMinStockLevel: '', reason: '' }
-const statusStyles = {
-  PENDING: 'bg-amber-50 text-amber-800',
-  APPROVED: 'bg-green-50 text-green-800',
-  REJECTED: 'bg-red-50 text-red-700',
-}
+
+// Stage 4 (RULES-PLANS/UI_AUDIT.md) — H7's local statusStyles is gone in
+// favour of the shared <StatusBadge> (PENDING/APPROVED/REJECTED all
+// already map onto its wait/done/fail tokens). C3's role="status" 10px
+// error is now <Alert>, and since this screen's `message` state doubles
+// as a success confirmation ("Request submitted."), the variant now
+// tracks `messageFailed` — error is role="alert" (assertive), success
+// stays role="status" (polite), instead of both being flattened into one
+// role="status" paragraph as before. This is a card/list layout, not a
+// table, so it stays that way — Card wraps each panel, Field/Input/Select
+// replace the three old input shapes, Button replaces the hand-rolled
+// buttons.
+//
+// handleProposeSubmit's request body is untouched: proposedStockQuantity
+// and proposedMinStockLevel are only added when non-blank, never spread
+// unconditionally (RULES-PLANS/UI_AUDIT.md's DB-default field note — the
+// backend treats an omitted optional field differently from one sent as
+// ''). handleReview and the one-pending-request-per-product /
+// observed-stock-quantity approval semantics are untouched — this pass
+// does not change how a change request is built or approved.
 export function InventoryRequests({ user, inventory }) {
   const isAdmin = user.role === 'ADMIN'
 
@@ -79,77 +102,104 @@ export function InventoryRequests({ user, inventory }) {
 
   return (
     <div className="mt-6 space-y-6">
-      {message && <p role="status" className={`rounded-lg px-3 py-2 text-[10px] font-semibold ${messageFailed ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-800'}`}>{message}</p>}
+      {message && <Alert variant={messageFailed ? 'error' : 'success'}>{message}</Alert>}
 
       {!isAdmin && (
-        <div className="rounded-2xl border border-green-100 bg-white p-6">
-          <h2 className="text-lg font-bold">Propose a stock change</h2>
-          <p className="mt-1 text-xs text-slate-500">An admin reviews this before anything actually changes.</p>
+        <Card className="p-6">
+          <h2 className="text-lg font-semibold text-ink-900">Propose a stock change</h2>
+          <p className="mt-1 text-xs text-ink-500">An admin reviews this before anything actually changes.</p>
           <form className="mt-4 grid gap-3 sm:grid-cols-2" onSubmit={handleProposeSubmit}>
             <div className="sm:col-span-2">
-              <label htmlFor="propose-product" className="mb-1.5 block text-[11px] font-extrabold">Product</label>
-              <select id="propose-product" value={proposeForm.productId} onChange={(event) => updateProposeField('productId', event.target.value)} className="w-full rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700">
-                <option value="">Select a product…</option>
-                {inventory.map((item) => <option key={item.productId} value={item.productId}>{item.productName} (currently {item.stockQuantity})</option>)}
-              </select>
-              {proposeErrors.productId && <p className="mt-1 text-[10px] font-medium text-red-700">{proposeErrors.productId}</p>}
+              <Field label="Product" error={proposeErrors.productId}>
+                <Select value={proposeForm.productId} onChange={(event) => updateProposeField('productId', event.target.value)}>
+                  <option value="">Select a product…</option>
+                  {inventory.map((item) => (
+                    <option key={item.productId} value={item.productId}>
+                      {item.productName} (currently {item.stockQuantity})
+                    </option>
+                  ))}
+                </Select>
+              </Field>
             </div>
-            <div>
-              <label htmlFor="propose-stock" className="mb-1.5 block text-[11px] font-extrabold">Proposed stock quantity</label>
-              <input id="propose-stock" value={proposeForm.proposedStockQuantity} onChange={(event) => updateProposeField('proposedStockQuantity', event.target.value)} inputMode="numeric" placeholder="Leave blank if unchanged" className="w-full rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700" />
-              {proposeErrors.proposedStockQuantity && <p className="mt-1 text-[10px] font-medium text-red-700">{proposeErrors.proposedStockQuantity}</p>}
-            </div>
-            <div>
-              <label htmlFor="propose-min" className="mb-1.5 block text-[11px] font-extrabold">Proposed minimum level</label>
-              <input id="propose-min" value={proposeForm.proposedMinStockLevel} onChange={(event) => updateProposeField('proposedMinStockLevel', event.target.value)} inputMode="numeric" placeholder="Leave blank if unchanged" className="w-full rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700" />
-              {proposeErrors.proposedMinStockLevel && <p className="mt-1 text-[10px] font-medium text-red-700">{proposeErrors.proposedMinStockLevel}</p>}
+            <Field label="Proposed stock quantity" error={proposeErrors.proposedStockQuantity}>
+              <Input value={proposeForm.proposedStockQuantity} onChange={(event) => updateProposeField('proposedStockQuantity', event.target.value)} inputMode="numeric" placeholder="Leave blank if unchanged" />
+            </Field>
+            <Field label="Proposed minimum level" error={proposeErrors.proposedMinStockLevel}>
+              <Input value={proposeForm.proposedMinStockLevel} onChange={(event) => updateProposeField('proposedMinStockLevel', event.target.value)} inputMode="numeric" placeholder="Leave blank if unchanged" />
+            </Field>
+            <div className="sm:col-span-2">
+              <Field label="Reason" error={proposeErrors.reason}>
+                <Input value={proposeForm.reason} onChange={(event) => updateProposeField('reason', event.target.value)} placeholder="e.g. Delivery received, or shelf recount" />
+              </Field>
             </div>
             <div className="sm:col-span-2">
-              <label htmlFor="propose-reason" className="mb-1.5 block text-[11px] font-extrabold">Reason</label>
-              <input id="propose-reason" value={proposeForm.reason} onChange={(event) => updateProposeField('reason', event.target.value)} placeholder="e.g. Delivery received, or shelf recount" className="w-full rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700" />
-              {proposeErrors.reason && <p className="mt-1 text-[10px] font-medium text-red-700">{proposeErrors.reason}</p>}
-            </div>
-            <div className="sm:col-span-2">
-              <button type="submit" disabled={proposeSubmitting} className="rounded-xl bg-green-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60">{proposeSubmitting ? 'Submitting…' : 'Submit request'}</button>
+              <Button type="submit" size="sm" disabled={proposeSubmitting}>
+                {proposeSubmitting ? 'Submitting…' : 'Submit request'}
+              </Button>
             </div>
           </form>
-        </div>
+        </Card>
       )}
 
-      <div className="rounded-2xl border border-green-100 bg-white p-6">
-        <h2 className="text-lg font-bold">{isAdmin ? 'All change requests' : 'My requests'}</h2>
+      <Card className="p-6">
+        <h2 className="text-lg font-semibold text-ink-900">{isAdmin ? 'All change requests' : 'My requests'}</h2>
         {loading ? (
-          <p className="mt-4 text-sm text-slate-500">Loading…</p>
+          <p className="mt-4 text-sm text-ink-500">Loading…</p>
         ) : requests.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-500">No requests yet.</p>
+          <EmptyState title="No requests yet" />
         ) : (
-          <ul className="mt-4 divide-y divide-slate-100">
+          <ul className="mt-4 divide-y divide-line-100">
             {requests.map((item) => (
-              <li key={item.id} className="py-3 text-xs">
+              <li key={item.id} className="py-3 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <p className="font-semibold text-slate-800">{item.productName}{!isAdmin ? '' : ` — ${item.requestedByName}`}</p>
-                    <p className="mt-0.5 text-slate-500">
-                      {item.proposedStockQuantity != null && <>Stock: {item.observedStockQuantity} → {item.proposedStockQuantity}. </>}
-                      {item.proposedMinStockLevel != null && <>Min level → {item.proposedMinStockLevel}. </>}
+                    <p className="font-semibold text-ink-900">
+                      {item.productName}
+                      {!isAdmin ? '' : ` — ${item.requestedByName}`}
                     </p>
-                    <p className="mt-0.5 text-slate-500">"{item.reason}"</p>
-                    {item.reviewerNote && <p className="mt-0.5 text-slate-500">Reviewer: "{item.reviewerNote}"</p>}
+                    <p className="mt-0.5 text-ink-500">
+                      {item.proposedStockQuantity != null && (
+                        <>
+                          Stock:{' '}
+                          <span className="tabular-nums">
+                            {item.observedStockQuantity} → {item.proposedStockQuantity}
+                          </span>
+                          .{' '}
+                        </>
+                      )}
+                      {item.proposedMinStockLevel != null && (
+                        <>
+                          Min level → <span className="tabular-nums">{item.proposedMinStockLevel}</span>.{' '}
+                        </>
+                      )}
+                    </p>
+                    <p className="mt-0.5 text-ink-500">"{item.reason}"</p>
+                    {item.reviewerNote && <p className="mt-0.5 text-ink-500">Reviewer: "{item.reviewerNote}"</p>}
                   </div>
-                  <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${statusStyles[item.status] ?? 'bg-slate-100 text-slate-700'}`}>{item.status}</span>
+                  <StatusBadge status={item.status} />
                 </div>
                 {isAdmin && item.status === 'PENDING' && (
                   <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <input value={reviewNotes[item.id] ?? ''} onChange={(event) => setReviewNotes({ ...reviewNotes, [item.id]: event.target.value })} placeholder="Optional note" className="flex-1 rounded-lg border border-stone-200 px-2 py-1.5 text-xs outline-none focus:border-green-700" />
-                    <button type="button" onClick={() => handleReview(item.id, 'APPROVED')} disabled={reviewingId === item.id} className="rounded-lg bg-green-700 px-2.5 py-1.5 text-[10px] font-bold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60">Approve</button>
-                    <button type="button" onClick={() => handleReview(item.id, 'REJECTED')} disabled={reviewingId === item.id} className="rounded-lg bg-red-50 px-2.5 py-1.5 text-[10px] font-bold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60">Reject</button>
+                    <Input
+                      value={reviewNotes[item.id] ?? ''}
+                      onChange={(event) => setReviewNotes({ ...reviewNotes, [item.id]: event.target.value })}
+                      placeholder="Optional note"
+                      aria-label={`Review note for request #${item.id}`}
+                      className="flex-1"
+                    />
+                    <Button size="sm" onClick={() => handleReview(item.id, 'APPROVED')} disabled={reviewingId === item.id}>
+                      {reviewingId === item.id ? 'Working…' : 'Approve'}
+                    </Button>
+                    <Button size="sm" variant="destructive" onClick={() => handleReview(item.id, 'REJECTED')} disabled={reviewingId === item.id}>
+                      Reject
+                    </Button>
                   </div>
                 )}
               </li>
             ))}
           </ul>
         )}
-      </div>
+      </Card>
     </div>
   )
 }

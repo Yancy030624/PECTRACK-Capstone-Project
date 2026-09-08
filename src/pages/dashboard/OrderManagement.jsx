@@ -1,18 +1,33 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPatch } from '../../api/client.js'
+import { Alert } from '../../components/ui/Alert.jsx'
+import { Button } from '../../components/ui/Button.jsx'
+import { Card } from '../../components/ui/Card.jsx'
+import { EmptyState } from '../../components/ui/EmptyState.jsx'
+import { Field } from '../../components/ui/Field.jsx'
+import { Input } from '../../components/ui/Input.jsx'
+import { Select } from '../../components/ui/Select.jsx'
+import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
+import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { NewOrderForm } from './NewOrderForm.jsx'
 
+// Stage 3 (RULES-PLANS/UI_AUDIT.md) — the busiest staff screen. Three
+// findings converge here:
+//   C2 (CRITICAL) — the order list's <tr onClick=…> and the customer's
+//     order list below were, per the audit, mouse-only: a <tr> has no
+//     keyboard semantics. See the comments at each row for the fix.
+//   C3 — the error banner was `role="status"` at 10px, the least
+//     readable text on the page for the moment it matters most. Replaced
+//     by <Alert variant="error"> everywhere in this file.
+//   H7 — statusStyles was one of six copy-pasted badge maps app-wide.
+//     Replaced by the shared <StatusBadge>.
+// Behaviour (which orders load, what a status change does, the
+// cashier-only "New order" tab, cancellation) is unchanged — this is a
+// presentation and accessibility pass, same as CustomerManagement.jsx's
+// Stage 1 conversion.
 const statusOptions = ['PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP', 'OUT_FOR_DELIVERY', 'COMPLETED', 'CANCELLED']
-const statusStyles = {
-  PLACED: 'bg-amber-50 text-amber-800',
-  CONFIRMED: 'bg-blue-50 text-blue-800',
-  IN_PRODUCTION: 'bg-indigo-50 text-indigo-800',
-  READY_FOR_PICKUP: 'bg-teal-50 text-teal-800',
-  OUT_FOR_DELIVERY: 'bg-teal-50 text-teal-800',
-  COMPLETED: 'bg-green-50 text-green-800',
-  CANCELLED: 'bg-red-50 text-red-700',
-}
+
 export function OrderManagement({ user }) {
   return user.role === 'ADMIN' || user.role === 'CASHIER' ? <StaffOrderManagement user={user} /> : <CustomerOrders user={user} />
 }
@@ -84,109 +99,153 @@ function StaffOrderManagement({ user }) {
 
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      <p className="text-sm font-semibold text-green-700">{user.role} PORTAL</p>
-      <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-slate-900">Order Management</h1>
-      <p className="mt-2 text-sm text-slate-500">{isCashier ? 'Take an order at the counter, or manage every order already placed.' : 'Every order placed, pickup and delivery.'}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
+      <h1 className="mt-1 text-2xl font-semibold text-ink-900">Order Management</h1>
+      <p className="mt-2 text-sm text-ink-500">{isCashier ? 'Take an order at the counter, or manage every order already placed.' : 'Every order placed, pickup and delivery.'}</p>
 
       {isCashier && (
         <div className="mt-6 flex gap-2">
           {['Orders', 'New order'].map((tab) => (
-            <button type="button" key={tab} onClick={() => setActiveTab(tab)} className={`rounded-full px-4 py-2 text-xs font-bold transition ${activeTab === tab ? 'bg-green-700 text-white' : 'bg-green-50 text-green-800 hover:bg-green-100'}`}>{tab}</button>
+            <Button type="button" key={tab} size="sm" variant={activeTab === tab ? 'primary' : 'secondary'} onClick={() => setActiveTab(tab)}>
+              {tab}
+            </Button>
           ))}
         </div>
       )}
 
-      {message && <p role="status" className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-[10px] font-semibold text-red-700">{message}</p>}
+      {/* C3: was `role="status"` at text-[10px] — a polite, hard-to-read
+          announcement for the most important text on a failed action.
+          <Alert variant="error"> is role="alert" (assertive) at 14px. */}
+      {message && (
+        <div className="mt-4">
+          <Alert variant="error">{message}</Alert>
+        </div>
+      )}
 
       <div hidden={activeTab !== 'Orders'} className="mt-7 grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
         {/* Order list */}
-        <div className="rounded-2xl border border-green-100 bg-white p-6">
-          <h2 className="text-lg font-bold">All orders</h2>
+        <Card className="p-6">
+          <h2 className="text-lg font-semibold text-ink-900">All orders</h2>
           {loading ? (
-            <p className="mt-4 text-sm text-slate-500">Loading…</p>
+            <p className="mt-4 text-sm text-ink-500">Loading…</p>
           ) : orders.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-500">No orders yet.</p>
+            <EmptyState title="No orders yet" />
           ) : (
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full min-w-125 text-left text-xs">
-                <thead>
-                  <tr className="border-b border-slate-100 text-slate-400">
-                    <th className="py-2 pr-4 font-bold">Order</th>
-                    <th className="py-2 pr-4 font-bold">Customer</th>
-                    <th className="py-2 pr-4 font-bold">Total</th>
-                    <th className="py-2 pr-4 font-bold">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
+            <div className="mt-4">
+              <Table caption="All orders">
+                <Thead>
+                  <Tr className="hover:bg-transparent">
+                    <Th>Order</Th>
+                    <Th>Customer</Th>
+                    <Th align="right">Total</Th>
+                    <Th>Status</Th>
+                  </Tr>
+                </Thead>
+                <Tbody>
                   {orders.map((order) => (
-                    <tr key={order.id} onClick={() => openOrder(order.id)} className={`cursor-pointer transition hover:bg-green-50 ${selectedOrderId === order.id ? 'bg-green-50' : ''}`}>
-                      <td className="py-3 pr-4 font-semibold text-slate-800">#{order.id}</td>
-                      <td className="py-3 pr-4 text-slate-600">{order.customerName ?? 'Walk-in'}</td>
-                      <td className="py-3 pr-4 text-slate-600">₱{order.totalAmount}</td>
-                      <td className="py-3 pr-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${statusStyles[order.status] ?? 'bg-slate-100 text-slate-700'}`}>{order.status.replaceAll('_', ' ')}</span></td>
-                    </tr>
+                    // C2 fix: the row's onClick stays as a mouse
+                    // convenience, but the primary action — opening the
+                    // order — now also lives on a real <button> in the
+                    // first cell (below), carrying an accessible name.
+                    // That is what actually gets this row focus,
+                    // Enter/Space, and screen-reader semantics; a <tr>
+                    // itself has none of those regardless of onClick.
+                    <Tr key={order.id} onClick={() => openOrder(order.id)} className={`cursor-pointer ${selectedOrderId === order.id ? 'bg-brand-50' : ''}`}>
+                      <Td>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation() // don't also fire the Tr's onClick above
+                            openOrder(order.id)
+                          }}
+                          aria-label={`Open order #${order.id}`}
+                          className="font-semibold text-ink-900 hover:underline focus-visible:underline"
+                        >
+                          #{order.id}
+                        </button>
+                      </Td>
+                      <Td>{order.customerName ?? 'Walk-in'}</Td>
+                      <Td numeric>₱{order.totalAmount}</Td>
+                      <Td>
+                        <StatusBadge status={order.status} />
+                      </Td>
+                    </Tr>
                   ))}
-                </tbody>
-              </table>
+                </Tbody>
+              </Table>
             </div>
           )}
-        </div>
+        </Card>
 
         {/* Selected order detail */}
-        <div className="rounded-2xl border border-green-100 bg-white p-6">
-          <h2 className="text-lg font-bold">Order detail</h2>
+        <Card className="p-6">
+          <h2 className="text-lg font-semibold text-ink-900">Order detail</h2>
           {!selectedOrderId ? (
-            <p className="mt-4 text-sm text-slate-500">Select an order to view its details.</p>
+            <p className="mt-4 text-sm text-ink-500">Select an order to view its details.</p>
           ) : detailLoading ? (
-            <p className="mt-4 text-sm text-slate-500">Loading…</p>
+            <p className="mt-4 text-sm text-ink-500">Loading…</p>
           ) : orderDetail ? (
             <div className="mt-4 space-y-4">
-              <div className="text-xs text-slate-600">
-                <p><strong className="text-slate-800">Order #{orderDetail.id}</strong> · {orderDetail.orderType}</p>
-                <p className="mt-1">Customer: {orderDetail.customerName ?? 'Walk-in'}{orderDetail.cashierName ? ` · Processed by ${orderDetail.cashierName}` : ''}</p>
+              <div className="text-xs text-ink-600">
+                <p>
+                  <strong className="text-ink-900">Order #{orderDetail.id}</strong> · {orderDetail.orderType}
+                </p>
+                <p className="mt-1">
+                  Customer: {orderDetail.customerName ?? 'Walk-in'}
+                  {orderDetail.cashierName ? ` · Processed by ${orderDetail.cashierName}` : ''}
+                </p>
                 {orderDetail.instructions && <p className="mt-1">Instructions: {orderDetail.instructions}</p>}
               </div>
 
               <div>
-                <p className="text-[11px] font-extrabold text-slate-500">Items</p>
-                <ul className="mt-1.5 divide-y divide-slate-100 text-xs">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Items</p>
+                <ul className="mt-1.5 divide-y divide-line-100 text-sm">
                   {orderDetail.items.map((item) => (
                     <li key={item.productId} className="flex items-center justify-between py-1.5">
-                      <span>{item.productName} × {item.quantity}</span>
-                      <span className="text-slate-500">₱{item.unitPrice}</span>
+                      <span>
+                        {item.productName} × {item.quantity}
+                      </span>
+                      <span className="text-ink-500 tabular-nums">₱{item.unitPrice}</span>
                     </li>
                   ))}
                 </ul>
-                <p className="mt-1.5 text-right text-xs font-bold text-slate-800">Total: ₱{orderDetail.totalAmount}</p>
+                <p className="mt-1.5 text-right text-sm font-semibold text-ink-900 tabular-nums">Total: ₱{orderDetail.totalAmount}</p>
               </div>
 
               {orderDetail.status === 'CANCELLED' || orderDetail.status === 'COMPLETED' ? (
-                <p className="border-t border-slate-100 pt-3 text-xs text-slate-500">This order is {orderDetail.status.toLowerCase()} and can no longer be changed.</p>
+                <p className="border-t border-line-100 pt-3 text-sm text-ink-500">This order is {orderDetail.status.toLowerCase()} and can no longer be changed.</p>
               ) : (
-                <form className="space-y-2 border-t border-slate-100 pt-3" onSubmit={handleStatusSubmit}>
-                  <label htmlFor="order-status" className="block text-[11px] font-extrabold">Update status</label>
-                  <select id="order-status" value={statusChoice} onChange={(event) => setStatusChoice(event.target.value)} className="w-full rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700">
-                    {statusOptions.map((status) => <option key={status} value={status}>{status.replaceAll('_', ' ')}</option>)}
-                  </select>
-                  <input value={statusNote} onChange={(event) => setStatusNote(event.target.value)} placeholder="Optional note" className="w-full rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700" />
-                  <button type="submit" disabled={statusSubmitting} className="rounded-xl bg-green-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60">{statusSubmitting ? 'Saving…' : 'Save status'}</button>
+                <form className="space-y-3 border-t border-line-100 pt-3" onSubmit={handleStatusSubmit}>
+                  <Field label="Update status">
+                    <Select value={statusChoice} onChange={(event) => setStatusChoice(event.target.value)}>
+                      {statusOptions.map((status) => (
+                        <option key={status} value={status}>
+                          {status.replaceAll('_', ' ')}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Input value={statusNote} onChange={(event) => setStatusNote(event.target.value)} placeholder="Optional note" aria-label="Status note" />
+                  <Button type="submit" size="sm" disabled={statusSubmitting}>
+                    {statusSubmitting ? 'Saving…' : 'Save status'}
+                  </Button>
                 </form>
               )}
 
               <div>
-                <p className="text-[11px] font-extrabold text-slate-500">Status history</p>
-                <ul className="mt-1.5 space-y-1 text-xs text-slate-600">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Status history</p>
+                <ul className="mt-1.5 space-y-1 text-sm text-ink-600">
                   {orderDetail.statusHistory.map((entry, index) => (
                     <li key={index}>
-                      <span className="font-semibold text-slate-800">{entry.status.replaceAll('_', ' ')}</span> by {entry.updatedByName} — {new Date(entry.updatedAt).toLocaleString()}
-                      {entry.note && <span className="block text-slate-500">"{entry.note}"</span>}
+                      <span className="font-semibold text-ink-900">{entry.status.replaceAll('_', ' ')}</span> by {entry.updatedByName} — {new Date(entry.updatedAt).toLocaleString()}
+                      {entry.note && <span className="block text-ink-500">"{entry.note}"</span>}
                     </li>
                   ))}
                 </ul>
               </div>
             </div>
           ) : null}
-        </div>
+        </Card>
       </div>
 
       {isCashier && (
@@ -253,95 +312,118 @@ function CustomerOrders({ user }) {
 
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      <p className="text-sm font-semibold text-green-700">{user.role} PORTAL</p>
-      <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-slate-900">My Orders</h1>
-      <p className="mt-2 text-sm text-slate-500">Everything you've ordered, and where it stands right now.</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
+      <h1 className="mt-1 text-2xl font-semibold text-ink-900">My Orders</h1>
+      <p className="mt-2 text-sm text-ink-500">Everything you've ordered, and where it stands right now.</p>
 
-      {message && <p role="status" className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-[10px] font-semibold text-red-700">{message}</p>}
+      {message && (
+        <div className="mt-4">
+          <Alert variant="error">{message}</Alert>
+        </div>
+      )}
 
       <div className="mt-7 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-        <div className="rounded-2xl border border-green-100 bg-white p-6">
-          <h2 className="text-lg font-bold">Your orders</h2>
+        <Card className="p-6">
+          <h2 className="text-lg font-semibold text-ink-900">Your orders</h2>
           {loading ? (
-            <p className="mt-4 text-sm text-slate-500">Loading…</p>
+            <p className="mt-4 text-sm text-ink-500">Loading…</p>
           ) : orders.length === 0 ? (
-            <div className="mt-4 rounded-xl bg-[#fbfbdc] p-5 text-center">
-              <p className="text-sm text-slate-600">You haven't placed an order yet.</p>
-              <Link to="/menu" className="mt-3 inline-block rounded-full bg-green-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-green-800">Browse the menu</Link>
+            <div className="mt-4">
+              <EmptyState
+                title="You haven't placed an order yet."
+                action={
+                  <Link to="/menu" className="inline-flex h-9 items-center justify-center rounded-control bg-brand-600 px-4 text-sm font-medium text-white transition hover:bg-brand-700">
+                    Browse the menu
+                  </Link>
+                }
+              />
             </div>
           ) : (
-            <ul className="mt-4 divide-y divide-slate-100">
+            // C2, second site: this list already rendered each row as a
+            // real <button> (not a <tr onClick>), which is already
+            // focusable and already fires on Enter/Space — the part of
+            // C2 the audit is about. Nothing structural to fix here; the
+            // change in this file is only retokening colours/badges to
+            // match the rest of the Stage 3 pass.
+            <ul className="mt-4 divide-y divide-line-100">
               {orders.map((order) => (
                 <li key={order.id}>
                   <button
                     type="button"
                     onClick={() => openOrder(order.id)}
-                    className={`w-full rounded-xl px-3 py-3 text-left transition hover:bg-green-50 ${selectedOrderId === order.id ? 'bg-green-50' : ''}`}
+                    aria-label={`Open order #${order.id}`}
+                    className={`w-full rounded-control px-3 py-3 text-left transition hover:bg-surface-sunk ${selectedOrderId === order.id ? 'bg-brand-50' : ''}`}
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-sm font-bold text-slate-800">Order #{order.id}</span>
-                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${statusStyles[order.status] ?? 'bg-slate-100 text-slate-700'}`}>{order.status.replaceAll('_', ' ')}</span>
+                      <span className="text-sm font-semibold text-ink-900">Order #{order.id}</span>
+                      <StatusBadge status={order.status} />
                     </div>
-                    <div className="mt-1 flex items-center justify-between text-xs text-slate-500">
+                    <div className="mt-1 flex items-center justify-between text-xs text-ink-500">
                       <span>{new Date(order.orderDate).toLocaleDateString()}</span>
-                      <span className="font-semibold text-slate-700">₱{order.totalAmount}</span>
+                      <span className="font-medium text-ink-700 tabular-nums">₱{order.totalAmount}</span>
                     </div>
                   </button>
                 </li>
               ))}
             </ul>
           )}
-        </div>
+        </Card>
 
         {/* Selected order detail */}
-        <div className="rounded-2xl border border-green-100 bg-white p-6">
-          <h2 className="text-lg font-bold">Order detail</h2>
+        <Card className="p-6">
+          <h2 className="text-lg font-semibold text-ink-900">Order detail</h2>
           {!selectedOrderId ? (
-            <p className="mt-4 text-sm text-slate-500">Select an order to see its items and status.</p>
+            <p className="mt-4 text-sm text-ink-500">Select an order to see its items and status.</p>
           ) : detailLoading ? (
-            <p className="mt-4 text-sm text-slate-500">Loading…</p>
+            <p className="mt-4 text-sm text-ink-500">Loading…</p>
           ) : orderDetail ? (
             <div className="mt-4 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs text-slate-600"><strong className="text-slate-800">Order #{orderDetail.id}</strong> · {orderDetail.orderType}</p>
-                <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${statusStyles[orderDetail.status] ?? 'bg-slate-100 text-slate-700'}`}>{orderDetail.status.replaceAll('_', ' ')}</span>
+                <p className="text-xs text-ink-600">
+                  <strong className="text-ink-900">Order #{orderDetail.id}</strong> · {orderDetail.orderType}
+                </p>
+                <StatusBadge status={orderDetail.status} />
               </div>
-              {orderDetail.instructions && <p className="text-xs text-slate-600">Instructions: {orderDetail.instructions}</p>}
+              {orderDetail.instructions && <p className="text-xs text-ink-600">Instructions: {orderDetail.instructions}</p>}
 
               <div>
-                <p className="text-[11px] font-extrabold text-slate-500">Items</p>
-                <ul className="mt-1.5 divide-y divide-slate-100 text-xs">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Items</p>
+                <ul className="mt-1.5 divide-y divide-line-100 text-sm">
                   {orderDetail.items.map((item) => (
                     <li key={item.productId} className="flex items-center justify-between py-1.5">
-                      <span>{item.productName} × {item.quantity}</span>
-                      <span className="text-slate-500">₱{item.unitPrice}</span>
+                      <span>
+                        {item.productName} × {item.quantity}
+                      </span>
+                      <span className="text-ink-500 tabular-nums">₱{item.unitPrice}</span>
                     </li>
                   ))}
                 </ul>
-                <p className="mt-1.5 text-right text-xs font-bold text-slate-800">Total: ₱{orderDetail.totalAmount}</p>
+                <p className="mt-1.5 text-right text-sm font-semibold text-ink-900 tabular-nums">Total: ₱{orderDetail.totalAmount}</p>
               </div>
 
               {orderDetail.status === 'PLACED' && (
-                <div className="border-t border-slate-100 pt-3">
-                  <button type="button" onClick={cancelOrder} disabled={cancelling} className="rounded-xl bg-red-50 px-4 py-2 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60">{cancelling ? 'Cancelling…' : 'Cancel this order'}</button>
-                  <p className="mt-1.5 text-[10px] text-slate-400">You can cancel while your order is still PLACED — once we start on it, ask staff directly.</p>
+                <div className="border-t border-line-100 pt-3">
+                  <Button type="button" variant="destructive" size="sm" onClick={cancelOrder} disabled={cancelling}>
+                    {cancelling ? 'Cancelling…' : 'Cancel this order'}
+                  </Button>
+                  <p className="mt-1.5 text-xs text-ink-400">You can cancel while your order is still PLACED — once we start on it, ask staff directly.</p>
                 </div>
               )}
 
               <div>
-                <p className="text-[11px] font-extrabold text-slate-500">Status history</p>
-                <ul className="mt-1.5 space-y-1 text-xs text-slate-600">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Status history</p>
+                <ul className="mt-1.5 space-y-1 text-sm text-ink-600">
                   {orderDetail.statusHistory.map((entry, index) => (
                     <li key={index}>
-                      <span className="font-semibold text-slate-800">{entry.status.replaceAll('_', ' ')}</span> — {new Date(entry.updatedAt).toLocaleString()}
-                      {entry.note && <span className="block text-slate-500">"{entry.note}"</span>}
+                      <span className="font-semibold text-ink-900">{entry.status.replaceAll('_', ' ')}</span> — {new Date(entry.updatedAt).toLocaleString()}
+                      {entry.note && <span className="block text-ink-500">"{entry.note}"</span>}
                     </li>
                   ))}
                 </ul>
               </div>
             </div>
           ) : null}
-        </div>
+        </Card>
       </div>
     </section>
   )

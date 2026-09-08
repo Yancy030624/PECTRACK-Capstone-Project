@@ -552,6 +552,38 @@ Right-align currency with `tabular-nums`. Delete the duplicate status maps.
 Test on a real phone viewport, not a resized desktop window. 44px touch
 targets, single-column, thumb-reachable primary actions.
 
+### Stage 5.5 — the four screens this plan originally missed
+
+**Correction (2026-09-09).** Stages 3–5 as first written covered eleven
+screens and silently skipped four. Found by measuring conversion coverage
+across `src/pages/dashboard/` after Stage 5, not by re-reading the plan:
+
+| Screen | Old-style hits | Seen by |
+| --- | --- | --- |
+| `MyProfile` | 27 | **all four roles** |
+| `ReportingAnalytics` | 73 | ADMIN, CASHIER |
+| `ProductManagement` | 31 | ADMIN |
+| `StaffManagement` | 27 | ADMIN |
+
+`MyProfile` is the serious one — `modules.js` grants it to every role, so
+every user currently lands on an unconverted screen. `ReportingAnalytics`
+is the largest file in the frontend (414 lines) and owns the Chart.js
+canvases, whose colours are hard-coded rather than taken from the tokens.
+
+This must run **before** Stage 6: an accessibility sweep over markup that
+is about to be rewritten is wasted work.
+
+Order within the stage: `MyProfile` first (all roles), then
+`StaffManagement` and `ProductManagement` (both admin-only, both mostly
+tables and forms the primitives already cover), then `ReportingAnalytics`
+last — it is the largest and the only one with charts.
+
+**The storefront stays as it is.** `src/pages/customer-storefront/` and
+`MarketingHeader` are deliberately a different visual language from the
+dashboard (`STOREFRONT_PLAN.md`), they were reworked recently, and they
+are internally consistent. They share the token layer already. Converting
+them to dashboard primitives would be scope creep with little return.
+
 ### Stage 6 — Accessibility and consistency sweep
 `scope="col"` and `sr-only` captions on all 12 tables; audit remaining
 focus states; verify colour contrast; tab through each role end to end.
