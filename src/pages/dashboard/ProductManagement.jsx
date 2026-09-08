@@ -1,8 +1,34 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiDelete, apiGet, apiPatch, apiPost, apiUpload } from '../../api/client.js'
+import { Alert } from '../../components/ui/Alert.jsx'
+import { Button } from '../../components/ui/Button.jsx'
+import { Card } from '../../components/ui/Card.jsx'
+import { EmptyState } from '../../components/ui/EmptyState.jsx'
+import { Field } from '../../components/ui/Field.jsx'
+import { Input } from '../../components/ui/Input.jsx'
+import { Select } from '../../components/ui/Select.jsx'
+import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
+import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
+import { Textarea } from '../../components/ui/Textarea.jsx'
 
 const emptyProductForm = { categoryId: '', name: '', description: '', price: '', variant: '', availabilityStatus: true }
 
+// Stage 5.5 (RULES-PLANS/UI_AUDIT.md) — admin-only writes, converted onto
+// the same primitive kit as the rest of Stage 5.5: Field/Input/Select/
+// Textarea replace the three hand-rolled input shapes (H3), <Alert>
+// replaces the 10px role="status" paragraph (C3), Available/Unavailable is
+// <StatusBadge status="ACTIVE"|"INACTIVE"> (its map already covers both —
+// H7), the products table is <Table>/<Th>/<Td> (scope="col" + caption,
+// M6) with the peso column right-aligned via <Td numeric> (the audit's
+// specific tabular-nums complaint), and the page title drops to 24px/600
+// (H1/H2). The category chip list stays a plain <ul> of pills — it isn't
+// tabular data.
+//
+// Untouched: the product-image upload contract. triggerPhotoUpload/
+// handlePhotoSelected still drive one shared hidden <input type="file">
+// and still call apiUpload(`/api/products/${id}/image`, file) — raw bytes,
+// not JSON — exactly as before. handleAddProduct/saveProduct's request
+// bodies are unchanged. This is presentation only.
 export function ProductManagement({ user }) {
   const isAdmin = user.role === 'ADMIN'
 
@@ -204,40 +230,44 @@ export function ProductManagement({ user }) {
 
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      <p className="text-sm font-semibold text-green-700">{user.role} PORTAL</p>
-      <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-slate-900">Product Management</h1>
-      <p className="mt-2 text-sm text-slate-500">{isAdmin ? 'Manage the product catalog and its categories.' : 'Browse the current product catalog.'}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
+      <h1 className="mt-1 text-2xl font-semibold text-ink-900">Product Management</h1>
+      <p className="mt-2 text-sm text-ink-500">{isAdmin ? 'Manage the product catalog and its categories.' : 'Browse the current product catalog.'}</p>
 
-      {message && <p role="status" className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-[10px] font-semibold text-red-700">{message}</p>}
+      {message && (
+        <div className="mt-4">
+          <Alert variant="error">{message}</Alert>
+        </div>
+      )}
 
       {/* Categories */}
-      <div className="mt-7 rounded-2xl border border-green-100 bg-white p-6">
-        <h2 className="text-lg font-bold">Categories</h2>
+      <Card className="mt-6 p-6">
+        <h2 className="text-lg font-semibold text-ink-900">Categories</h2>
         {isAdmin && (
           <form className="mt-3 flex flex-wrap gap-2" onSubmit={handleAddCategory}>
-            <input value={newCategoryName} onChange={(event) => setNewCategoryName(event.target.value)} placeholder="New category name" className="flex-1 rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700" />
-            <button type="submit" disabled={categorySubmitting} className="rounded-xl bg-green-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60">{categorySubmitting ? 'Adding…' : 'Add category'}</button>
+            <Input value={newCategoryName} onChange={(event) => setNewCategoryName(event.target.value)} placeholder="New category name" className="flex-1" />
+            <Button type="submit" size="sm" disabled={categorySubmitting}>{categorySubmitting ? 'Adding…' : 'Add category'}</Button>
           </form>
         )}
         {loading ? (
-          <p className="mt-4 text-sm text-slate-500">Loading…</p>
+          <p className="mt-4 text-sm text-ink-500">Loading…</p>
         ) : categories.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-500">No categories yet.</p>
+          <EmptyState title="No categories yet" />
         ) : (
           <ul className="mt-4 flex flex-wrap gap-2">
             {categories.map((category) =>
               editingCategoryId === category.id ? (
-                <li key={category.id} className="flex items-center gap-1.5 rounded-full border border-green-200 bg-white px-2 py-1">
-                  <input value={editingCategoryName} onChange={(event) => setEditingCategoryName(event.target.value)} className="w-28 rounded-lg border border-stone-200 px-2 py-1 text-xs outline-none focus:border-green-700" />
-                  <button type="button" onClick={(event) => saveCategory(event, category.id)} className="rounded-lg bg-green-700 px-2 py-1 text-[10px] font-bold text-white">Save</button>
-                  <button type="button" onClick={() => setEditingCategoryId(null)} className="rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600">Cancel</button>
+                <li key={category.id} className="flex items-center gap-1.5 rounded-full border border-brand-100 bg-surface px-2 py-1">
+                  <Input value={editingCategoryName} onChange={(event) => setEditingCategoryName(event.target.value)} className="h-8 w-28 text-xs" />
+                  <Button type="button" size="sm" onClick={(event) => saveCategory(event, category.id)}>Save</Button>
+                  <Button type="button" size="sm" variant="secondary" onClick={() => setEditingCategoryId(null)}>Cancel</Button>
                 </li>
               ) : (
-                <li key={category.id} className="flex items-center gap-1.5 rounded-full bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-800">
+                <li key={category.id} className="flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1.5 text-sm font-medium text-brand-700">
                   {category.name}
                   {isAdmin && (
-                    <span className="flex gap-1">
-                      <button type="button" onClick={() => startEditCategory(category)} className="text-green-700 hover:underline">Edit</button>
+                    <span className="flex gap-1.5 text-xs">
+                      <button type="button" onClick={() => startEditCategory(category)} className="text-brand-700 hover:underline">Edit</button>
                       <button type="button" onClick={() => deleteCategory(category)} className="text-red-700 hover:underline">Delete</button>
                     </span>
                   )}
@@ -246,131 +276,134 @@ export function ProductManagement({ user }) {
             )}
           </ul>
         )}
-      </div>
+      </Card>
 
       {/* Add a product — admin only */}
       {isAdmin && (
-        <div className="mt-6 rounded-2xl border border-green-100 bg-white p-6">
-          <h2 className="text-lg font-bold">New product</h2>
+        <Card className="mt-6 p-6">
+          <h2 className="text-lg font-semibold text-ink-900">New product</h2>
           <form className="mt-4 space-y-3" onSubmit={handleAddProduct} noValidate>
             <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label htmlFor="product-category" className="mb-1.5 block text-[11px] font-extrabold">Category</label>
-                <select id="product-category" value={productForm.categoryId} onChange={(event) => updateProductField('categoryId', event.target.value)} className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-2.5 text-xs shadow-sm outline-none focus:border-green-700">
+              <Field label="Category" error={productErrors.categoryId}>
+                <Select value={productForm.categoryId} onChange={(event) => updateProductField('categoryId', event.target.value)}>
                   <option value="">Select a category</option>
                   {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                </select>
-                {productErrors.categoryId && <p className="mt-1 text-[10px] font-medium text-red-700">{productErrors.categoryId}</p>}
-              </div>
-              <div>
-                <label htmlFor="product-name" className="mb-1.5 block text-[11px] font-extrabold">Product name</label>
-                <input id="product-name" value={productForm.name} onChange={(event) => updateProductField('name', event.target.value)} placeholder="e.g. Pandesal" className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-2.5 text-xs shadow-sm outline-none focus:border-green-700" />
-                {productErrors.name && <p className="mt-1 text-[10px] font-medium text-red-700">{productErrors.name}</p>}
-              </div>
+                </Select>
+              </Field>
+              <Field label="Product name" error={productErrors.name}>
+                <Input value={productForm.name} onChange={(event) => updateProductField('name', event.target.value)} placeholder="e.g. Pandesal" />
+              </Field>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label htmlFor="product-price" className="mb-1.5 block text-[11px] font-extrabold">Price (₱)</label>
-                <input id="product-price" type="number" min="0" step="0.01" value={productForm.price} onChange={(event) => updateProductField('price', event.target.value)} placeholder="0.00" className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-2.5 text-xs shadow-sm outline-none focus:border-green-700" />
-                {productErrors.price && <p className="mt-1 text-[10px] font-medium text-red-700">{productErrors.price}</p>}
-              </div>
-              <div>
-                <label htmlFor="product-variant" className="mb-1.5 block text-[11px] font-extrabold">Variant (optional)</label>
-                <input id="product-variant" value={productForm.variant} onChange={(event) => updateProductField('variant', event.target.value)} placeholder="e.g. 10-pack" className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-2.5 text-xs shadow-sm outline-none focus:border-green-700" />
-              </div>
+              <Field label="Price (₱)" error={productErrors.price}>
+                <Input type="number" min="0" step="0.01" value={productForm.price} onChange={(event) => updateProductField('price', event.target.value)} placeholder="0.00" />
+              </Field>
+              <Field label="Variant (optional)">
+                <Input value={productForm.variant} onChange={(event) => updateProductField('variant', event.target.value)} placeholder="e.g. 10-pack" />
+              </Field>
             </div>
-            <div>
-              <label htmlFor="product-description" className="mb-1.5 block text-[11px] font-extrabold">Description</label>
-              <textarea id="product-description" value={productForm.description} onChange={(event) => updateProductField('description', event.target.value)} rows={2} className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-2.5 text-xs shadow-sm outline-none focus:border-green-700" />
-            </div>
-            <label className="flex cursor-pointer items-center gap-2 text-[11px] font-bold"><input type="checkbox" checked={productForm.availabilityStatus} onChange={(event) => updateProductField('availabilityStatus', event.target.checked)} className="h-4 w-4 accent-green-700" />Available for ordering</label>
-            <button type="submit" disabled={productSubmitting} className="rounded-2xl bg-green-700 px-5 py-2.5 text-xs font-bold text-white shadow-md transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60">{productSubmitting ? 'Creating…' : 'Create product'}</button>
+            <Field label="Description">
+              <Textarea value={productForm.description} onChange={(event) => updateProductField('description', event.target.value)} rows={2} />
+            </Field>
+            <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-ink-700">
+              <input type="checkbox" checked={productForm.availabilityStatus} onChange={(event) => updateProductField('availabilityStatus', event.target.checked)} className="h-4 w-4 accent-brand-600" />
+              Available for ordering
+            </label>
+            <Button type="submit" size="sm" disabled={productSubmitting}>{productSubmitting ? 'Creating…' : 'Create product'}</Button>
           </form>
-        </div>
+        </Card>
       )}
 
       {/* Product list */}
-      <div className="mt-6 rounded-2xl border border-green-100 bg-white p-6">
-        <h2 className="text-lg font-bold">Products</h2>
+      <Card className="mt-6 p-6">
+        <h2 className="text-lg font-semibold text-ink-900">Products</h2>
         {/* One shared, invisible file input for every row's photo button —
             see triggerPhotoUpload above for why one input, not one per row. */}
         <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePhotoSelected} className="hidden" />
         {loading ? (
-          <p className="mt-4 text-sm text-slate-500">Loading…</p>
+          <p className="mt-4 text-sm text-ink-500">Loading…</p>
         ) : products.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-500">No products yet.</p>
+          <EmptyState title="No products yet" />
         ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-200 text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-100 text-slate-400">
-                  <th className="py-2 pr-4 font-bold">Photo</th>
-                  <th className="py-2 pr-4 font-bold">Name</th>
-                  <th className="py-2 pr-4 font-bold">Category</th>
-                  <th className="py-2 pr-4 font-bold">Variant</th>
-                  <th className="py-2 pr-4 font-bold">Price</th>
-                  <th className="py-2 pr-4 font-bold">Status</th>
-                  {isAdmin && <th className="py-2 pr-4 font-bold">Actions</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
+          <div className="mt-4">
+            <Table caption="Products">
+              <Thead>
+                <Tr className="hover:bg-transparent">
+                  <Th>Photo</Th>
+                  <Th>Name</Th>
+                  <Th>Category</Th>
+                  <Th>Variant</Th>
+                  <Th align="right">Price</Th>
+                  <Th>Status</Th>
+                  {isAdmin && <Th>Actions</Th>}
+                </Tr>
+              </Thead>
+              <Tbody>
                 {products.map((product) =>
                   editingProductId === product.id ? (
-                    <tr key={product.id}>
-                      <td className="py-3 pr-4">
-                        {product.imageUrl ? <img src={product.imageUrl} alt="" className="h-12 w-12 rounded-lg object-cover" /> : <div className="grid h-12 w-12 place-items-center rounded-lg bg-stone-100 text-lg">🥐</div>}
-                      </td>
-                      <td className="py-3 pr-4"><input value={editingProduct.name} onChange={(event) => updateEditingProductField('name', event.target.value)} className="w-full rounded-lg border border-stone-200 px-2 py-1.5 text-xs outline-none focus:border-green-700" />{editingProductErrors.name && <p className="mt-1 text-[10px] font-medium text-red-700">{editingProductErrors.name}</p>}</td>
-                      <td className="py-3 pr-4">
-                        <select value={editingProduct.categoryId} onChange={(event) => updateEditingProductField('categoryId', event.target.value)} className="w-full rounded-lg border border-stone-200 px-2 py-1.5 text-xs outline-none focus:border-green-700">
+                    <Tr key={product.id}>
+                      <Td>
+                        {product.imageUrl ? <img src={product.imageUrl} alt="" className="h-12 w-12 rounded-control object-cover" /> : <div className="grid h-12 w-12 place-items-center rounded-control bg-surface-sunk text-lg">🥐</div>}
+                      </Td>
+                      <Td>
+                        <Input value={editingProduct.name} onChange={(event) => updateEditingProductField('name', event.target.value)} className="h-8 text-xs" />
+                        {editingProductErrors.name && <p className="mt-1 text-xs text-red-700">{editingProductErrors.name}</p>}
+                      </Td>
+                      <Td>
+                        <Select value={editingProduct.categoryId} onChange={(event) => updateEditingProductField('categoryId', event.target.value)} className="h-8 text-xs">
                           {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                        </select>
-                      </td>
-                      <td className="py-3 pr-4"><input value={editingProduct.variant} onChange={(event) => updateEditingProductField('variant', event.target.value)} className="w-full rounded-lg border border-stone-200 px-2 py-1.5 text-xs outline-none focus:border-green-700" /></td>
-                      <td className="py-3 pr-4"><input type="number" min="0" step="0.01" value={editingProduct.price} onChange={(event) => updateEditingProductField('price', event.target.value)} className="w-24 rounded-lg border border-stone-200 px-2 py-1.5 text-xs outline-none focus:border-green-700" />{editingProductErrors.price && <p className="mt-1 text-[10px] font-medium text-red-700">{editingProductErrors.price}</p>}</td>
-                      <td className="py-3 pr-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${product.availabilityStatus ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-700'}`}>{product.availabilityStatus ? 'Available' : 'Unavailable'}</span></td>
-                      <td className="py-3 pr-4">
+                        </Select>
+                      </Td>
+                      <Td>
+                        <Input value={editingProduct.variant} onChange={(event) => updateEditingProductField('variant', event.target.value)} className="h-8 text-xs" />
+                      </Td>
+                      <Td numeric>
+                        <Input type="number" min="0" step="0.01" value={editingProduct.price} onChange={(event) => updateEditingProductField('price', event.target.value)} className="h-8 w-24 text-right text-xs" />
+                        {editingProductErrors.price && <p className="mt-1 text-xs text-red-700">{editingProductErrors.price}</p>}
+                      </Td>
+                      <Td><StatusBadge status={product.availabilityStatus ? 'ACTIVE' : 'INACTIVE'} label={product.availabilityStatus ? 'Available' : 'Unavailable'} /></Td>
+                      <Td>
                         <div className="flex gap-2">
-                          <button type="button" onClick={(event) => saveProduct(event, product.id)} disabled={editingProductSubmitting} className="rounded-lg bg-green-700 px-2.5 py-1.5 text-[10px] font-bold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60">{editingProductSubmitting ? 'Saving…' : 'Save'}</button>
-                          <button type="button" onClick={cancelEditProduct} className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-200">Cancel</button>
+                          <Button type="button" size="sm" onClick={(event) => saveProduct(event, product.id)} disabled={editingProductSubmitting}>{editingProductSubmitting ? 'Saving…' : 'Save'}</Button>
+                          <Button type="button" size="sm" variant="secondary" onClick={cancelEditProduct}>Cancel</Button>
                         </div>
-                      </td>
-                    </tr>
+                      </Td>
+                    </Tr>
                   ) : (
-                    <tr key={product.id}>
-                      <td className="py-3 pr-4">
-                        {product.imageUrl ? <img src={product.imageUrl} alt="" className="h-12 w-12 rounded-lg object-cover" /> : <div className="grid h-12 w-12 place-items-center rounded-lg bg-stone-100 text-lg">🥐</div>}
+                    <Tr key={product.id}>
+                      <Td>
+                        {product.imageUrl ? <img src={product.imageUrl} alt="" className="h-12 w-12 rounded-control object-cover" /> : <div className="grid h-12 w-12 place-items-center rounded-control bg-surface-sunk text-lg">🥐</div>}
                         {isAdmin && (
                           <div className="mt-1 flex flex-col items-start gap-0.5">
-                            <button type="button" onClick={() => triggerPhotoUpload(product.id)} disabled={uploadingImageProductId === product.id} className="text-[10px] font-bold text-green-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60">
+                            <button type="button" onClick={() => triggerPhotoUpload(product.id)} disabled={uploadingImageProductId === product.id} className="text-xs font-semibold text-brand-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60">
                               {uploadingImageProductId === product.id ? 'Uploading…' : product.imageUrl ? 'Change' : 'Upload'}
                             </button>
-                            {product.imageUrl && <button type="button" onClick={() => removePhoto(product)} className="text-[10px] font-bold text-red-700 hover:underline">Remove</button>}
+                            {product.imageUrl && <button type="button" onClick={() => removePhoto(product)} className="text-xs font-semibold text-red-700 hover:underline">Remove</button>}
                           </div>
                         )}
-                      </td>
-                      <td className="py-3 pr-4 font-semibold text-slate-800">{product.name}</td>
-                      <td className="py-3 pr-4 text-slate-600">{product.categoryName}</td>
-                      <td className="py-3 pr-4 text-slate-600">{product.variant ?? '—'}</td>
-                      <td className="py-3 pr-4 text-slate-600">₱{product.price}</td>
-                      <td className="py-3 pr-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${product.availabilityStatus ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-700'}`}>{product.availabilityStatus ? 'Available' : 'Unavailable'}</span></td>
+                      </Td>
+                      <Td className="font-semibold text-ink-900">{product.name}</Td>
+                      <Td>{product.categoryName}</Td>
+                      <Td>{product.variant ?? '—'}</Td>
+                      <Td numeric>₱{product.price}</Td>
+                      <Td><StatusBadge status={product.availabilityStatus ? 'ACTIVE' : 'INACTIVE'} label={product.availabilityStatus ? 'Available' : 'Unavailable'} /></Td>
                       {isAdmin && (
-                        <td className="py-3 pr-4">
+                        <Td>
                           <div className="flex flex-wrap gap-2">
-                            <button type="button" onClick={() => startEditProduct(product)} className="rounded-lg bg-green-50 px-2.5 py-1.5 text-[10px] font-bold text-green-800 transition hover:bg-green-100">Edit</button>
-                            <button type="button" onClick={() => toggleAvailability(product)} className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[10px] font-bold text-amber-800 transition hover:bg-amber-100">{product.availabilityStatus ? 'Mark unavailable' : 'Mark available'}</button>
-                            <button type="button" onClick={() => deleteProduct(product)} className="rounded-lg bg-red-50 px-2.5 py-1.5 text-[10px] font-bold text-red-700 transition hover:bg-red-100">Delete</button>
+                            <Button type="button" size="sm" variant="secondary" onClick={() => startEditProduct(product)}>Edit</Button>
+                            <Button type="button" size="sm" variant="secondary" onClick={() => toggleAvailability(product)}>{product.availabilityStatus ? 'Mark unavailable' : 'Mark available'}</Button>
+                            <Button type="button" size="sm" variant="destructive" onClick={() => deleteProduct(product)}>Delete</Button>
                           </div>
-                        </td>
+                        </Td>
                       )}
-                    </tr>
+                    </Tr>
                   ),
                 )}
-              </tbody>
-            </table>
+              </Tbody>
+            </Table>
           </div>
         )}
-      </div>
+      </Card>
     </section>
   )
 }
