@@ -81,7 +81,7 @@ export function DashboardHome({ user, onNavigate }) {
             <>
               <p className="text-sm font-medium text-ink-500">{tile.label}</p>
               <p className="mt-3 text-4xl font-semibold text-ink-900">{tile.value}</p>
-              <p className={`mt-7 text-xs ${linkable ? 'font-medium text-brand-700' : 'text-ink-400'}`}>{linkable ? `${tile.caption} →` : tile.caption}</p>
+              <p className={`mt-7 text-xs ${linkable ? 'font-medium text-brand-700' : 'text-ink-500'}`}>{linkable ? `${tile.caption} →` : tile.caption}</p>
             </>
           )
           // M2 fix: a tile that navigates is a real <button>, not a <p>

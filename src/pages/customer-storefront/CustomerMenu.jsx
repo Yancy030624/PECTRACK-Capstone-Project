@@ -34,10 +34,10 @@ export function CustomerMenu() {
 
       <div className="relative mt-6 max-w-sm">
         <svg viewBox="0 0 24 24" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" fill="none" stroke="currentColor" strokeWidth="2"><path d="m21 21-4.35-4.35m1.35-5.15a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0Z" /></svg>
-        <input ref={searchInputRef} value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search the menu" className="w-full rounded-full border border-green-100 bg-white py-2.5 pl-10 pr-4 text-xs shadow-sm outline-none transition focus:border-green-700 focus:ring-4 focus:ring-green-100" />
+        <input ref={searchInputRef} value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search the menu" aria-label="Search the menu" className="w-full rounded-full border border-green-100 bg-white py-2.5 pl-10 pr-4 text-xs shadow-sm outline-none transition focus:border-green-700 focus:ring-4 focus:ring-green-100" />
       </div>
 
-      {message && <p role="status" className="mt-6 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{message}</p>}
+      {message && <p role="alert" className="mt-6 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{message}</p>}
 
       {!loading && !term && sections.length > 1 && (
         <nav aria-label="Jump to category" className="sticky top-0 z-10 -mx-4 mt-6 flex gap-2 overflow-x-auto border-y border-green-100 bg-[#f5f7f2]/95 px-4 py-3 backdrop-blur sm:-mx-7 sm:px-7">

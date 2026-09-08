@@ -13,7 +13,7 @@ export function PublicMenu({ openLogin }) {
       <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-stone-900 sm:text-4xl">Fresh from Pecto's oven</h1>
       <p className="mt-2 max-w-2xl text-sm text-stone-500">Everything currently available at the bakery, grouped the same way our counter is.</p>
 
-      {message && <p role="status" className="mt-6 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{message}</p>}
+      {message && <p role="alert" className="mt-6 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{message}</p>}
 
       {!loading && sections.length > 1 && (
         <nav aria-label="Jump to category" className="sticky top-0 z-10 -mx-4 mt-6 flex gap-2 overflow-x-auto border-y border-green-100 bg-[#f5f7f2]/95 px-4 py-3 backdrop-blur sm:-mx-7 sm:px-7">

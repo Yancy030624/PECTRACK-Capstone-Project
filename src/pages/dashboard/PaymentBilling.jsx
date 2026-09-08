@@ -184,7 +184,7 @@ export function PaymentBilling({ user }) {
                         <Td numeric>₱{order.totalAmount}</Td>
                         <Td numeric>
                           {order.status === 'CANCELLED' ? (
-                            <span className="text-ink-400">—</span>
+                            <span className="text-ink-500">—</span>
                           ) : order.isFullyPaid ? (
                             <StatusBadge status="PAID" label="Paid" />
                           ) : (
@@ -265,7 +265,7 @@ export function PaymentBilling({ user }) {
                       {orderDetail.payment.payments.map((payment) => (
                         <li key={payment.id} className="flex items-center justify-between gap-2">
                           <span>
-                            {payment.method} · <span className="tabular-nums">₱{payment.amount}</span> {payment.gatewayReference && <span className="text-ink-400">({payment.gatewayReference})</span>}
+                            {payment.method} · <span className="tabular-nums">₱{payment.amount}</span> {payment.gatewayReference && <span className="text-ink-500">({payment.gatewayReference})</span>}
                           </span>
                           <StatusBadge status={payment.status} />
                         </li>

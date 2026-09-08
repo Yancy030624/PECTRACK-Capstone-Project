@@ -49,10 +49,17 @@
   /* ---- Neutrals: ONE warm ramp. Replaces the stone/slate mix (M8) ---- */
   --color-ink-900: #1c1b17;  /* headings */
   --color-ink-700: #3d3b34;  /* body */
-  --color-ink-500: #6b6860;  /* secondary */
-  --color-ink-400: #8c8880;  /* placeholder, disabled */
-  --color-line-200: #e4e2d8; /* borders */
-  --color-line-100: #f0efe8; /* dividers */
+  --color-ink-500: #6b6860;  /* secondary — also the floor for real sentences/labels: 5.56:1 on surface, passes AA body text */
+  --color-ink-400: #8c8880;  /* PLACEHOLDER / DISABLED TEXT ONLY — 3.53:1 on surface, fails AA's 4.5:1 for
+                                 body text (Stage 6 measurement). WCAG exempts placeholder copy and inactive
+                                 controls, so the token is legitimate there, but it must not be used for real
+                                 sentences, captions, or table-cell content — use ink-500 for those. */
+  --color-line-200: #8f8a70; /* borders — darkened from #e4e2d8 (Stage 6): the old value was 1.30:1 against
+                                 surface, far under the 3:1 WCAG 1.4.11 needs for a UI-component boundary, and
+                                 Input/Button(secondary)/Card have no other visual cue for their edge. Now
+                                 3.48:1 on surface / 3.21:1 on surface-sunk. */
+  --color-line-100: #f0efe8; /* dividers — decorative row separators inside an already-bordered table; not a
+                                 required UI boundary, so left as-is */
 
   /* ---- Status: the existing semantics, centralised (H7) ---- */
   --color-status-wait-bg:    #fef3c7;  --color-status-wait-fg:    #92400e;

@@ -141,7 +141,7 @@ function StaffDeliveryView({ user }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-ink-900">Deliveries</h2>
           <div className="w-full sm:w-56">
-            <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter by status">
               <option value="">All statuses</option>
               {statusOptions.map((status) => <option key={status} value={status}>{status.replaceAll('_', ' ')}</option>)}
             </Select>
@@ -176,7 +176,7 @@ function StaffDeliveryView({ user }) {
                 {delivery.status === 'PENDING_ASSIGNMENT' && (
                   <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line-100 pt-3">
                     <div className="min-w-40 flex-1">
-                      <Select value={assignChoice[delivery.id] ?? ''} onChange={(event) => setAssignChoice({ ...assignChoice, [delivery.id]: event.target.value })}>
+                      <Select value={assignChoice[delivery.id] ?? ''} onChange={(event) => setAssignChoice({ ...assignChoice, [delivery.id]: event.target.value })} aria-label={`Assign a driver for order #${delivery.orderId}`}>
                         <option value="">Select a driver…</option>
                         {personnel.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
                       </Select>
@@ -187,13 +187,13 @@ function StaffDeliveryView({ user }) {
 
                 {delivery.status === 'FAILED' && isAdmin && (
                   <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line-100 pt-3">
-                    <Input value={retryNotes[delivery.id] ?? ''} onChange={(event) => setRetryNotes({ ...retryNotes, [delivery.id]: event.target.value })} placeholder="Why is this being retried?" className="flex-1" />
+                    <Input value={retryNotes[delivery.id] ?? ''} onChange={(event) => setRetryNotes({ ...retryNotes, [delivery.id]: event.target.value })} placeholder="Why is this being retried?" aria-label={`Retry note for order #${delivery.orderId}`} className="flex-1" />
                     <Button type="button" size="sm" variant="secondary" onClick={() => handleAdminTransition(delivery.id, 'PENDING_ASSIGNMENT')} disabled={busyId === delivery.id}>Retry</Button>
                   </div>
                 )}
                 {(delivery.status === 'ASSIGNED' || delivery.status === 'OUT_FOR_DELIVERY') && isAdmin && (
                   <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line-100 pt-3">
-                    <Input value={retryNotes[delivery.id] ?? ''} onChange={(event) => setRetryNotes({ ...retryNotes, [delivery.id]: event.target.value })} placeholder="Why is this being recalled from its driver?" className="flex-1" />
+                    <Input value={retryNotes[delivery.id] ?? ''} onChange={(event) => setRetryNotes({ ...retryNotes, [delivery.id]: event.target.value })} placeholder="Why is this being recalled from its driver?" aria-label={`Recall note for order #${delivery.orderId}`} className="flex-1" />
                     <Button type="button" size="sm" variant="destructive" onClick={() => handleAdminTransition(delivery.id, 'FAILED')} disabled={busyId === delivery.id}>Recall from driver</Button>
                   </div>
                 )}

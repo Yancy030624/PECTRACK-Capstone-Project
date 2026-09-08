@@ -406,7 +406,7 @@ function CustomerOrders({ user }) {
                   <Button type="button" variant="destructive" size="sm" onClick={cancelOrder} disabled={cancelling}>
                     {cancelling ? 'Cancelling…' : 'Cancel this order'}
                   </Button>
-                  <p className="mt-1.5 text-xs text-ink-400">You can cancel while your order is still PLACED — once we start on it, ask staff directly.</p>
+                  <p className="mt-1.5 text-xs text-ink-500">You can cancel while your order is still PLACED — once we start on it, ask staff directly.</p>
                 </div>
               )}
 

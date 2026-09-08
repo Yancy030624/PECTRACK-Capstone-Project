@@ -112,7 +112,7 @@ export function CheckoutPage() {
       <p className="text-sm font-semibold text-green-700">CHECKOUT</p>
       <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-stone-900 sm:text-4xl">Place your order</h1>
 
-      {message && <p role="status" className={`mt-6 rounded-lg px-3 py-2 text-xs font-semibold ${messageFailed ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-800'}`}>{message}</p>}
+      {message && <p role={messageFailed ? 'alert' : 'status'} className={`mt-6 rounded-lg px-3 py-2 text-xs font-semibold ${messageFailed ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-800'}`}>{message}</p>}
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_320px]">
         <div className="space-y-6">

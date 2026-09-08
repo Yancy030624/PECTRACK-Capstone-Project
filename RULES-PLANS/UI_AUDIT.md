@@ -597,3 +597,265 @@ This stage is directly citable in the thesis.
 - The Figma is not final, so **Stage 0's tokens are the contract** — when
   Figma lands, changing the `@theme` values re-skins the app without
   touching components. That is the whole point of doing Stage 0 first.
+
+---
+
+## Stage 6 — accessibility results
+
+Measured 2026-09-09, against the running app (backend on :3001 against the
+real local Postgres instance, frontend on Vite) rather than against source
+alone, so the numbers below reflect what a keyboard or screen-reader user
+actually gets.
+
+### Table semantics (M6) — already closed, not by this stage
+
+The brief for this stage assumed 3 hand-written `<th>` and 3 `<Table>` call
+sites without a `caption` were still outstanding. Measuring first (per the
+brief's own method) found neither: `grep -rn "<th\b" src/` outside
+`ui/Table.jsx` returns nothing, `grep -rn "<table\b"` outside the same file
+returns nothing, and all 8 `<Table>` call sites across
+`CustomerManagement`, `InventoryManagement`, `OrderManagement`,
+`PaymentBilling`, `PaymentLog`, `ProductManagement`, `StaffManagement`, and
+`ReportingAnalytics` (5 tables in that one file) already pass a `caption`.
+Stage 5.5's conversion of the four missed screens evidently finished this
+along the way. **This is a finding in this stage's brief that turned out
+to be stale, not a finding in the app** — recorded here so the discrepancy
+is on the record rather than silently absorbed.
+
+### Colour contrast — measured against the tokens actually in use
+
+Method: a throwaway Node script (relative-luminance + WCAG contrast-ratio
+formula, no library) against the hex values in `src/index.css`'s `@theme`
+block. Checked against **AA: 4.5:1 for body text, 3:1 for large text and
+UI-component boundaries** (WCAG 1.4.3 and 1.4.11).
+
+| Pair | Hex | Ratio | AA body (4.5:1) | AA large/UI (3:1) |
+| --- | --- | --- | --- | --- |
+| `ink-700` on `surface` | `#3d3b34` / `#ffffff` | 11.21:1 | PASS | PASS |
+| `ink-700` on `surface-sunk` | `#3d3b34` / `#f7f6ef` | 10.35:1 | PASS | PASS |
+| `ink-500` on `surface` | `#6b6860` / `#ffffff` | 5.56:1 | PASS | PASS |
+| `ink-500` on `surface-sunk` | `#6b6860` / `#f7f6ef` | 5.14:1 | PASS | PASS |
+| `ink-400` on `surface` | `#8c8880` / `#ffffff` | 3.53:1 | **FAIL** | PASS |
+| `ink-400` on `surface-sunk` | `#8c8880` / `#f7f6ef` | 3.26:1 | **FAIL** | PASS |
+| `brand-600` on white / white on `brand-600` | `#26752a` / `#ffffff` | 5.74:1 | PASS | PASS |
+| `brand-700` on white | `#1d5a21` / `#ffffff` | 8.28:1 | PASS | PASS |
+| `status-wait-fg` on `status-wait-bg` | `#92400e` / `#fef3c7` | 6.37:1 | PASS | PASS |
+| `status-active-fg` on `status-active-bg` | `#1e40af` / `#dbeafe` | 7.15:1 | PASS | PASS |
+| `status-transit-fg` on `status-transit-bg` | `#115e59` / `#ccfbf1` | 6.73:1 | PASS | PASS |
+| `status-done-fg` on `status-done-bg` | `#166534` / `#dcfce7` | 6.49:1 | PASS | PASS |
+| `status-fail-fg` on `status-fail-bg` | `#991b1b` / `#fee2e2` | 6.80:1 | PASS | PASS |
+| `status-idle-fg` on `status-idle-bg` | `#57534e` / `#f1f0ea` | 6.68:1 | PASS | PASS |
+| `line-200` (border) on `surface` — **before** | `#e4e2d8` / `#ffffff` | 1.30:1 | — | **FAIL** |
+
+Every status pair and every core text tier passes with margin. Two
+findings needed a real fix, not just a table entry:
+
+**1. `line-200` (the border token behind `Input`, `Button`'s secondary
+variant, and `Card`) failed WCAG 1.4.11 badly — 1.30:1, effectively
+invisible.** None of those three components differ in *background* from
+their surroundings (an `Input` is `bg-surface` inside a `Card` that is
+also `bg-surface`; a `Card` sits on `surface-sunk`, itself only 1.03:1 from
+white), so the border is not decorative — it is the only thing that says
+"this is a text field" or "this is where the card ends." **Fixed the
+token**: `--color-line-200` moved from `#e4e2d8` to `#8f8a70` (same warm
+hue, darker) — now 3.48:1 on `surface` and 3.21:1 on `surface-sunk`, both
+past 3:1. `line-100` (`#f0efe8`, decorative row dividers inside an
+already-bordered table) was left alone — 1.4.11 only binds UI-component
+boundaries, and a divider inside a table that already has its own border
+isn't one.
+
+**2. `ink-400` fails AA body text (3.53:1, needs 4.5:1) — and grep showed
+it was actually being used as body text**, not only for the placeholder/
+disabled cases the token layer's original comment names as exempt.
+Genuine content was found set in `ink-400` in 8 files: a username in a
+table cell (`CustomerManagement.jsx`), the "MAIN MENU" nav label
+(`Dashboard.jsx`), a KPI caption (`DashboardHome.jsx`), help sentences
+(`NewOrderForm.jsx`, `OrderManagement.jsx`, `PaymentBilling.jsx`), a
+refund-reason quote (`PaymentLog.jsx`), and four captions/sub-labels
+(`ReportingAnalytics.jsx`). Darkening the token itself to clear 4.5:1
+lands it within 3 points of lightness of `ink-500` (worked out to
+`#736f68` at l=43 — visually almost the same colour as `#6b6860`), which
+would make two "different" tiers indistinguishable. **Fixed the usage
+instead of the token**: all 12 real-content call sites above moved from
+`text-ink-400` to `text-ink-500` (already 5.56:1/5.14:1, comfortably
+passing); `ink-400`'s hex is unchanged, and `index.css` now says in the
+token comment that it is for placeholder and disabled text only — its one
+remaining use is `Input.jsx`'s `placeholder:text-ink-400`, which is
+exempt (WCAG doesn't bind placeholder copy, and every field carrying one
+also has a real `<label>` via `Field`, so the placeholder was never the
+only name for the control).
+
+No other pair needed a change. `accent-600` is chart-only (a Chart.js
+`backgroundColor`/`borderColor`, never text-on-background) and wasn't
+checked as a text pair for that reason.
+
+### Keyboard pass, per role
+
+Method: Playwright driving real Chromium against the running app
+(installed with `npm install --no-save playwright`, uninstalled after;
+temp scripts deleted, both dev servers killed). For each role: log in,
+walk every module that role's nav exposes, and press Tab in a loop,
+recording `document.activeElement` and its computed `outline`/`box-shadow`
+after every press. 269 Tab presses were traced across the three
+reachable roles.
+
+**ADMIN could not be tested — no admin password was provided or found in
+the repo, and none should be guessed.** Everything below is CASHIER,
+DELIVERY PERSONNEL, and CUSTOMER only. ADMIN shares the same shell,
+primitives, and (for 7 of its 9 modules) the same components CASHIER
+already exercised, so the untested surface is `Staff Management` and
+`Product Management` specifically, plus whatever ADMIN-only branches exist
+inside shared screens (e.g. the "Actions" column, category/product
+mutation forms). This is a real gap, not a formality — say so rather than
+implying coverage that doesn't exist.
+
+**CASHIER** (desktop, 1400×900) — all 8 modules plus the dashboard home:
+Dashboard, Order Management, Customer Management, Inventory Management,
+Payment & Billing, Delivery Management, Reporting & Analytics, My Profile.
+140 Tab presses. Every element reached had a visible focus indicator
+except 2 (below). Confirmed C2 is still fixed live, not just in source:
+focused the `aria-label="Open order #6828"` button by keyboard and pressed
+Enter — the order detail panel opened, matching the `stopPropagation`
+pattern in `OrderManagement.jsx:153-165`. Tab order through the orders
+table is sequential by row (button → next row's button), which is
+sensible reading order.
+
+**DELIVERY PERSONNEL** (phone viewport, 390×844, per the audit's own
+"test on a real phone viewport" instruction for this role) — Delivery
+Management and My Profile. 35 Tab presses, 0 without a visible ring. The
+demo account had exactly one assigned delivery, so the reachable set was
+small (Log out, the two mobile nav pills, one "Start delivery" button) —
+confirmed by screenshot, not just the trace, that this is the true content
+of the screen and not something skipped. The mobile module nav (Stage 2's
+fix) renders as in-flow pills at this viewport and both are independently
+reachable and operable.
+
+**CUSTOMER** (desktop, 1400×900) — the storefront (`/`, `/menu`, `/cart`)
+and the dashboard shell (My Orders, Payment & Billing, My Profile). 94 Tab
+presses, 0 without a visible ring. Order-history rows use the same
+focusable-button-per-row pattern as staff's Order Management.
+
+**The only anomaly across all 269 presses**: 2 of them, both on the same
+native `<input type="date">` in Reporting & Analytics' Sales tab. Chromium
+renders a date input's month/day/year as internal segments that share one
+DOM node and one accessible-name (confirmed both segments correctly
+report their `<label>` — "From" / "To" — via `el.labels`); Tab moves
+between segments without `document.activeElement` changing, and on the
+segment immediately before the field is left, the browser's own computed
+`outline-style` briefly reports `none` where the prior two segments
+reported the app's `solid 2px` ring. This reproduced identically on both
+date fields and is a property of Chromium's native control internals, not
+of any CSS in this app — there is no selector in `src/` that could target
+an internal date-input segment to suppress its outline. Recorded rather
+than "fixed" because there is nothing in the app to fix.
+
+**Not covered**: mouse-only interactions (drag, hover-only affordances —
+the audit's own read is that the app has none), and any screen behind a
+data state the demo database didn't have populated (e.g. a delivery in
+every status, not just ASSIGNED).
+
+### Forms and labels
+
+The `Field` primitive (`src/components/ui/Field.jsx`) wires `<label
+htmlFor>` and `aria-describedby` automatically wherever it's given a
+`label` prop, but deliberately allows an unlabelled `Field` for dense
+table-inline edits "whose column header already names the field" — the
+comment's assumption was that the header naming it *visually* was enough.
+It isn't: a `scope="col"` header associates with a `<td>`'s text for a
+screen reader reading table cells, not with a form control nested inside
+one, so every inline-edit control built that way had **zero** accessible
+name. Grepping every `<Input`/`<Select`/`<Textarea` call site and checking
+each one against its nearest `Field label=`/`aria-label` found 13 real
+gaps, all now fixed with a matching `aria-label`:
+
+| File | Control(s) fixed |
+| --- | --- |
+| `CustomerManagement.jsx` | inline-edit Name, Contact number, Email |
+| `StaffManagement.jsx` | inline-edit Name, Contact number, Email |
+| `ProductManagement.jsx` | category-rename input; inline-edit Product name, Category, Variant, Price |
+| `NewOrderForm.jsx` | customer `<Select>`; "Add a product…" `<Select>` |
+| `DeliveryManagement.jsx` | status filter `<Select>`; per-row "Assign a driver" `<Select>`; per-row retry-note and recall-note `<Input>` |
+
+Everything else checked — `AddressForm.jsx`, `LoginForm.jsx`,
+`RegistrationPage.jsx`, every `Field`-wrapped call site in `MyProfile.jsx`
+/ `InventoryRequests.jsx` / `PaymentBilling.jsx` / `ReportingAnalytics.jsx`
+/ `MyDeliveries.jsx` — already had a real `<label>` or `aria-label`; those
+were false positives from a first-pass grep (multi-line JSX hides the
+`aria-label` on a different line) and are recorded here only to show they
+were checked, not skipped.
+
+**Storefront** (the two inputs the brief named specifically): the
+checkout instructions `<textarea>` and every `AddressForm` field already
+had a real `<label>`; `CustomerMenu.jsx`'s search input had only a
+`placeholder`, which the task's own bar (`<label>`, `aria-label`, or
+`aria-labelledby` — not placeholder) doesn't count. Added
+`aria-label="Search the menu"`.
+
+### C3 — storefront error announcements (the main gap this stage closed)
+
+All four files the brief named were confirmed to be genuinely mismarked
+and fixed:
+
+| File | Before | After |
+| --- | --- | --- |
+| `CartPage.jsx:38` | `role="status"` | `role="alert"` (the `message` state is only ever set from a `.catch`, never a success path) |
+| `CustomerMenu.jsx:40` | `role="status"` | `role="alert"` (same — `useMenuData.js`'s `message` is catch-only) |
+| `PublicMenu.jsx:16` | `role="status"` | `role="alert"` (same shared hook) |
+| `CheckoutPage.jsx:115` | `role="status"` always | `role={messageFailed ? 'alert' : 'status'}` — the component already tracked which case it was in (`messageFailed`), it just wasn't reading that flag for the `role` |
+
+No other change to these four files — styling, copy, and business logic
+are untouched, per the brief's "ARIA semantics only" instruction.
+
+### Headings and landmarks
+
+Checked live via `document.querySelectorAll('h1..h6')` and landmark tag
+counts, across the CASHIER-visible dashboard screens and every public
+storefront route (`/`, `/menu`, `/about`, `/contact`, `/login`,
+`/register`). Every screen has exactly one `<h1>`, heading levels never
+skip (h1 → h2 → h3 on `/menu`'s category/product listing, h1 → h2
+elsewhere), and every screen has exactly one `<header>`, one `<main>`, and
+at least one `<nav>`. `OrderManagement.jsx` and `CheckoutPage.jsx` each
+have two `<h1>` **in source**, but they're mutually exclusive early-return
+branches (staff view vs. customer view; empty-cart vs. real checkout) —
+never both mounted at once, confirmed live. `/menu` renders two `<nav>`
+landmarks (the site nav and a "Jump to category" nav); only the second has
+an `aria-label`. Left as-is: the two are still distinguishable (one
+labelled, one not) and this falls outside the four named storefront ARIA
+fixes, but it's a one-line follow-up (`aria-label="Primary"` on
+`MarketingHeader`'s `<nav>`) if this comes up again.
+
+### Images
+
+Every `<img>` in `src/` (8 total) already has `alt`: meaningful text for
+content images (`alt={product.name}` in `CustomerMenu`/`PublicMenu`/
+`HomePage`, `alt={proof.fileName}` for delivery proof photos, `alt="Pectos
+Bakery logo"` for the brand mark) or explicit `alt=""` for the two
+decorative product-thumbnail fallbacks in `ProductManagement.jsx`. No
+change needed.
+
+### Housekeeping
+
+Deleted 144 rows from the `sessions` table for the three demo accounts
+used in the keyboard pass (`cashier1`, `delivery1`, `customer1`) — most of
+these pre-dated this session's testing (the table already held 145 rows
+total, 144 of them across exactly these three users, before any of this
+stage's logins). This only signs those three accounts out everywhere; it
+does not touch `orders`, `payments`, `inventory`, or any other table. If
+you were signed into one of these three accounts in your own browser,
+you'll need to log in again.
+
+### What remains open
+
+- **ADMIN's keyboard behaviour is unverified** — no password available.
+  `Staff Management` and `Product Management` specifically, and any
+  ADMIN-only branch of a shared screen, should get the same Tab-trace this
+  stage ran for the other three roles once a password exists.
+- **`/menu`'s primary `<nav>` has no `aria-label`** to distinguish it from
+  the "Jump to category" nav on the same page — not a WCAG failure (the
+  two are still distinguishable), but worth the one-line fix.
+- **The Chromium native-date-input focus-ring gap** (2 of 269 presses,
+  detailed above) is a browser-internals property, not an app defect —
+  recorded for completeness, nothing to fix in `src/`.
+- **`npm run build` clean, `npm run lint` unchanged at 8 pre-existing
+  warnings, `npm test` 312/312** — verified after all fixes in this
+  section, not before.

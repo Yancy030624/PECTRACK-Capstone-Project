@@ -74,7 +74,7 @@ export function PaymentLog({ user }) {
                   <Td className="text-ink-500">{payment.gatewayReference ?? '—'}</Td>
                   <Td>
                     <StatusBadge status={payment.status} />
-                    {payment.status === 'REFUNDED' && payment.refundReason && <p className="mt-1 text-xs text-ink-400">"{payment.refundReason}"</p>}
+                    {payment.status === 'REFUNDED' && payment.refundReason && <p className="mt-1 text-xs text-ink-500">"{payment.refundReason}"</p>}
                   </Td>
                   <Td>{payment.status === 'REFUNDED' ? payment.refundedByName : payment.recordedByName}</Td>
                   <Td className="text-ink-500">{new Date(payment.status === 'REFUNDED' ? payment.refundedAt : (payment.paymentDate ?? payment.createdAt)).toLocaleString()}</Td>

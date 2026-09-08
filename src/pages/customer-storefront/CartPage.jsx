@@ -35,7 +35,7 @@ export function CartPage() {
       <p className="text-sm font-semibold text-green-700">YOUR CART</p>
       <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-stone-900 sm:text-4xl">Review your order</h1>
 
-      {message && <p role="status" className="mt-6 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{message}</p>}
+      {message && <p role="alert" className="mt-6 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{message}</p>}
 
       {loading ? (
         <div className="mt-10 space-y-3">

@@ -277,17 +277,17 @@ export function ReportingAnalytics({ user }) {
             <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Orders placed</p><p className="mt-3 text-4xl font-semibold text-ink-900">{sales.totals.ordersPlaced}</p></Card>
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Ordered</p><p className="mt-3 text-4xl font-semibold text-ink-900">₱{sales.totals.ordered}</p></Card>
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Collected</p><p className="mt-3 text-4xl font-semibold text-ink-900">₱{sales.totals.collected}</p><p className="mt-2 text-xs text-ink-400">Refunds already removed</p></Card>
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Refunds issued</p><p className="mt-3 text-4xl font-semibold text-ink-900">₱{sales.totals.refunded}</p><p className="mt-2 text-xs text-ink-400">Already excluded from Collected — do not subtract</p></Card>
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Collected</p><p className="mt-3 text-4xl font-semibold text-ink-900">₱{sales.totals.collected}</p><p className="mt-2 text-xs text-ink-500">Refunds already removed</p></Card>
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Refunds issued</p><p className="mt-3 text-4xl font-semibold text-ink-900">₱{sales.totals.refunded}</p><p className="mt-2 text-xs text-ink-500">Already excluded from Collected — do not subtract</p></Card>
             </div>
             <p className="mt-3 text-xs text-ink-500">
               Average payment: ₱{sales.totals.averagePayment}
-              <span className="text-ink-400"> — per payment recorded, not per order (an order settled in instalments counts once per instalment).</span>
+              <span className="text-ink-500"> — per payment recorded, not per order (an order settled in instalments counts once per instalment).</span>
             </p>
             {summary && (
               <p className="mt-1 text-xs font-medium text-status-wait-fg">
                 Outstanding across all open orders, as of now: ₱{summary.outstanding}
-                <span className="font-normal text-ink-400"> — not scoped to the range above; this is every unpaid balance still on the books.</span>
+                <span className="font-normal text-ink-500"> — not scoped to the range above; this is every unpaid balance still on the books.</span>
               </p>
             )}
 
@@ -304,7 +304,7 @@ export function ReportingAnalytics({ user }) {
                     <Th>Orders placed</Th>
                     <Th align="right">Ordered</Th>
                     <Th align="right">Collected</Th>
-                    <Th align="right">Refunds issued <span className="block font-normal normal-case text-ink-400">not deducted from Collected</span></Th>
+                    <Th align="right">Refunds issued <span className="block font-normal normal-case text-ink-500">not deducted from Collected</span></Th>
                   </Tr>
                 </Thead>
                 <Tbody>

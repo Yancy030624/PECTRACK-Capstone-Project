@@ -138,18 +138,18 @@ export function CustomerManagement({ user }) {
                   <Tr key={customer.id}>
                     <Td>
                       <Field error={editErrors.name}>
-                        <Input value={editForm.name} onChange={(event) => setEditForm({ ...editForm, name: event.target.value })} />
+                        <Input value={editForm.name} onChange={(event) => setEditForm({ ...editForm, name: event.target.value })} aria-label="Name" />
                       </Field>
                     </Td>
-                    <Td className="text-ink-400">{customer.username}</Td>
+                    <Td className="text-ink-500">{customer.username}</Td>
                     <Td>
                       <Field error={editErrors.contactNumber}>
-                        <Input value={editForm.contactNumber} onChange={(event) => setEditForm({ ...editForm, contactNumber: event.target.value })} />
+                        <Input value={editForm.contactNumber} onChange={(event) => setEditForm({ ...editForm, contactNumber: event.target.value })} aria-label="Contact number" />
                       </Field>
                     </Td>
                     <Td>
                       <Field error={editErrors.email}>
-                        <Input value={editForm.email} onChange={(event) => setEditForm({ ...editForm, email: event.target.value })} />
+                        <Input value={editForm.email} onChange={(event) => setEditForm({ ...editForm, email: event.target.value })} aria-label="Email" />
                       </Field>
                     </Td>
                     <Td><StatusBadge status={customer.isActive ? 'ACTIVE' : 'INACTIVE'} label={customer.isActive ? 'Active' : 'Inactive'} /></Td>

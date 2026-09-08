@@ -157,7 +157,7 @@ export function NewOrderForm({ onCreated }) {
           />
           <div className="mt-2">
             <Field error={errors.customerId}>
-              <Select value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
+              <Select value={customerId} onChange={(event) => setCustomerId(event.target.value)} aria-label="Customer">
                 <option value="">Walk-in (no customer account)</option>
                 {filteredCustomers.map((customer) => (
                   <option key={customer.customerId} value={customer.customerId}>
@@ -179,7 +179,7 @@ export function NewOrderForm({ onCreated }) {
               Delivery
             </Button>
           </div>
-          {!customerId && <p className="mt-2 text-xs text-ink-400">Delivery needs a customer account — a walk-in order can only be picked up.</p>}
+          {!customerId && <p className="mt-2 text-xs text-ink-500">Delivery needs a customer account — a walk-in order can only be picked up.</p>}
 
           {orderType === 'DELIVERY' && (
             <div className="mt-4 border-t border-line-100 pt-4">
@@ -241,7 +241,7 @@ export function NewOrderForm({ onCreated }) {
           <h2 className="text-lg font-semibold text-ink-900">Items</h2>
           <div className="mt-3">
             <Field error={errors.items}>
-              <Select value="" onChange={(event) => addLine(event.target.value)}>
+              <Select value="" onChange={(event) => addLine(event.target.value)} aria-label="Add a product to the order">
                 <option value="" disabled>
                   Add a product…
                 </option>
@@ -298,7 +298,7 @@ export function NewOrderForm({ onCreated }) {
               placeholder="e.g. Less sugar, birthday message on the cake"
             />
           </Field>
-          <p className="mt-1 text-right text-xs text-ink-400">
+          <p className="mt-1 text-right text-xs text-ink-500">
             {instructions.length}/{instructionsMaxLength}
           </p>
         </Card>

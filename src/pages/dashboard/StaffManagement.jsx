@@ -213,17 +213,17 @@ export function StaffManagement() {
                   editingId === person.id ? (
                     <Tr key={person.id}>
                       <Td>
-                        <Input value={editForm.name} onChange={(event) => updateEditField('name', event.target.value)} className="h-8 text-xs" />
+                        <Input value={editForm.name} onChange={(event) => updateEditField('name', event.target.value)} aria-label="Name" className="h-8 text-xs" />
                         {editErrors.name && <p className="mt-1 text-xs text-red-700">{editErrors.name}</p>}
                       </Td>
                       <Td className="text-ink-500">{person.username}</Td>
                       <Td className="text-ink-500">{roleLabels[person.role] ?? person.role}</Td>
                       <Td>
-                        <Input value={editForm.contactNumber} onChange={(event) => updateEditField('contactNumber', event.target.value)} className="h-8 text-xs" />
+                        <Input value={editForm.contactNumber} onChange={(event) => updateEditField('contactNumber', event.target.value)} aria-label="Contact number" className="h-8 text-xs" />
                         {editErrors.contactNumber && <p className="mt-1 text-xs text-red-700">{editErrors.contactNumber}</p>}
                       </Td>
                       <Td>
-                        <Input value={editForm.email} onChange={(event) => updateEditField('email', event.target.value)} className="h-8 text-xs" />
+                        <Input value={editForm.email} onChange={(event) => updateEditField('email', event.target.value)} aria-label="Email" className="h-8 text-xs" />
                         {editErrors.email && <p className="mt-1 text-xs text-red-700">{editErrors.email}</p>}
                       </Td>
                       <Td><StatusBadge status={person.isActive ? 'ACTIVE' : 'INACTIVE'} /></Td>

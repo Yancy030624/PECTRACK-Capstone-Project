@@ -258,7 +258,7 @@ export function ProductManagement({ user }) {
             {categories.map((category) =>
               editingCategoryId === category.id ? (
                 <li key={category.id} className="flex items-center gap-1.5 rounded-full border border-brand-100 bg-surface px-2 py-1">
-                  <Input value={editingCategoryName} onChange={(event) => setEditingCategoryName(event.target.value)} className="h-8 w-28 text-xs" />
+                  <Input value={editingCategoryName} onChange={(event) => setEditingCategoryName(event.target.value)} aria-label="Category name" className="h-8 w-28 text-xs" />
                   <Button type="button" size="sm" onClick={(event) => saveCategory(event, category.id)}>Save</Button>
                   <Button type="button" size="sm" variant="secondary" onClick={() => setEditingCategoryId(null)}>Cancel</Button>
                 </li>
@@ -346,19 +346,19 @@ export function ProductManagement({ user }) {
                         {product.imageUrl ? <img src={product.imageUrl} alt="" className="h-12 w-12 rounded-control object-cover" /> : <div className="grid h-12 w-12 place-items-center rounded-control bg-surface-sunk text-lg">🥐</div>}
                       </Td>
                       <Td>
-                        <Input value={editingProduct.name} onChange={(event) => updateEditingProductField('name', event.target.value)} className="h-8 text-xs" />
+                        <Input value={editingProduct.name} onChange={(event) => updateEditingProductField('name', event.target.value)} aria-label="Product name" className="h-8 text-xs" />
                         {editingProductErrors.name && <p className="mt-1 text-xs text-red-700">{editingProductErrors.name}</p>}
                       </Td>
                       <Td>
-                        <Select value={editingProduct.categoryId} onChange={(event) => updateEditingProductField('categoryId', event.target.value)} className="h-8 text-xs">
+                        <Select value={editingProduct.categoryId} onChange={(event) => updateEditingProductField('categoryId', event.target.value)} aria-label="Category" className="h-8 text-xs">
                           {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
                         </Select>
                       </Td>
                       <Td>
-                        <Input value={editingProduct.variant} onChange={(event) => updateEditingProductField('variant', event.target.value)} className="h-8 text-xs" />
+                        <Input value={editingProduct.variant} onChange={(event) => updateEditingProductField('variant', event.target.value)} aria-label="Variant" className="h-8 text-xs" />
                       </Td>
                       <Td numeric>
-                        <Input type="number" min="0" step="0.01" value={editingProduct.price} onChange={(event) => updateEditingProductField('price', event.target.value)} className="h-8 w-24 text-right text-xs" />
+                        <Input type="number" min="0" step="0.01" value={editingProduct.price} onChange={(event) => updateEditingProductField('price', event.target.value)} aria-label="Price" className="h-8 w-24 text-right text-xs" />
                         {editingProductErrors.price && <p className="mt-1 text-xs text-red-700">{editingProductErrors.price}</p>}
                       </Td>
                       <Td><StatusBadge status={product.availabilityStatus ? 'ACTIVE' : 'INACTIVE'} label={product.availabilityStatus ? 'Available' : 'Unavailable'} /></Td>

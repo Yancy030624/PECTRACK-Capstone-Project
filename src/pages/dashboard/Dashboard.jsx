@@ -112,7 +112,7 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
               uppercase, tracking-wide — not the old font-bold/tracking-widest
               pairing (H2: weight should carry meaning, not be maxed out
               everywhere). */}
-          <p className="mb-4 px-3 text-[10px] font-semibold tracking-wide text-ink-400 uppercase">MAIN MENU</p>
+          <p className="mb-4 px-3 text-[10px] font-semibold tracking-wide text-ink-500 uppercase">MAIN MENU</p>
           <nav className="space-y-1">
             {allowedModules.map((module) => (
               <button
