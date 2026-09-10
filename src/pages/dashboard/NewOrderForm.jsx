@@ -210,7 +210,7 @@ export function NewOrderForm({ onCreated }) {
                             {address.label}
                             {address.isDefault && <span className="ml-2 rounded-full bg-brand-100 px-2 py-0.5 text-[10px] font-semibold text-brand-700">DEFAULT</span>}
                           </span>
-                          <span className="block text-ink-600">
+                          <span className="block text-ink-500">
                             {address.recipientName} · {address.contactNumber}
                           </span>
                           <span className="block text-ink-500">

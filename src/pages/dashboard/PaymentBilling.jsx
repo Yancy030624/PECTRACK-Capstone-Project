@@ -210,7 +210,7 @@ export function PaymentBilling({ user }) {
               <p className="mt-4 text-sm text-ink-500">Loading…</p>
             ) : orderDetail ? (
               <div className="mt-4 space-y-4">
-                <div className="text-xs text-ink-600">
+                <div className="text-xs text-ink-500">
                   <p>
                     <strong className="text-ink-900">Order #{orderDetail.id}</strong> · {orderDetail.status.replaceAll('_', ' ')}
                   </p>
@@ -261,7 +261,7 @@ export function PaymentBilling({ user }) {
                 {orderDetail.payment.payments.length > 0 && (
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Payments</p>
-                    <ul className="mt-1.5 space-y-1.5 text-sm text-ink-600">
+                    <ul className="mt-1.5 space-y-1.5 text-sm text-ink-500">
                       {orderDetail.payment.payments.map((payment) => (
                         <li key={payment.id} className="flex items-center justify-between gap-2">
                           <span>

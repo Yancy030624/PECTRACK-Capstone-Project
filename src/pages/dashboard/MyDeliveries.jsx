@@ -119,7 +119,18 @@ export function MyDeliveries({ user }) {
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <p className="font-semibold text-ink-900">Order #{delivery.orderId} · {delivery.customerName ?? 'Customer'}</p>
-                    <p className="mt-1 text-ink-600">{delivery.address.recipientName} · {delivery.address.contactNumber}</p>
+                    {/* The number is a tel: link because this screen is
+                        used on a phone, at the door — a driver who needs
+                        to say "I'm outside" should not have to memorise
+                        eleven digits and retype them in another app. The
+                        storefront footer already links the bakery's own
+                        number the same way. */}
+                    <p className="mt-1 text-ink-500">
+                      {delivery.address.recipientName} ·{' '}
+                      <a href={`tel:${delivery.address.contactNumber}`} className="font-medium text-brand-700 underline underline-offset-2">
+                        {delivery.address.contactNumber}
+                      </a>
+                    </p>
                     <p className="mt-0.5 text-xs text-ink-500">
                       {delivery.address.addressLine1}{delivery.address.addressLine2 && `, ${delivery.address.addressLine2}`}
                       {delivery.address.barangay && `, ${delivery.address.barangay}`}, {delivery.address.municipality}, {delivery.address.province}
@@ -150,7 +161,7 @@ export function MyDeliveries({ user }) {
                         type="file"
                         accept="image/jpeg,image/png"
                         onChange={(event) => setProofFiles({ ...proofFiles, [delivery.id]: event.target.files[0] ?? null })}
-                        className="block w-full text-xs text-ink-600 file:mr-3 file:h-11 file:cursor-pointer file:rounded-control file:border-0 file:bg-brand-50 file:px-4 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100"
+                        className="block w-full text-xs text-ink-500 file:mr-3 file:h-11 file:cursor-pointer file:rounded-control file:border-0 file:bg-brand-50 file:px-4 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100"
                       />
                       <Button
                         type="button"

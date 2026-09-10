@@ -186,7 +186,7 @@ function StaffOrderManagement({ user }) {
             <p className="mt-4 text-sm text-ink-500">Loading…</p>
           ) : orderDetail ? (
             <div className="mt-4 space-y-4">
-              <div className="text-xs text-ink-600">
+              <div className="text-xs text-ink-500">
                 <p>
                   <strong className="text-ink-900">Order #{orderDetail.id}</strong> · {orderDetail.orderType}
                 </p>
@@ -234,7 +234,7 @@ function StaffOrderManagement({ user }) {
 
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Status history</p>
-                <ul className="mt-1.5 space-y-1 text-sm text-ink-600">
+                <ul className="mt-1.5 space-y-1 text-sm text-ink-500">
                   {orderDetail.statusHistory.map((entry, index) => (
                     <li key={index}>
                       <span className="font-semibold text-ink-900">{entry.status.replaceAll('_', ' ')}</span> by {entry.updatedByName} — {new Date(entry.updatedAt).toLocaleString()}
@@ -379,12 +379,12 @@ function CustomerOrders({ user }) {
           ) : orderDetail ? (
             <div className="mt-4 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs text-ink-600">
+                <p className="text-xs text-ink-500">
                   <strong className="text-ink-900">Order #{orderDetail.id}</strong> · {orderDetail.orderType}
                 </p>
                 <StatusBadge status={orderDetail.status} />
               </div>
-              {orderDetail.instructions && <p className="text-xs text-ink-600">Instructions: {orderDetail.instructions}</p>}
+              {orderDetail.instructions && <p className="text-xs text-ink-500">Instructions: {orderDetail.instructions}</p>}
 
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Items</p>
@@ -412,7 +412,7 @@ function CustomerOrders({ user }) {
 
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Status history</p>
-                <ul className="mt-1.5 space-y-1 text-sm text-ink-600">
+                <ul className="mt-1.5 space-y-1 text-sm text-ink-500">
                   {orderDetail.statusHistory.map((entry, index) => (
                     <li key={index}>
                       <span className="font-semibold text-ink-900">{entry.status.replaceAll('_', ' ')}</span> — {new Date(entry.updatedAt).toLocaleString()}

@@ -233,7 +233,7 @@ function AddressesTab() {
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-line-100 pt-4">
         <h2 className="text-lg font-semibold text-ink-900">Your addresses</h2>
         <div className="flex items-center gap-3">
-          <label className="flex items-center gap-1.5 text-xs font-medium text-ink-600">
+          <label className="flex items-center gap-1.5 text-xs font-medium text-ink-500">
             <input type="checkbox" checked={includeInactive} onChange={(event) => setIncludeInactive(event.target.checked)} />
             Show deactivated
           </label>
@@ -263,7 +263,7 @@ function AddressesTab() {
                       {address.isDefault && <span className="ml-2 rounded-full bg-status-done-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-done-fg">Default</span>}
                       {!address.isActive && <span className="ml-2 rounded-full bg-status-idle-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-idle-fg">Deactivated</span>}
                     </p>
-                    <p className="mt-1 text-ink-600">{address.recipientName} · {address.contactNumber}</p>
+                    <p className="mt-1 text-ink-500">{address.recipientName} · {address.contactNumber}</p>
                     <p className="mt-0.5 text-xs text-ink-500">
                       {address.addressLine1}{address.addressLine2 && `, ${address.addressLine2}`}
                       {address.barangay && `, ${address.barangay}`}, {address.municipality}, {address.province}

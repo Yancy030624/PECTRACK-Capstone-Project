@@ -159,7 +159,7 @@ function StaffDeliveryView({ user }) {
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <p className="font-semibold text-ink-900">Order #{delivery.orderId} · {delivery.customerName ?? 'Customer'} · <span className="tabular-nums">₱{delivery.totalAmount}</span></p>
-                    <p className="mt-1 text-ink-600">{delivery.address.recipientName} · {delivery.address.contactNumber}</p>
+                    <p className="mt-1 text-ink-500">{delivery.address.recipientName} · {delivery.address.contactNumber}</p>
                     <p className="mt-0.5 text-xs text-ink-500">
                       {delivery.address.addressLine1}{delivery.address.addressLine2 && `, ${delivery.address.addressLine2}`}
                       {delivery.address.barangay && `, ${delivery.address.barangay}`}, {delivery.address.municipality}, {delivery.address.province}

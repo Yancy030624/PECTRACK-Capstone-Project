@@ -58,7 +58,12 @@ export function DashboardHome({ user, onNavigate }) {
     { label: "Today's collected", value: summary ? `₱${summary.today.collected}` : '—', caption: 'Today, so far' },
     { label: 'Outstanding', value: summary ? `₱${summary.outstanding}` : '—', caption: 'Unpaid across all open orders' },
     { label: 'Low stock', value: summary ? summary.lowStockAlertsTotal : '—', caption: 'Open stock alerts', module: 'Inventory Management' },
-    { label: 'Deliveries to assign', value: summary ? summary.deliveriesNeedingAttention : '—', caption: 'Pending assignment or already assigned', module: 'Delivery Management' },
+    // Caption kept short deliberately: the longer wording this replaced
+    // ("Pending assignment or already assigned") wrapped to two lines and
+    // left this tile's content sitting unevenly against its three
+    // siblings, which breaks the "repeated things are one object" rule
+    // the four-tile row exists to satisfy.
+    { label: 'Deliveries to assign', value: summary ? summary.deliveriesNeedingAttention : '—', caption: 'Assign deliveries', module: 'Delivery Management' },
   ]
 
   return (
