@@ -8,7 +8,7 @@ import express from 'express'
 import { pool } from '../db.js'
 import { bcryptRounds, findDuplicateAccount } from '../lib/accounts.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
-import { normalize, normalizeEmail, parseId, validateAccountFields, validateContactNumberField, validateEmailField, validateName } from '../lib/validation.js'
+import { normalize, normalizeEmail, parseId, validateAccountFields, validateContactNumberField, validateEmailField, validateName, validatePasswordField } from '../lib/validation.js'
 
 const router = express.Router()
 
@@ -94,18 +94,35 @@ router.post('/', async (request, response) => {
 })
 
 // PATCH /api/staff/:id — edit name/email/contactNumber and/or toggle
-// isActive. Deliberately excludes username and role: changing role would
-// mean moving the profile row between tables entirely (closer to
-// "deactivate and recreate" than an edit), and username isn't meant to
-// change once set.
+// isActive, and (LOGIN_SPLIT_PLAN.md Part B) reset the account's password.
+// Deliberately excludes username and role: changing role would mean
+// moving the profile row between tables entirely (closer to "deactivate
+// and recreate" than an edit), and username isn't meant to change once
+// set.
+//
+// This route staying scoped to CASHIER/DELIVERY_PERSONNEL (the WHERE
+// below) and the router-wide requireRole('ADMIN') (staff.js:45 at the
+// top of this file) together are exactly what keeps this a *staff*
+// password reset and not a way for an admin to reach another admin's
+// account, or a non-admin to reach anyone's — LOGIN_SPLIT_PLAN.md Part B
+// step 1 calls out both properties by name as things to preserve, so
+// neither the query's role filter nor the router-level guard should move.
 router.patch('/:id', async (request, response) => {
   // Same reasoning as routes/customers.js — an id that can't be a valid
   // bigint gets the "not found" answer rather than crashing the query.
   const userId = parseId(request.params.id)
   if (!userId) return response.status(404).json({ message: 'Staff account not found.' })
 
+  // email/username are fetched alongside the role so a password reset can
+  // run validatePasswordField's "doesn't contain your username or email"
+  // check against the account being reset — the same rule creation uses —
+  // without a second round trip.
   const current = await pool.query(
-    `SELECT u.user_id, u.username, u.user_type FROM users u WHERE u.user_id = $1 AND u.user_type IN ('CASHIER', 'DELIVERY_PERSONNEL')`,
+    `SELECT u.user_id, u.username, u.user_type, COALESCE(ca.email, d.email) AS email
+     FROM users u
+     LEFT JOIN cashiers ca ON ca.user_id = u.user_id
+     LEFT JOIN delivery_personnel d ON d.user_id = u.user_id
+     WHERE u.user_id = $1 AND u.user_type IN ('CASHIER', 'DELIVERY_PERSONNEL')`,
     [userId],
   )
   const target = current.rows[0]
@@ -140,6 +157,21 @@ router.patch('/:id', async (request, response) => {
     if (typeof request.body.isActive !== 'boolean') errors.isActive = 'isActive must be true or false.'
     else updates.isActive = request.body.isActive
   }
+  // `'password' in request.body`, not a truthiness check — an empty string
+  // must still be validated (and rejected) rather than silently ignored
+  // like an omitted field would be (feedback_db_default_field_validation.md
+  // — this is the same "in, not has()" gotcha, applied to a field that
+  // isn't a DB-default column but is equally optional on this PATCH).
+  // Reuses the exact same rule account creation uses, checked against
+  // THIS account's own username/email — a reset password shouldn't be
+  // allowed to be weaker than, or contain, the identity of the account
+  // it's being set on.
+  if ('password' in request.body) {
+    const password = String(request.body.password ?? '')
+    const error = validatePasswordField(password, { username: target.username, email: updates.email ?? target.email })
+    if (error) errors.password = error
+    else updates.password = password
+  }
 
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
   if (Object.keys(updates).length === 0) return response.status(422).json({ message: 'Provide at least one field to update.' })
@@ -166,7 +198,21 @@ router.patch('/:id', async (request, response) => {
       `UPDATE ${table} SET name = COALESCE($1, name), email = COALESCE($2, email), contact_num = COALESCE($3, contact_num) WHERE user_id = $4`,
       [updates.name ?? null, updates.email ?? null, updates.contactNumber ?? null, userId],
     )
-    await client.query('UPDATE users SET is_active = COALESCE($1, is_active) WHERE user_id = $2', [updates.isActive ?? null, userId])
+    // Hashed here, inside the transaction, rather than up in the
+    // validation block above — bcrypt.hash costs ~250ms at bcryptRounds
+    // and there's no reason to pay it before the duplicate-email check
+    // above has had a chance to fail fast.
+    const passwordHash = updates.password !== undefined ? await bcrypt.hash(updates.password, bcryptRounds) : null
+    await client.query('UPDATE users SET is_active = COALESCE($1, is_active), password_hash = COALESCE($2, password_hash) WHERE user_id = $3', [updates.isActive ?? null, passwordHash, userId])
+
+    // LOGIN_SPLIT_PLAN.md Decision 5 — a reset ends ALL of this account's
+    // sessions, not "all but the caller's". auth.js's PATCH /password
+    // (line ~290) keeps the caller's own session because there the caller
+    // IS the account being changed; here the caller is the admin, not the
+    // cashier/driver whose password just changed, so there is no "except
+    // mine" session to spare. Skipped when no password field was sent, so
+    // a plain name/email/isActive edit doesn't sign anyone out.
+    if (updates.password !== undefined) await client.query('DELETE FROM sessions WHERE user_id = $1', [userId])
 
     await client.query('COMMIT')
   } catch (error) {

@@ -46,6 +46,16 @@ export function StaffManagement() {
   // Tracks which row's activate/deactivate request is in flight, so only
   // that row's button shows a disabled/pending state.
   const [togglingId, setTogglingId] = useState(null)
+  // LOGIN_SPLIT_PLAN.md Part B — admin password reset. Mirrors the
+  // editingId/editForm/editErrors/editSubmitting shape above rather than
+  // reusing it outright: a row being edited and a row having its password
+  // reset are different concerns (see staff.js's PATCH /:id comment — a
+  // password isn't a profile field), and this state disappears once the
+  // reset succeeds instead of staying around to redisplay saved values.
+  const [resettingId, setResettingId] = useState(null)
+  const [resetPassword, setResetPassword] = useState('')
+  const [resetErrors, setResetErrors] = useState({})
+  const [resetSubmitting, setResetSubmitting] = useState(false)
 
   // Update a single form field without losing the others.
   const updateField = (field, value) => setForm({ ...form, [field]: value })
@@ -92,6 +102,7 @@ export function StaffManagement() {
 
   // Switch a row into edit mode, seeded with its current values.
   const startEdit = (person) => {
+    setResettingId(null)
     setEditingId(person.id)
     setEditForm({ name: person.name, email: person.email, contactNumber: person.contactNumber })
     setEditErrors({})
@@ -119,6 +130,51 @@ export function StaffManagement() {
       setEditMessage(error.message)
     } finally {
       setEditSubmitting(false)
+    }
+  }
+
+  // Open the inline reset form for one row. Also backs out of an in-progress
+  // edit on the same or another row — the two inline forms sharing a row
+  // would be confusing, and nothing needs them open at once.
+  const startReset = (person) => {
+    setEditingId(null)
+    setResettingId(person.id)
+    setResetPassword('')
+    setResetErrors({})
+  }
+
+  const cancelReset = () => {
+    setResettingId(null)
+    setResetPassword('')
+    setResetErrors({})
+  }
+
+  // Reset the account's password. LOGIN_SPLIT_PLAN.md Decision 4: the admin
+  // TYPES the new password here rather than the server generating one — the
+  // input above is a plain password field, not a "Generate" button, on
+  // purpose. On success the server has already deleted every session on
+  // this account (Decision 5), so the confirmation has to say that plainly
+  // rather than just "Password updated" — otherwise an admin who doesn't
+  // already know that side effect has no way to learn it from this screen.
+  const submitReset = async (event, person) => {
+    event.preventDefault()
+    setResetSubmitting(true)
+    setResetErrors({})
+    try {
+      await apiPatch(`/api/staff/${person.id}`, { password: resetPassword })
+      setResettingId(null)
+      setResetPassword('')
+      setMessage(`${person.name}'s password has been reset. They have been signed out everywhere and must sign in again with the new password.`)
+      setMessageFailed(false)
+    } catch (error) {
+      // Left open on failure (unlike the success path above) so the admin
+      // can see the field error and correct it without re-opening the form
+      // and losing the context of which row it was for.
+      setResetErrors(error.errors ?? {})
+      setMessage(error.message)
+      setMessageFailed(true)
+    } finally {
+      setResetSubmitting(false)
     }
   }
 
@@ -243,12 +299,32 @@ export function StaffManagement() {
                       <Td>{person.email}</Td>
                       <Td><StatusBadge status={person.isActive ? 'ACTIVE' : 'INACTIVE'} /></Td>
                       <Td>
-                        <div className="flex gap-2">
-                          <Button type="button" size="sm" variant="secondary" onClick={() => startEdit(person)}>Edit</Button>
-                          <Button type="button" size="sm" variant={person.isActive ? 'destructive' : 'primary'} onClick={() => toggleActive(person)} disabled={togglingId === person.id}>
-                            {togglingId === person.id ? 'Working…' : person.isActive ? 'Deactivate' : 'Activate'}
-                          </Button>
-                        </div>
+                        {resettingId === person.id ? (
+                          // LOGIN_SPLIT_PLAN.md Part B — a small inline form,
+                          // not a modal or a separate page, matching the
+                          // weight of the row-level Edit form above. Only
+                          // one field: the admin types the new password
+                          // (Decision 4 — nothing here generates one).
+                          <form onSubmit={(event) => submitReset(event, person)} className="flex flex-col items-start gap-2">
+                            <div className="w-44">
+                              <Field label={`New password for ${person.name}`} error={resetErrors.password}>
+                                <Input type="password" value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} autoComplete="new-password" placeholder="New password" className="h-8 text-xs" />
+                              </Field>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button type="submit" size="sm" disabled={resetSubmitting}>{resetSubmitting ? 'Resetting…' : 'Save'}</Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={cancelReset}>Cancel</Button>
+                            </div>
+                          </form>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            <Button type="button" size="sm" variant="secondary" onClick={() => startEdit(person)}>Edit</Button>
+                            <Button type="button" size="sm" variant="secondary" onClick={() => startReset(person)}>Reset password</Button>
+                            <Button type="button" size="sm" variant={person.isActive ? 'destructive' : 'primary'} onClick={() => toggleActive(person)} disabled={togglingId === person.id}>
+                              {togglingId === person.id ? 'Working…' : person.isActive ? 'Deactivate' : 'Activate'}
+                            </Button>
+                          </div>
+                        )}
                       </Td>
                     </Tr>
                   ),

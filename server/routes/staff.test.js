@@ -149,6 +149,7 @@ describe('editing and deactivating a staff account', () => {
   let customerCookie
   let cashierId
   let secondCashierEmail
+  let secondRowUserId
   const createdUserIds = []
 
   const admin = { username: `editadmin_${runId}`, password: 'Admin-Only-Password-9!' }
@@ -189,7 +190,8 @@ describe('editing and deactivating a staff account', () => {
     const secondResponse = await fetch(`${baseUrl}/api/staff`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ ...secondCashier, confirmPassword: secondCashier.password }) })
     assert.equal(secondResponse.status, 201)
     const secondRow = await pool.query('SELECT user_id FROM users WHERE username = $1', [secondCashier.username])
-    createdUserIds.push(secondRow.rows[0].user_id)
+    secondRowUserId = secondRow.rows[0].user_id
+    createdUserIds.push(secondRowUserId)
     secondCashierEmail = secondCashier.email
   })
 
@@ -249,6 +251,67 @@ describe('editing and deactivating a staff account', () => {
     const listed = listBody.staff.find((entry) => entry.id === cashierId)
     assert.equal(listed.name, 'Renamed Cashier')
     assert.equal(listed.username, cashier.username, 'username must be unchanged — editing does not touch it')
+  })
+
+  // LOGIN_SPLIT_PLAN.md Part B — admin password reset. Uses secondCashier
+  // (rather than the already-renamed `cashier`/cashierId above) so these
+  // cases don't depend on test execution order relative to the rename test.
+  test('PATCH /api/staff/:id resets a password: the new password works at /api/auth/login and the old one is refused', async () => {
+    const newPassword = 'Reset-By-Admin-9!'
+    const resetResponse = await fetch(`${baseUrl}/api/staff/${secondRowUserId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
+      body: JSON.stringify({ password: newPassword }),
+    })
+    assert.equal(resetResponse.status, 200)
+
+    const newLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: secondCashier.username, password: newPassword }) })
+    assert.equal(newLogin.status, 200)
+
+    const oldLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: secondCashier.username, password: secondCashier.password }) })
+    assert.equal(oldLogin.status, 401)
+  })
+
+  test('PATCH /api/staff/:id rejects a weak password with 422 and changes nothing — the old password still works', async () => {
+    // A fresh login here (rather than reusing the previous test's new
+    // password) keeps this test independent of the previous one's outcome.
+    const currentPassword = 'Reset-By-Admin-9!'
+    const response = await fetch(`${baseUrl}/api/staff/${secondRowUserId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
+      body: JSON.stringify({ password: 'short' }),
+    })
+    assert.equal(response.status, 422)
+    const body = await response.json()
+    assert.ok(body.errors.password)
+
+    // Prove the rejected attempt didn't touch the password: the password
+    // set by the PRIOR (successful) reset test still works.
+    const stillWorks = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: secondCashier.username, password: currentPassword }) })
+    assert.equal(stillWorks.status, 200)
+  })
+
+  test('PATCH /api/staff/:id resetting a password ends that account\'s existing sessions', async () => {
+    // Log the target account in first, so it has a live session to lose.
+    const loginResponse = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: secondCashier.username, password: 'Reset-By-Admin-9!' }) })
+    assert.equal(loginResponse.status, 200)
+    const targetCookie = loginResponse.headers.get('set-cookie').split(';')[0]
+
+    const meBeforeReset = await fetch(`${baseUrl}/api/auth/me`, { headers: { Cookie: targetCookie } })
+    assert.equal(meBeforeReset.status, 200)
+
+    const resetResponse = await fetch(`${baseUrl}/api/staff/${secondRowUserId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
+      body: JSON.stringify({ password: 'Another-New-Password-9!' }),
+    })
+    assert.equal(resetResponse.status, 200)
+
+    // Decision 5: ALL sessions end, including this one the account was
+    // actively using — there is no "except mine" clause for an admin
+    // resetting someone else's password.
+    const meAfterReset = await fetch(`${baseUrl}/api/auth/me`, { headers: { Cookie: targetCookie } })
+    assert.equal(meAfterReset.status, 401)
   })
 
   test('PATCH /api/staff/:id deactivating an account blocks its next login, and reactivating restores it', async () => {
