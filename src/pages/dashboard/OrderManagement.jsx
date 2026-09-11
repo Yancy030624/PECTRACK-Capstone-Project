@@ -122,9 +122,17 @@ function StaffOrderManagement({ user }) {
         </div>
       )}
 
+      {/* The Cards below carry min-w-0 on purpose. minmax(0, …) only zeroes
+          the column minimum at lg and up; below that, the implicit single
+          column gives each grid item min-width:auto, so a Card holding a
+          table refuses to shrink narrower than the table's content and the
+          table's own overflow-x-auto never gets to scroll — the PAGE grows
+          sideways instead. Measured: 159px of horizontal page overflow at a
+          320px viewport (WCAG 1.4.10 reflow), gone with min-w-0. The
+          horizontal twin of the min-h-0 fix in Dashboard.jsx's shell. */}
       <div hidden={activeTab !== 'Orders'} className="mt-7 grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
         {/* Order list */}
-        <Card className="p-6">
+        <Card className="min-w-0 p-6">
           <h2 className="text-lg font-semibold text-ink-900">All orders</h2>
           {loading ? (
             <p className="mt-4 text-sm text-ink-500">Loading…</p>
@@ -178,7 +186,7 @@ function StaffOrderManagement({ user }) {
         </Card>
 
         {/* Selected order detail */}
-        <Card className="p-6">
+        <Card className="min-w-0 p-6">
           <h2 className="text-lg font-semibold text-ink-900">Order detail</h2>
           {!selectedOrderId ? (
             <p className="mt-4 text-sm text-ink-500">Select an order to view its details.</p>
@@ -323,7 +331,7 @@ function CustomerOrders({ user }) {
       )}
 
       <div className="mt-7 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-        <Card className="p-6">
+        <Card className="min-w-0 p-6">
           <h2 className="text-lg font-semibold text-ink-900">Your orders</h2>
           {loading ? (
             <p className="mt-4 text-sm text-ink-500">Loading…</p>
@@ -370,7 +378,7 @@ function CustomerOrders({ user }) {
         </Card>
 
         {/* Selected order detail */}
-        <Card className="p-6">
+        <Card className="min-w-0 p-6">
           <h2 className="text-lg font-semibold text-ink-900">Order detail</h2>
           {!selectedOrderId ? (
             <p className="mt-4 text-sm text-ink-500">Select an order to see its items and status.</p>

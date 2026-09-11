@@ -142,7 +142,10 @@ export function PaymentBilling({ user }) {
 
       {activeTab === 'billing' && (
         <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-          <Card className="p-6">
+          {/* min-w-0 on both Cards is load-bearing — see the matching comment
+              on OrderManagement.jsx's grid for the full reasoning. Without it
+              this page overflowed sideways by 159px at a 320px viewport. */}
+          <Card className="min-w-0 p-6">
             <h2 className="text-lg font-semibold text-ink-900">{isStaff ? 'All orders' : 'Your orders'}</h2>
             {loading ? (
               <p className="mt-4 text-sm text-ink-500">Loading…</p>
@@ -202,7 +205,7 @@ export function PaymentBilling({ user }) {
             )}
           </Card>
 
-          <Card className="p-6">
+          <Card className="min-w-0 p-6">
             <h2 className="text-lg font-semibold text-ink-900">Receipt</h2>
             {!selectedOrderId ? (
               <p className="mt-4 text-sm text-ink-500">Select an order to view its receipt.</p>
