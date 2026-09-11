@@ -302,9 +302,34 @@ describe('editing stock directly', () => {
     assert.equal(latest.rows[0].reason, 'SPOILAGE')
   })
 
+  // migration 008 (RULES-PLANS/INVENTORY_REVIEW.md) — an admin's direct edit
+  // can now name WHICH kind of loss this was, not just SPOILAGE for
+  // everything. Stock is 30 going in from the previous test.
+  test('an admin direct edit accepts the three loss-specific reasons and records each correctly', async () => {
+    const cases = [
+      { reason: 'PRODUCTION_LOSS', from: 30, to: 26 },
+      { reason: 'EXPIRED', from: 26, to: 23 },
+      { reason: 'DAMAGED', from: 23, to: 21 },
+    ]
+    for (const { reason, from, to } of cases) {
+      const response = await fetch(`${baseUrl}/api/inventory/${productId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
+        body: JSON.stringify({ stockQuantity: to, reason }),
+      })
+      assert.equal(response.status, 200, reason)
+      assert.equal((await response.json()).item.stockQuantity, to, reason)
+
+      const latest = await pool.query('SELECT quantity_change, reason FROM inventory_movements WHERE inventory_id = $1 ORDER BY movement_id DESC LIMIT 1', [inventoryId])
+      assert.equal(latest.rows[0].quantity_change, to - from, reason)
+      assert.equal(latest.rows[0].reason, reason)
+    }
+  })
+
   // syncStockAlert itself is unit-tested thoroughly in lib/inventory.test.js
-  // — this just confirms it's actually WIRED IN to this route (min level 5,
-  // stock is 30 going in from the previous test).
+  // — this just confirms it's actually WIRED IN to this route (min level 5;
+  // whatever stock is going in, this PATCH sets it ABSOLUTELY to 5, so the
+  // prior test's ending figure doesn't matter here).
   test('dropping stock to the minimum opens an alert; restoring it resolves the alert', async () => {
     const dropResponse = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ stockQuantity: 5, reason: 'SPOILAGE' }) })
     assert.equal(dropResponse.status, 200)
@@ -752,5 +777,223 @@ describe('cashier proposes, admin approves (Phase 5, Step 6)', () => {
     const row = await pool.query('SELECT stock_quantity, min_stock_level FROM inventory WHERE product_id = $1', [productId])
     assert.equal(row.rows[0].stock_quantity, 12, 'stock must be untouched — only minStockLevel was proposed')
     assert.equal(row.rows[0].min_stock_level, 8)
+  })
+})
+
+// migration 008 (RULES-PLANS/INVENTORY_REVIEW.md) — a cashier's LOSS REPORT,
+// the second shape POST /api/inventory/requests now accepts alongside the
+// original recount. Same cashier-proposes/admin-approves workflow as the
+// describe block above; a separate block because the setup below wants its
+// own product at a known starting stock rather than sharing one already
+// being driven through recount scenarios.
+describe('cashier reports a loss (migration 008)', () => {
+  let server
+  let baseUrl
+  let adminCookie
+  let cashierCookie
+  let categoryId
+  let productId
+  let inventoryId
+  const createdUserIds = []
+  const createdProductIds = []
+
+  const admin = { username: `invloss_admin_${runId}`, password: 'Admin-Only-Password-9!' }
+  const cashier = { role: 'CASHIER', name: 'Loss Report Cashier', username: `invloss_cash_${runId}`, email: `invloss_cash_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
+
+  before(async () => {
+    server = app.listen(0)
+    await new Promise((resolve) => server.once('listening', resolve))
+    baseUrl = `http://localhost:${server.address().port}`
+
+    const adminPasswordHash = await bcrypt.hash(admin.password, 4)
+    const adminResult = await pool.query(`INSERT INTO users (username, password_hash, user_type) VALUES ($1, $2, 'ADMIN') RETURNING user_id`, [admin.username, adminPasswordHash])
+    createdUserIds.push(adminResult.rows[0].user_id)
+    await pool.query('INSERT INTO admins (user_id, name, contact_num, email) VALUES ($1, $2, $3, $4)', [adminResult.rows[0].user_id, 'Loss Report Admin', randomContactNumber(), `invloss_admin_${runId}@example.com`])
+    await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: admin.username, password: admin.password }) })
+    const rawCode = '667788'
+    const challengeToken = `test-challenge-${crypto.randomUUID()}`
+    await pool.query(`INSERT INTO otp_codes (user_id, code_hash, challenge_token, expires_at) VALUES ($1, $2, $3, CURRENT_TIMESTAMP + INTERVAL '5 minutes')`, [adminResult.rows[0].user_id, crypto.createHash('sha256').update(rawCode).digest('hex'), challengeToken])
+    const otpResponse = await fetch(`${baseUrl}/api/auth/verify-otp`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challengeToken, code: rawCode }) })
+    adminCookie = otpResponse.headers.get('set-cookie').split(';')[0]
+
+    const cashierCreate = await fetch(`${baseUrl}/api/staff`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ ...cashier, confirmPassword: cashier.password }) })
+    assert.equal(cashierCreate.status, 201)
+    const cashierRow = await pool.query('SELECT user_id FROM users WHERE username = $1', [cashier.username])
+    createdUserIds.push(cashierRow.rows[0].user_id)
+    const cashierLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: cashier.username, password: cashier.password }) })
+    cashierCookie = cashierLogin.headers.get('set-cookie').split(';')[0]
+
+    // No customer account here, unlike the describe block above — the role
+    // guard on this route runs before any shape-specific validation, so
+    // "a customer is refused" is already fully covered by the recount
+    // shape's own test; re-proving it for the loss shape would exercise
+    // the exact same requireRole('CASHIER') line a second time.
+    const categoryResult = await pool.query('INSERT INTO categories (category_name) VALUES ($1) RETURNING category_id', [`Loss Report Category ${runId}`])
+    categoryId = categoryResult.rows[0].category_id
+
+    const productResponse = await fetch(`${baseUrl}/api/products`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ categoryId, name: `Loss Report Loaf ${runId}`, price: 45 }) })
+    productId = (await productResponse.json()).product.id
+    createdProductIds.push(productId)
+    await pool.query('UPDATE inventory SET stock_quantity = 24, min_stock_level = 5 WHERE product_id = $1', [productId])
+    inventoryId = (await pool.query('SELECT inventory_id FROM inventory WHERE product_id = $1', [productId])).rows[0].inventory_id
+  })
+
+  after(async () => {
+    await pool.query('DELETE FROM stock_alerts WHERE inventory_id = $1', [inventoryId]).catch(() => {})
+    await pool.query('DELETE FROM inventory_movements WHERE inventory_id = $1', [inventoryId]).catch(() => {})
+    await pool.query('DELETE FROM inventory_change_requests WHERE product_id = ANY($1)', [createdProductIds]).catch(() => {})
+    for (const id of createdProductIds) {
+      await pool.query('DELETE FROM order_details WHERE product_id = $1', [id]).catch(() => {})
+      await pool.query('DELETE FROM inventory WHERE product_id = $1', [id]).catch(() => {})
+      await pool.query('DELETE FROM products WHERE product_id = $1', [id]).catch(() => {})
+    }
+    await pool.query('DELETE FROM categories WHERE category_id = $1', [categoryId]).catch(() => {})
+    await pool.query('DELETE FROM cashiers WHERE user_id = ANY($1)', [createdUserIds])
+    await pool.query('DELETE FROM admins WHERE user_id = ANY($1)', [createdUserIds])
+    await pool.query('DELETE FROM users WHERE user_id = ANY($1)', [createdUserIds])
+    await new Promise((resolve) => server.close(resolve))
+  })
+
+  test('POST /api/inventory/requests rejects an invalid movementReason', async () => {
+    const response = await fetch(`${baseUrl}/api/inventory/requests`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ productId, movementReason: 'BECAUSE_I_FELT_LIKE_IT', quantityLost: 10, reason: 'x' }) })
+    assert.equal(response.status, 422)
+    assert.ok((await response.json()).errors.movementReason)
+  })
+
+  // RESTOCK and CORRECTION exist on the full enum but are deliberately
+  // excluded from lossReportReasons — RESTOCK adds stock rather than
+  // losing it, and CORRECTION is what the existing recount shape already
+  // covers for an unexplained (possibly positive) discrepancy.
+  test('POST /api/inventory/requests rejects RESTOCK and CORRECTION as a loss reason, even though both are valid stock_movement_reason values', async () => {
+    for (const movementReason of ['RESTOCK', 'CORRECTION']) {
+      const response = await fetch(`${baseUrl}/api/inventory/requests`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ productId, movementReason, quantityLost: 10, reason: 'x' }) })
+      assert.equal(response.status, 422, movementReason)
+    }
+  })
+
+  test('POST /api/inventory/requests rejects a zero, negative, or non-integer quantityLost', async () => {
+    for (const quantityLost of [0, -5, 2.5]) {
+      const response = await fetch(`${baseUrl}/api/inventory/requests`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ productId, movementReason: 'PRODUCTION_LOSS', quantityLost, reason: 'x' }) })
+      assert.equal(response.status, 422, String(quantityLost))
+      assert.ok((await response.json()).errors.quantityLost, String(quantityLost))
+    }
+  })
+
+  // The two request shapes are mutually exclusive — INVENTORY_REVIEW.md
+  // Section 2b. Sending both leaves approval with two conflicting
+  // instructions for the same stock_quantity, so it's refused up front
+  // rather than silently picking one.
+  test('POST /api/inventory/requests rejects a loss report that also proposes a recount', async () => {
+    const response = await fetch(`${baseUrl}/api/inventory/requests`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ productId, movementReason: 'PRODUCTION_LOSS', quantityLost: 10, proposedStockQuantity: 14, reason: 'x' }) })
+    assert.equal(response.status, 422)
+    assert.ok((await response.json()).errors.movementReason)
+  })
+
+  test('a valid loss report is created PENDING, with quantityChange stored negative and no proposed recount fields', async () => {
+    const response = await fetch(`${baseUrl}/api/inventory/requests`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ productId, movementReason: 'PRODUCTION_LOSS', quantityLost: 10, reason: 'Burned in the oven' }) })
+    assert.equal(response.status, 201)
+    const body = await response.json()
+    assert.equal(body.request.status, 'PENDING')
+    assert.equal(body.request.movementReason, 'PRODUCTION_LOSS')
+    assert.equal(body.request.quantityChange, -10, 'stored negative — the sign the ledger will apply, not the positive number the cashier typed')
+    assert.equal(body.request.proposedStockQuantity, null)
+    assert.equal(body.request.proposedMinStockLevel, null)
+    assert.equal(body.request.observedStockQuantity, 24, 'still captured for a loss report, even though approval does not need it for the arithmetic')
+
+    await fetch(`${baseUrl}/api/inventory/requests/${body.request.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'REJECTED' }) })
+  })
+
+  // The scenario the adviser actually asked about: 10 breads burned during
+  // production (RULES-PLANS/INVENTORY_REVIEW.md, edge case A). Approval
+  // must write PRODUCTION_LOSS to the ledger, not CORRECTION — this is the
+  // entire reason migration 008 exists.
+  test('approving a PRODUCTION_LOSS report deducts the reported quantity and the movement records PRODUCTION_LOSS, not CORRECTION', async () => {
+    await pool.query('UPDATE inventory SET stock_quantity = 24 WHERE product_id = $1', [productId])
+
+    const created = await fetch(`${baseUrl}/api/inventory/requests`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ productId, movementReason: 'PRODUCTION_LOSS', quantityLost: 10, reason: '10 breads burned during production' }) })
+    const requestId = (await created.json()).request.id
+
+    const response = await fetch(`${baseUrl}/api/inventory/requests/${requestId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'APPROVED' }) })
+    assert.equal(response.status, 200)
+
+    const stock = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [productId])
+    assert.equal(stock.rows[0].stock_quantity, 14, '24 - 10')
+
+    const movement = await pool.query('SELECT quantity_change, reason, request_id FROM inventory_movements WHERE request_id = $1', [requestId])
+    assert.equal(movement.rows.length, 1)
+    assert.equal(movement.rows[0].quantity_change, -10)
+    assert.equal(movement.rows[0].reason, 'PRODUCTION_LOSS', 'must NOT be flattened to CORRECTION — that was the entire bug this migration fixes')
+  })
+
+  // Proves a loss report needs no observed baseline: unlike a recount, it
+  // applies to whatever stock genuinely IS at approval time, exactly like
+  // routes/orders.js's own relative deduction — the review's edge case E.
+  // Stock moves BETWEEN proposing and approving via a real order-shaped
+  // update; the loss delta is unaffected by that movement, because it was
+  // never computed from the stock figure in the first place.
+  test('approving applies the loss to CURRENT stock even when stock moved since the proposal — no observed-delta correction', async () => {
+    await pool.query('UPDATE inventory SET stock_quantity = 14 WHERE product_id = $1', [productId])
+
+    // Cashier reports 5 expired.
+    const created = await fetch(`${baseUrl}/api/inventory/requests`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ productId, movementReason: 'EXPIRED', quantityLost: 5, reason: 'Five units past shelf life' }) })
+    const requestId = (await created.json()).request.id
+
+    // Before review, 3 more sell through a real order.
+    await pool.query('UPDATE inventory SET stock_quantity = stock_quantity - 3 WHERE product_id = $1', [productId])
+    const midway = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [productId])
+    assert.equal(midway.rows[0].stock_quantity, 11)
+
+    // Approving must land on 11 - 5 = 6 — the sale and the loss are two
+    // independent reductions, both of which must apply in full.
+    const response = await fetch(`${baseUrl}/api/inventory/requests/${requestId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'APPROVED' }) })
+    assert.equal(response.status, 200)
+
+    const stock = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [productId])
+    assert.equal(stock.rows[0].stock_quantity, 6, 'must apply -5 to the post-sale 11, not a delta computed against the stale 14')
+
+    const movement = await pool.query('SELECT quantity_change, reason FROM inventory_movements WHERE request_id = $1', [requestId])
+    assert.equal(movement.rows[0].quantity_change, -5)
+    assert.equal(movement.rows[0].reason, 'EXPIRED')
+  })
+
+  // Mirrors the recount path's own "approving is refused with 409 if it
+  // would drive stock negative" test — the same guard, reused for the
+  // loss branch.
+  test('approving a loss report is refused with 409 if it would drive stock negative, and nothing is applied', async () => {
+    await pool.query('UPDATE inventory SET stock_quantity = 6 WHERE product_id = $1', [productId])
+
+    // Cashier reports 10 damaged, more than remains.
+    const created = await fetch(`${baseUrl}/api/inventory/requests`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ productId, movementReason: 'DAMAGED', quantityLost: 10, reason: 'Crate dropped in the stockroom' }) })
+    const requestId = (await created.json()).request.id
+
+    const response = await fetch(`${baseUrl}/api/inventory/requests/${requestId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'APPROVED' }) })
+    assert.equal(response.status, 409)
+
+    const stock = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [productId])
+    assert.equal(stock.rows[0].stock_quantity, 6, 'stock must be unchanged after a refused approval')
+
+    const stillPending = await pool.query('SELECT status FROM inventory_change_requests WHERE request_id = $1', [requestId])
+    assert.equal(stillPending.rows[0].status, 'PENDING', 'a refused approval must leave the request open for a real decision')
+
+    const movements = await pool.query('SELECT 1 FROM inventory_movements WHERE request_id = $1', [requestId])
+    assert.equal(movements.rows.length, 0, 'a refused approval must not write a movement row')
+
+    await fetch(`${baseUrl}/api/inventory/requests/${requestId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'REJECTED' }) })
+  })
+
+  test('rejecting a loss report changes nothing about stock', async () => {
+    await pool.query('UPDATE inventory SET stock_quantity = 6 WHERE product_id = $1', [productId])
+
+    const created = await fetch(`${baseUrl}/api/inventory/requests`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ productId, movementReason: 'SPOILAGE', quantityLost: 2, reason: 'Looked off, discarded' }) })
+    const requestId = (await created.json()).request.id
+
+    const response = await fetch(`${baseUrl}/api/inventory/requests/${requestId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'REJECTED', reviewerNote: 'Check with the supplier first' }) })
+    assert.equal(response.status, 200)
+
+    const stock = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [productId])
+    assert.equal(stock.rows[0].stock_quantity, 6, 'a rejected loss report must not touch stock at all')
+
+    const movements = await pool.query('SELECT 1 FROM inventory_movements WHERE request_id = $1', [requestId])
+    assert.equal(movements.rows.length, 0, 'a rejected loss report must not write a movement row')
   })
 })

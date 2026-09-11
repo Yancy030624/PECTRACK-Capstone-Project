@@ -25,7 +25,22 @@ const router = express.Router()
 // than the full stock_movement_reason enum: ORDER_PLACED and
 // ORDER_CANCELLED are written by the system itself when an order moves
 // (Steps 3–4), never chosen by a person filling in a form here.
-const manualMovementReasons = new Set(['RESTOCK', 'SPOILAGE', 'CORRECTION'])
+//
+// PRODUCTION_LOSS/EXPIRED/DAMAGED (migration 008 — INVENTORY_REVIEW.md)
+// widen this beyond Phase 5's original RESTOCK/SPOILAGE/CORRECTION so an
+// admin recording a loss directly can say WHICH kind it was, the same
+// distinction a cashier's loss report below now makes. Before this, every
+// loss — burned, expired, or genuinely spoiled — had to be filed as
+// SPOILAGE, so analytics could never separate a production accident from
+// ordinary overproduction.
+const manualMovementReasons = new Set(['RESTOCK', 'SPOILAGE', 'CORRECTION', 'PRODUCTION_LOSS', 'EXPIRED', 'DAMAGED'])
+// The reasons a CASHIER may pick for a loss report (POST /requests below).
+// Narrower than manualMovementReasons: RESTOCK and CORRECTION make no
+// sense as a "loss" (a correction might not even be a loss — it can go
+// either direction), so they stay reachable only through the admin's
+// direct edit or the cashier's existing recount shape, never through this
+// list.
+const lossReportReasons = new Set(['PRODUCTION_LOSS', 'EXPIRED', 'DAMAGED', 'SPOILAGE'])
 const requestDecisions = new Set(['APPROVED', 'REJECTED'])
 const requestReasonMaxLength = 500
 // Describes whatever pending request is blocking this product, or null if
@@ -86,6 +101,11 @@ const mapChangeRequestRow = (row) => ({
   observedStockQuantity: row.observed_stock_quantity,
   proposedStockQuantity: row.proposed_stock_quantity,
   proposedMinStockLevel: row.proposed_min_stock_level,
+  // Present only on a loss report (migration 008) — null on an ordinary
+  // recount, which is how the frontend tells the two shapes apart without
+  // a separate "type" field.
+  movementReason: row.movement_reason,
+  quantityChange: row.quantity_change,
   reason: row.reason,
   status: row.status,
   reviewedByName: row.reviewed_by_name,
@@ -96,6 +116,7 @@ const mapChangeRequestRow = (row) => ({
 
 const changeRequestSelectQuery = `SELECT r.request_id, r.product_id, p.product_name, r.requested_by, rc.name AS requested_by_name,
             r.observed_stock_quantity, r.proposed_stock_quantity, r.proposed_min_stock_level,
+            r.movement_reason, r.quantity_change,
             r.reason, r.status, r.reviewed_by, ra.name AS reviewed_by_name, r.reviewed_at, r.reviewer_note, r.created_at
      FROM inventory_change_requests r
      JOIN products p ON p.product_id = r.product_id
@@ -159,9 +180,43 @@ router.post('/requests', requireRole('CASHIER'), async (request, response) => {
     if (!Number.isInteger(proposedMinStockLevel) || proposedMinStockLevel < 0) errors.proposedMinStockLevel = 'Enter a whole number, zero or greater.'
     else values.proposedMinStockLevel = proposedMinStockLevel
   }
-  // Mirrors the table's own CHECK constraint for an INVENTORY request:
-  // at least one of the two proposed fields must be present.
-  if (values.proposedStockQuantity === undefined && values.proposedMinStockLevel === undefined) {
+
+  // A LOSS REPORT is a second, mutually exclusive shape this same route
+  // accepts (migration 008 — INVENTORY_REVIEW.md Section 2b). A recount
+  // disputes the count itself ("stock should read 20"); a loss reports a
+  // known quantity leaving a shelf that was otherwise correct ("10 fewer,
+  // because it burned"). Presence of movementReason is what selects this
+  // shape — the same "detect by which optional field showed up" pattern
+  // every other field on this route already uses, rather than a separate
+  // mode flag.
+  //
+  // It needs no observed baseline the way a recount does: see the
+  // approval route below for why a recount's arithmetic depends on what
+  // stock WAS when proposed, and why a loss report's does not.
+  const isLossReport = request.body.movementReason != null
+  let movementReason = null
+  let quantityChange = null
+  if (isLossReport) {
+    movementReason = normalize(request.body.movementReason).toUpperCase()
+    if (!lossReportReasons.has(movementReason)) errors.movementReason = 'Select why stock was lost: production loss, expired, damaged, or spoilage.'
+
+    const quantityLost = Number(request.body.quantityLost)
+    if (!Number.isInteger(quantityLost) || quantityLost <= 0) errors.quantityLost = 'Enter a whole number greater than zero.'
+    // Stored negative, matching inventory_movements.quantity_change's own
+    // signed convention — a loss report can only remove stock, so the
+    // sign is never ambiguous the way it is for CORRECTION.
+    else quantityChange = -quantityLost
+
+    // The two shapes are never mixed on one row. This route is the only
+    // code path that writes this table, so enforcing it here is
+    // sufficient — there is no concurrent writer that could race past it.
+    if (values.proposedStockQuantity !== undefined || values.proposedMinStockLevel !== undefined) {
+      errors.movementReason = 'A loss report cannot also propose a recount. Submit them separately.'
+    }
+  } else if (values.proposedStockQuantity === undefined && values.proposedMinStockLevel === undefined) {
+    // Mirrors the table's own CHECK constraint for a recount-shaped
+    // INVENTORY request: at least one of the two proposed fields must be
+    // present.
     errors.proposedStockQuantity = 'Propose a new stock quantity, a new minimum level, or both.'
   }
 
@@ -212,10 +267,10 @@ router.post('/requests', requireRole('CASHIER'), async (request, response) => {
   let created
   try {
     created = await pool.query(
-      `INSERT INTO inventory_change_requests (product_id, requested_by, request_type, observed_stock_quantity, proposed_stock_quantity, proposed_min_stock_level, reason)
-       VALUES ($1, $2, 'INVENTORY', $3, $4, $5, $6)
+      `INSERT INTO inventory_change_requests (product_id, requested_by, request_type, observed_stock_quantity, proposed_stock_quantity, proposed_min_stock_level, movement_reason, quantity_change, reason)
+       VALUES ($1, $2, 'INVENTORY', $3, $4, $5, $6, $7, $8)
        RETURNING request_id`,
-      [productId, cashierId, inventoryRow.stock_quantity, values.proposedStockQuantity ?? null, values.proposedMinStockLevel ?? null, reason],
+      [productId, cashierId, inventoryRow.stock_quantity, values.proposedStockQuantity ?? null, values.proposedMinStockLevel ?? null, movementReason, quantityChange, reason],
     )
   } catch (error) {
     // 23505 on the one-pending-per-product index means another submission
@@ -267,7 +322,7 @@ router.patch('/requests/:requestId', requireRole('ADMIN'), async (request, respo
       `UPDATE inventory_change_requests
        SET status = $1, reviewed_by = $2, reviewed_at = CURRENT_TIMESTAMP, reviewer_note = $3
        WHERE request_id = $4 AND status = 'PENDING'
-       RETURNING product_id, observed_stock_quantity, proposed_stock_quantity, proposed_min_stock_level, reason`,
+       RETURNING product_id, observed_stock_quantity, proposed_stock_quantity, proposed_min_stock_level, movement_reason, quantity_change, reason`,
       [decision, adminId, reviewerNote, requestId],
     )
     if (reviewed.rowCount === 0) {
@@ -299,7 +354,29 @@ router.patch('/requests/:requestId', requireRole('ADMIN'), async (request, respo
       const inventoryRow = inventoryResult.rows[0]
 
       let newStockQuantity = inventoryRow.stock_quantity
-      if (changeRequest.proposed_stock_quantity != null) {
+      // Which reason the movement row gets. Stays 'CORRECTION' for a
+      // recount — unchanged from before migration 008 — and is only ever
+      // overwritten in the loss-report branch just below.
+      let ledgerReason = 'CORRECTION'
+      if (changeRequest.quantity_change != null) {
+        // A LOSS REPORT (migration 008). quantity_change already IS the
+        // reported delta (always negative — see POST /requests above), so
+        // it applies directly to CURRENT stock, the same way
+        // routes/orders.js's relative deduction does — no observed
+        // baseline is needed here, because a loss report never disputed
+        // what stock WAS, only how much of it left. That is the entire
+        // reason this branch is simpler than the recount branch below it,
+        // not a shortcut taken for convenience: there is nothing for
+        // observed-delta arithmetic to correct for when the proposal was
+        // never an absolute count in the first place.
+        newStockQuantity = inventoryRow.stock_quantity + changeRequest.quantity_change
+        ledgerReason = changeRequest.movement_reason
+
+        if (newStockQuantity < 0) {
+          await client.query('ROLLBACK')
+          return response.status(409).json({ message: 'Approving this would drive stock negative — more has already sold than remains to report as lost. Reject it and ask for a fresh count instead.' })
+        }
+      } else if (changeRequest.proposed_stock_quantity != null) {
         // THE OBSERVED-DELTA CALCULATION — PHASE5_PLAN.md, Decision 2.
         // observed_stock_quantity is what stock WAS when the cashier
         // proposed this; inventoryRow.stock_quantity is what it IS right
@@ -334,15 +411,19 @@ router.patch('/requests/:requestId', requireRole('ADMIN'), async (request, respo
       )
 
       if (newStockQuantity !== inventoryRow.stock_quantity) {
-        // CORRECTION, not RESTOCK/SPOILAGE — this movement originates
-        // from a cashier's physical recount being confirmed by an admin,
-        // which is exactly what CORRECTION means. request_id (not
-        // order_id) is what this movement's cause is; changed_by is the
-        // APPROVING ADMIN's user_id, since they're the one who actually
-        // authorized the stock change, even though a cashier proposed it.
+        // ledgerReason is 'CORRECTION' for a recount — this movement
+        // originates from a cashier's physical recount being confirmed by
+        // an admin, exactly what CORRECTION means — or the cashier's own
+        // structured reason (PRODUCTION_LOSS/EXPIRED/DAMAGED/SPOILAGE) for
+        // a loss report, copied through rather than flattened to
+        // CORRECTION the way every approval did before migration 008.
+        // request_id (not order_id) is what this movement's cause is;
+        // changed_by is the APPROVING ADMIN's user_id, since they're the
+        // one who actually authorized the stock change, even though a
+        // cashier proposed it.
         await client.query(
           'INSERT INTO inventory_movements (inventory_id, request_id, changed_by, quantity_change, reason, note) VALUES ($1, $2, $3, $4, $5, $6)',
-          [inventoryRow.inventory_id, requestId, request.user.id, newStockQuantity - inventoryRow.stock_quantity, 'CORRECTION', changeRequest.reason],
+          [inventoryRow.inventory_id, requestId, request.user.id, newStockQuantity - inventoryRow.stock_quantity, ledgerReason, changeRequest.reason],
         )
       }
 
@@ -407,7 +488,7 @@ router.patch('/:productId', requireRole('ADMIN'), async (request, response) => {
   let reason = null
   if ('stockQuantity' in values) {
     reason = normalize(request.body.reason).toUpperCase()
-    if (!manualMovementReasons.has(reason)) errors.reason = 'Select why stock is changing: restock, spoilage, or correction.'
+    if (!manualMovementReasons.has(reason)) errors.reason = 'Select why stock is changing: restock, spoilage, correction, production loss, expired, or damaged.'
   }
 
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })

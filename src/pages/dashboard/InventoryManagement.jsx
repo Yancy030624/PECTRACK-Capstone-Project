@@ -12,8 +12,19 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { InventoryRequests } from './InventoryRequests.jsx'
 
 const emptyEditForm = { stockQuantity: '', minStockLevel: '', expirationDate: '', reason: '', note: '' }
+// PRODUCTION_LOSS/EXPIRED/DAMAGED added by migration 008
+// (RULES-PLANS/INVENTORY_REVIEW.md) — matches server/routes/inventory.js's
+// widened manualMovementReasons exactly. Before this, every one of these
+// had to be filed as SPOILAGE, the only "something went wrong" option
+// available, which is why an admin editing stock directly could never say
+// whether a loss was a burned batch, an expired one, or genuine spoilage —
+// three situations with three different remedies (Section 8 of that
+// review).
 const reasonOptions = [
   { value: 'RESTOCK', label: 'Restock (delivery received)' },
+  { value: 'PRODUCTION_LOSS', label: 'Production loss (burned, defective)' },
+  { value: 'EXPIRED', label: 'Expired (past shelf life)' },
+  { value: 'DAMAGED', label: 'Damaged (handling or storage)' },
   { value: 'SPOILAGE', label: 'Spoilage / waste' },
   { value: 'CORRECTION', label: 'Correction (recount)' },
 ]

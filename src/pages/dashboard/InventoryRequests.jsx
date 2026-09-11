@@ -9,7 +9,18 @@ import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 
-const emptyProposeForm = { productId: '', proposedStockQuantity: '', proposedMinStockLevel: '', reason: '' }
+const emptyProposeForm = { productId: '', proposedStockQuantity: '', proposedMinStockLevel: '', movementReason: '', quantityLost: '', reason: '' }
+// The reasons selectable for a LOSS report — narrower than
+// InventoryManagement.jsx's admin reasonOptions, matching the backend's
+// own lossReportReasons Set exactly (RESTOCK and CORRECTION are excluded
+// on purpose: see server/routes/inventory.js for why).
+const lossReasonOptions = [
+  { value: 'PRODUCTION_LOSS', label: 'Production loss (burned, defective)' },
+  { value: 'EXPIRED', label: 'Expired (past shelf life)' },
+  { value: 'DAMAGED', label: 'Damaged (handling or storage)' },
+  { value: 'SPOILAGE', label: 'Spoilage / waste' },
+]
+const lossReasonLabels = Object.fromEntries(lossReasonOptions.map((option) => [option.value, option.label]))
 
 // Stage 4 (RULES-PLANS/UI_AUDIT.md) — H7's local statusStyles is gone in
 // favour of the shared <StatusBadge> (PENDING/APPROVED/REJECTED all
@@ -23,13 +34,22 @@ const emptyProposeForm = { productId: '', proposedStockQuantity: '', proposedMin
 // replace the three old input shapes, Button replaces the hand-rolled
 // buttons.
 //
-// handleProposeSubmit's request body is untouched: proposedStockQuantity
-// and proposedMinStockLevel are only added when non-blank, never spread
-// unconditionally (RULES-PLANS/UI_AUDIT.md's DB-default field note — the
-// backend treats an omitted optional field differently from one sent as
-// ''). handleReview and the one-pending-request-per-product /
+// migration 008 (RULES-PLANS/INVENTORY_REVIEW.md) added a second,
+// mutually exclusive shape this form can submit: a LOSS REPORT
+// (movementReason + quantityLost) alongside the original RECOUNT
+// (proposedStockQuantity/proposedMinStockLevel). `proposeMode` selects
+// which one is showing; handleProposeSubmit only ever puts ONE shape's
+// fields into the request body — never both, and never the other mode's
+// fields as blanks. That matters for the same reason the recount fields
+// were already careful about it (RULES-PLANS/UI_AUDIT.md's DB-default
+// field note): the backend detects a loss report by
+// `request.body.movementReason != null`, and an empty string is not
+// null, so sending `movementReason: ''` while proposing a recount would
+// make the server think a loss report was submitted and reject it for
+// an invalid reason — a confusing error for someone who never touched
+// that field. handleReview and the one-pending-request-per-product /
 // observed-stock-quantity approval semantics are untouched — this pass
-// does not change how a change request is built or approved.
+// does not change how either shape is approved.
 export function InventoryRequests({ user, inventory }) {
   const isAdmin = user.role === 'ADMIN'
 
@@ -38,6 +58,7 @@ export function InventoryRequests({ user, inventory }) {
   const [message, setMessage] = useState('')
   const [messageFailed, setMessageFailed] = useState(false)
 
+  const [proposeMode, setProposeMode] = useState('RECOUNT')
   const [proposeForm, setProposeForm] = useState(emptyProposeForm)
   const [proposeErrors, setProposeErrors] = useState({})
   const [proposeSubmitting, setProposeSubmitting] = useState(false)
@@ -64,17 +85,35 @@ export function InventoryRequests({ user, inventory }) {
 
   const updateProposeField = (field, value) => setProposeForm({ ...proposeForm, [field]: value })
 
+  // Switching modes clears the form rather than leaving the other shape's
+  // half-filled fields sitting invisibly in state — a cashier who types a
+  // quantity into "Report a loss" and then clicks back to "Recount" should
+  // not have that number silently resurface if they switch again.
+  const switchProposeMode = (mode) => {
+    setProposeMode(mode)
+    setProposeForm(emptyProposeForm)
+    setProposeErrors({})
+  }
+
   const handleProposeSubmit = async (event) => {
     event.preventDefault()
     setProposeSubmitting(true)
     setProposeErrors({})
     try {
       const body = { productId: proposeForm.productId, reason: proposeForm.reason }
-      if (proposeForm.proposedStockQuantity !== '') body.proposedStockQuantity = Number(proposeForm.proposedStockQuantity)
-      if (proposeForm.proposedMinStockLevel !== '') body.proposedMinStockLevel = Number(proposeForm.proposedMinStockLevel)
+      // Exactly one shape's fields go in — see the file header comment for
+      // why the other mode's fields must never be sent at all, not even as
+      // blanks.
+      if (proposeMode === 'LOSS') {
+        body.movementReason = proposeForm.movementReason
+        body.quantityLost = Number(proposeForm.quantityLost)
+      } else {
+        if (proposeForm.proposedStockQuantity !== '') body.proposedStockQuantity = Number(proposeForm.proposedStockQuantity)
+        if (proposeForm.proposedMinStockLevel !== '') body.proposedMinStockLevel = Number(proposeForm.proposedMinStockLevel)
+      }
       await apiPost('/api/inventory/requests', body)
       setProposeForm(emptyProposeForm)
-      setMessage('Request submitted.')
+      setMessage(proposeMode === 'LOSS' ? 'Loss reported.' : 'Request submitted.')
       setMessageFailed(false)
       await loadRequests()
     } catch (error) {
@@ -106,7 +145,20 @@ export function InventoryRequests({ user, inventory }) {
 
       {!isAdmin && (
         <Card className="p-6">
-          <h2 className="text-lg font-semibold text-ink-900">Propose a stock change</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-ink-900">{proposeMode === 'LOSS' ? 'Report a loss' : 'Propose a stock change'}</h2>
+            {/* A mode toggle, not a second form — same Button-pill pattern
+                InventoryManagement.jsx's own Stock levels/Change requests
+                tabs use just above this screen. */}
+            <div className="flex gap-2">
+              <Button type="button" size="sm" variant={proposeMode === 'RECOUNT' ? 'primary' : 'secondary'} onClick={() => switchProposeMode('RECOUNT')}>
+                Recount
+              </Button>
+              <Button type="button" size="sm" variant={proposeMode === 'LOSS' ? 'primary' : 'secondary'} onClick={() => switchProposeMode('LOSS')}>
+                Report a loss
+              </Button>
+            </div>
+          </div>
           <p className="mt-1 text-xs text-ink-500">An admin reviews this before anything actually changes.</p>
           <form className="mt-4 grid gap-3 sm:grid-cols-2" onSubmit={handleProposeSubmit}>
             <div className="sm:col-span-2">
@@ -121,20 +173,47 @@ export function InventoryRequests({ user, inventory }) {
                 </Select>
               </Field>
             </div>
-            <Field label="Proposed stock quantity" error={proposeErrors.proposedStockQuantity}>
-              <Input value={proposeForm.proposedStockQuantity} onChange={(event) => updateProposeField('proposedStockQuantity', event.target.value)} inputMode="numeric" placeholder="Leave blank if unchanged" />
-            </Field>
-            <Field label="Proposed minimum level" error={proposeErrors.proposedMinStockLevel}>
-              <Input value={proposeForm.proposedMinStockLevel} onChange={(event) => updateProposeField('proposedMinStockLevel', event.target.value)} inputMode="numeric" placeholder="Leave blank if unchanged" />
-            </Field>
-            <div className="sm:col-span-2">
-              <Field label="Reason" error={proposeErrors.reason}>
-                <Input value={proposeForm.reason} onChange={(event) => updateProposeField('reason', event.target.value)} placeholder="e.g. Delivery received, or shelf recount" />
-              </Field>
-            </div>
+
+            {proposeMode === 'LOSS' ? (
+              <>
+                <Field label="Reason" error={proposeErrors.movementReason}>
+                  <Select value={proposeForm.movementReason} onChange={(event) => updateProposeField('movementReason', event.target.value)}>
+                    <option value="">Why was it lost?</option>
+                    {lossReasonOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Quantity lost" error={proposeErrors.quantityLost}>
+                  <Input value={proposeForm.quantityLost} onChange={(event) => updateProposeField('quantityLost', event.target.value)} inputMode="numeric" placeholder="e.g. 10" />
+                </Field>
+                <div className="sm:col-span-2">
+                  <Field label="Details" error={proposeErrors.reason}>
+                    <Input value={proposeForm.reason} onChange={(event) => updateProposeField('reason', event.target.value)} placeholder="e.g. Oven timer failed on the morning batch" />
+                  </Field>
+                </div>
+              </>
+            ) : (
+              <>
+                <Field label="Proposed stock quantity" error={proposeErrors.proposedStockQuantity}>
+                  <Input value={proposeForm.proposedStockQuantity} onChange={(event) => updateProposeField('proposedStockQuantity', event.target.value)} inputMode="numeric" placeholder="Leave blank if unchanged" />
+                </Field>
+                <Field label="Proposed minimum level" error={proposeErrors.proposedMinStockLevel}>
+                  <Input value={proposeForm.proposedMinStockLevel} onChange={(event) => updateProposeField('proposedMinStockLevel', event.target.value)} inputMode="numeric" placeholder="Leave blank if unchanged" />
+                </Field>
+                <div className="sm:col-span-2">
+                  <Field label="Reason" error={proposeErrors.reason}>
+                    <Input value={proposeForm.reason} onChange={(event) => updateProposeField('reason', event.target.value)} placeholder="e.g. Delivery received, or shelf recount" />
+                  </Field>
+                </div>
+              </>
+            )}
+
             <div className="sm:col-span-2">
               <Button type="submit" size="sm" disabled={proposeSubmitting}>
-                {proposeSubmitting ? 'Submitting…' : 'Submit request'}
+                {proposeSubmitting ? 'Submitting…' : proposeMode === 'LOSS' ? 'Submit loss report' : 'Submit request'}
               </Button>
             </div>
           </form>
@@ -158,18 +237,33 @@ export function InventoryRequests({ user, inventory }) {
                       {!isAdmin ? '' : ` — ${item.requestedByName}`}
                     </p>
                     <p className="mt-0.5 text-ink-500">
-                      {item.proposedStockQuantity != null && (
+                      {/* quantityChange is set on a LOSS report and null on
+                          a RECOUNT — the same pairing the API uses to tell
+                          the two shapes apart (see mapChangeRequestRow in
+                          server/routes/inventory.js). Math.abs undoes the
+                          negative sign the backend stores it with — a
+                          cashier reading their own list wants "10 lost",
+                          not "-10". */}
+                      {item.quantityChange != null ? (
                         <>
-                          Stock:{' '}
-                          <span className="tabular-nums">
-                            {item.observedStockQuantity} → {item.proposedStockQuantity}
-                          </span>
-                          .{' '}
+                          Lost <span className="tabular-nums">{Math.abs(item.quantityChange)}</span> — {lossReasonLabels[item.movementReason] ?? item.movementReason}.{' '}
                         </>
-                      )}
-                      {item.proposedMinStockLevel != null && (
+                      ) : (
                         <>
-                          Min level → <span className="tabular-nums">{item.proposedMinStockLevel}</span>.{' '}
+                          {item.proposedStockQuantity != null && (
+                            <>
+                              Stock:{' '}
+                              <span className="tabular-nums">
+                                {item.observedStockQuantity} → {item.proposedStockQuantity}
+                              </span>
+                              .{' '}
+                            </>
+                          )}
+                          {item.proposedMinStockLevel != null && (
+                            <>
+                              Min level → <span className="tabular-nums">{item.proposedMinStockLevel}</span>.{' '}
+                            </>
+                          )}
                         </>
                       )}
                     </p>
