@@ -6,6 +6,7 @@ import { Card } from '../../components/ui/Card.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
+import { formatDateTime, formatPeso } from '../../lib/format.js'
 
 // Stage 5 (RULES-PLANS/UI_AUDIT.md) — the delivery role's only screen, and
 // the only one in the app worked standing up, on a phone, one-handed. H7's
@@ -58,6 +59,9 @@ export function MyDeliveries({ user }) {
   }, [])
 
   const setStatus = async (deliveryId, status, note) => {
+    // Failing a delivery is the one driver action that cannot be walked
+    // back by the driver; the other destructive actions in the app ask.
+    if (status === 'FAILED' && !window.confirm('Mark this delivery as failed? An admin will have to send it back to the queue.')) return
     setBusyId(deliveryId)
     setMessage('')
     try {
@@ -84,7 +88,7 @@ export function MyDeliveries({ user }) {
       setMessageFailed(true)
       return
     }
-    if (!window.confirm(`Record ₱${amount.toFixed(2)} cash collected for order #${delivery.orderId}?`)) return
+    if (!window.confirm(`Record ${formatPeso(amount)} cash collected for order #${delivery.orderId}?`)) return
     setBusyId(delivery.id)
     setMessage('')
     try {
@@ -169,8 +173,8 @@ export function MyDeliveries({ user }) {
                     </p>
                     {delivery.address.deliveryNotes && <p className="mt-0.5 text-xs text-ink-500">Note: "{delivery.address.deliveryNotes}"</p>}
                     {delivery.instructions && <p className="mt-0.5 text-xs text-ink-500">Instructions: "{delivery.instructions}"</p>}
-                    {delivery.requestedFulfillmentTime && <p className="mt-0.5 text-xs font-semibold text-ink-900">Needed by {new Date(delivery.requestedFulfillmentTime).toLocaleString()}</p>}
-                    <p className="mt-1 text-xs text-ink-500">Order total: <span className="tabular-nums">₱{delivery.totalAmount}</span>{delivery.isFullyPaid ? ' · paid' : <> · <span className="font-semibold text-status-fail-fg">collect ₱{delivery.balanceDue}</span></>}</p>
+                    {delivery.requestedFulfillmentTime && <p className="mt-0.5 text-xs font-semibold text-ink-900">Needed by {formatDateTime(delivery.requestedFulfillmentTime)}</p>}
+                    <p className="mt-1 text-xs text-ink-500">Order total: <span className="tabular-nums">{formatPeso(delivery.totalAmount)}</span>{delivery.isFullyPaid ? ' · paid' : <> · <span className="font-semibold text-status-fail-fg">collect {formatPeso(delivery.balanceDue)}</span></>}</p>
                   </div>
                   <StatusBadge status={delivery.status} />
                 </div>
@@ -210,7 +214,7 @@ export function MyDeliveries({ user }) {
 
                     {!delivery.isFullyPaid && (
                       <div>
-                        <label htmlFor={`cash-${delivery.id}`} className="mb-1.5 block text-xs font-semibold text-ink-700">Cash collected (₱{delivery.balanceDue} due)</label>
+                        <label htmlFor={`cash-${delivery.id}`} className="mb-1.5 block text-xs font-semibold text-ink-700">Cash collected ({formatPeso(delivery.balanceDue)} due)</label>
                         <Input
                           id={`cash-${delivery.id}`}
                           value={cashAmounts[delivery.id] ?? delivery.balanceDue}

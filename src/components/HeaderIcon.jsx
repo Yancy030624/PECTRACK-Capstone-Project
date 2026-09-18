@@ -10,7 +10,7 @@ export function HeaderIcon({ type, disabled = false, onClick, badge, label }) {
       disabled={disabled}
       onClick={disabled ? undefined : onClick}
       title={disabled ? 'Coming soon' : undefined}
-      className={`relative grid h-9 w-9 place-items-center rounded-full bg-white shadow-md transition focus:outline-none focus:ring-2 focus:ring-green-700 ${disabled ? 'cursor-not-allowed text-stone-300' : 'text-stone-900 hover:-translate-y-0.5 hover:text-green-800'}`}
+      className={`relative grid h-9 w-9 place-items-center rounded-full bg-white shadow-md transition ${disabled ? 'cursor-not-allowed text-stone-300' : 'text-stone-900 hover:-translate-y-0.5 hover:text-green-800'}`}
       aria-label={label ?? type}
     >
       <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.4">{paths[type]}</svg>

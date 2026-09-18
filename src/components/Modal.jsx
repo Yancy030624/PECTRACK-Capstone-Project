@@ -15,6 +15,16 @@ export function Modal({ open, onClose, children, labelledBy }) {
 
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') onClose()
+      // Tab stays inside the dialog: without this, focus walked out into
+      // the page underneath while the overlay still covered it.
+      if (event.key === 'Tab' && panelRef.current) {
+        const focusable = panelRef.current.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')
+        if (focusable.length === 0) return
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === panelRef.current)) { event.preventDefault(); last.focus() }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+      }
     }
     document.addEventListener('keydown', handleKeyDown)
 

@@ -186,7 +186,7 @@ export function InventoryRequests({ user, inventory }) {
                   <option value="">Select a product…</option>
                   {inventory.map((item) => (
                     <option key={item.productId} value={item.productId}>
-                      {item.productName} (currently {item.stockQuantity})
+                      {item.productName}{item.variant ? ` (${item.variant})` : ''} — {item.stockQuantity} in stock
                     </option>
                   ))}
                 </Select>
@@ -252,7 +252,7 @@ export function InventoryRequests({ user, inventory }) {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="font-semibold text-ink-900">
-                      {item.productName}
+                      {item.productName}{item.variant ? ` (${item.variant})` : ''}
                       {!isAdmin ? '' : ` — ${item.requestedByName}`}
                     </p>
                     <p className="mt-0.5 text-ink-500">

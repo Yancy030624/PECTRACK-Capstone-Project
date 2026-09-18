@@ -10,6 +10,7 @@ import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { Textarea } from '../../components/ui/Textarea.jsx'
+import { formatPeso } from '../../lib/format.js'
 
 const emptyProductForm = { categoryId: '', name: '', description: '', price: '', variant: '', availabilityStatus: true }
 
@@ -266,9 +267,9 @@ export function ProductManagement({ user }) {
                 <li key={category.id} className="flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1.5 text-sm font-medium text-brand-700">
                   {category.name}
                   {isAdmin && (
-                    <span className="flex gap-1.5 text-xs">
-                      <button type="button" onClick={() => startEditCategory(category)} className="text-brand-700 hover:underline">Edit</button>
-                      <button type="button" onClick={() => deleteCategory(category)} className="text-red-700 hover:underline">Delete</button>
+                    <span className="flex gap-0.5 text-xs">
+                      <button type="button" onClick={() => startEditCategory(category)} aria-label={`Edit category ${category.name}`} className="min-h-8 rounded-control px-2 text-brand-700 hover:bg-brand-100 hover:underline">Edit</button>
+                      <button type="button" onClick={() => deleteCategory(category)} aria-label={`Delete category ${category.name}`} className="min-h-8 rounded-control px-2 text-red-700 hover:bg-red-50 hover:underline">Delete</button>
                     </span>
                   )}
                 </li>
@@ -329,10 +330,10 @@ export function ProductManagement({ user }) {
             <Table caption="Products">
               <Thead>
                 <Tr className="hover:bg-transparent">
-                  <Th>Photo</Th>
+                  <Th priority="md">Photo</Th>
                   <Th>Name</Th>
-                  <Th>Category</Th>
-                  <Th>Variant</Th>
+                  <Th priority="xl">Category</Th>
+                  <Th priority="lg">Variant</Th>
                   <Th align="right">Price</Th>
                   <Th>Status</Th>
                   {isAdmin && <Th>Actions</Th>}
@@ -341,51 +342,54 @@ export function ProductManagement({ user }) {
               <Tbody>
                 {products.map((product) =>
                   editingProductId === product.id ? (
+                    // One cell spanning the row: a stacked form survives
+                    // whichever columns the current width has dropped.
                     <Tr key={product.id}>
-                      <Td>
-                        {product.imageUrl ? <img src={product.imageUrl} alt="" className="h-12 w-12 rounded-control object-cover" /> : <div className="grid h-12 w-12 place-items-center rounded-control bg-surface-sunk text-lg">🥐</div>}
-                      </Td>
-                      <Td>
-                        <Input value={editingProduct.name} onChange={(event) => updateEditingProductField('name', event.target.value)} aria-label="Product name" className="h-8 text-xs" />
-                        {editingProductErrors.name && <p className="mt-1 text-xs text-red-700">{editingProductErrors.name}</p>}
-                      </Td>
-                      <Td>
-                        <Select value={editingProduct.categoryId} onChange={(event) => updateEditingProductField('categoryId', event.target.value)} aria-label="Category" className="h-8 text-xs">
-                          {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                        </Select>
-                      </Td>
-                      <Td>
-                        <Input value={editingProduct.variant} onChange={(event) => updateEditingProductField('variant', event.target.value)} aria-label="Variant" className="h-8 text-xs" />
-                      </Td>
-                      <Td numeric>
-                        <Input type="number" min="0" step="0.01" value={editingProduct.price} onChange={(event) => updateEditingProductField('price', event.target.value)} aria-label="Price" className="h-8 w-24 text-right text-xs" />
-                        {editingProductErrors.price && <p className="mt-1 text-xs text-red-700">{editingProductErrors.price}</p>}
-                      </Td>
-                      <Td><StatusBadge status={product.availabilityStatus ? 'ACTIVE' : 'INACTIVE'} label={product.availabilityStatus ? 'Available' : 'Unavailable'} /></Td>
-                      <Td>
-                        <div className="flex gap-2">
+                      <td colSpan={7} className="px-3 py-3 text-sm text-ink-700">
+                        <p className="text-xs text-ink-500">Editing {product.name}</p>
+                        <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                          <Field label="Name" error={editingProductErrors.name}>
+                            <Input value={editingProduct.name} onChange={(event) => updateEditingProductField('name', event.target.value)} />
+                          </Field>
+                          <Field label="Category">
+                            <Select value={editingProduct.categoryId} onChange={(event) => updateEditingProductField('categoryId', event.target.value)}>
+                              {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                            </Select>
+                          </Field>
+                          <Field label="Variant (optional)">
+                            <Input value={editingProduct.variant} onChange={(event) => updateEditingProductField('variant', event.target.value)} />
+                          </Field>
+                          <Field label="Price (₱)" error={editingProductErrors.price}>
+                            <Input type="number" min="0" step="0.01" value={editingProduct.price} onChange={(event) => updateEditingProductField('price', event.target.value)} />
+                          </Field>
+                        </div>
+                        <div className="mt-3 flex gap-2">
                           <Button type="button" size="sm" onClick={(event) => saveProduct(event, product.id)} disabled={editingProductSubmitting}>{editingProductSubmitting ? 'Saving…' : 'Save'}</Button>
                           <Button type="button" size="sm" variant="secondary" onClick={cancelEditProduct}>Cancel</Button>
                         </div>
-                      </Td>
+                      </td>
                     </Tr>
                   ) : (
                     <Tr key={product.id}>
-                      <Td>
+                      <Td priority="md">
                         {product.imageUrl ? <img src={product.imageUrl} alt="" className="h-12 w-12 rounded-control object-cover" /> : <div className="grid h-12 w-12 place-items-center rounded-control bg-surface-sunk text-lg">🥐</div>}
                         {isAdmin && (
-                          <div className="mt-1 flex flex-col items-start gap-0.5">
-                            <button type="button" onClick={() => triggerPhotoUpload(product.id)} disabled={uploadingImageProductId === product.id} className="text-xs font-semibold text-brand-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60">
-                              {uploadingImageProductId === product.id ? 'Uploading…' : product.imageUrl ? 'Change' : 'Upload'}
+                          <div className="mt-1 flex flex-col items-start">
+                            <button type="button" onClick={() => triggerPhotoUpload(product.id)} disabled={uploadingImageProductId === product.id} className="min-h-8 text-xs font-semibold text-brand-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60">
+                              {uploadingImageProductId === product.id ? 'Uploading…' : product.imageUrl ? 'Change photo' : 'Upload photo'}
                             </button>
-                            {product.imageUrl && <button type="button" onClick={() => removePhoto(product)} className="text-xs font-semibold text-red-700 hover:underline">Remove</button>}
+                            {product.imageUrl && <button type="button" onClick={() => removePhoto(product)} className="min-h-8 text-xs font-semibold text-red-700 hover:underline">Remove photo</button>}
                           </div>
                         )}
                       </Td>
-                      <Td className="font-semibold text-ink-900">{product.name}</Td>
-                      <Td>{product.categoryName}</Td>
-                      <Td>{product.variant ?? '—'}</Td>
-                      <Td numeric>₱{product.price}</Td>
+                      <Td className="font-semibold text-ink-900">
+                        {product.name}
+                        {product.variant && <span className="block text-xs font-normal text-ink-500 lg:hidden">{product.variant}</span>}
+                        <span className="block text-xs font-normal text-ink-500 xl:hidden">{product.categoryName}</span>
+                      </Td>
+                      <Td priority="xl">{product.categoryName}</Td>
+                      <Td priority="lg">{product.variant ?? '—'}</Td>
+                      <Td numeric>{formatPeso(product.price)}</Td>
                       <Td><StatusBadge status={product.availabilityStatus ? 'ACTIVE' : 'INACTIVE'} label={product.availabilityStatus ? 'Available' : 'Unavailable'} /></Td>
                       {isAdmin && (
                         <Td>

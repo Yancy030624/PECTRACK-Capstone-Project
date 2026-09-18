@@ -162,10 +162,10 @@ export function InventoryManagement({ user }) {
                 <Thead>
                   <Tr className="hover:bg-transparent">
                     <Th>Product</Th>
-                    <Th>Category</Th>
+                    <Th priority="lg">Category</Th>
                     <Th align="right">Stock</Th>
-                    <Th align="right">Min level</Th>
-                    <Th>Expiry</Th>
+                    <Th align="right" priority="md">Min level</Th>
+                    <Th priority="lg">Expiry</Th>
                     <Th>Status</Th>
                     {isAdmin && <Th>Actions</Th>}
                   </Tr>
@@ -173,36 +173,30 @@ export function InventoryManagement({ user }) {
                 <Tbody>
                   {inventory.map((item) =>
                     editingProductId === item.productId ? (
+                      // The edit form spans the whole row as one cell. It
+                      // used to put one input per column, which broke the
+                      // moment a column was hidden on a narrow screen: the
+                      // "Min level" and "Expiry" inputs vanished with their
+                      // columns. One cell, one stacked form, every size.
                       <Tr key={item.productId}>
-                        <Td className="font-semibold text-ink-900">{item.productName}</Td>
-                        <Td>{item.categoryName}</Td>
-                        <Td numeric>
-                          <Field error={editErrors.stockQuantity}>
-                            <Input value={editForm.stockQuantity} onChange={(event) => setEditForm({ ...editForm, stockQuantity: event.target.value })} inputMode="numeric" aria-label="Stock quantity" />
-                          </Field>
-                        </Td>
-                        <Td numeric>
-                          <Field error={editErrors.minStockLevel}>
-                            <Input value={editForm.minStockLevel} onChange={(event) => setEditForm({ ...editForm, minStockLevel: event.target.value })} inputMode="numeric" aria-label="Minimum stock level" />
-                          </Field>
-                        </Td>
-                        <Td>
-                          <Field error={editErrors.expirationDate}>
-                            <Input type="date" value={editForm.expirationDate} onChange={(event) => setEditForm({ ...editForm, expirationDate: event.target.value })} aria-label="Expiration date" />
-                          </Field>
-                        </Td>
-                        {/* Merged Status + Actions cell, same as before this
-                            conversion — a plain <td colSpan> rather than the
-                            <Td> primitive, since <Td> doesn't take colSpan
-                            and this is the only place in Stage 4 that needs
-                            it. Only reachable when isAdmin, so both columns
-                            it spans genuinely exist on every row here. */}
-                        <td colSpan={2} className="px-3 py-3 text-sm text-ink-700">
+                        <td colSpan={7} className="px-3 py-3 text-sm text-ink-700">
+                          <p className="font-semibold text-ink-900">{item.productName}{item.variant ? ` (${item.variant})` : ''}</p>
+                          <div className="mt-2 grid gap-3 sm:grid-cols-3">
+                            <Field label="Stock" error={editErrors.stockQuantity}>
+                              <Input value={editForm.stockQuantity} onChange={(event) => setEditForm({ ...editForm, stockQuantity: event.target.value })} inputMode="numeric" />
+                            </Field>
+                            <Field label="Min level" error={editErrors.minStockLevel}>
+                              <Input value={editForm.minStockLevel} onChange={(event) => setEditForm({ ...editForm, minStockLevel: event.target.value })} inputMode="numeric" />
+                            </Field>
+                            <Field label="Expiry" error={editErrors.expirationDate}>
+                              <Input type="date" value={editForm.expirationDate} onChange={(event) => setEditForm({ ...editForm, expirationDate: event.target.value })} />
+                            </Field>
+                          </div>
                           {stockQuantityChanged && (
-                            <div className="space-y-1.5">
-                              <Field error={editErrors.reason}>
-                                <Select value={editForm.reason} onChange={(event) => setEditForm({ ...editForm, reason: event.target.value })} aria-label="Reason for stock change">
-                                  <option value="">Why is stock changing?</option>
+                            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                              <Field label="Why is stock changing?" error={editErrors.reason}>
+                                <Select value={editForm.reason} onChange={(event) => setEditForm({ ...editForm, reason: event.target.value })}>
+                                  <option value="">Select a reason</option>
                                   {reasonOptions.map((option) => (
                                     <option key={option.value} value={option.value}>
                                       {option.label}
@@ -210,10 +204,12 @@ export function InventoryManagement({ user }) {
                                   ))}
                                 </Select>
                               </Field>
-                              <Input value={editForm.note} onChange={(event) => setEditForm({ ...editForm, note: event.target.value })} placeholder="Optional note" aria-label="Note" />
+                              <Field label="Note (optional)">
+                                <Input value={editForm.note} onChange={(event) => setEditForm({ ...editForm, note: event.target.value })} />
+                              </Field>
                             </div>
                           )}
-                          <div className="mt-2 flex gap-2">
+                          <div className="mt-3 flex gap-2">
                             <Button size="sm" onClick={(event) => saveEdit(event, item)} disabled={editSubmitting}>
                               {editSubmitting ? 'Saving…' : 'Save'}
                             </Button>
@@ -225,11 +221,14 @@ export function InventoryManagement({ user }) {
                       </Tr>
                     ) : (
                       <Tr key={item.productId}>
-                        <Td className="font-semibold text-ink-900">{item.productName}</Td>
-                        <Td>{item.categoryName}</Td>
+                        <Td className="font-semibold text-ink-900">
+                          {item.productName}
+                          {item.variant && <span className="block text-xs font-normal text-ink-500">{item.variant}</span>}
+                        </Td>
+                        <Td priority="lg">{item.categoryName}</Td>
                         <Td numeric>{item.stockQuantity}</Td>
-                        <Td numeric>{item.minStockLevel}</Td>
-                        <Td>{item.expirationDate ?? '—'}{item.expired && <span className="ml-2 rounded-full bg-status-fail-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-fail-fg">Expired</span>}</Td>
+                        <Td numeric priority="md">{item.minStockLevel}</Td>
+                        <Td priority="lg">{item.expirationDate ?? '—'}{item.expired && <span className="ml-2 rounded-full bg-status-fail-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-fail-fg">Expired</span>}</Td>
                         <Td>
                           <StatusBadge status={item.lowStock ? 'INACTIVE' : 'ACTIVE'} label={item.lowStock ? 'Low stock' : 'OK'} />
                         </Td>

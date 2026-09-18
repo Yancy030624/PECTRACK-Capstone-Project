@@ -8,6 +8,7 @@ import { Field } from '../../components/ui/Field.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
+import { formatDateTime, formatPeso } from '../../lib/format.js'
 
 const paymentMethodOptions = ['CASH', 'GCASH']
 const paymentStatusOptions = ['PENDING', 'PAID', 'FAILED', 'CANCELLED', 'REFUNDED']
@@ -82,7 +83,7 @@ export function ReportingAnalytics({ user }) {
   const [message, setMessage] = useState('')
 
   const generate = async (event) => {
-    event.preventDefault()
+    event?.preventDefault()
     setGenerating(true)
     setErrors({})
     setMessage('')
@@ -104,6 +105,16 @@ export function ReportingAnalytics({ user }) {
       setGenerating(false)
     }
   }
+  // The default range is already filled in, so the screen no longer opens
+  // blank waiting for a click nothing else on the page hints at. The
+  // report_logs audit row is ADMIN-only on the server and records a call,
+  // so an admin opening the tab logs one SALES generation — the same as
+  // pressing the button they would otherwise press immediately.
+  useEffect(() => {
+    generate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const salesCanvasRef = useRef(null)
   useEffect(() => {
     if (!sales || !salesCanvasRef.current) return
@@ -276,18 +287,18 @@ export function ReportingAnalytics({ user }) {
           <>
             <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Orders placed</p><p className="mt-3 text-4xl font-semibold text-ink-900">{sales.totals.ordersPlaced}</p></Card>
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Ordered</p><p className="mt-3 text-4xl font-semibold text-ink-900">₱{sales.totals.ordered}</p></Card>
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Collected</p><p className="mt-3 text-4xl font-semibold text-ink-900">₱{sales.totals.collected}</p><p className="mt-2 text-xs text-ink-500">Refunds already removed</p></Card>
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Refunds issued</p><p className="mt-3 text-4xl font-semibold text-ink-900">₱{sales.totals.refunded}</p><p className="mt-2 text-xs text-ink-500">Already excluded from Collected — do not subtract</p></Card>
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Ordered</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.ordered)}</p><p className="mt-2 text-xs text-ink-500">Value of orders placed in this range</p></Card>
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Collected</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.collected)}</p><p className="mt-2 text-xs text-ink-500">Money received; refunds already taken out</p></Card>
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Refunds issued</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.refunded)}</p><p className="mt-2 text-xs text-ink-500">For information — not part of Collected</p></Card>
             </div>
             <p className="mt-3 text-xs text-ink-500">
-              Average payment: ₱{sales.totals.averagePayment}
-              <span className="text-ink-500"> — per payment recorded, not per order (an order settled in instalments counts once per instalment).</span>
+              Average payment: {formatPeso(sales.totals.averagePayment)}
+              <span className="text-ink-500"> — per payment received, not per order.</span>
             </p>
             {summary && (
               <p className="mt-1 text-xs font-medium text-status-wait-fg">
-                Outstanding across all open orders, as of now: ₱{summary.outstanding}
-                <span className="font-normal text-ink-500"> — not scoped to the range above; this is every unpaid balance still on the books.</span>
+                Still unpaid across all open orders today: {formatPeso(summary.outstanding)}
+                <span className="font-normal text-ink-500"> — every unpaid balance on the books, regardless of the date range above.</span>
               </p>
             )}
 
@@ -304,7 +315,7 @@ export function ReportingAnalytics({ user }) {
                     <Th>Orders placed</Th>
                     <Th align="right">Ordered</Th>
                     <Th align="right">Collected</Th>
-                    <Th align="right">Refunds issued <span className="block font-normal normal-case text-ink-500">not deducted from Collected</span></Th>
+                    <Th align="right">Refunds issued</Th>
                   </Tr>
                 </Thead>
                 <Tbody>
@@ -312,16 +323,16 @@ export function ReportingAnalytics({ user }) {
                     <Tr key={bucket.period}>
                       <Td className="font-semibold text-ink-900">{bucket.period}</Td>
                       <Td>{bucket.ordersPlaced}</Td>
-                      <Td numeric>₱{bucket.ordered}</Td>
-                      <Td numeric>₱{bucket.collected}</Td>
-                      <Td numeric>₱{bucket.refunded}</Td>
+                      <Td numeric>{formatPeso(bucket.ordered)}</Td>
+                      <Td numeric>{formatPeso(bucket.collected)}</Td>
+                      <Td numeric>{formatPeso(bucket.refunded)}</Td>
                     </Tr>
                   ))}
                 </Tbody>
               </Table>
             </div>
           </>
-        ) : <p className="mt-6 text-sm text-ink-500">Pick a date range and press Generate report to see sales.</p>}
+        ) : <p className="mt-6 text-sm text-ink-500">Loading the sales report…</p>}
       </div>
 
       <div hidden={activeTab !== 'Products'}>
@@ -345,14 +356,14 @@ export function ReportingAnalytics({ user }) {
                     <Tr key={product.productId}>
                       <Td className="font-semibold text-ink-900">{product.productName}{product.variant ? ` (${product.variant})` : ''}</Td>
                       <Td numeric>{product.quantitySold}</Td>
-                      <Td numeric>₱{product.revenue}</Td>
+                      <Td numeric>{formatPeso(product.revenue)}</Td>
                     </Tr>
                   ))}
                 </Tbody>
               </Table>
             </div>
           </>
-        ) : <p className="mt-6 text-sm text-ink-500">Pick a date range and press Generate report to see product performance.</p>}
+        ) : <p className="mt-6 text-sm text-ink-500">Loading product performance…</p>}
       </div>
 
       <div hidden={activeTab !== 'Inventory'}>
@@ -406,7 +417,7 @@ export function ReportingAnalytics({ user }) {
               )}
             </Card>
           </>
-        ) : <p className="mt-6 text-sm text-ink-500">Pick a date range and press Generate report to see inventory activity.</p>}
+        ) : <p className="mt-6 text-sm text-ink-500">Loading inventory activity…</p>}
       </div>
       <div hidden={activeTab !== 'Transactions'}>
         <Card className="mt-6 p-6">
@@ -445,22 +456,22 @@ export function ReportingAnalytics({ user }) {
                   <Thead>
                     <Tr className="hover:bg-transparent">
                       <Th>Order</Th>
-                      <Th>Customer</Th>
+                      <Th priority="md">Customer</Th>
                       <Th>Method</Th>
                       <Th align="right">Amount</Th>
                       <Th>Status</Th>
-                      <Th>When</Th>
+                      <Th priority="lg">When</Th>
                     </Tr>
                   </Thead>
                   <Tbody>
                     {txResult.payments.map((payment) => (
                       <Tr key={payment.id}>
                         <Td className="font-semibold text-ink-900">#{payment.orderId}</Td>
-                        <Td>{payment.customerName ?? 'Walk-in'}</Td>
+                        <Td priority="md">{payment.customerName ?? 'Walk-in'}</Td>
                         <Td>{payment.method}</Td>
-                        <Td numeric>₱{payment.amount}</Td>
+                        <Td numeric>{formatPeso(payment.amount)}</Td>
                         <Td>{payment.status}</Td>
-                        <Td className="text-ink-500">{new Date(payment.status === 'REFUNDED' ? payment.refundedAt : (payment.paymentDate ?? payment.createdAt)).toLocaleString()}</Td>
+                        <Td priority="lg" className="whitespace-nowrap text-ink-500">{formatDateTime(payment.status === 'REFUNDED' ? payment.refundedAt : (payment.paymentDate ?? payment.createdAt))}</Td>
                       </Tr>
                     ))}
                   </Tbody>
@@ -509,7 +520,7 @@ export function ReportingAnalytics({ user }) {
                         <Tr key={log.id}>
                           <Td className="font-semibold text-ink-900">{log.reportType}</Td>
                           <Td>{log.generatedByName}</Td>
-                          <Td className="text-ink-500">{new Date(log.generatedAt).toLocaleString()}</Td>
+                          <Td className="text-ink-500">{formatDateTime(log.generatedAt)}</Td>
                         </Tr>
                       ))}
                     </Tbody>

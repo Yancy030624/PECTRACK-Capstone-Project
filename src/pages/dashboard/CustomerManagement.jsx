@@ -125,9 +125,9 @@ export function CustomerManagement({ user }) {
             <Thead>
               <Tr className="hover:bg-transparent">
                 <Th>Name</Th>
-                <Th>Username</Th>
-                <Th>Contact</Th>
-                <Th>Email</Th>
+                <Th priority="lg">Username</Th>
+                <Th priority="md">Contact</Th>
+                <Th priority="xl">Email</Th>
                 <Th>Status</Th>
                 {isAdmin && <Th>Actions</Th>}
               </Tr>
@@ -135,37 +135,38 @@ export function CustomerManagement({ user }) {
             <Tbody>
               {customers.map((customer) =>
                 editingId === customer.id ? (
+                  // One cell spanning the row: a stacked form survives
+                  // whichever columns the current width has dropped.
                   <Tr key={customer.id}>
-                    <Td>
-                      <Field error={editErrors.name}>
-                        <Input value={editForm.name} onChange={(event) => setEditForm({ ...editForm, name: event.target.value })} aria-label="Name" />
-                      </Field>
-                    </Td>
-                    <Td className="text-ink-500">{customer.username}</Td>
-                    <Td>
-                      <Field error={editErrors.contactNumber}>
-                        <Input value={editForm.contactNumber} onChange={(event) => setEditForm({ ...editForm, contactNumber: event.target.value })} aria-label="Contact number" />
-                      </Field>
-                    </Td>
-                    <Td>
-                      <Field error={editErrors.email}>
-                        <Input value={editForm.email} onChange={(event) => setEditForm({ ...editForm, email: event.target.value })} aria-label="Email" />
-                      </Field>
-                    </Td>
-                    <Td><StatusBadge status={customer.isActive ? 'ACTIVE' : 'INACTIVE'} label={customer.isActive ? 'Active' : 'Inactive'} /></Td>
-                    <Td>
-                      <div className="flex gap-2">
+                    <td colSpan={6} className="px-3 py-3 text-sm text-ink-700">
+                      <p className="text-xs text-ink-500">Editing {customer.username}</p>
+                      <div className="mt-2 grid gap-3 sm:grid-cols-3">
+                        <Field label="Name" error={editErrors.name}>
+                          <Input value={editForm.name} onChange={(event) => setEditForm({ ...editForm, name: event.target.value })} />
+                        </Field>
+                        <Field label="Contact number" error={editErrors.contactNumber}>
+                          <Input value={editForm.contactNumber} onChange={(event) => setEditForm({ ...editForm, contactNumber: event.target.value })} inputMode="tel" />
+                        </Field>
+                        <Field label="Email" error={editErrors.email}>
+                          <Input value={editForm.email} onChange={(event) => setEditForm({ ...editForm, email: event.target.value })} type="email" />
+                        </Field>
+                      </div>
+                      <div className="mt-3 flex gap-2">
                         <Button size="sm" onClick={(event) => saveEdit(event, customer.id)} disabled={editSubmitting}>{editSubmitting ? 'Saving…' : 'Save'}</Button>
                         <Button size="sm" variant="secondary" onClick={cancelEdit}>Cancel</Button>
                       </div>
-                    </Td>
+                    </td>
                   </Tr>
                 ) : (
                   <Tr key={customer.id}>
-                    <Td className="font-semibold text-ink-900">{customer.name}</Td>
-                    <Td>{customer.username}</Td>
-                    <Td>{customer.contactNumber}</Td>
-                    <Td>{customer.email}</Td>
+                    <Td className="font-semibold text-ink-900">
+                      {customer.name}
+                      <span className="block text-xs font-normal text-ink-500 lg:hidden">{customer.username}</span>
+                      <span className="block text-xs font-normal text-ink-500 md:hidden">{customer.contactNumber}</span>
+                    </Td>
+                    <Td priority="lg">{customer.username}</Td>
+                    <Td priority="md">{customer.contactNumber}</Td>
+                    <Td priority="xl">{customer.email}</Td>
                     <Td><StatusBadge status={customer.isActive ? 'ACTIVE' : 'INACTIVE'} label={customer.isActive ? 'Active' : 'Inactive'} /></Td>
                     {isAdmin && (
                       <Td>

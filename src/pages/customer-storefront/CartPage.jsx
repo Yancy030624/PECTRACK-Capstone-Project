@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet } from '../../api/client.js'
 import { useCart } from '../../cart/CartContext.jsx'
+import { formatPeso } from '../../lib/format.js'
 
 export function CartPage() {
   const { lines, setQuantity, removeItem } = useCart()
@@ -54,27 +55,27 @@ export function CartPage() {
                 <div className="min-w-0 flex-1">
                   <p className="font-bold text-stone-900">{product.name}</p>
                   {product.variant && <p className="text-xs font-semibold text-green-700">{product.variant}</p>}
-                  <p className="mt-1 text-xs text-stone-500">₱{product.price} each</p>
+                  <p className="mt-1 text-xs text-stone-500">{formatPeso(product.price)} each</p>
                 </div>
                 <div className="flex items-center rounded-full border border-green-100">
-                  <button type="button" onClick={() => setQuantity(line.productId, line.quantity - 1)} aria-label="Decrease quantity" className="grid h-7 w-7 place-items-center text-sm font-bold text-green-800">−</button>
-                  <span className="w-6 text-center text-xs font-bold">{line.quantity}</span>
-                  <button type="button" onClick={() => setQuantity(line.productId, line.quantity + 1)} aria-label="Increase quantity" className="grid h-7 w-7 place-items-center text-sm font-bold text-green-800">+</button>
+                  <button type="button" onClick={() => setQuantity(line.productId, line.quantity - 1)} aria-label="Decrease quantity" className="grid h-9 w-9 place-items-center text-base font-bold text-green-800">−</button>
+                  <span className="w-7 text-center text-sm font-bold">{line.quantity}</span>
+                  <button type="button" onClick={() => setQuantity(line.productId, line.quantity + 1)} aria-label="Increase quantity" className="grid h-9 w-9 place-items-center text-base font-bold text-green-800">+</button>
                 </div>
-                <p className="w-20 shrink-0 text-right text-sm font-extrabold text-green-800">₱{(Number(product.price) * line.quantity).toFixed(2)}</p>
-                <button type="button" onClick={() => removeItem(line.productId)} className="shrink-0 rounded-full px-2 py-1 text-[10px] font-bold text-red-700 transition hover:bg-red-50">Remove</button>
+                <p className="w-20 shrink-0 text-right text-sm font-extrabold text-green-800">{formatPeso(Number(product.price) * line.quantity)}</p>
+                <button type="button" onClick={() => removeItem(line.productId)} className="shrink-0 rounded-full px-3 py-2 text-xs font-bold text-red-700 transition hover:bg-red-50">Remove</button>
               </div>
             ))}
           </div>
 
           <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-green-100 bg-[#fbfbdc] p-5">
             <div>
-              <p className="text-xs font-semibold text-green-800">Provisional subtotal</p>
-              <p className="text-2xl font-extrabold text-stone-900">₱{subtotal.toFixed(2)}</p>
-              <p className="mt-1 text-[10px] text-stone-500">The exact total is confirmed when you place the order.</p>
+              <p className="text-xs font-semibold text-green-800">Estimated subtotal</p>
+              <p className="text-2xl font-extrabold text-stone-900">{formatPeso(subtotal)}</p>
+              <p className="mt-1 text-xs text-stone-500">The exact total is confirmed when you place the order.</p>
             </div>
             <div className="flex items-center gap-3">
-              <Link to="/menu" className="text-xs font-bold text-green-800 hover:underline">Continue shopping</Link>
+              <Link to="/menu" className="inline-flex min-h-9 items-center text-xs font-bold text-green-800 hover:underline">Continue shopping</Link>
               <Link to="/checkout" className="rounded-full bg-green-700 px-6 py-3 text-xs font-bold text-white shadow-md transition hover:bg-green-800">Proceed to checkout</Link>
             </div>
           </div>

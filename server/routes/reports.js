@@ -362,7 +362,10 @@ router.get('/summary', async (_request, response) => {
     // READ from stock_alerts. Phase 5 has been writing it since Step 5;
     // nothing until now looked.
     getLowStockAlerts(),
-    pool.query(`SELECT COUNT(*)::int AS n FROM deliveries WHERE status IN ('PENDING_ASSIGNMENT', 'ASSIGNED')`),
+    // Only deliveries someone can still act on: a row whose order is
+    // already COMPLETED or CANCELLED cannot be assigned (routes/deliveries.js
+    // refuses it), so counting it here sent staff to a queue of dead work.
+    pool.query(`SELECT COUNT(*)::int AS n FROM deliveries d JOIN orders o ON o.order_id = d.order_id WHERE d.status IN ('PENDING_ASSIGNMENT', 'ASSIGNED') AND o.status NOT IN ('COMPLETED', 'CANCELLED')`),
     getExpiredStock(),
   ])
   const todayRow = todayResult.rows[0]

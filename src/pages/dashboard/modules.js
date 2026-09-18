@@ -24,38 +24,44 @@ export const modules = [
   // where they land instead (Dashboard.jsx's defaultModuleFor) — the same
   // "send them to real content, not a placeholder" call already made for
   // customers.
-  { name: 'Dashboard', icon: '▦', roles: ['ADMIN', 'CASHIER'] },
-  { name: 'Staff Management', icon: '☺', roles: ['ADMIN'] },
+  { name: 'Dashboard', icon: 'dashboard', roles: ['ADMIN', 'CASHIER'] },
+  { name: 'Staff Management', icon: 'staff', roles: ['ADMIN'] },
   // Staff manage every order; a customer only ever needs their own — two
   // different screens with two different names, not one screen wearing
   // two labels. Both map to the SAME component (OrderManagement.jsx,
   // Dashboard.jsx's moduleComponents), which dispatches on role
   // internally — the exact shape Delivery Management already established
   // for ADMIN/CASHIER vs DELIVERY PERSONNEL below.
-  { name: 'Order Management', icon: '□', roles: ['ADMIN', 'CASHIER'] },
-  { name: 'My Orders', icon: '□', roles: ['CUSTOMER'] },
+  { name: 'Order Management', icon: 'orders', roles: ['ADMIN', 'CASHIER'] },
+  { name: 'My Orders', icon: 'orders', roles: ['CUSTOMER'] },
   // Read-only for CASHIER (CustomerManagement.jsx hides Edit/Deactivate
   // for anyone but ADMIN, and customers.js:53's PATCH route backs that up
   // server-side) — a cashier still needs to look a customer up to attach
   // one to a delivery order, but only ADMIN may change a customer's
   // record. See UI_REVISIONS_PLAN.md Decision 12.
-  { name: 'Customer Management', icon: '♙', roles: ['ADMIN', 'CASHIER'] },
+  { name: 'Customer Management', icon: 'customers', roles: ['ADMIN', 'CASHIER'] },
   // ADMIN only — every write in products.js is already admin-gated, so a
   // cashier opening this screen previously saw a catalogue where every
   // button failed. They already see products (with prices) inside the
   // order screen and stock levels in Inventory Management, so the screen
   // was redundant for them, not merely restricted. See
   // UI_REVISIONS_PLAN.md Decision 13.
-  { name: 'Product Management', icon: '▤', roles: ['ADMIN'] },
-  { name: 'Inventory Management', icon: '⛁', roles: ['ADMIN', 'CASHIER'] },
-  { name: 'Payment & Billing', icon: '◫', roles: ['ADMIN', 'CUSTOMER', 'CASHIER'] },
+  { name: 'Product Management', icon: 'products', roles: ['ADMIN'] },
+  { name: 'Inventory Management', icon: 'inventory', roles: ['ADMIN', 'CASHIER'] },
+  { name: 'Payment & Billing', icon: 'payments', roles: ['ADMIN', 'CASHIER'] },
+  // A customer does not "bill" anyone — same screen (PaymentBilling.jsx
+  // dispatches on role), named for what they do there.
+  { name: 'My Payments', icon: 'payments', roles: ['CUSTOMER'] },
   // Phase 7 (see PHASE7_PLAN.md) — one nav entry shared by three roles.
   // ADMIN/CASHIER get the assignment queue; DELIVERY PERSONNEL get their
   // own workflow instead — DeliveryManagement.jsx dispatches between the
   // two based on role, the same shape Order Management now also uses.
-  { name: 'Delivery Management', icon: '⛟', roles: ['ADMIN', 'CASHIER', 'DELIVERY PERSONNEL'] },
-  { name: 'Reporting & Analytics', icon: '⌁', roles: ['ADMIN', 'CASHIER'] },
-  { name: 'My Profile', icon: '◉', roles: ['ADMIN', 'CUSTOMER', 'CASHIER', 'DELIVERY PERSONNEL'] },
+  { name: 'Delivery Management', icon: 'deliveries', roles: ['ADMIN', 'CASHIER'] },
+  // The driver's screen has always titled itself "My Deliveries"; the nav
+  // said "Delivery Management". One name, the driver's own.
+  { name: 'My Deliveries', icon: 'deliveries', roles: ['DELIVERY PERSONNEL'] },
+  { name: 'Reporting & Analytics', icon: 'reports', roles: ['ADMIN', 'CASHIER'] },
+  { name: 'My Profile', icon: 'profile', roles: ['ADMIN', 'CUSTOMER', 'CASHIER', 'DELIVERY PERSONNEL'] },
   // No separate 'Address Book' entry any more — a customer's saved
   // delivery addresses moved INTO My Profile as a tab (MyProfile.jsx),
   // alongside their profile details and password. One place for

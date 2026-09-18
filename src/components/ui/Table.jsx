@@ -8,6 +8,19 @@
 // users already see the page heading above the table, but a screen
 // reader jumping directly into table navigation mode has nothing else
 // that names what the table is.
+// Responsive column priority. A table that only ever scrolls sideways
+// hides whichever columns are rightmost — on every admin table that was
+// Status and Actions, the two a person acts on. `priority` names the
+// breakpoint a column first appears at; below it the column is dropped
+// entirely (`hidden` beats `table-cell`), so what remains fits. Pass the
+// same value to a column's <Th> and every <Td> under it.
+const PRIORITY_CLASSES = {
+  md: 'hidden md:table-cell',
+  lg: 'hidden lg:table-cell',
+  xl: 'hidden xl:table-cell',
+}
+const priorityClass = (priority) => (priority ? PRIORITY_CLASSES[priority] ?? '' : '')
+
 export function Table({ caption, children, className = '' }) {
   return (
     <div className="overflow-x-auto rounded-panel border border-line-200 bg-surface">
@@ -25,11 +38,11 @@ export function Thead({ children }) {
 
 // `scope="col"` is the fix for M6: without it, a screen reader reads a
 // row as a bare list of values with no header association at all.
-export function Th({ children, align = 'left', className = '' }) {
+export function Th({ children, align = 'left', priority, className = '' }) {
   return (
     <th
       scope="col"
-      className={`border-b border-line-200 py-3 px-3 text-[10px] font-semibold uppercase tracking-wide text-ink-500 ${align === 'right' ? 'text-right' : 'text-left'} ${className}`}
+      className={`whitespace-nowrap border-b border-line-200 py-3 px-3 text-[10px] font-semibold uppercase tracking-wide text-ink-500 ${align === 'right' ? 'text-right' : 'text-left'} ${priorityClass(priority)} ${className}`}
     >
       {children}
     </th>
@@ -51,9 +64,9 @@ export function Tr({ className = '', ...props }) {
 // specific complaint that peso columns currently left-align and don't
 // line up ("Numeric and currency columns right-aligned with
 // tabular-nums").
-export function Td({ children, align = 'left', numeric = false, className = '' }) {
+export function Td({ children, align = 'left', numeric = false, priority, className = '' }) {
   return (
-    <td className={`py-3 px-3 text-sm text-ink-700 ${align === 'right' || numeric ? 'text-right tabular-nums' : 'text-left'} ${className}`}>
+    <td className={`py-3 px-3 text-sm text-ink-700 ${align === 'right' || numeric ? 'text-right tabular-nums' : 'text-left'} ${priorityClass(priority)} ${className}`}>
       {children}
     </td>
   )

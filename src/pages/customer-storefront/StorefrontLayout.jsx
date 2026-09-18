@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Outlet, useNavigate } from 'react-router-dom'
+import { Link, Outlet, useNavigate } from 'react-router-dom'
 import { Brand } from '../../components/Brand.jsx'
 import { LoginModal } from '../../components/LoginModal.jsx'
 import { MarketingHeader } from '../../components/MarketingHeader.jsx'
@@ -23,7 +23,15 @@ export function StorefrontLayout({ user, onLogin }) {
       </main>
       <footer className="border-t border-green-100 bg-[#fffedc] px-4 py-10 sm:px-7">
         <div className="mx-auto flex max-w-6xl flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
-          <Brand compact />
+          <div>
+            <Brand compact />
+            <nav aria-label="Footer" className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-xs font-bold text-green-800">
+              <Link to="/" className="py-2 hover:underline">Home</Link>
+              <Link to="/menu" className="py-2 hover:underline">Menu</Link>
+              <Link to="/about" className="py-2 hover:underline">About</Link>
+              <Link to="/contact" className="py-2 hover:underline">Contact</Link>
+            </nav>
+          </div>
           <div className="grid gap-6 text-xs text-stone-600 sm:grid-cols-3 sm:gap-10">
             <div>
               <p className="mb-2 font-serif text-sm font-bold text-green-800">Visit</p>
@@ -35,11 +43,13 @@ export function StorefrontLayout({ user, onLogin }) {
             </div>
             <div>
               <p className="mb-2 font-serif text-sm font-bold text-green-800">Reach us</p>
-              <a href="tel:0425404366" className="hover:text-green-800 hover:underline">(042) 540-4366</a>
+              <a href="tel:0425404366" className="inline-block py-2 hover:text-green-800 hover:underline">(042) 540-4366</a>
+              <br />
+              <a href="tel:0425408838" className="inline-block py-2 hover:text-green-800 hover:underline">(042) 540-8838</a>
             </div>
           </div>
         </div>
-        <p className="mx-auto mt-8 max-w-6xl text-[10px] text-stone-400">© {new Date().getFullYear()} Pecto's Bakery — PECTRACK Order Management System.</p>
+        <p className="mx-auto mt-8 max-w-6xl text-xs text-stone-500">© {new Date().getFullYear()} Pecto's Bakery — PECTRACK Order Management System.</p>
       </footer>
       <LoginModal
         open={loginOpen}

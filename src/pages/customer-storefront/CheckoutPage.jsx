@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { apiGet, apiPost } from '../../api/client.js'
 import { AddressForm } from '../../components/AddressForm.jsx'
 import { useCart } from '../../cart/CartContext.jsx'
+import { formatPeso } from '../../lib/format.js'
 
 const instructionsMaxLength = 500
 
@@ -145,7 +146,7 @@ export function CheckoutPage() {
                   <div className="mt-3 space-y-2">
                     {addresses.map((address) => (
                       <label key={address.id} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-xs transition ${addressId === address.id ? 'border-green-700 bg-green-50' : 'border-stone-200'}`}>
-                        <input type="radio" name="addressId" checked={addressId === address.id} onChange={() => setAddressId(address.id)} className="mt-0.5" />
+                        <input type="radio" name="addressId" checked={addressId === address.id} onChange={() => setAddressId(address.id)} className="mt-0.5 h-5 w-5 accent-green-700" />
                         <span>
                           <span className="block font-bold text-stone-800">{address.label}{address.isDefault && <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-[9px] font-bold text-green-800">DEFAULT</span>}</span>
                           <span className="block text-stone-600">{address.recipientName} · {address.contactNumber}</span>
@@ -154,44 +155,47 @@ export function CheckoutPage() {
                       </label>
                     ))}
                   </div>
-                  <button type="button" onClick={() => setAddingAddress(true)} className="mt-3 text-[11px] font-bold text-green-700 hover:underline">+ Add another address</button>
+                  <button type="button" onClick={() => setAddingAddress(true)} className="mt-3 py-2 text-xs font-bold text-green-700 hover:underline">+ Add another address</button>
                 </>
               )}
-              {errors.addressId && <p className="mt-2 text-[10px] font-medium text-red-700">{errors.addressId}</p>}
+              {errors.addressId && <p className="mt-2 text-xs font-medium text-red-700">{errors.addressId}</p>}
             </div>
           )}
 
           <div className="rounded-2xl border border-green-100 bg-white p-5">
             <label htmlFor="checkout-instructions" className="text-sm font-bold text-stone-900">Special instructions (optional)</label>
             <textarea id="checkout-instructions" value={instructions} onChange={(event) => setInstructions(event.target.value.slice(0, instructionsMaxLength))} rows={3} placeholder="e.g. Less sugar, birthday message on the cake" className="mt-3 w-full rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700" />
-            <p className="mt-1 text-right text-[10px] text-stone-400">{instructions.length}/{instructionsMaxLength}</p>
+            <p className="mt-1 text-right text-xs text-stone-500">{instructions.length}/{instructionsMaxLength}</p>
           </div>
 
           <div className="rounded-2xl border border-green-100 bg-white p-5">
             <label htmlFor="checkout-needed-by" className="text-sm font-bold text-stone-900">When do you need it? (optional)</label>
             <input id="checkout-needed-by" type="datetime-local" value={requestedFulfillmentTime} onChange={(event) => setRequestedFulfillmentTime(event.target.value)} className="mt-3 w-full rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700" />
-            <p className="mt-1 text-[10px] text-stone-400">Leave blank for as soon as it's ready. Orders can be placed up to 30 days ahead.</p>
-            {errors.requestedFulfillmentTime && <p className="mt-2 text-[10px] font-medium text-red-700">{errors.requestedFulfillmentTime}</p>}
+            <p className="mt-1 text-xs text-stone-500">Leave blank for as soon as it's ready. Orders can be placed up to 30 days ahead.</p>
+            {errors.requestedFulfillmentTime && <p className="mt-2 text-xs font-medium text-red-700">{errors.requestedFulfillmentTime}</p>}
           </div>
 
           <button type="button" onClick={handleSubmit} disabled={submitting} className="w-full rounded-2xl bg-green-700 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Placing your order…' : 'Place order'}</button>
         </div>
 
-        <div className="h-fit rounded-2xl border border-green-100 bg-[#fbfbdc] p-5">
+        {/* order-first below lg: on a phone the summary used to render
+            AFTER the "Place order" button, so the customer committed
+            before seeing the items and total. */}
+        <div className="order-first h-fit rounded-2xl border border-green-100 bg-[#fbfbdc] p-5 lg:order-none">
           <h2 className="text-sm font-bold text-stone-900">Order summary</h2>
           <div className="mt-3 space-y-2 divide-y divide-green-100/60">
             {validLines.map(({ line, product }) => (
               <div key={line.productId} className="flex items-center justify-between gap-2 pt-2 text-xs first:pt-0">
                 <span className="text-stone-700">{product.name}{product.variant ? ` (${product.variant})` : ''} × {line.quantity}</span>
-                <span className="font-bold text-stone-900">₱{(Number(product.price) * line.quantity).toFixed(2)}</span>
+                <span className="font-bold text-stone-900">{formatPeso(Number(product.price) * line.quantity)}</span>
               </div>
             ))}
           </div>
           <div className="mt-3 flex items-center justify-between border-t border-green-200 pt-3 text-sm font-extrabold text-green-800">
-            <span>Provisional total</span>
-            <span>₱{subtotal.toFixed(2)}</span>
+            <span>Estimated total</span>
+            <span>{formatPeso(subtotal)}</span>
           </div>
-          <Link to="/cart" className="mt-3 block text-center text-[11px] font-bold text-green-700 hover:underline">Edit cart</Link>
+          <Link to="/cart" className="mt-3 block py-2 text-center text-xs font-bold text-green-700 hover:underline">Edit cart</Link>
         </div>
       </div>
     </section>

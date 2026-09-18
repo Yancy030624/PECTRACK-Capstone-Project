@@ -59,7 +59,7 @@ const TOKEN_CLASSES = {
 export function StatusBadge({ status, label }) {
   const token = STATUS_TOKEN[status] ?? 'idle'
   return (
-    <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${TOKEN_CLASSES[token]}`}>
+    <span className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${TOKEN_CLASSES[token]}`}>
       {label ?? status?.replaceAll('_', ' ')}
     </span>
   )

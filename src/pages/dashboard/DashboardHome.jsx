@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { apiGet } from '../../api/client.js'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Card } from '../../components/ui/Card.jsx'
+import { formatPeso } from '../../lib/format.js'
 import { modules } from './modules.js'
 
 // Stage 3 (RULES-PLANS/UI_AUDIT.md — M1, M2, M3, M4). This is the first
@@ -55,8 +56,8 @@ export function DashboardHome({ user, onNavigate }) {
   // other three. `module` is only set on the two tiles that should be
   // real navigation.
   const tiles = [
-    { label: "Today's collected", value: summary ? `₱${summary.today.collected}` : '—', caption: 'Today, so far' },
-    { label: 'Outstanding', value: summary ? `₱${summary.outstanding}` : '—', caption: 'Unpaid across all open orders' },
+    { label: "Today's collected", value: summary ? formatPeso(summary.today.collected) : '—', caption: 'Today, so far' },
+    { label: 'Outstanding', value: summary ? formatPeso(summary.outstanding) : '—', caption: 'Unpaid across all open orders', module: 'Payment & Billing' },
     { label: 'Low stock', value: summary ? summary.lowStockAlertsTotal : '—', caption: 'Open stock alerts', module: 'Inventory Management' },
     // Caption kept short deliberately: the longer wording this replaced
     // ("Pending assignment or already assigned") wrapped to two lines and
@@ -64,7 +65,7 @@ export function DashboardHome({ user, onNavigate }) {
     // siblings, which breaks the "repeated things are one object" rule
     // the four-tile row exists to satisfy.
     { label: 'Deliveries to assign', value: summary ? summary.deliveriesNeedingAttention : '—', caption: 'Assign deliveries', module: 'Delivery Management' },
-    { label: 'Expired stock', value: summary ? summary.expiredStockTotal : '—', caption: 'Products past their date, still on the shelf', module: 'Inventory Management' },
+    { label: 'Expired stock', value: summary ? summary.expiredStockTotal : '—', caption: 'Past their date, still in stock', module: 'Inventory Management' },
   ]
 
   return (
@@ -83,12 +84,15 @@ export function DashboardHome({ user, onNavigate }) {
       <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {tiles.map((tile) => {
           const linkable = tile.module && allowedModuleNames.has(tile.module)
+          // A fixed inner layout: label at the top, value directly under it,
+          // caption pinned to the bottom — so a two-line caption or a long
+          // peso figure never shifts the value's baseline across tiles.
           const body = (
-            <>
+            <div className="flex h-full min-h-40 flex-col">
               <p className="text-sm font-medium text-ink-500">{tile.label}</p>
-              <p className="mt-3 text-4xl font-semibold text-ink-900">{tile.value}</p>
-              <p className={`mt-7 text-xs ${linkable ? 'font-medium text-brand-700' : 'text-ink-500'}`}>{linkable ? `${tile.caption} →` : tile.caption}</p>
-            </>
+              <p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{tile.value}</p>
+              <p className={`mt-auto pt-4 text-xs ${linkable ? 'font-medium text-brand-700' : 'text-ink-500'}`}>{linkable ? `${tile.caption} →` : tile.caption}</p>
+            </div>
           )
           // M2 fix: a tile that navigates is a real <button>, not a <p>
           // styled to look clickable — same reasoning as C2's row fix
@@ -130,8 +134,10 @@ export function DashboardHome({ user, onNavigate }) {
                 <div key={alert.id} className="flex items-center justify-between gap-4 py-4 text-sm text-ink-700">
                   <span className="flex items-center gap-3">
                     <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-status-wait-bg text-status-wait-fg">!</span>
-                    {alert.productName}
-                    {alert.variant ? ` (${alert.variant})` : ''} — {alert.alertMessage}
+                    <span>
+                      <span className="font-semibold text-ink-900">{alert.productName}{alert.variant ? ` (${alert.variant})` : ''}</span>
+                      <span className="block text-xs text-ink-500">{alert.stockQuantity} left · minimum {alert.minStockLevel}</span>
+                    </span>
                   </span>
                 </div>
               ))}

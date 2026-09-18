@@ -243,7 +243,7 @@ function AddressesTab() {
 
       {showForm && (
         <div className="mt-4 border-t border-line-100 pt-4">
-          <AddressForm onSaved={handleAddressSaved} onCancel={() => setShowForm(false)} />
+          <AddressForm variant="dashboard" onSaved={handleAddressSaved} onCancel={() => setShowForm(false)} />
         </div>
       )}
 

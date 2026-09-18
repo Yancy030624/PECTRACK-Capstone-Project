@@ -82,6 +82,9 @@ const pendingRequestConflictMessage = 'This product already has a pending reques
 const mapInventoryRow = (row) => ({
   productId: row.product_id,
   productName: row.product_name,
+  // Three "Broas" rows with no variant were indistinguishable on the
+  // stock screen; the variant is what tells the gallon tin from the pack.
+  variant: row.variant,
   categoryId: row.category_id,
   categoryName: row.category_name,
   stockQuantity: row.stock_quantity,
@@ -99,7 +102,7 @@ const mapInventoryRow = (row) => ({
   expired: row.expired,
 })
 
-const inventorySelectQuery = `SELECT i.inventory_id, i.product_id, p.product_name, p.category_id, c.category_name,
+const inventorySelectQuery = `SELECT i.inventory_id, i.product_id, p.product_name, p.variant, p.category_id, c.category_name,
             i.stock_quantity, i.min_stock_level, i.expiration_date, i.last_updated,
             ${expiredSql('i')} AS expired
      FROM inventory i
@@ -110,6 +113,7 @@ const mapChangeRequestRow = (row) => ({
   id: row.request_id,
   productId: row.product_id,
   productName: row.product_name,
+  variant: row.variant,
   requestedByName: row.requested_by_name,
   observedStockQuantity: row.observed_stock_quantity,
   proposedStockQuantity: row.proposed_stock_quantity,
@@ -127,7 +131,7 @@ const mapChangeRequestRow = (row) => ({
   createdAt: row.created_at,
 })
 
-const changeRequestSelectQuery = `SELECT r.request_id, r.product_id, p.product_name, r.requested_by, rc.name AS requested_by_name,
+const changeRequestSelectQuery = `SELECT r.request_id, r.product_id, p.product_name, p.variant, r.requested_by, rc.name AS requested_by_name,
             r.observed_stock_quantity, r.proposed_stock_quantity, r.proposed_min_stock_level,
             r.movement_reason, r.quantity_change,
             r.reason, r.status, r.reviewed_by, ra.name AS reviewed_by_name, r.reviewed_at, r.reviewer_note, r.created_at

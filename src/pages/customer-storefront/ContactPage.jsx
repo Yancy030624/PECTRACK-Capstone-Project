@@ -17,7 +17,7 @@ export function ContactPage() {
             href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`Pecto's Bakery, ${address}`)}`}
             target="_blank"
             rel="noreferrer"
-            className="mt-3 inline-block text-xs font-bold text-green-700 hover:underline"
+            className="mt-3 inline-block py-2 text-xs font-bold text-green-700 hover:underline"
           >
             Get directions →
           </a>
@@ -32,7 +32,7 @@ export function ContactPage() {
           <p className="mt-3 font-serif text-sm font-bold text-green-800">Phone</p>
           {phoneNumbers.map((number) => (
             <p key={number} className="mt-1 text-sm text-stone-600">
-              <a href={`tel:${number.replace(/[^\d+]/g, '')}`} className="hover:text-green-700 hover:underline">{number}</a>
+              <a href={`tel:${number.replace(/[^\d+]/g, '')}`} className="inline-block py-1 hover:text-green-700 hover:underline">{number}</a>
             </p>
           ))}
         </div>

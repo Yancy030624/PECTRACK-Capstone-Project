@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { apiGet } from '../../api/client.js'
+import { formatPeso } from '../../lib/format.js'
 
 export function OrderPlacedPage() {
   const { orderId } = useParams()
@@ -40,7 +41,7 @@ export function OrderPlacedPage() {
         <div className="mt-6 rounded-xl bg-[#fbfbdc] p-5 text-left text-sm">
           <div className="flex items-center justify-between"><span className="text-stone-600">Status</span><span className="font-bold text-stone-900">{order.status}</span></div>
           <div className="mt-2 flex items-center justify-between"><span className="text-stone-600">Order type</span><span className="font-bold text-stone-900">{order.orderType}</span></div>
-          <div className="mt-2 flex items-center justify-between border-t border-green-200 pt-2 text-green-800"><span className="font-bold">Total</span><span className="text-lg font-extrabold">₱{order.totalAmount}</span></div>
+          <div className="mt-2 flex items-center justify-between border-t border-green-200 pt-2 text-green-800"><span className="font-bold">Total</span><span className="text-lg font-extrabold">{formatPeso(order.totalAmount)}</span></div>
         </div>
 
         <p className="mt-5 text-xs text-stone-500">Pay at pickup or on delivery, or pay online now from Payment &amp; Billing.</p>

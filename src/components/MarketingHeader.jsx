@@ -3,7 +3,14 @@ import { useCart } from '../cart/CartContext.jsx'
 import { Brand } from './Brand.jsx'
 import { HeaderIcon } from './HeaderIcon.jsx'
 
-const navLinkClass = ({ isActive }) => `font-serif text-sm transition hover:text-green-800 ${isActive ? 'border-b-2 border-green-700 text-green-800' : 'text-stone-800'}`
+const navLinkClass = ({ isActive }) => `inline-flex min-h-9 items-center font-serif text-sm transition hover:text-green-800 ${isActive ? 'border-b-2 border-green-700 text-green-800' : 'text-stone-800'}`
+// The same four links as pills, for screens too narrow for the inline row.
+// Below `md` the header used to show only the account icon and JOIN, so a
+// phone visitor had no way to reach Menu, About, or Contact except the
+// Home hero — the pill row mirrors the "Jump to category" strip the Menu
+// page already uses, so it is not a new pattern.
+const mobileLinkClass = ({ isActive }) => `whitespace-nowrap rounded-full px-4 py-2 text-xs font-bold shadow-sm ring-1 ring-green-100 transition ${isActive ? 'bg-green-700 text-white' : 'bg-white text-green-800 hover:bg-green-50'}`
+const links = [['/', 'Home', true], ['/menu', 'Menu'], ['/about', 'About'], ['/contact', 'Contact']]
 
 // `onOpenLogin` defaults to a no-op because this header also renders bare
 // (no props) on /login and /register themselves — clicking the sign-in
@@ -18,13 +25,11 @@ export function MarketingHeader({ user, onOpenLogin = () => {} }) {
   const isCustomer = user?.role === 'CUSTOMER'
 
   return (
-    <header className="grid min-h-21.5 grid-cols-[1fr_auto] items-center border-t-[7px] border-[#26752a] bg-[#fffedc] px-4 py-3 sm:px-7 md:grid-cols-[1fr_auto_1fr]">
+    <header className="border-t-[7px] border-[#26752a] bg-[#fffedc]">
+      <div className="grid min-h-21.5 grid-cols-[1fr_auto] items-center px-4 py-3 sm:px-7 md:grid-cols-[1fr_auto_1fr]">
       <Link to="/" aria-label="Go to home"><Brand compact /></Link>
-      <nav className="hidden items-center gap-6 text-xs font-bold md:flex">
-        <NavLink to="/" end className={navLinkClass}>HOME</NavLink>
-        <NavLink to="/menu" className={navLinkClass}>MENU</NavLink>
-        <NavLink to="/about" className={navLinkClass}>ABOUT</NavLink>
-        <NavLink to="/contact" className={navLinkClass}>CONTACT</NavLink>
+      <nav aria-label="Site" className="hidden items-center gap-6 text-xs font-bold md:flex">
+        {links.map(([to, label, end]) => <NavLink key={to} to={to} end={end} className={navLinkClass}>{label.toUpperCase()}</NavLink>)}
       </nav>
       <div className="ml-auto flex items-center gap-3">
         {isCustomer && <HeaderIcon type="search" onClick={() => navigate('/menu?focus=search')} label="Search the menu" />}
@@ -42,8 +47,12 @@ export function MarketingHeader({ user, onOpenLogin = () => {} }) {
           </button>
         )}
         {isCustomer && <HeaderIcon type="cart" onClick={() => navigate('/cart')} badge={itemCount} label={`Cart, ${itemCount} item${itemCount === 1 ? '' : 's'}`} />}
-        {!user && <Link to="/register" className="rounded-full bg-green-700 px-3 py-2 text-[11px] text-white shadow-sm transition hover:bg-green-800 md:hidden">JOIN</Link>}
+        {!user && <Link to="/register" className="inline-flex min-h-9 items-center rounded-full bg-green-700 px-3 text-xs font-bold text-white shadow-sm transition hover:bg-green-800 md:hidden">JOIN</Link>}
       </div>
+      </div>
+      <nav aria-label="Site" className="flex gap-2 overflow-x-auto px-4 pb-3 sm:px-7 md:hidden">
+        {links.map(([to, label, end]) => <NavLink key={to} to={to} end={end} className={mobileLinkClass}>{label}</NavLink>)}
+      </nav>
     </header>
   )
 }

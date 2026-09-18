@@ -256,10 +256,10 @@ export function StaffManagement() {
               <Thead>
                 <Tr className="hover:bg-transparent">
                   <Th>Name</Th>
-                  <Th>Username</Th>
+                  <Th priority="lg">Username</Th>
                   <Th>Role</Th>
-                  <Th>Contact</Th>
-                  <Th>Email</Th>
+                  <Th priority="md">Contact</Th>
+                  <Th priority="xl">Email</Th>
                   <Th>Status</Th>
                   <Th>Actions</Th>
                 </Tr>
@@ -268,35 +268,36 @@ export function StaffManagement() {
                 {staff.map((person) =>
                   editingId === person.id ? (
                     <Tr key={person.id}>
-                      <Td>
-                        <Input value={editForm.name} onChange={(event) => updateEditField('name', event.target.value)} aria-label="Name" className="h-8 text-xs" />
-                        {editErrors.name && <p className="mt-1 text-xs text-red-700">{editErrors.name}</p>}
-                      </Td>
-                      <Td className="text-ink-500">{person.username}</Td>
-                      <Td className="text-ink-500">{roleLabels[person.role] ?? person.role}</Td>
-                      <Td>
-                        <Input value={editForm.contactNumber} onChange={(event) => updateEditField('contactNumber', event.target.value)} aria-label="Contact number" className="h-8 text-xs" />
-                        {editErrors.contactNumber && <p className="mt-1 text-xs text-red-700">{editErrors.contactNumber}</p>}
-                      </Td>
-                      <Td>
-                        <Input value={editForm.email} onChange={(event) => updateEditField('email', event.target.value)} aria-label="Email" className="h-8 text-xs" />
-                        {editErrors.email && <p className="mt-1 text-xs text-red-700">{editErrors.email}</p>}
-                      </Td>
-                      <Td><StatusBadge status={person.isActive ? 'ACTIVE' : 'INACTIVE'} /></Td>
-                      <Td>
-                        <div className="flex gap-2">
+                      <td colSpan={7} className="px-3 py-3 text-sm text-ink-700">
+                        <p className="text-xs text-ink-500">Editing {person.username} · {roleLabels[person.role] ?? person.role}</p>
+                        <div className="mt-2 grid gap-3 sm:grid-cols-3">
+                          <Field label="Name" error={editErrors.name}>
+                            <Input value={editForm.name} onChange={(event) => updateEditField('name', event.target.value)} />
+                          </Field>
+                          <Field label="Contact number" error={editErrors.contactNumber}>
+                            <Input value={editForm.contactNumber} onChange={(event) => updateEditField('contactNumber', event.target.value)} inputMode="tel" />
+                          </Field>
+                          <Field label="Email" error={editErrors.email}>
+                            <Input value={editForm.email} onChange={(event) => updateEditField('email', event.target.value)} type="email" />
+                          </Field>
+                        </div>
+                        <div className="mt-3 flex gap-2">
                           <Button type="button" size="sm" onClick={(event) => saveEdit(event, person.id)} disabled={editSubmitting}>{editSubmitting ? 'Saving…' : 'Save'}</Button>
                           <Button type="button" size="sm" variant="secondary" onClick={cancelEdit}>Cancel</Button>
                         </div>
-                      </Td>
+                      </td>
                     </Tr>
                   ) : (
                     <Tr key={person.id}>
-                      <Td className="font-semibold text-ink-900">{person.name}</Td>
-                      <Td>{person.username}</Td>
+                      <Td className="font-semibold text-ink-900">
+                        {person.name}
+                        <span className="block text-xs font-normal text-ink-500 lg:hidden">{person.username}</span>
+                        <span className="block text-xs font-normal text-ink-500 md:hidden">{person.contactNumber}</span>
+                      </Td>
+                      <Td priority="lg">{person.username}</Td>
                       <Td>{roleLabels[person.role] ?? person.role}</Td>
-                      <Td>{person.contactNumber}</Td>
-                      <Td>{person.email}</Td>
+                      <Td priority="md">{person.contactNumber}</Td>
+                      <Td priority="xl">{person.email}</Td>
                       <Td><StatusBadge status={person.isActive ? 'ACTIVE' : 'INACTIVE'} /></Td>
                       <Td>
                         {resettingId === person.id ? (

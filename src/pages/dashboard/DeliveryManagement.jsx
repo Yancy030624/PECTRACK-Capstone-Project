@@ -7,6 +7,7 @@ import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
+import { formatPeso } from '../../lib/format.js'
 import { MyDeliveries } from './MyDeliveries.jsx'
 
 const statusOptions = ['PENDING_ASSIGNMENT', 'ASSIGNED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED']
@@ -158,7 +159,7 @@ function StaffDeliveryView({ user }) {
               <li key={delivery.id} className="rounded-panel border border-line-200 p-4 text-sm">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
-                    <p className="font-semibold text-ink-900">Order #{delivery.orderId} · {delivery.customerName ?? 'Customer'} · <span className="tabular-nums">₱{delivery.totalAmount}</span></p>
+                    <p className="font-semibold text-ink-900">Order #{delivery.orderId} · {delivery.customerName ?? 'Customer'} · <span className="tabular-nums">{formatPeso(delivery.totalAmount)}</span></p>
                     <p className="mt-1 text-ink-500">{delivery.address.recipientName} · {delivery.address.contactNumber}</p>
                     <p className="mt-0.5 text-xs text-ink-500">
                       {delivery.address.addressLine1}{delivery.address.addressLine2 && `, ${delivery.address.addressLine2}`}
@@ -179,7 +180,10 @@ function StaffDeliveryView({ user }) {
                 {delivery.status === 'PENDING_ASSIGNMENT' && delivery.orderStatus === 'PLACED' && (
                   <p className="mt-3 border-t border-line-100 pt-3 text-xs text-ink-500">Confirm the order in Order Management before assigning a driver.</p>
                 )}
-                {delivery.status === 'PENDING_ASSIGNMENT' && delivery.orderStatus !== 'PLACED' && (
+                {delivery.status === 'PENDING_ASSIGNMENT' && (delivery.orderStatus === 'COMPLETED' || delivery.orderStatus === 'CANCELLED') && (
+                  <p className="mt-3 border-t border-line-100 pt-3 text-xs text-ink-500">This order is already {delivery.orderStatus.toLowerCase()} — nothing left to deliver.</p>
+                )}
+                {delivery.status === 'PENDING_ASSIGNMENT' && !['PLACED', 'COMPLETED', 'CANCELLED'].includes(delivery.orderStatus) && (
                   <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line-100 pt-3">
                     <div className="min-w-40 flex-1">
                       <Select value={assignChoice[delivery.id] ?? ''} onChange={(event) => setAssignChoice({ ...assignChoice, [delivery.id]: event.target.value })} aria-label={`Assign a driver for order #${delivery.orderId}`}>

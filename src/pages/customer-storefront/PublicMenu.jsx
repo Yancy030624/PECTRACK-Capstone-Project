@@ -1,4 +1,5 @@
 import { sectionAnchor, useMenuData } from './useMenuData.js'
+import { formatPeso } from '../../lib/format.js'
 
 // What an anonymous visitor sees: browse everything, no quantity stepper,
 // no cart — "Sign in to order" is the only thing a card lets them do
@@ -56,8 +57,8 @@ function PublicMenuCard({ product, openLogin }) {
         {product.variant && <p className="text-xs font-semibold text-green-700">{product.variant}</p>}
         {product.description && <p className="mt-1 flex-1 text-xs text-stone-500">{product.description}</p>}
         <div className="mt-3 flex items-center justify-between gap-2">
-          <span className="text-lg font-extrabold text-green-800">₱{product.price}</span>
-          <button type="button" onClick={openLogin} className="whitespace-nowrap rounded-full bg-green-700 px-3 py-1.5 text-[10px] font-bold text-white transition hover:bg-green-800">Sign in to order</button>
+          <span className="text-lg font-extrabold text-green-800">{formatPeso(product.price)}</span>
+          <button type="button" onClick={openLogin} className="min-h-9 whitespace-nowrap rounded-full bg-green-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-green-800">Sign in to order</button>
         </div>
       </div>
     </article>

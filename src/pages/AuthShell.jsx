@@ -34,5 +34,5 @@ export function AuthShell({ badge, title, children }) {
   )
 }
 
-export const authInputClass = 'w-full rounded-2xl border border-stone-200 bg-white px-4 py-2.5 text-xs shadow-sm outline-none transition focus:border-green-700 focus:ring-4 focus:ring-green-100'
+export const authInputClass = 'w-full rounded-2xl border border-stone-200 bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition focus:border-green-700 focus:ring-4 focus:ring-green-100'
 export const authButtonClass = 'mt-5 w-full rounded-2xl bg-brand-600 py-2.5 text-xs font-bold text-white shadow-md transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60'

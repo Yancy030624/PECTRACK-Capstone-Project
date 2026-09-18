@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet } from '../../api/client.js'
+import { formatPeso } from '../../lib/format.js'
 
 const featuredCount = 4
 
@@ -35,7 +36,7 @@ export function HomePage() {
             <p className="text-sm font-semibold text-green-700">TODAY'S PICKS</p>
             <h2 className="mt-1 text-2xl font-bold text-stone-900">A few favorites</h2>
           </div>
-          <Link to="/menu" className="text-xs font-bold text-green-700 hover:underline">See the full menu →</Link>
+          <Link to="/menu" className="inline-flex min-h-9 items-center text-xs font-bold text-green-700 hover:underline">See the full menu →</Link>
         </div>
         {featured === null ? (
           <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
@@ -53,7 +54,7 @@ export function HomePage() {
                 <div className="p-4">
                   <h3 className="font-bold text-stone-900">{product.name}</h3>
                   {product.variant && <p className="text-xs font-semibold text-green-700">{product.variant}</p>}
-                  <p className="mt-1 text-sm font-extrabold text-green-800">₱{product.price}</p>
+                  <p className="mt-1 text-sm font-extrabold text-green-800">{formatPeso(product.price)}</p>
                 </div>
               </Link>
             ))}
@@ -69,7 +70,7 @@ export function HomePage() {
           </div>
           <div className="rounded-2xl bg-white p-6 shadow-sm">
             <p className="text-2xl">🕒</p>
-            <p className="mt-2 font-serif text-sm font-bold text-green-800">Open daily</p>
+            <p className="mt-2 font-serif text-sm font-bold text-green-800">Open Mon–Sat</p>
             <p className="mt-1 text-xs text-stone-500">6:00 AM – 8:00 PM, Monday – Saturday</p>
           </div>
           <div className="rounded-2xl bg-white p-6 shadow-sm">

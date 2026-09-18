@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Brand } from '../../components/Brand.jsx'
 import { Button } from '../../components/ui/Button.jsx'
+import { ModuleIcon } from '../../components/ui/ModuleIcon.jsx'
 import { CustomerManagement } from './CustomerManagement.jsx'
 import { DashboardHome } from './DashboardHome.jsx'
 import { DeliveryManagement } from './DeliveryManagement.jsx'
@@ -24,12 +25,14 @@ const moduleComponents = {
   'Order Management': OrderManagement,
   'My Orders': OrderManagement,
   'Payment & Billing': PaymentBilling,
+  'My Payments': PaymentBilling,
   'Delivery Management': DeliveryManagement,
+  'My Deliveries': DeliveryManagement,
   'Reporting & Analytics': ReportingAnalytics,
 }
 const defaultModuleFor = (role) => {
   if (role === 'CUSTOMER') return 'My Orders'
-  if (role === 'DELIVERY PERSONNEL') return 'Delivery Management'
+  if (role === 'DELIVERY PERSONNEL') return 'My Deliveries'
   return 'Dashboard'
 }
 export function Dashboard({ user, onLogout, onUserUpdated }) {
@@ -82,7 +85,7 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
   // content, top to bottom, the way a phone page is supposed to behave.
   // ---------------------------------------------------------------------
   return (
-    <div className="flex min-h-screen flex-col bg-surface-sunk text-ink-700 md:h-screen md:overflow-hidden">
+    <div className="flex min-h-screen flex-col bg-surface-sunk text-ink-700 lg:h-screen lg:overflow-hidden">
       <header className="flex shrink-0 items-center justify-between border-b border-line-200 bg-surface px-4 py-3 shadow-raised sm:px-7">
         <Link to="/" aria-label="Go to home">
           <Brand compact />
@@ -102,12 +105,15 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
         </div>
       </header>
 
-      <div className="mx-auto flex w-full max-w-7xl min-h-0 flex-1 flex-col md:flex-row">
+      {/* The sidebar appears from `lg`, not `md`: at 768–1023px its 256px
+          took a third of the screen and squeezed every table into a
+          horizontal scroller. Tablets get the same pill row as phones. */}
+      <div className="mx-auto flex w-full max-w-7xl min-h-0 flex-1 flex-col lg:flex-row 2xl:max-w-[1440px]">
         {/* Desktop sidebar. No explicit height anywhere — it stretches to
             fill the row (see the layout note above) and scrolls its own
             content with `overflow-y-auto` if a role ever has enough
             modules to exceed the viewport. */}
-        <aside className="hidden w-64 shrink-0 overflow-y-auto border-r border-line-200 bg-surface p-5 md:block">
+        <aside className="hidden w-64 shrink-0 overflow-y-auto border-r border-line-200 bg-surface p-5 lg:block">
           {/* Micro-label per DESIGN SYSTEM's typography table: 10px/600,
               uppercase, tracking-wide — not the old font-bold/tracking-widest
               pairing (H2: weight should carry meaning, not be maxed out
@@ -130,15 +136,11 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
                     : 'font-medium text-ink-500 hover:bg-brand-50 hover:text-brand-700'
                 }`}
               >
-                <span className="text-lg">{module.icon}</span>
+                <ModuleIcon name={module.icon} />
                 {module.name}
               </button>
             ))}
           </nav>
-          <div className="mt-8 rounded-panel bg-surface-warm p-4 text-xs leading-5 text-brand-900">
-            <strong className="block font-semibold">{user.role} access</strong>
-            You can use {allowedModules.length} permitted module{allowedModules.length === 1 ? '' : 's'}.
-          </div>
         </aside>
 
         {/* Mobile module nav. Previously `absolute top-16.25` floating
@@ -146,13 +148,13 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
             child that sits between the header and the content in normal
             flow, so it can never overlap anything regardless of header
             height. */}
-        <div className="flex gap-2 overflow-x-auto border-b border-line-200 bg-surface p-3 md:hidden">
+        <div className="flex gap-2 overflow-x-auto border-b border-line-200 bg-surface p-3 lg:hidden">
           {allowedModules.map((module) => (
             <button
               type="button"
               key={module.name}
               onClick={() => setActiveModule(module.name)}
-              className={`shrink-0 rounded-full px-3 py-2 text-xs whitespace-nowrap ${
+              className={`inline-flex min-h-9 shrink-0 items-center rounded-full px-3 text-xs whitespace-nowrap ${
                 activeModule === module.name ? 'bg-brand-600 font-semibold text-white' : 'bg-brand-50 font-medium text-brand-700'
               }`}
             >
@@ -166,7 +168,7 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
             landmark. The shell owns the top spacing that used to live in
             every module page as `pt-24`/`md:pt-9`; each module's own
             <section> keeps only its ordinary side/bottom padding. */}
-        <main className="min-w-0 flex-1 pt-6 sm:pt-8 md:overflow-y-auto">
+        <main className="min-w-0 flex-1 pt-6 sm:pt-8 lg:overflow-y-auto">
           {/* onNavigate === setActiveModule, so a module page (currently
               only DashboardHome — see its M2 fix, UI_AUDIT.md) can switch
               to another permitted module the same way the sidebar/mobile

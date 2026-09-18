@@ -21,11 +21,11 @@ export function AboutPage() {
           <div className="grid grid-cols-2 gap-4">
             <div className="rounded-2xl border border-green-100 bg-white p-5 text-center">
               <p className="text-2xl font-extrabold text-green-800">6</p>
-              <p className="mt-1 text-[11px] font-semibold text-stone-500">days a week, baking fresh</p>
+              <p className="mt-1 text-xs font-semibold text-stone-500">days a week, baking fresh</p>
             </div>
             <div className="rounded-2xl border border-green-100 bg-white p-5 text-center">
               <p className="text-2xl font-extrabold text-green-800">40+</p>
-              <p className="mt-1 text-[11px] font-semibold text-stone-500">items on the counter</p>
+              <p className="mt-1 text-xs font-semibold text-stone-500">items on the counter</p>
             </div>
           </div>
         </div>

@@ -8,6 +8,7 @@ import { Field } from '../../components/ui/Field.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { Textarea } from '../../components/ui/Textarea.jsx'
+import { formatPeso } from '../../lib/format.js'
 
 const instructionsMaxLength = 500
 
@@ -66,6 +67,13 @@ export function NewOrderForm({ onCreated }) {
   const loading = customers === null || products === null
   const productsById = loading ? new Map() : new Map(products.map((product) => [product.id, product]))
   const availableProducts = loading ? [] : products.filter((product) => product.availabilityStatus)
+  // A cashier types the product name faster than they scroll a 40-entry
+  // dropdown; the search narrows the <select> below it as they type.
+  const [productSearch, setProductSearch] = useState('')
+  const matchingProducts = availableProducts.filter((product) => {
+    const term = productSearch.trim().toLowerCase()
+    return !term || `${product.name} ${product.variant ?? ''}`.toLowerCase().includes(term)
+  })
 
   const filteredCustomers = !customers ? [] : customers.filter((customer) => {
     const query = customerSearch.trim().toLowerCase()
@@ -194,7 +202,7 @@ export function NewOrderForm({ onCreated }) {
               {addresses === null ? (
                 <p className="text-sm text-ink-500">Loading addresses…</p>
               ) : addingAddress ? (
-                <AddressForm customerId={customerId} onSaved={handleAddressSaved} onCancel={() => setAddingAddress(false)} />
+                <AddressForm variant="dashboard" customerId={customerId} onSaved={handleAddressSaved} onCancel={() => setAddingAddress(false)} />
               ) : addresses.length === 0 ? (
                 <div>
                   <p className="text-sm text-ink-500">This customer has no saved address yet.</p>
@@ -247,16 +255,17 @@ export function NewOrderForm({ onCreated }) {
 
         <Card className="p-6">
           <h2 className="text-lg font-semibold text-ink-900">Items</h2>
-          <div className="mt-3">
+          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1.4fr]">
+            <Input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Search products…" aria-label="Search products" />
             <Field error={errors.items}>
-              <Select value="" onChange={(event) => addLine(event.target.value)} aria-label="Add a product to the order">
+              <Select value="" onChange={(event) => { addLine(event.target.value); setProductSearch('') }} aria-label="Add a product to the order">
                 <option value="" disabled>
-                  Add a product…
+                  {matchingProducts.length === 0 ? 'No products match' : `Add a product… (${matchingProducts.length})`}
                 </option>
-                {availableProducts.map((product) => (
+                {matchingProducts.map((product) => (
                   <option key={product.id} value={product.id}>
                     {product.name}
-                    {product.variant ? ` (${product.variant})` : ''} — ₱{product.price}
+                    {product.variant ? ` (${product.variant})` : ''} — {formatPeso(product.price)}{product.inStock === false ? ' — sold out' : ''}
                   </option>
                 ))}
               </Select>
@@ -286,7 +295,7 @@ export function NewOrderForm({ onCreated }) {
                         +
                       </button>
                     </div>
-                    <span className="w-16 shrink-0 text-right font-semibold text-brand-700 tabular-nums">₱{(Number(product.price) * line.quantity).toFixed(2)}</span>
+                    <span className="w-16 shrink-0 text-right font-semibold text-brand-700 tabular-nums">{formatPeso(Number(product.price) * line.quantity)}</span>
                     <button type="button" onClick={() => removeLine(line.productId)} className="shrink-0 rounded-full px-2 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-50">
                       Remove
                     </button>
@@ -340,14 +349,14 @@ export function NewOrderForm({ onCreated }) {
                     <span className="text-ink-700">
                       {product.name} × {line.quantity}
                     </span>
-                    <span className="font-medium text-ink-900 tabular-nums">₱{(Number(product.price) * line.quantity).toFixed(2)}</span>
+                    <span className="font-medium text-ink-900 tabular-nums">{formatPeso(Number(product.price) * line.quantity)}</span>
                   </div>
                 )
               })}
             </div>
             <div className="mt-3 flex items-center justify-between border-t border-brand-100 pt-3 text-sm font-semibold text-brand-700">
               <span>Provisional total</span>
-              <span className="tabular-nums">₱{subtotal.toFixed(2)}</span>
+              <span className="tabular-nums">{formatPeso(subtotal)}</span>
             </div>
           </>
         )}
