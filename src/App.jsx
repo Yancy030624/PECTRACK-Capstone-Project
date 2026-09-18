@@ -3,8 +3,10 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate, useSe
 import { apiGet, apiPost } from './api/client.js'
 import { CartProvider } from './cart/CartContext.jsx'
 import { Dashboard } from './pages/dashboard/Dashboard.jsx'
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage.jsx'
 import { LoginPage } from './pages/LoginPage.jsx'
 import { RegistrationPage } from './pages/RegistrationPage.jsx'
+import { ResetPasswordPage } from './pages/ResetPasswordPage.jsx'
 import { AboutPage } from './pages/customer-storefront/AboutPage.jsx'
 import { CartPage } from './pages/customer-storefront/CartPage.jsx'
 import { CheckoutPage } from './pages/customer-storefront/CheckoutPage.jsx'
@@ -99,6 +101,8 @@ function App() {
         <Routes>
           <Route path="/login" element={<LoginRoute user={user} onLogin={setUser} />} />
           <Route path="/register" element={<RegisterRoute user={user} />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/dashboard" element={<RequireAuth user={user}><Dashboard user={user} onLogout={handleLogout} onUserUpdated={setUser} /></RequireAuth>} />
           <Route element={<StorefrontLayout user={user} onLogin={setUser} />}>
             <Route path="/" element={<HomePage />} />

@@ -71,7 +71,14 @@ function CustomerMenuCard({ product, onAdd }) {
   const [quantity, setQuantity] = useState(1)
   const [added, setAdded] = useState(false)
 
+  // Sold out is a fact about stock, not a choice about the catalogue, so
+  // the card stays visible (the customer can see it exists and check
+  // back) but cannot be added — the order would only be refused at
+  // checkout by the stock guard in routes/orders.js.
+  const soldOut = product.inStock === false
+
   const handleAdd = () => {
+    if (soldOut) return
     onAdd(product.id, quantity)
     setQuantity(1)
     setAdded(true)
@@ -86,18 +93,18 @@ function CustomerMenuCard({ product, onAdd }) {
           : <div className="grid h-full w-full place-items-center text-5xl">🥐</div>}
       </div>
       <div className="flex flex-1 flex-col p-4">
-        <h3 className="font-bold text-stone-900">{product.name}</h3>
+        <h3 className="font-bold text-stone-900">{product.name}{soldOut && <span className="ml-2 rounded-full bg-stone-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-stone-500">Sold out</span>}</h3>
         {product.variant && <p className="text-xs font-semibold text-green-700">{product.variant}</p>}
         {product.description && <p className="mt-1 flex-1 text-xs text-stone-500">{product.description}</p>}
         <div className="mt-3 flex items-center justify-between gap-2">
           <span className="text-lg font-extrabold text-green-800">₱{product.price}</span>
           <div className="flex items-center gap-1.5">
             <div className="flex items-center rounded-full border border-green-100">
-              <button type="button" onClick={() => setQuantity((q) => Math.max(1, q - 1))} aria-label="Decrease quantity" className="grid h-6 w-6 place-items-center text-xs font-bold text-green-800">−</button>
+              <button type="button" disabled={soldOut} onClick={() => setQuantity((q) => Math.max(1, q - 1))} aria-label="Decrease quantity" className="grid h-6 w-6 place-items-center text-xs font-bold text-green-800 disabled:opacity-40">−</button>
               <span className="w-4 text-center text-[11px] font-bold">{quantity}</span>
-              <button type="button" onClick={() => setQuantity((q) => q + 1)} aria-label="Increase quantity" className="grid h-6 w-6 place-items-center text-xs font-bold text-green-800">+</button>
+              <button type="button" disabled={soldOut} onClick={() => setQuantity((q) => q + 1)} aria-label="Increase quantity" className="grid h-6 w-6 place-items-center text-xs font-bold text-green-800 disabled:opacity-40">+</button>
             </div>
-            <button type="button" onClick={handleAdd} className="whitespace-nowrap rounded-full bg-green-700 px-3 py-1.5 text-[10px] font-bold text-white transition hover:bg-green-800">{added ? 'Added ✓' : 'Add to cart'}</button>
+            <button type="button" disabled={soldOut} onClick={handleAdd} className="whitespace-nowrap rounded-full bg-green-700 px-3 py-1.5 text-[10px] font-bold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:bg-stone-300">{soldOut ? 'Sold out' : added ? 'Added ✓' : 'Add to cart'}</button>
           </div>
         </div>
       </div>

@@ -3,6 +3,22 @@
 
 export const bcryptRounds = 12
 
+// The one place the four role tables are folded into a single "profile"
+// for a users row. Every query that needs a user's name/email/contact —
+// login, session lookup, profile refresh, password recovery — used to
+// write these four LEFT JOINs out again; five copies of the same shape
+// is how one of them drifts. `profileJoinsSql` expects the users table
+// to be aliased `u`; `profileColumnsSql` expects those joins present.
+export const profileJoinsSql = `LEFT JOIN admins a ON a.user_id = u.user_id
+     LEFT JOIN cashiers ca ON ca.user_id = u.user_id
+     LEFT JOIN customers c ON c.user_id = u.user_id
+     LEFT JOIN delivery_personnel d ON d.user_id = u.user_id`
+export const profileColumnsSql = `COALESCE(a.name, ca.name, c.name, d.name) AS name,
+            COALESCE(a.email, ca.email, c.email, d.email) AS email,
+            COALESCE(a.contact_num, ca.contact_num, c.contact_num, d.contact_num) AS contact_num`
+// "Any role's email matches" — the WHERE half of a lookup by email.
+export const profileEmailMatchesSql = (param) => `(LOWER(a.email) = ${param} OR LOWER(ca.email) = ${param} OR LOWER(c.email) = ${param} OR LOWER(d.email) = ${param})`
+
 // Maps every role to its profile table. Used by self-service profile
 // editing (PATCH /api/auth/me), which needs to update whichever table the
 // requesting user's own role lives in, regardless of which role that is —

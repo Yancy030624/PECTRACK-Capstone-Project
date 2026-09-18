@@ -243,6 +243,90 @@ describe('customer registration and session lifecycle', () => {
     const meResponse = await fetch(`${baseUrl}/api/auth/me`, { headers: { Cookie: sessionCookie } })
     assert.equal(meResponse.status, 401)
   })
+
+  // "Remember me" was a checkbox wired to nothing. Unticked now means a
+  // browser-session cookie (no Max-Age); ticked or omitted keeps the
+  // 7-day cookie every login has always produced.
+  test('POST /api/auth/login honours rememberMe: false with a session cookie that carries no Max-Age', async () => {
+    const remembered = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: customer.username, password: customer.password }) })
+    assert.equal(remembered.status, 200)
+    assert.match(remembered.headers.get('set-cookie'), /Max-Age=/)
+
+    const forgotten = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: customer.username, password: customer.password, rememberMe: false }) })
+    assert.equal(forgotten.status, 200)
+    const cookie = forgotten.headers.get('set-cookie')
+    assert.doesNotMatch(cookie, /Max-Age=/)
+    assert.doesNotMatch(cookie, /Expires=/)
+    // Still a working session — only the cookie's lifetime differs.
+    const me = await fetch(`${baseUrl}/api/auth/me`, { headers: { Cookie: cookie.split(';')[0] } })
+    assert.equal(me.status, 200)
+  })
+
+  // Email password recovery (migration 010). The token never leaves the
+  // server except inside the email, so the test reads the stored hash's
+  // row only to prove it exists — and gets the token itself by capturing
+  // what lib/mail.js prints when SMTP is not configured.
+  test('forgot-password answers identically for known and unknown emails, and the emailed link resets the password once', async () => {
+    const unknown = await fetch(`${baseUrl}/api/auth/forgot-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: `nobody_${runId}@example.com` }) })
+    assert.equal(unknown.status, 200)
+    const unknownBody = await unknown.json()
+
+    const printed = []
+    const originalLog = console.log
+    console.log = (...args) => printed.push(args.join(' '))
+    let known
+    try {
+      known = await fetch(`${baseUrl}/api/auth/forgot-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: customer.email.toUpperCase() }) })
+    } finally {
+      console.log = originalLog
+    }
+    assert.equal(known.status, 200)
+    assert.deepEqual(await known.json(), unknownBody, 'the response must not reveal whether the email is on file')
+
+    const mail = printed.find((line) => line.includes('[mail not configured]'))
+    assert.ok(mail, 'with no SMTP configured the email is printed to the console')
+    const token = mail.match(/reset-password\?token=([A-Za-z0-9_-]+)/)[1]
+
+    // Cooldown: a second request straight away sends nothing and issues
+    // no second token — but still answers exactly the same 200.
+    const printedAgain = []
+    console.log = (...args) => printedAgain.push(args.join(' '))
+    let again
+    try {
+      again = await fetch(`${baseUrl}/api/auth/forgot-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: customer.email }) })
+    } finally {
+      console.log = originalLog
+    }
+    assert.equal(again.status, 200)
+    assert.deepEqual(await again.json(), unknownBody)
+    assert.ok(!printedAgain.some((line) => line.includes('[mail not configured]')), 'no second email inside the cooldown')
+    assert.equal((await pool.query('SELECT COUNT(*)::int AS n FROM password_reset_tokens WHERE user_id = $1', [createdUserId])).rows[0].n, 1)
+    const stored = await pool.query('SELECT consumed_at FROM password_reset_tokens WHERE user_id = $1', [createdUserId])
+    assert.equal(stored.rows.length, 1)
+    assert.equal(stored.rows[0].consumed_at, null)
+
+    const weak = await fetch(`${baseUrl}/api/auth/reset-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, newPassword: 'short', confirmPassword: 'short' }) })
+    assert.equal(weak.status, 422)
+    const wrongToken = await fetch(`${baseUrl}/api/auth/reset-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: 'not-a-real-token', newPassword: 'Brand-New-Password-7!', confirmPassword: 'Brand-New-Password-7!' }) })
+    assert.equal(wrongToken.status, 400)
+
+    // An open session exists from the rememberMe test above; the reset must end it.
+    const before = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: customer.username, password: customer.password }) })
+    const liveCookie = before.headers.get('set-cookie').split(';')[0]
+
+    const reset = await fetch(`${baseUrl}/api/auth/reset-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, newPassword: 'Brand-New-Password-7!', confirmPassword: 'Brand-New-Password-7!' }) })
+    assert.equal(reset.status, 200)
+    assert.equal((await fetch(`${baseUrl}/api/auth/me`, { headers: { Cookie: liveCookie } })).status, 401, 'existing sessions are ended')
+
+    const oldPassword = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: customer.username, password: customer.password }) })
+    assert.equal(oldPassword.status, 401)
+    const newPassword = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: customer.username, password: 'Brand-New-Password-7!' }) })
+    assert.equal(newPassword.status, 200)
+    customer.password = 'Brand-New-Password-7!'
+
+    const reuse = await fetch(`${baseUrl}/api/auth/reset-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, newPassword: 'Another-Password-8!', confirmPassword: 'Another-Password-8!' }) })
+    assert.equal(reuse.status, 400, 'a consumed token is dead')
+  })
 })
 
 // The second factor itself (createOtpCode / /verify-otp) is still fully

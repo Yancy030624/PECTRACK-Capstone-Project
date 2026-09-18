@@ -229,7 +229,7 @@ export function InventoryManagement({ user }) {
                         <Td>{item.categoryName}</Td>
                         <Td numeric>{item.stockQuantity}</Td>
                         <Td numeric>{item.minStockLevel}</Td>
-                        <Td>{item.expirationDate ?? '—'}</Td>
+                        <Td>{item.expirationDate ?? '—'}{item.expired && <span className="ml-2 rounded-full bg-status-fail-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-fail-fg">Expired</span>}</Td>
                         <Td>
                           <StatusBadge status={item.lowStock ? 'INACTIVE' : 'ACTIVE'} label={item.lowStock ? 'Low stock' : 'OK'} />
                         </Td>

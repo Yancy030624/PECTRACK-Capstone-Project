@@ -359,7 +359,7 @@ export function ReportingAnalytics({ user }) {
         {inventory ? (
           <>
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Spoiled units</p><p className="mt-3 text-4xl font-semibold text-ink-900">{inventory.spoilageUnits}</p></Card>
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Units lost</p><p className="mt-3 text-4xl font-semibold text-ink-900">{inventory.lossUnits}</p></Card>
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Open low-stock alerts</p><p className="mt-3 text-4xl font-semibold text-ink-900">{inventory.lowStockAlertsTotal}</p></Card>
             </div>
 

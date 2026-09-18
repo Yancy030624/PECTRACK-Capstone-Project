@@ -12,6 +12,7 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { optionalAuth, requireAuth, requireRole } from '../lib/auth.js'
+import { expiredSql } from '../lib/inventory.js'
 import { deleteFile, filePath, saveFile } from '../lib/storage.js'
 import { normalize, parseId } from '../lib/validation.js'
 
@@ -32,11 +33,25 @@ const mapProductRow = (row) => ({
   variant: row.variant,
   availabilityStatus: row.availability_status,
   imageUrl: row.image_key ? `/api/products/${row.product_id}/image` : null,
+  // A boolean, never the count. availability_status is what the bakery
+  // CHOOSES to sell; this is whether there is any to sell right now.
+  // Without it the Menu offered a product at stock 0 as if it were on the
+  // shelf, and the customer learned otherwise only at checkout, from the
+  // 409 the stock guard in routes/orders.js returns. The number itself
+  // stays private to routes/inventory.js (ADMIN/CASHIER): the storefront
+  // needs "sold out", not "3 left".
+  inStock: row.in_stock,
 })
 
-const productSelectQuery = `SELECT p.product_id, p.category_id, c.category_name, p.product_name, p.description, p.price, p.variant, p.availability_status, p.image_key
+const productSelectQuery = `SELECT p.product_id, p.category_id, c.category_name, p.product_name, p.description, p.price, p.variant, p.availability_status, p.image_key,
+            COALESCE(i.stock_quantity, 0) > 0 AS in_stock
      FROM products p
-     JOIN categories c ON c.category_id = p.category_id`
+     JOIN categories c ON c.category_id = p.category_id
+     LEFT JOIN inventory i ON i.product_id = p.product_id`
+// Requires the inventory join above (alias i). The rule itself lives in
+// lib/inventory.js so this router, order placement, and the dashboard can
+// never disagree on what "expired" is.
+const notExpiredSql = `NOT ${expiredSql('i')}`
 
 // Same shape as deliveries.js's allowedProofMimeTypes — the content type
 // IS the validation (express.raw({ type: [...keys] }) below refuses
@@ -77,8 +92,10 @@ function validateProductFields(body, { partial }) {
     else values.price = Math.round(price * 100) / 100
   }
   if (has('categoryId')) {
-    const categoryId = Number(body.categoryId)
-    if (!body.categoryId || Number.isNaN(categoryId)) errors.categoryId = 'Select a category.'
+    // parseId, not Number(): '1.5' is a number but not a bigint, and
+    // reached Postgres as an invalid literal (a 500) instead of this 422.
+    const categoryId = parseId(body.categoryId)
+    if (!categoryId) errors.categoryId = 'Select a category.'
     else values.categoryId = categoryId
   }
   if (has('availabilityStatus')) {
@@ -103,8 +120,12 @@ router.get('/', optionalAuth, async (request, response) => {
   // separate "public" one — because a customer view is already the most
   // restricted view this table has. `!request.user` covers the storefront;
   // the CUSTOMER check is unchanged from before this endpoint was public.
+  // "Unavailable/expired items are hidden from customers" — the paper's
+  // own availability rule, of which only the first half was enforced
+  // until now. Expired means inventory.expiration_date is before today;
+  // NULL (no expiry recorded) never hides anything.
   const restrictToAvailable = !request.user || request.user.role === 'CUSTOMER'
-  const query = restrictToAvailable ? `${productSelectQuery} WHERE p.availability_status = TRUE ORDER BY p.product_name` : `${productSelectQuery} ORDER BY p.product_name`
+  const query = restrictToAvailable ? `${productSelectQuery} WHERE p.availability_status = TRUE AND ${notExpiredSql} ORDER BY p.product_name` : `${productSelectQuery} ORDER BY p.product_name`
   const result = await pool.query(query)
   return response.json({ products: result.rows.map(mapProductRow) })
 })
@@ -115,10 +136,11 @@ router.get('/:id', optionalAuth, async (request, response) => {
   const productId = parseId(request.params.id)
   if (!productId) return response.status(404).json({ message: 'Product not found.' })
 
-  const result = await pool.query(`${productSelectQuery} WHERE p.product_id = $1`, [productId])
+  const result = await pool.query(`${productSelectQuery} WHERE p.product_id = $1 AND (${notExpiredSql} OR $2) `, [productId, Boolean(request.user && request.user.role !== 'CUSTOMER')])
   const row = result.rows[0]
-  // An anonymous or CUSTOMER caller asking for a hidden product gets the
-  // same 404 as a nonexistent one — no confirmation that it exists at all.
+  // An anonymous or CUSTOMER caller asking for a hidden (or expired)
+  // product gets the same 404 as a nonexistent one — no confirmation that
+  // it exists at all. Staff ($2 true above) still see it.
   if (!row || ((!request.user || request.user.role === 'CUSTOMER') && !row.availability_status)) return response.status(404).json({ message: 'Product not found.' })
   return response.json({ product: mapProductRow(row) })
 })
@@ -131,9 +153,14 @@ router.get('/:id/image', optionalAuth, async (request, response) => {
   const productId = parseId(request.params.id)
   if (!productId) return response.status(404).json({ message: 'Product not found.' })
 
-  const result = await pool.query('SELECT image_key, availability_status FROM products WHERE product_id = $1', [productId])
+  const result = await pool.query(
+    `SELECT p.image_key, p.availability_status, ${notExpiredSql} AS not_expired
+       FROM products p LEFT JOIN inventory i ON i.product_id = p.product_id
+      WHERE p.product_id = $1`,
+    [productId],
+  )
   const row = result.rows[0]
-  if (!row || !row.image_key || ((!request.user || request.user.role === 'CUSTOMER') && !row.availability_status)) {
+  if (!row || !row.image_key || ((!request.user || request.user.role === 'CUSTOMER') && (!row.availability_status || !row.not_expired))) {
     return response.status(404).json({ message: 'Image not found.' })
   }
 
@@ -298,6 +325,17 @@ router.delete('/:id', requireRole('ADMIN'), async (request, response) => {
   // place that remembers which file was ever attached to this product.
   // Once the DELETE below succeeds, that knowledge is gone for good.
   const existing = await pool.query('SELECT image_key FROM products WHERE product_id = $1', [productId])
+
+  // inventory.product_id cascades on delete, and inventory_movements and
+  // stock_alerts cascade from inventory — so deleting a product that has
+  // ever been restocked, spoiled, or corrected would take its whole
+  // ledger with it, silently, and the period's SUM(quantity_change) in
+  // GET /api/reports/inventory would change after the fact. Order history
+  // is already protected by order_details' FK (the 23503 catch below);
+  // this gives the ledger the same protection. A product with neither
+  // orders nor movements — created by mistake, never used — still deletes.
+  const hasMovements = await pool.query('SELECT 1 FROM inventory_movements im JOIN inventory i ON i.inventory_id = im.inventory_id WHERE i.product_id = $1 LIMIT 1', [productId])
+  if (hasMovements.rowCount > 0) return response.status(409).json({ message: 'This product has stock movement history and cannot be deleted. Set it to unavailable instead.' })
 
   try {
     const result = await pool.query('DELETE FROM products WHERE product_id = $1', [productId])

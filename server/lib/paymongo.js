@@ -118,6 +118,42 @@ export async function createCheckoutSession({ secretKey, amountCentavos, referen
   return { id: body.data.id, checkoutUrl: body.data.attributes.checkout_url }
 }
 
+// Refunds a settled PayMongo Payment (pay_...) — the id the payment.paid
+// webhook carries, stored as payments.gateway_payment_id (migration 009).
+// A checkout session id cannot be refunded; only the Payment it produced.
+//
+// Same request shape and error handling as createCheckoutSession above:
+// one PaymongoApiError for "never answered" and "answered no" alike, and
+// an Idempotency-Key so a retried call can never refund the same money
+// twice. `reason` is one of PayMongo's own fixed values; every refund this
+// app issues is a cancelled order, which is 'requested_by_customer'.
+export async function createRefund({ secretKey, paymentId, amountCentavos, notes }) {
+  let response
+  try {
+    response = await fetch(`${paymongoApiBase}/refunds`, {
+      signal: AbortSignal.timeout(paymongoRequestTimeoutMs),
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Basic ${Buffer.from(`${secretKey}:`).toString('base64')}`,
+        'Idempotency-Key': crypto.randomUUID(),
+      },
+      body: JSON.stringify({
+        data: { attributes: { amount: amountCentavos, payment_id: paymentId, reason: 'requested_by_customer', notes } },
+      }),
+    })
+  } catch (error) {
+    throw new PaymongoApiError('Could not reach PayMongo.', { status: null, body: { cause: error.name } })
+  }
+
+  const body = await response.json().catch(() => null)
+  if (!response.ok) {
+    throw new PaymongoApiError('PayMongo rejected the refund request.', { status: response.status, body })
+  }
+
+  return { id: body.data.id, status: body.data.attributes.status }
+}
+
 // Verifies a webhook request genuinely came from PayMongo and returns the
 // parsed event. Throws PaymongoWebhookVerificationError for ANY failure
 // (malformed header, bad signature, stale timestamp) — the route turns

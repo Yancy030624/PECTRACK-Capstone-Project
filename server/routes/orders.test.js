@@ -298,6 +298,124 @@ describe('order management', () => {
     assert.equal(history.rows[0].n, 0, 'a refused transition must not leave a history row claiming it happened')
   })
 
+  const patchStatus = (orderId, status, cookie = cashierCookie) =>
+    fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ status }) })
+
+  const placePickupOrder = async () => {
+    const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 1 }] }) })
+    const orderId = (await response.json()).order.id
+    createdOrderIds.push(orderId)
+    return orderId
+  }
+
+  // The order status is a forward path. Re-submitting the current status
+  // or moving back used to succeed, and each wrote a history row for a
+  // transition that never happened.
+  test('PATCH /api/orders/:id refuses the same status and a backward move, and writes no history row for either', async () => {
+    const orderId = await placePickupOrder()
+    const same = await patchStatus(orderId, 'PLACED')
+    assert.equal(same.status, 409)
+    assert.match((await same.json()).message, /already placed/)
+
+    const forward = await patchStatus(orderId, 'IN_PRODUCTION')
+    assert.equal(forward.status, 200, 'skipping ahead is allowed')
+    const backward = await patchStatus(orderId, 'CONFIRMED')
+    assert.equal(backward.status, 409)
+    assert.match((await backward.json()).message, /cannot move back/)
+
+    const history = await pool.query('SELECT status FROM order_status_history WHERE order_id = $1 ORDER BY history_id', [orderId])
+    assert.deepEqual(history.rows.map((row) => row.status), ['PLACED', 'IN_PRODUCTION'])
+  })
+
+  test('PATCH /api/orders/:id refuses OUT_FOR_DELIVERY on a PICKUP order and READY_FOR_PICKUP on a DELIVERY order', async () => {
+    const pickupId = await placePickupOrder()
+    const outForDelivery = await patchStatus(pickupId, 'OUT_FOR_DELIVERY')
+    assert.equal(outForDelivery.status, 409)
+    assert.match((await outForDelivery.json()).message, /pickup order/)
+
+    const readyForPickup = await patchStatus(deliveryOrderId, 'READY_FOR_PICKUP')
+    assert.equal(readyForPickup.status, 409)
+    assert.match((await readyForPickup.json()).message, /delivery order/)
+  })
+
+  // A delivery order is finished once the goods arrived — deliveries.status
+  // is the source of truth for that (PHASE7_PLAN.md, Decision 2), so
+  // COMPLETED asks it, on top of the existing fully-paid rule.
+  test('PATCH /api/orders/:id COMPLETED on a DELIVERY order requires the delivery to be DELIVERED', async () => {
+    const response = await fetch(`${baseUrl}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: customerCookie },
+      body: JSON.stringify({ orderType: 'DELIVERY', addressId: customerAddressId, items: [{ productId: availableProductId, quantity: 1 }] }),
+    })
+    const orderId = (await response.json()).order.id
+    createdOrderIds.push(orderId)
+    const paid = await fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ orderId, method: 'CASH', amount: 45.5 }) })
+    assert.equal(paid.status, 201)
+
+    const tooEarly = await patchStatus(orderId, 'COMPLETED')
+    assert.equal(tooEarly.status, 409)
+    assert.match((await tooEarly.json()).message, /marked delivered/)
+    const untouched = await pool.query('SELECT status FROM orders WHERE order_id = $1', [orderId])
+    assert.equal(untouched.rows[0].status, 'PLACED', 'the refused COMPLETED must roll the status claim back too')
+
+    await pool.query(`UPDATE deliveries SET status = 'DELIVERED', delivered_at = CURRENT_TIMESTAMP WHERE order_id = $1`, [orderId])
+    const completed = await patchStatus(orderId, 'COMPLETED')
+    assert.equal(completed.status, 200)
+  })
+
+  // A PENDING gateway intent is a live checkout link for an order nobody
+  // will fill once it is cancelled; the cancel closes it. (What happens if
+  // it is paid anyway is payments.test.js's webhook case.)
+  test('PATCH /api/orders/:id CANCELLED closes a PENDING gateway intent as CANCELLED', async () => {
+    const orderId = await placePickupOrder()
+    await pool.query(`INSERT INTO payments (order_id, payment_method, amount, status, gateway_reference) VALUES ($1, 'GCASH', 45.5, 'PENDING', $2)`, [orderId, `cs_cancel_${runId}_${orderId}`])
+    const cancelled = await patchStatus(orderId, 'CANCELLED', customerCookie)
+    assert.equal(cancelled.status, 200)
+    const { rows } = await pool.query('SELECT status, refunded_at FROM payments WHERE order_id = $1', [orderId])
+    assert.equal(rows[0].status, 'CANCELLED')
+    assert.equal(rows[0].refunded_at, null, 'nothing was paid, so nothing was refunded')
+  })
+
+  // orders.requested_fulfillment_time existed in the schema from the
+  // start and was never written; a cake order needs a date.
+  test('POST /api/orders stores an optional requestedFulfillmentTime, and refuses one in the past or too far ahead', async () => {
+    const soon = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString()
+    const created = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 1 }], requestedFulfillmentTime: soon }) })
+    assert.equal(created.status, 201)
+    const orderId = (await created.json()).order.id
+    createdOrderIds.push(orderId)
+    const detail = await (await fetch(`${baseUrl}/api/orders/${orderId}`, { headers: { Cookie: customerCookie } })).json()
+    assert.equal(new Date(detail.order.requestedFulfillmentTime).toISOString(), soon)
+    const listed = await (await fetch(`${baseUrl}/api/orders`, { headers: { Cookie: customerCookie } })).json()
+    assert.equal(new Date(listed.orders.find((order) => order.id === orderId).requestedFulfillmentTime).toISOString(), soon)
+
+    for (const bad of ['2020-01-01T10:00:00Z', new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(), 'next tuesday']) {
+      const refused = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 1 }], requestedFulfillmentTime: bad }) })
+      assert.equal(refused.status, 422, `"${bad}"`)
+      assert.ok((await refused.json()).errors.requestedFulfillmentTime)
+    }
+  })
+
+  // A customer could see their order reach OUT_FOR_DELIVERY and never
+  // DELIVERED, because that fact lives on deliveries.status (Decision 4)
+  // and /api/deliveries does not admit customers.
+  test('GET /api/orders/:id carries the delivery status for a DELIVERY order, and null for a PICKUP one', async () => {
+    const pickup = await (await fetch(`${baseUrl}/api/orders/${await placePickupOrder()}`, { headers: { Cookie: customerCookie } })).json()
+    assert.equal(pickup.order.delivery, null)
+
+    const delivery = await (await fetch(`${baseUrl}/api/orders/${deliveryOrderId}`, { headers: { Cookie: customerCookie } })).json()
+    assert.ok(delivery.order.delivery)
+    assert.ok(['PENDING_ASSIGNMENT', 'ASSIGNED', 'FAILED'].includes(delivery.order.delivery.status))
+    assert.deepEqual(Object.keys(delivery.order.delivery).sort(), ['assignedAt', 'deliveredAt', 'deliveryPersonnelName', 'status'], 'no address, no driver note — only where it stands')
+  })
+
+  test('POST /api/orders rejects a non-numeric customerId and an out-of-range quantity with 422, never 500', async () => {
+    const badCustomer = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ customerId: 'abc', items: [{ productId: availableProductId, quantity: 1 }] }) })
+    assert.equal(badCustomer.status, 422)
+    const hugeQuantity = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 1e12 }] }) })
+    assert.equal(hugeQuantity.status, 422)
+  })
+
   // Decision 6 — cancelling an order must resolve its delivery row, in the
   // SAME transaction, so an ASSIGNED/OUT_FOR_DELIVERY delivery never keeps
   // pointing at a cancelled order.

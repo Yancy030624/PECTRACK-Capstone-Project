@@ -275,6 +275,20 @@ describe('editing stock directly', () => {
     assert.equal(movements.rows[0].note, 'Delivery from supplier')
   })
 
+  // A reason and a new figure arrive separately, and used to be accepted
+  // in any combination. RESTOCK only adds; a loss reason only removes.
+  test('a reason that contradicts the direction of the change is refused, and the ledger is untouched', async () => {
+    // Stock is 35 going in.
+    const before = await pool.query('SELECT COUNT(*)::int AS n FROM inventory_movements WHERE inventory_id = $1', [inventoryId])
+    const restockDown = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ stockQuantity: 30, reason: 'RESTOCK' }) })
+    assert.equal(restockDown.status, 422)
+    const spoilageUp = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ stockQuantity: 40, reason: 'SPOILAGE' }) })
+    assert.equal(spoilageUp.status, 422)
+    const after = await pool.query('SELECT COUNT(*)::int AS n, (SELECT stock_quantity FROM inventory WHERE inventory_id = $1) AS stock FROM inventory_movements WHERE inventory_id = $1', [inventoryId])
+    assert.equal(after.rows[0].n, before.rows[0].n)
+    assert.equal(after.rows[0].stock, 35)
+  })
+
   test('setting stockQuantity to its current value writes no movement row', async () => {
     // Stock is 35 after the previous test — "changing" it to 35 again is a
     // no-op that should leave the ledger untouched.
@@ -587,6 +601,31 @@ describe('cashier proposes, admin approves (Phase 5, Step 6)', () => {
     assert.equal(response.status, 403)
 
     await fetch(`${baseUrl}/api/inventory/requests/${requestId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'REJECTED' }) })
+  })
+
+  // CANCELLED was the one change_request_status value nothing could reach:
+  // a cashier who mistyped waited on an admin to reject it, with the
+  // one-pending-per-product rule blocking the corrected proposal meanwhile.
+  test('a cashier can withdraw their own PENDING request as CANCELLED, which frees the product for a new proposal', async () => {
+    const created = await fetch(`${baseUrl}/api/inventory/requests`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ productId, proposedStockQuantity: 21, reason: 'typo' }) })
+    const requestId = (await created.json()).request.id
+
+    const adminAsCancel = await fetch(`${baseUrl}/api/inventory/requests/${requestId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    assert.equal(adminAsCancel.status, 422, 'CANCELLED is the cashier\'s own withdrawal, not an admin decision')
+
+    const withdrawn = await fetch(`${baseUrl}/api/inventory/requests/${requestId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    assert.equal(withdrawn.status, 200)
+    assert.equal((await withdrawn.json()).request.status, 'CANCELLED')
+
+    const twice = await fetch(`${baseUrl}/api/inventory/requests/${requestId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    assert.equal(twice.status, 409)
+    const adminAfter = await fetch(`${baseUrl}/api/inventory/requests/${requestId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'APPROVED' }) })
+    assert.equal(adminAfter.status, 409, 'a withdrawn request cannot be approved afterwards')
+
+    const stock = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [productId])
+    const fresh = await fetch(`${baseUrl}/api/inventory/requests`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ productId, proposedStockQuantity: stock.rows[0].stock_quantity, reason: 'corrected' }) })
+    assert.equal(fresh.status, 201, 'the product is free for a new proposal')
+    await fetch(`${baseUrl}/api/inventory/requests/${(await fresh.json()).request.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'REJECTED' }) })
   })
 
   test('PATCH rejects an invalid decision, and a malformed/missing request id', async () => {

@@ -16,7 +16,7 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
-import { syncStockAlert } from '../lib/inventory.js'
+import { expiredSql, syncStockAlert } from '../lib/inventory.js'
 import { normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
@@ -41,6 +41,13 @@ const manualMovementReasons = new Set(['RESTOCK', 'SPOILAGE', 'CORRECTION', 'PRO
 // direct edit or the cashier's existing recount shape, never through this
 // list.
 const lossReportReasons = new Set(['PRODUCTION_LOSS', 'EXPIRED', 'DAMAGED', 'SPOILAGE'])
+// Which way each manual reason is allowed to move stock. RESTOCK only ever
+// adds; the four loss reasons only ever remove; CORRECTION is the one that
+// goes either way (a recount can find more or less). Checked on the admin
+// direct edit, where the reason and the new figure arrive separately and
+// used to be accepted in any combination — a "+20 SPOILAGE" ledger row is
+// not a loss, and analytics built on the ledger would read it as one.
+const reasonDirection = { RESTOCK: 1, SPOILAGE: -1, PRODUCTION_LOSS: -1, EXPIRED: -1, DAMAGED: -1 }
 const requestDecisions = new Set(['APPROVED', 'REJECTED'])
 const requestReasonMaxLength = 500
 // Describes whatever pending request is blocking this product, or null if
@@ -85,10 +92,16 @@ const mapInventoryRow = (row) => ({
   // storing it would just be a second place it could go stale relative to
   // stock_quantity and min_stock_level.
   lowStock: row.stock_quantity <= row.min_stock_level,
+  // Same "computed, never stored" reasoning as lowStock. True once
+  // expiration_date is before today: the product is hidden from the
+  // catalogue and refused at checkout (routes/products.js, routes/orders.js)
+  // until the date is cleared or the stock replaced.
+  expired: row.expired,
 })
 
 const inventorySelectQuery = `SELECT i.inventory_id, i.product_id, p.product_name, p.category_id, c.category_name,
-            i.stock_quantity, i.min_stock_level, i.expiration_date, i.last_updated
+            i.stock_quantity, i.min_stock_level, i.expiration_date, i.last_updated,
+            ${expiredSql('i')} AS expired
      FROM inventory i
      JOIN products p ON p.product_id = i.product_id
      JOIN categories c ON c.category_id = p.category_id`
@@ -287,12 +300,40 @@ router.post('/requests', requireRole('CASHIER'), async (request, response) => {
   return response.status(201).json({ request: mapChangeRequestRow(full.rows[0]) })
 })
 
-// PATCH /api/inventory/requests/:requestId — admin-only approve/reject.
-router.patch('/requests/:requestId', requireRole('ADMIN'), async (request, response) => {
+// PATCH /api/inventory/requests/:requestId — admin approve/reject, or the
+// requesting cashier withdrawing their own PENDING proposal (CANCELLED —
+// the one change_request_status value nothing could reach before this: a
+// cashier who mistyped had to wait for an admin to reject it, while the
+// one-pending-per-product rule blocked the corrected proposal).
+router.patch('/requests/:requestId', async (request, response) => {
   const requestId = parseId(request.params.requestId)
   if (!requestId) return response.status(404).json({ message: 'Request not found.' })
 
   const decision = normalize(request.body.status).toUpperCase()
+
+  if (request.user.role === 'CASHIER') {
+    if (decision !== 'CANCELLED') return response.status(403).json({ message: 'Only an admin can approve or reject a request — you can withdraw your own pending one.' })
+    // Ownership and PENDING in the WHERE of the write itself, the same
+    // conditional-claim shape the admin review below uses: a request that
+    // is not theirs 404s (never confirmed to exist), one already reviewed
+    // is a 409, and an admin's approval racing this withdrawal wins or
+    // loses cleanly on the row.
+    const withdrawn = await pool.query(
+      `UPDATE inventory_change_requests r SET status = 'CANCELLED', reviewed_at = CURRENT_TIMESTAMP
+         FROM cashiers c
+        WHERE r.request_id = $1 AND r.status = 'PENDING' AND c.cashier_id = r.requested_by AND c.user_id = $2
+      RETURNING r.request_id`,
+      [requestId, request.user.id],
+    )
+    if (withdrawn.rowCount === 0) {
+      const owns = await pool.query('SELECT 1 FROM inventory_change_requests r JOIN cashiers c ON c.cashier_id = r.requested_by WHERE r.request_id = $1 AND c.user_id = $2', [requestId, request.user.id])
+      if (!owns.rows[0]) return response.status(404).json({ message: 'Request not found.' })
+      return response.status(409).json({ message: 'This request has already been reviewed.' })
+    }
+    const full = await pool.query(`${changeRequestSelectQuery} WHERE r.request_id = $1`, [requestId])
+    return response.json({ request: mapChangeRequestRow(full.rows[0]) })
+  }
+
   if (!requestDecisions.has(decision)) return response.status(422).json({ message: 'Enter a valid decision.', errors: { status: 'status must be APPROVED or REJECTED.' } })
 
   const reviewerNote = request.body.reviewerNote == null ? null : normalize(request.body.reviewerNote).slice(0, requestReasonMaxLength) || null
@@ -523,6 +564,21 @@ router.patch('/:productId', requireRole('ADMIN'), async (request, response) => {
       return response.status(404).json({ message: 'Product not found.' })
     }
     const current = locked.rows[0]
+
+    // Judged against the LOCKED figure, for the same reason the ledger row
+    // below is: the direction of the change is only knowable once the
+    // starting point cannot move under it.
+    if ('stockQuantity' in values) {
+      const direction = Math.sign(values.stockQuantity - current.stock_quantity)
+      const expected = reasonDirection[reason]
+      if (expected && direction !== 0 && direction !== expected) {
+        await client.query('ROLLBACK')
+        const message = expected > 0
+          ? `A restock adds stock — the new quantity is below the current ${current.stock_quantity}. Use correction, or a loss reason, for a decrease.`
+          : `${reason.toLowerCase().replaceAll('_', ' ')} removes stock — the new quantity is above the current ${current.stock_quantity}. Use restock, or correction, for an increase.`
+        return response.status(422).json({ message, errors: { reason: message } })
+      }
+    }
 
     // expiration_date is nullable and clearing it to NULL is a real, valid
     // edit — COALESCE alone can't distinguish "not sent" from "sent as

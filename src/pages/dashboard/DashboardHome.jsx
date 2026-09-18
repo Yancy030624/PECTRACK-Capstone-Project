@@ -64,6 +64,7 @@ export function DashboardHome({ user, onNavigate }) {
     // siblings, which breaks the "repeated things are one object" rule
     // the four-tile row exists to satisfy.
     { label: 'Deliveries to assign', value: summary ? summary.deliveriesNeedingAttention : '—', caption: 'Assign deliveries', module: 'Delivery Management' },
+    { label: 'Expired stock', value: summary ? summary.expiredStockTotal : '—', caption: 'Products past their date, still on the shelf', module: 'Inventory Management' },
   ]
 
   return (
@@ -79,7 +80,7 @@ export function DashboardHome({ user, onNavigate }) {
         </div>
       )}
 
-      <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {tiles.map((tile) => {
           const linkable = tile.module && allowedModuleNames.has(tile.module)
           const body = (
@@ -149,6 +150,24 @@ export function DashboardHome({ user, onNavigate }) {
           <p className="mt-5 text-sm text-ink-500">{error ? 'Unable to load alerts.' : summary ? 'Nothing needs attention right now.' : 'Loading…'}</p>
         )}
       </Card>
+
+      {summary && summary.expiredStock.length > 0 && (
+        <Card className="mt-6 p-6">
+          <h2 className="text-lg font-semibold text-ink-900">Expired stock</h2>
+          <p className="mt-1 text-sm text-ink-500">Hidden from the menu and refused at checkout until written off — file a loss report with reason Expired, or clear the date if it was entered wrongly.</p>
+          <div className="mt-5 divide-y divide-line-100">
+            {summary.expiredStock.map((item) => (
+              <div key={item.productId} className="flex items-center justify-between gap-4 py-3 text-sm text-ink-700">
+                <span>{item.productName}{item.variant ? ` (${item.variant})` : ''}</span>
+                <span className="text-xs text-ink-500">{item.stockQuantity} on hand · expired {item.expirationDate}</span>
+              </div>
+            ))}
+          </div>
+          {summary.expiredStockTotal > summary.expiredStock.length && (
+            <p className="mt-4 text-xs font-medium text-status-wait-fg">Showing {summary.expiredStock.length} of {summary.expiredStockTotal}.</p>
+          )}
+        </Card>
+      )}
     </section>
   )
 }

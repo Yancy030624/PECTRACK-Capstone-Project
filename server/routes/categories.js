@@ -7,7 +7,7 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { optionalAuth, requireAuth, requireRole } from '../lib/auth.js'
-import { normalize } from '../lib/validation.js'
+import { normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
 
@@ -42,11 +42,16 @@ router.post('/', requireRole('ADMIN'), async (request, response) => {
 })
 
 router.patch('/:id', requireRole('ADMIN'), async (request, response) => {
+  // Same reasoning as every other :id route — an id that cannot be a
+  // bigint is "not found", not a 500 from inside the query.
+  const categoryId = parseId(request.params.id)
+  if (!categoryId) return response.status(404).json({ message: 'Category not found.' })
+
   const { name, error } = validateCategoryName(request.body)
   if (error) return response.status(422).json({ message: error, errors: { name: error } })
 
   try {
-    const result = await pool.query('UPDATE categories SET category_name = $1 WHERE category_id = $2 RETURNING category_id, category_name', [name, request.params.id])
+    const result = await pool.query('UPDATE categories SET category_name = $1 WHERE category_id = $2 RETURNING category_id, category_name', [name, categoryId])
     if (!result.rows[0]) return response.status(404).json({ message: 'Category not found.' })
     return response.json({ category: mapCategoryRow(result.rows[0]) })
   } catch (dbError) {
@@ -56,8 +61,11 @@ router.patch('/:id', requireRole('ADMIN'), async (request, response) => {
 })
 
 router.delete('/:id', requireRole('ADMIN'), async (request, response) => {
+  const categoryId = parseId(request.params.id)
+  if (!categoryId) return response.status(404).json({ message: 'Category not found.' })
+
   try {
-    const result = await pool.query('DELETE FROM categories WHERE category_id = $1', [request.params.id])
+    const result = await pool.query('DELETE FROM categories WHERE category_id = $1', [categoryId])
     if (result.rowCount === 0) return response.status(404).json({ message: 'Category not found.' })
     return response.status(204).end()
   } catch (dbError) {

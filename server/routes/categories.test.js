@@ -109,6 +109,15 @@ describe('category management', () => {
     assert.equal((await response.json()).category.name, `Renamed Breads ${runId}`)
   })
 
+  test('PATCH and DELETE /api/categories/:id treat a malformed id as "not found", never a server error', async () => {
+    for (const badId of ['abc', '1.5', '999999999999999999999']) {
+      const rename = await fetch(`${baseUrl}/api/categories/${badId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ name: 'x' }) })
+      assert.equal(rename.status, 404, `PATCH id "${badId}"`)
+      const remove = await fetch(`${baseUrl}/api/categories/${badId}`, { method: 'DELETE', headers: { Cookie: adminCookie } })
+      assert.equal(remove.status, 404, `DELETE id "${badId}"`)
+    }
+  })
+
   test('PATCH /api/categories/:id returns 404 for a nonexistent category', async () => {
     const response = await fetch(`${baseUrl}/api/categories/999999999`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ name: 'Nope' }) })
     assert.equal(response.status, 404)

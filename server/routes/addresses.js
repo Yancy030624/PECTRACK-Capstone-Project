@@ -26,6 +26,15 @@ const addressFieldLimits = { label: 50, addressLine1: 255, addressLine2: 255, ba
 // instructionsMaxLength uses in routes/orders.js for a column that is
 // also TEXT.
 const deliveryNotesMaxLength = 500
+// The fields that say WHERE an order went. Once any order references an
+// address, these are frozen on it: orders.address_id points at the row
+// itself, so editing them would rewrite the destination on every past
+// receipt and on any delivery still in progress — the exact loss
+// PHASE7_PLAN.md's Decision 1 ("deactivate, never delete") exists to
+// prevent, reached through PATCH instead of DELETE. label, deliveryNotes,
+// isDefault, and isActive stay editable: none of them change where the
+// goods were sent.
+const frozenOnceOrderedFields = ['recipientName', 'contactNumber', 'addressLine1', 'addressLine2', 'barangay', 'municipality', 'province', 'postalCode']
 
 const mapAddressRow = (row) => ({
   id: row.address_id,
@@ -280,6 +289,13 @@ router.patch('/:id', async (request, response) => {
   const { errors, values } = validateAddressFields(request.body, { partial: true })
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
   if (Object.keys(values).length === 0) return response.status(422).json({ message: 'Provide at least one field to update.' })
+
+  if (frozenOnceOrderedFields.some((field) => field in values)) {
+    const used = await pool.query('SELECT 1 FROM orders WHERE address_id = $1 LIMIT 1', [addressId])
+    if (used.rowCount > 0) {
+      return response.status(409).json({ message: 'This address has already been used on an order, so its details can no longer be changed. Deactivate it and add a new address instead.' })
+    }
+  }
 
   // Deactivating an address also clears is_default — an inactive default
   // is a contradiction the partial unique index's own WHERE clause

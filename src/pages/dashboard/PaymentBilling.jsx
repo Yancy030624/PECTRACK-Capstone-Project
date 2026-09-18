@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { apiGet, apiPost } from '../../api/client.js'
+import { apiGet, apiPatch, apiPost } from '../../api/client.js'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Button } from '../../components/ui/Button.jsx'
 import { Card } from '../../components/ui/Card.jsx'
@@ -86,6 +86,33 @@ export function PaymentBilling({ user }) {
     } catch (error) {
       setMessage(error.message)
       setGcashSubmitting(false)
+    }
+  }
+
+  // An abandoned GCash attempt blocks every new one for the order until
+  // it is closed (PATCH /api/payments/:id). Staff may close any; the
+  // customer their own.
+  const handleCancelAttempt = async (paymentId) => {
+    if (!window.confirm('Cancel this online payment attempt? If it was actually paid, the payment is still recorded when PayMongo confirms it.')) return
+    setMessage('')
+    try {
+      await apiPatch(`/api/payments/${paymentId}`, { status: 'CANCELLED' })
+      await openOrder(selectedOrderId)
+    } catch (error) {
+      setMessage(error.message)
+    }
+  }
+
+  // ADMIN only — resends a refund the ledger already records to PayMongo,
+  // for a row whose gateway refund failed or ran before credentials
+  // existed (POST /api/payments/:id/refund).
+  const handleRetryRefund = async (paymentId) => {
+    setMessage('')
+    try {
+      await apiPost(`/api/payments/${paymentId}/refund`)
+      await openOrder(selectedOrderId)
+    } catch (error) {
+      setMessage(error.message)
     }
   }
 
@@ -266,11 +293,24 @@ export function PaymentBilling({ user }) {
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Payments</p>
                     <ul className="mt-1.5 space-y-1.5 text-sm text-ink-500">
                       {orderDetail.payment.payments.map((payment) => (
-                        <li key={payment.id} className="flex items-center justify-between gap-2">
+                        <li key={payment.id} className="flex flex-wrap items-center justify-between gap-2">
                           <span>
                             {payment.method} · <span className="tabular-nums">₱{payment.amount}</span> {payment.gatewayReference && <span className="text-ink-500">({payment.gatewayReference})</span>}
+                            {payment.status === 'REFUNDED' && payment.gatewayPaymentId && (
+                              <span className={`block text-xs ${payment.refundReference ? 'text-ink-500' : 'font-semibold text-status-fail-fg'}`}>
+                                {payment.refundReference ? `Refunded through PayMongo (${payment.refundReference})` : 'Gateway refund not yet sent'}
+                              </span>
+                            )}
                           </span>
-                          <StatusBadge status={payment.status} />
+                          <span className="flex items-center gap-2">
+                            <StatusBadge status={payment.status} />
+                            {payment.status === 'PENDING' && orderDetail.status !== 'CANCELLED' && (
+                              <Button type="button" size="sm" variant="secondary" onClick={() => handleCancelAttempt(payment.id)}>Cancel attempt</Button>
+                            )}
+                            {user.role === 'ADMIN' && payment.status === 'REFUNDED' && payment.gatewayPaymentId && !payment.refundReference && (
+                              <Button type="button" size="sm" variant="secondary" onClick={() => handleRetryRefund(payment.id)}>Retry refund</Button>
+                            )}
+                          </span>
                         </li>
                       ))}
                     </ul>

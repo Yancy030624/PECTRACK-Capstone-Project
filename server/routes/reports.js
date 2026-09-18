@@ -10,6 +10,7 @@ import express from 'express'
 import { pool } from '../db.js'
 import { billingListSql } from '../lib/billing.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
+import { expiredSql } from '../lib/inventory.js'
 import { bucketSql, csvRow, dateRangeSql, parseDateRange, parseGroupBy } from '../lib/reporting.js'
 import { normalize } from '../lib/validation.js'
 
@@ -61,6 +62,33 @@ async function getLowStockAlerts() {
       alertMessage: row.alert_message,
       createdAt: row.created_at,
     })),
+    total: countResult.rows[0].n,
+  }
+}
+
+// Stock that is past its expiration_date and still on the shelf. The
+// column has been editable since Phase 5 and nothing ever read it back:
+// an expired batch sat in stock_quantity as if sellable. The catalogue
+// now hides it and checkout refuses it (routes/products.js,
+// routes/orders.js); this is the list that tells staff to write it off —
+// a loss report with reason EXPIRED, which is exactly what migration 008
+// added that reason for. Same capped-list-plus-true-count shape as
+// getLowStockAlerts, for the same reason.
+const maxExpiredStock = 50
+async function getExpiredStock() {
+  const [listResult, countResult] = await Promise.all([
+    pool.query(
+      `SELECT p.product_id, p.product_name, p.variant, inv.stock_quantity, inv.expiration_date
+         FROM inventory inv JOIN products p ON p.product_id = inv.product_id
+        WHERE ${expiredSql('inv')} AND inv.stock_quantity > 0
+        ORDER BY inv.expiration_date, p.product_name
+        LIMIT $1`,
+      [maxExpiredStock],
+    ),
+    pool.query(`SELECT COUNT(*)::int AS n FROM inventory inv WHERE ${expiredSql('inv')} AND inv.stock_quantity > 0`),
+  ])
+  return {
+    items: listResult.rows.map((row) => ({ productId: row.product_id, productName: row.product_name, variant: row.variant, stockQuantity: row.stock_quantity, expirationDate: row.expiration_date })),
     total: countResult.rows[0].n,
   }
 }
@@ -300,7 +328,7 @@ router.get('/sales', async (request, response) => {
 // database that already has to know the right answer (Decision 1) compute
 // it start to finish.
 router.get('/summary', async (_request, response) => {
-  const [todayResult, outstandingResult, lowStockAlerts, deliveriesResult] = await Promise.all([
+  const [todayResult, outstandingResult, lowStockAlerts, deliveriesResult, expiredStock] = await Promise.all([
     pool.query(`
       WITH today_range AS (
         SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date AS local_date,
@@ -335,6 +363,7 @@ router.get('/summary', async (_request, response) => {
     // nothing until now looked.
     getLowStockAlerts(),
     pool.query(`SELECT COUNT(*)::int AS n FROM deliveries WHERE status IN ('PENDING_ASSIGNMENT', 'ASSIGNED')`),
+    getExpiredStock(),
   ])
   const todayRow = todayResult.rows[0]
 
@@ -352,6 +381,8 @@ router.get('/summary', async (_request, response) => {
     // can never under-report how much actually needs attention.
     lowStockAlertsTotal: lowStockAlerts.total,
     deliveriesNeedingAttention: deliveriesResult.rows[0].n,
+    expiredStock: expiredStock.items,
+    expiredStockTotal: expiredStock.total,
   })
 })
 
@@ -419,7 +450,7 @@ router.get('/inventory', async (request, response) => {
   const { from, to, errors } = parseDateRange(request.query)
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
 
-  const [movementsResult, spoilageResult, lowStockAlerts] = await Promise.all([
+  const [movementsResult, lossResult, lowStockAlerts] = await Promise.all([
     pool.query(
       `SELECT im.reason, COALESCE(SUM(im.quantity_change), 0)::int AS net_change
          FROM inventory_movements im
@@ -428,13 +459,16 @@ router.get('/inventory', async (request, response) => {
         ORDER BY im.reason`,
       [from, to],
     ),
-    // SPOILAGE gets its own headline figure — for a bakery this is the
-    // single most operationally meaningful number in the whole section,
-    // and it has been recorded since Phase 5 and never once looked at.
+    // Stock LOST gets its own headline figure — for a bakery this is the
+    // single most operationally meaningful number in the whole section.
+    // Since migration 008 a loss is filed under whichever of four reasons
+    // fits (SPOILAGE, PRODUCTION_LOSS, EXPIRED, DAMAGED); summing only
+    // SPOILAGE, as this did before, silently dropped the other three from
+    // the headline the moment anyone used them.
     pool.query(
-      `SELECT COALESCE(SUM(-im.quantity_change), 0)::int AS spoiled_units
+      `SELECT COALESCE(SUM(-im.quantity_change), 0)::int AS lost_units
          FROM inventory_movements im
-        WHERE im.reason = 'SPOILAGE' AND ${dateRangeSql('im.created_at')}`,
+        WHERE im.reason IN ('SPOILAGE', 'PRODUCTION_LOSS', 'EXPIRED', 'DAMAGED') AND ${dateRangeSql('im.created_at')}`,
       [from, to],
     ),
     getLowStockAlerts(),
@@ -444,7 +478,7 @@ router.get('/inventory', async (request, response) => {
     from,
     to,
     movements: movementsResult.rows.map((row) => ({ reason: row.reason, netChange: row.net_change })),
-    spoilageUnits: spoilageResult.rows[0].spoiled_units,
+    lossUnits: lossResult.rows[0].lost_units,
     lowStockAlerts: lowStockAlerts.alerts,
     lowStockAlertsTotal: lowStockAlerts.total,
   })

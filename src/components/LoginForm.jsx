@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { apiPost } from '../api/client.js'
 import { Brand } from './Brand.jsx'
 
@@ -35,6 +36,9 @@ export function LoginForm({ onLogin, onRegister }) {
   const [password, setPassword] = useState('')
   // Control the password visibility toggle.
   const [showPassword, setShowPassword] = useState(false)
+  // Ticked by default — the 7-day session every login has always had.
+  // Unticked asks the server for a browser-session cookie instead.
+  const [rememberMe, setRememberMe] = useState(true)
   // Store a validation error that can be announced to screen readers.
   const [error, setError] = useState('')
   // Set once the server asks for a one-time code (admin accounts only), and
@@ -61,7 +65,7 @@ export function LoginForm({ onLogin, onRegister }) {
       return
     }
     try {
-      const data = await apiPost('/api/auth/login', { identifier: username, password })
+      const data = await apiPost('/api/auth/login', { identifier: username, password, rememberMe })
       setError('')
       // Admin accounts don't get a session yet — the server wants a
       // verification code first. Everyone else is signed in immediately.
@@ -127,14 +131,10 @@ export function LoginForm({ onLogin, onRegister }) {
           <form className="mt-6 space-y-3" onSubmit={handleSubmit} noValidate>
             <div><label htmlFor="username" className="mb-1.5 block text-[11px] font-extrabold">Username or Email</label><div className="relative"><svg viewBox="0 0 24 24" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="3" /><path d="M5.5 20c.8-3.3 2.9-5 6.5-5s5.7 1.7 6.5 5" /></svg><input id="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" placeholder="Email" className="w-full rounded-2xl border border-stone-200 bg-white py-2.5 pl-9 pr-3 text-xs shadow-sm outline-none transition focus:border-green-700 focus:ring-4 focus:ring-green-100" /></div></div>
             <div><label htmlFor="password" className="mb-1.5 block text-[11px] font-extrabold">Password</label><div className="relative"><svg viewBox="0 0 24 24" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg><input id="password" type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" placeholder="Password" className="w-full rounded-2xl border border-stone-200 bg-white py-2.5 pl-9 pr-14 text-xs shadow-sm outline-none transition focus:border-green-700 focus:ring-4 focus:ring-green-100" /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 px-3 text-[10px] font-bold text-green-800">{showPassword ? 'Hide' : 'Show'}</button></div></div>
-            {/* "Forgot password?" used to link to #forgot, which went
-                nowhere — there was no recovery path behind it to link to
-                (Step 0 / the plan's opening paragraph). Plain text now,
-                deliberately not a link or a button, and mode-aware because
-                the honest answer differs: a customer reset needs email/SMS
-                delivery that's out of scope (Decision 6), while a staff
-                reset is exactly what Part B adds. */}
-            <div className="flex items-center justify-between gap-2 text-[10px] font-bold"><label className="flex cursor-pointer items-center gap-1.5"><input type="checkbox" className="h-4 w-4 accent-green-700" />Remember me</label><span className="text-stone-500">{mode === 'staff' ? 'Forgot password? Ask an admin to reset it.' : 'Forgot password? Contact the bakery.'}</span></div>
+            {/* Email password recovery (routes/auth.js /forgot-password)
+                works for every role, so the link is the same in both
+                modes; staff can also still ask an admin. */}
+            <div className="flex items-center justify-between gap-2 text-[10px] font-bold"><label className="flex cursor-pointer items-center gap-1.5"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className="h-4 w-4 accent-green-700" />Remember me</label><Link to="/forgot-password" className="text-green-700 hover:underline">Forgot password?</Link></div>
             {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-[10px] font-semibold text-red-700">{error}</p>}
             <button type="submit" className="mt-5 w-full rounded-2xl bg-brand-600 py-2.5 text-xs font-bold text-white shadow-md transition hover:bg-brand-700 ">Log In</button>
             {/* Hidden in staff mode (Decision 2's table) — self-registration

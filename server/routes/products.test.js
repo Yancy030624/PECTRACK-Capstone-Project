@@ -174,6 +174,22 @@ describe('product catalog management', () => {
     await pool.query('DELETE FROM orders WHERE order_id = $1', [orderId])
   })
 
+  // inventory cascades on product delete, and the movement ledger cascades
+  // from inventory — so a product with stock history used to take its
+  // ledger with it. Same 409 shape as the order-history block above.
+  test('DELETE /api/products/:id is blocked once the product has stock movement history', async () => {
+    const createResponse = await fetch(`${baseUrl}/api/products`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ categoryId, name: `Restocked Product ${runId}`, price: 15 }) })
+    const productId = (await createResponse.json()).product.id
+    createdProductIds.push(productId)
+    const restock = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ stockQuantity: 5, reason: 'RESTOCK' }) })
+    assert.equal(restock.status, 200)
+
+    const blockedDelete = await fetch(`${baseUrl}/api/products/${productId}`, { method: 'DELETE', headers: { Cookie: adminCookie } })
+    assert.equal(blockedDelete.status, 409)
+    const ledger = await pool.query('SELECT COUNT(*)::int AS n FROM inventory_movements im JOIN inventory i ON i.inventory_id = im.inventory_id WHERE i.product_id = $1', [productId])
+    assert.equal(ledger.rows[0].n, 1, 'the ledger row must survive the refused delete')
+  })
+
   test('DELETE /api/products/:id succeeds for a product with no history', async () => {
     const createResponse = await fetch(`${baseUrl}/api/products`, {
       method: 'POST',
@@ -248,15 +264,28 @@ describe('product catalog management', () => {
     })
 
     // Guards against a field ever being ADDED to mapProductRow without
-    // someone consciously deciding it is safe to publish. stock lives on
-    // `inventory`, never on `products`, so this also proves the two tables
-    // were never accidentally joined together for this response.
+    // someone consciously deciding it is safe to publish. The stock COUNT
+    // lives on `inventory` and stays there; `inStock` is the one deliberate
+    // exception — a boolean, so the Menu can say "sold out" without the
+    // number behind it ever leaving routes/inventory.js.
     test('the public response carries no stock or cost field, by name', async () => {
       const { product } = await (await fetch(`${baseUrl}/api/products/${publicAvailableId}`)).json()
-      assert.deepEqual(Object.keys(product).sort(), ['availabilityStatus', 'categoryId', 'categoryName', 'description', 'id', 'imageUrl', 'name', 'price', 'variant'])
+      assert.deepEqual(Object.keys(product).sort(), ['availabilityStatus', 'categoryId', 'categoryName', 'description', 'id', 'imageUrl', 'inStock', 'name', 'price', 'variant'])
+      assert.equal(typeof product.inStock, 'boolean')
       for (const forbidden of ['stockQuantity', 'stock_quantity', 'cost', 'minStockLevel', 'min_stock_level']) {
         assert.ok(!(forbidden in product), `product must not carry a "${forbidden}" field`)
       }
+    })
+
+    // A new product's inventory row starts at stock 0, so it is sold out
+    // until stocked — the Menu must be able to say so before checkout does.
+    test('inStock is false at stock 0 and true once there is stock', async () => {
+      const before = await (await fetch(`${baseUrl}/api/products/${publicAvailableId}`)).json()
+      assert.equal(before.product.inStock, false)
+      await pool.query('UPDATE inventory SET stock_quantity = 3 WHERE product_id = $1', [publicAvailableId])
+      const after = await (await fetch(`${baseUrl}/api/products/${publicAvailableId}`)).json()
+      assert.equal(after.product.inStock, true)
+      await pool.query('UPDATE inventory SET stock_quantity = 0 WHERE product_id = $1', [publicAvailableId])
     })
 
     test('an anonymous GET /:id for a hidden product is 404, never 403 and never the product', async () => {

@@ -28,4 +28,16 @@ export const config = {
     successUrl: process.env.PAYMONGO_SUCCESS_URL,
     cancelUrl: process.env.PAYMONGO_CANCEL_URL,
   },
+  // Outgoing email (server/lib/mail.js) — today only the password-reset
+  // link. Same "undefined, never a placeholder" rule as paymongo above:
+  // with SMTP_HOST unset nothing is sent, and outside production the
+  // message is printed to the server console instead so the flow can be
+  // exercised on a developer machine with no mail account at all.
+  mail: {
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT ?? 587),
+    user: process.env.SMTP_USER,
+    password: process.env.SMTP_PASS,
+    from: process.env.MAIL_FROM ?? 'PECTRACK <no-reply@pectrack.local>',
+  },
 }

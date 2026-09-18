@@ -181,6 +181,27 @@ describe('customer address management', () => {
     }
   })
 
+  // orders.address_id points at the row itself, so editing where it goes
+  // would rewrite every past receipt that used it. Once ordered against,
+  // the destination fields freeze; label/notes/default/active stay open.
+  test('an address used on an order can no longer change where it points, but can still be relabelled or retired', async () => {
+    const created = await fetch(`${baseUrl}/api/addresses`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ recipientName: 'Frozen Recipient', contactNumber: '09171234567', addressLine1: '1 Frozen St' }) })
+    const address = (await created.json()).address
+    const orderId = (await pool.query(`INSERT INTO orders (customer_id, order_type, address_id) VALUES ((SELECT customer_id FROM customer_addresses WHERE address_id = $1), 'DELIVERY', $1) RETURNING order_id`, [address.id])).rows[0].order_id
+    try {
+      const frozen = await fetch(`${baseUrl}/api/addresses/${address.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ addressLine1: '2 Moved St' }) })
+      assert.equal(frozen.status, 409)
+      const unchanged = await pool.query('SELECT address_line_1 FROM customer_addresses WHERE address_id = $1', [address.id])
+      assert.equal(unchanged.rows[0].address_line_1, '1 Frozen St')
+
+      const relabelled = await fetch(`${baseUrl}/api/addresses/${address.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ label: 'Old flat', isActive: false }) })
+      assert.equal(relabelled.status, 200)
+      assert.equal((await relabelled.json()).address.label, 'Old flat')
+    } finally {
+      await pool.query('DELETE FROM orders WHERE order_id = $1', [orderId])
+    }
+  })
+
   // The partial unique index is `WHERE is_default AND is_active`, so a row
   // that is default but INACTIVE is invisible to it and violates nothing.
   // That made "set a deactivated address as the default" a way to clear

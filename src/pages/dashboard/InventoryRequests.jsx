@@ -125,6 +125,25 @@ export function InventoryRequests({ user, inventory }) {
     }
   }
 
+  // The cashier's own escape hatch: a mistyped proposal no longer has to
+  // wait for an admin to reject it before the corrected one can be filed.
+  const handleWithdraw = async (requestId) => {
+    if (!window.confirm('Withdraw this request? You can submit a new one afterwards.')) return
+    setReviewingId(requestId)
+    setMessage('')
+    try {
+      await apiPatch(`/api/inventory/requests/${requestId}`, { status: 'CANCELLED' })
+      setMessage('Request withdrawn.')
+      setMessageFailed(false)
+      await loadRequests()
+    } catch (error) {
+      setMessage(error.message)
+      setMessageFailed(true)
+    } finally {
+      setReviewingId(null)
+    }
+  }
+
   const handleReview = async (requestId, status) => {
     setReviewingId(requestId)
     setMessage('')
@@ -272,6 +291,13 @@ export function InventoryRequests({ user, inventory }) {
                   </div>
                   <StatusBadge status={item.status} />
                 </div>
+                {!isAdmin && item.status === 'PENDING' && (
+                  <div className="mt-2">
+                    <Button size="sm" variant="secondary" onClick={() => handleWithdraw(item.id)} disabled={reviewingId === item.id}>
+                      {reviewingId === item.id ? 'Working…' : 'Withdraw'}
+                    </Button>
+                  </div>
+                )}
                 {isAdmin && item.status === 'PENDING' && (
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <Input

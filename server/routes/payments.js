@@ -23,6 +23,7 @@ import { config } from '../config.js'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { createCheckoutSession, PaymongoApiError, paymongoMinimumAmountCentavos, PaymongoWebhookVerificationError, verifyPaymongoWebhook } from '../lib/paymongo.js'
+import { describeGatewayRefunds, settleGatewayRefunds } from '../lib/refunds.js'
 import { dateRangeSql, parseDateRange } from '../lib/reporting.js'
 import { normalize, parseId } from '../lib/validation.js'
 
@@ -60,13 +61,14 @@ const mapPaymentListRow = (row) => ({
   refundedAt: row.refunded_at,
   refundReason: row.refund_reason,
   refundedByName: row.refunded_by_name,
+  gatewayPaymentId: row.gateway_payment_id,
+  refundReference: row.refund_reference,
   createdAt: row.created_at,
 })
 
-// Same narrower join reasoning as lib/billing.js's per-order query:
-// recorded_by is only ever a cashier or admin, refunded_by only ever an
-// admin, because those are the only roles the routes below ever let write
-// to those columns.
+// Same join reasoning as lib/billing.js's per-order query: recorded_by is
+// a cashier, an admin, or — for cash collected at the door — the driver
+// (POST / below), and refunded_by only ever an admin.
 //
 // COUNT(*) OVER() — no PARTITION BY — is evaluated over every row the
 // WHERE clause matched, BEFORE LIMIT/OFFSET trims the page down (that is
@@ -76,14 +78,16 @@ const mapPaymentListRow = (row) => ({
 // than a second COUNT(*) query against the same filters.
 const paymentListSelectQuery = `SELECT p.payment_id, p.order_id, o.status AS order_status, c.name AS customer_name,
             p.payment_method, p.amount, p.status, p.gateway_reference, p.payment_date, p.created_at,
-            COALESCE(ra.name, rc.name) AS recorded_by_name,
+            COALESCE(ra.name, rc.name, rd.name) AS recorded_by_name,
             p.refunded_at, p.refund_reason, fa.name AS refunded_by_name,
+            p.gateway_payment_id, p.refund_reference,
             COUNT(*) OVER()::int AS full_count
        FROM payments p
        JOIN orders o ON o.order_id = p.order_id
        LEFT JOIN customers c ON c.customer_id = o.customer_id
        LEFT JOIN admins ra ON ra.user_id = p.recorded_by
        LEFT JOIN cashiers rc ON rc.user_id = p.recorded_by
+       LEFT JOIN delivery_personnel rd ON rd.user_id = p.recorded_by
        LEFT JOIN admins fa ON fa.user_id = p.refunded_by`
 
 // ============================================================================
@@ -188,11 +192,41 @@ router.post('/webhook', async (request, response) => {
   // see Decision 9 for exactly why not.
   // ------------------------------------------------------------------
   if (eventType === 'payment.paid') {
-    await pool.query(
-      `UPDATE payments SET status = 'PAID', payment_date = CURRENT_TIMESTAMP
-        WHERE gateway_reference = $1 AND status = 'PENDING'`,
-      [checkoutSessionId],
+    // A CANCELLED intent can still be paid: the checkout link was live in
+    // the customer's browser when it was closed — by an order cancel, or
+    // by staff clearing an abandoned attempt (PATCH /:id below) — and by
+    // the time this event arrives their money has moved. Ignoring it
+    // would leave collected money with no record at all. What it becomes
+    // depends on the ORDER, not on which of those closed the intent:
+    //
+    //   - the order still stands: PAID, the money is owed and has
+    //     arrived (an intent cleared by mistake, then paid after all);
+    //   - the order is CANCELLED: PAID then immediately REFUNDED, the
+    //     same transition the cancel itself performs, refunded_by NULL
+    //     because no person did this — and settleGatewayRefunds below
+    //     sends the money back through PayMongo.
+    //
+    // gateway_payment_id (migration 009) is the PayMongo Payment id this
+    // event carries — the only place we ever learn it, and the id its
+    // Refunds API needs. Written on every paid row, cancelled order or
+    // not, so a LATER cancel can refund it too.
+    const paymongoPaymentId = event?.data?.attributes?.data?.id ?? null
+    const settled = await pool.query(
+      `UPDATE payments p
+          SET status = CASE WHEN o.status = 'CANCELLED' THEN 'REFUNDED' ELSE 'PAID' END::payment_status,
+              payment_date = CURRENT_TIMESTAMP,
+              gateway_payment_id = COALESCE($2, p.gateway_payment_id),
+              refunded_at = CASE WHEN o.status = 'CANCELLED' THEN CURRENT_TIMESTAMP ELSE p.refunded_at END,
+              refund_reason = CASE WHEN o.status = 'CANCELLED' THEN 'Order was cancelled before the gateway confirmed this payment.' ELSE p.refund_reason END
+         FROM orders o
+        WHERE o.order_id = p.order_id AND p.gateway_reference = $1 AND p.status IN ('PENDING', 'CANCELLED')
+      RETURNING p.order_id, p.status`,
+      [checkoutSessionId, paymongoPaymentId],
     )
+    if (settled.rows[0]?.status === 'REFUNDED') {
+      // Outside any transaction, after the ledger write — see lib/refunds.js.
+      await settleGatewayRefunds(settled.rows[0].order_id)
+    }
   } else {
     await pool.query(
       `UPDATE payments SET status = 'FAILED'
@@ -206,13 +240,14 @@ router.post('/webhook', async (request, response) => {
 
 // Admin and cashier see every payment; a customer sees only the ones tied
 // to their own orders — same role-scoping shape as GET /api/orders.
-// Delivery personnel are excluded for the same reason routes/orders.js
-// excludes them: no real access model exists for that role yet, and
-// billing has even less to do with delivery than order status does.
+// Delivery personnel reach exactly ONE route here — POST /, to record the
+// cash they collected at the door (cash on delivery) — so the router-wide
+// gate admits them, and every other route below narrows itself back down.
 //
 // Everything from here down DOES require a signed-in session — only
 // POST /webhook above, registered before this line, is exempt.
-router.use(requireAuth, requireRole('ADMIN', 'CASHIER', 'CUSTOMER'))
+router.use(requireAuth, requireRole('ADMIN', 'CASHIER', 'CUSTOMER', 'DELIVERY_PERSONNEL'))
+const billingRoles = requireRole('ADMIN', 'CASHIER', 'CUSTOMER')
 
 // PHASE 8, DECISION 5 — transaction history EXTENDS this existing
 // endpoint rather than becoming a second one under /api/reports. A new
@@ -223,7 +258,7 @@ router.use(requireAuth, requireRole('ADMIN', 'CASHIER', 'CUSTOMER'))
 // what. The role scoping below is UNCHANGED from before this phase: a
 // customer filtering their own history is a new feature; a customer
 // seeing anyone else's is the bug that scoping already prevented.
-router.get('/', async (request, response) => {
+router.get('/', billingRoles, async (request, response) => {
   const filters = []
   const params = []
 
@@ -315,17 +350,24 @@ router.get('/', async (request, response) => {
   })
 })
 
-// POST /api/payments — cashier/admin only. A customer can VIEW their own
-// bills (GET above) but never records money changing hands themselves;
-// that always happens at the counter, through staff.
-router.post('/', requireRole('CASHIER', 'ADMIN'), async (request, response) => {
+// POST /api/payments — cashier/admin, and the driver for cash on delivery.
+// A customer can VIEW their own bills (GET above) but never records money
+// changing hands themselves. A DELIVERY_PERSONNEL caller is scoped hard:
+// CASH only, and only against an order whose delivery is theirs and
+// currently OUT_FOR_DELIVERY or DELIVERED — the two states in which they
+// can be standing at the door holding the money. Without this route the
+// order stayed "owed" until a cashier typed in, later and from memory,
+// what the driver said they collected.
+router.post('/', requireRole('CASHIER', 'ADMIN', 'DELIVERY_PERSONNEL'), async (request, response) => {
   const orderId = parseId(request.body.orderId)
   if (!orderId) return response.status(422).json({ message: 'Select a valid order.', errors: { orderId: 'Select a valid order.' } })
 
   const errors = {}
 
+  const isDriver = request.user.role === 'DELIVERY PERSONNEL'
   const method = normalize(request.body.method).toUpperCase()
   if (!paymentMethods.has(method)) errors.method = 'Select cash or GCash.'
+  else if (isDriver && method !== 'CASH') errors.method = 'A delivery person can only record cash collected on delivery.'
 
   // Decision 3: 0 and negative amounts are refused here — the column's
   // CHECK (amount >= 0) alone would let a zero-amount row through, and a
@@ -394,6 +436,22 @@ router.post('/', requireRole('CASHIER', 'ADMIN'), async (request, response) => {
     if (order.status === 'CANCELLED') {
       await client.query('ROLLBACK')
       return response.status(409).json({ message: 'This order was cancelled — a payment cannot be recorded against it.' })
+    }
+
+    // PATTERN H (routes/deliveries.js) — the driver's own id, resolved
+    // from the session and checked against the delivery row under the
+    // order lock already held above. A delivery that is not theirs, or
+    // not yet on the road, 404s the same way their other routes do.
+    if (isDriver) {
+      const owns = await client.query(
+        `SELECT 1 FROM deliveries d JOIN delivery_personnel dp ON dp.delivery_personnel_id = d.delivery_personnel_id
+          WHERE d.order_id = $1 AND dp.user_id = $2 AND d.status IN ('OUT_FOR_DELIVERY', 'DELIVERED')`,
+        [orderId, request.user.id],
+      )
+      if (owns.rowCount === 0) {
+        await client.query('ROLLBACK')
+        return response.status(404).json({ message: 'Order not found.' })
+      }
     }
 
     let recorded
@@ -484,7 +542,7 @@ router.post('/', requireRole('CASHIER', 'ADMIN'), async (request, response) => {
 // trade: an unused checkout link simply expires unused, whereas holding
 // the lock stalls the whole system.
 // ============================================================================
-router.post('/intent', async (request, response) => {
+router.post('/intent', billingRoles, async (request, response) => {
   const orderId = parseId(request.body.orderId)
   if (!orderId) return response.status(422).json({ message: 'Select a valid order.', errors: { orderId: 'Select a valid order.' } })
 
@@ -526,7 +584,7 @@ router.post('/intent', async (request, response) => {
 
   const existingPending = await pool.query(`SELECT 1 FROM payments WHERE order_id = $1 AND status = 'PENDING'`, [orderId])
   if (existingPending.rowCount > 0) {
-    return response.status(409).json({ message: 'A payment attempt for this order is already in progress. Wait for it to complete or ask an admin to check its status.' })
+    return response.status(409).json({ message: 'A payment attempt for this order is already in progress. Finish it, or cancel that attempt from the receipt and try again.' })
   }
 
   // The full remaining balance, always — not a customer-chosen partial
@@ -622,6 +680,62 @@ router.post('/intent', async (request, response) => {
   } finally {
     client.release()
   }
+})
+
+// PATCH /api/payments/:id — closes an abandoned gateway intent. The only
+// transition this accepts is PENDING -> CANCELLED: a customer who opened
+// the GCash page and never finished left a PENDING row that blocks every
+// new attempt for that order (POST /intent above, migration 006), and
+// until now nothing could clear it. Staff may close any; a customer only
+// one on their own order. If PayMongo later reports the abandoned link
+// paid after all, the webhook records it against the order it belongs to
+// — see the payment.paid branch above — so closing it never loses money.
+router.patch('/:id', billingRoles, async (request, response) => {
+  const paymentId = parseId(request.params.id)
+  if (!paymentId) return response.status(404).json({ message: 'Payment not found.' })
+  if (normalize(request.body.status).toUpperCase() !== 'CANCELLED') {
+    return response.status(422).json({ message: 'Only a pending online payment attempt can be cancelled.', errors: { status: 'status must be CANCELLED.' } })
+  }
+
+  const existing = await pool.query('SELECT p.status, o.customer_id FROM payments p JOIN orders o ON o.order_id = p.order_id WHERE p.payment_id = $1', [paymentId])
+  const payment = existing.rows[0]
+  if (!payment) return response.status(404).json({ message: 'Payment not found.' })
+  if (request.user.role === 'CUSTOMER') {
+    const customerResult = await pool.query('SELECT customer_id FROM customers WHERE user_id = $1', [request.user.id])
+    if (payment.customer_id == null || payment.customer_id !== customerResult.rows[0]?.customer_id) return response.status(404).json({ message: 'Payment not found.' })
+  }
+
+  // Conditional on PENDING, so a webhook landing at the same moment wins
+  // cleanly one way or the other rather than both writes going through.
+  const closed = await pool.query(`UPDATE payments SET status = 'CANCELLED' WHERE payment_id = $1 AND status = 'PENDING' RETURNING payment_id`, [paymentId])
+  if (closed.rowCount === 0) return response.status(409).json({ message: 'This payment attempt is no longer pending.' })
+  return response.json({ message: 'Payment attempt cancelled.' })
+})
+
+// POST /api/payments/:id/refund — ADMIN only. Retries the gateway side of
+// a refund the ledger already records: a REFUNDED row with a
+// gateway_payment_id and no refund_reference (migration 009). It never
+// changes the row's status — that decision was made when the order was
+// cancelled — it only asks PayMongo to move the money and records the
+// refund id it answers with.
+router.post('/:id/refund', requireRole('ADMIN'), async (request, response) => {
+  const paymentId = parseId(request.params.id)
+  if (!paymentId) return response.status(404).json({ message: 'Payment not found.' })
+
+  const existing = await pool.query('SELECT order_id, status, gateway_payment_id, refund_reference FROM payments WHERE payment_id = $1', [paymentId])
+  const payment = existing.rows[0]
+  if (!payment) return response.status(404).json({ message: 'Payment not found.' })
+  if (payment.status !== 'REFUNDED' || !payment.gateway_payment_id) {
+    return response.status(409).json({ message: 'Only a refunded online payment can be sent to PayMongo for refund.' })
+  }
+  if (payment.refund_reference) return response.status(409).json({ message: `This payment was already refunded through PayMongo (${payment.refund_reference}).` })
+
+  const result = await settleGatewayRefunds(payment.order_id)
+  const updated = await pool.query('SELECT refund_reference FROM payments WHERE payment_id = $1', [paymentId])
+  if (!updated.rows[0].refund_reference) {
+    return response.status(502).json({ message: describeGatewayRefunds(result) ?? 'The refund could not be sent to PayMongo.' })
+  }
+  return response.json({ message: describeGatewayRefunds(result), refundReference: updated.rows[0].refund_reference })
 })
 
 export default router

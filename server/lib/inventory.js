@@ -3,6 +3,14 @@
 // edit (routes/inventory.js). Kept here rather than duplicated three times,
 // since all three need the exact same rule applied the exact same way.
 
+// The ONE definition of "this stock is expired": inventory.expiration_date
+// is set and before today. Read by the catalogue (hide it), order
+// placement (refuse it), the inventory list (flag it) and the dashboard
+// (list it). `alias` is the inventory table's alias in the caller's
+// query; CURRENT_DATE is the database session's day, the same clock the
+// date was entered against. A NULL date never counts as expired.
+export const expiredSql = (alias) => `(${alias}.expiration_date IS NOT NULL AND ${alias}.expiration_date < CURRENT_DATE)`
+
 // Keeps stock_alerts in sync with the stock level it's watching. Call this
 // inside the SAME transaction as whatever write changed stock_quantity or
 // min_stock_level, right after that write — so the alert can never observe

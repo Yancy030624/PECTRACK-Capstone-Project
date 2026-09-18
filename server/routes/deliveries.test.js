@@ -39,7 +39,7 @@ describe('delivery management', () => {
   // Places a fresh DELIVERY order as the test customer and returns its id
   // — every workflow test below needs its own order at PENDING_ASSIGNMENT
   // to start from.
-  const placeDeliveryOrder = async () => {
+  const placeDeliveryOrder = async ({ confirm = true } = {}) => {
     const response = await fetch(`${baseUrl}/api/orders`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: customerCookie },
@@ -47,6 +47,13 @@ describe('delivery management', () => {
     })
     const body = await response.json()
     createdOrderIds.push(body.order.id)
+    // Assignment needs the order CONFIRMED first (the kitchen has accepted
+    // it) — so every delivery this helper hands back is assignable, and
+    // the one test about an unconfirmed order places its own.
+    if (confirm) {
+      const confirmed = await fetch(`${baseUrl}/api/orders/${body.order.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CONFIRMED' }) })
+      assert.equal(confirmed.status, 200)
+    }
     const delivery = await pool.query('SELECT delivery_id FROM deliveries WHERE order_id = $1', [body.order.id])
     return { orderId: body.order.id, deliveryId: delivery.rows[0].delivery_id }
   }
@@ -121,6 +128,8 @@ describe('delivery management', () => {
     await pool.query('DELETE FROM delivery_proofs WHERE delivery_id IN (SELECT delivery_id FROM deliveries WHERE order_id = ANY($1))', [createdOrderIds]).catch(() => {})
     await pool.query('DELETE FROM deliveries WHERE order_id = ANY($1)', [createdOrderIds]).catch(() => {})
     await pool.query('DELETE FROM inventory_movements WHERE order_id = ANY($1)', [createdOrderIds]).catch(() => {})
+    // The cash-on-delivery test records a payment against its order.
+    await pool.query('DELETE FROM payments WHERE order_id = ANY($1)', [createdOrderIds]).catch(() => {})
     for (const orderId of createdOrderIds) {
       await pool.query('DELETE FROM order_status_history WHERE order_id = $1', [orderId]).catch(() => {})
       await pool.query('DELETE FROM order_details WHERE order_id = $1', [orderId]).catch(() => {})
@@ -224,6 +233,73 @@ describe('delivery management', () => {
     const { deliveryId } = await placeDeliveryOrder()
     const response = await assign(deliveryId, '999999999999999999')
     assert.equal(response.status, 422)
+  })
+
+  // A deactivated driver cannot sign in, so a delivery handed to them is
+  // stuck in ASSIGNED with nobody able to move it. GET /personnel already
+  // hid them from the dropdown; the write itself now refuses too.
+  test('PATCH /api/deliveries/:id/assign refuses a deactivated delivery person', async () => {
+    const { deliveryId } = await placeDeliveryOrder()
+    await pool.query('UPDATE users SET is_active = FALSE WHERE user_id = (SELECT user_id FROM delivery_personnel WHERE delivery_personnel_id = $1)', [secondDriverId])
+    try {
+      const response = await assign(deliveryId, secondDriverId)
+      assert.equal(response.status, 422)
+      assert.match((await response.json()).message, /deactivated/)
+    } finally {
+      await pool.query('UPDATE users SET is_active = TRUE WHERE user_id = (SELECT user_id FROM delivery_personnel WHERE delivery_personnel_id = $1)', [secondDriverId])
+    }
+    const { rows } = await pool.query('SELECT status FROM deliveries WHERE delivery_id = $1', [deliveryId])
+    assert.equal(rows[0].status, 'PENDING_ASSIGNMENT')
+  })
+
+  test('PATCH /api/deliveries/:id/assign refuses a delivery whose order is still PLACED', async () => {
+    const { deliveryId } = await placeDeliveryOrder({ confirm: false })
+    const response = await assign(deliveryId, firstDriverId)
+    assert.equal(response.status, 409)
+    assert.match((await response.json()).message, /Confirm the order first/)
+  })
+
+  // Cash on delivery: the driver standing at the door records what they
+  // collected, scoped to their own in-progress delivery and CASH only.
+  test('a driver can record cash collected on their own OUT_FOR_DELIVERY delivery, and nothing else', async () => {
+    const { orderId, deliveryId } = await placeDeliveryOrder()
+    assert.equal((await assign(deliveryId, firstDriverId)).status, 200)
+
+    const record = (cookie, body) => fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ orderId, method: 'CASH', amount: 45.5, ...body }) })
+
+    const tooEarly = await record(firstDriverCookie)
+    assert.equal(tooEarly.status, 404, 'not yet on the road — the driver cannot record against it')
+
+    assert.equal((await setStatus(deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)).status, 200)
+    const mine = await (await fetch(`${baseUrl}/api/deliveries/mine`, { headers: { Cookie: firstDriverCookie } })).json()
+    const card = mine.deliveries.find((delivery) => delivery.id === deliveryId)
+    assert.equal(card.balanceDue, '45.50', 'the driver sees what to collect')
+    assert.equal(card.isFullyPaid, false)
+
+    const otherDriver = await record(secondDriverCookie)
+    assert.equal(otherDriver.status, 404, "someone else's delivery")
+    const gcash = await record(firstDriverCookie, { method: 'GCASH', gatewayReference: `drv_${runId}` })
+    assert.equal(gcash.status, 422, 'CASH only')
+
+    const collected = await record(firstDriverCookie)
+    assert.equal(collected.status, 201)
+    const body = await collected.json()
+    assert.equal(body.isFullyPaid, true)
+    assert.equal(body.payment.recordedByName, 'First Driver')
+
+    const listing = await fetch(`${baseUrl}/api/payments`, { headers: { Cookie: firstDriverCookie } })
+    assert.equal(listing.status, 403, 'recording is the only payments route a driver reaches')
+  })
+
+  test('PATCH /api/deliveries/:id/assign refuses a delivery whose order is already finished', async () => {
+    const { orderId, deliveryId } = await placeDeliveryOrder()
+    // Bypasses the route's own rules (COMPLETED needs DELIVERED) to reach
+    // the one state this guard exists for: a finished order with a
+    // delivery row still sitting in the queue.
+    await pool.query(`UPDATE orders SET status = 'COMPLETED' WHERE order_id = $1`, [orderId])
+    const response = await assign(deliveryId, firstDriverId)
+    assert.equal(response.status, 409)
+    assert.match((await response.json()).message, /already completed/)
   })
 
   test('PATCH /api/deliveries/:id/assign is staff-only — a driver cannot self-assign', async () => {

@@ -15,7 +15,8 @@ import express from 'express'
 import { pool } from '../db.js'
 import { billingListSql, getBillingSummary, mapBillingColumns } from '../lib/billing.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
-import { syncStockAlert } from '../lib/inventory.js'
+import { expiredSql, syncStockAlert } from '../lib/inventory.js'
+import { describeGatewayRefunds, settleGatewayRefunds } from '../lib/refunds.js'
 import { parseId } from '../lib/validation.js'
 
 const router = express.Router()
@@ -31,7 +32,36 @@ const terminalStatuses = new Set(['COMPLETED', 'CANCELLED'])
 // again, so a new status can never be added to one list but not the other.
 const nonTerminalStatuses = [...validStatuses].filter((status) => !terminalStatuses.has(status))
 const customerClaimableStatuses = ['PLACED']
+// Where each status sits on the order's forward path. A transition must
+// move to a HIGHER rank (CANCELLED is the one exception: reachable from
+// any non-terminal state). Skipping ahead is allowed — a walk-in that is
+// paid and handed over at the counter goes PLACED -> COMPLETED in one step
+// — but moving back (READY_FOR_PICKUP -> PLACED) or to the same status is
+// not: neither describes anything that happened, and both used to write
+// a history row claiming it did. READY_FOR_PICKUP and OUT_FOR_DELIVERY
+// share a rank because they are the same stage for the two order types.
+const statusRank = { PLACED: 0, CONFIRMED: 1, IN_PRODUCTION: 2, READY_FOR_PICKUP: 3, OUT_FOR_DELIVERY: 3, COMPLETED: 4 }
 const instructionsMaxLength = 500
+// Largest value order_details.quantity (INTEGER) can hold.
+const maxItemQuantity = 2147483647
+// How far ahead an order may ask to be ready. orders.requested_fulfillment_time
+// existed in the schema from the start and was never written: a bakery
+// takes cake orders for a date, so the column is the point of the
+// screen, not an extra. Bounded so a typo (year 2062) is refused rather
+// than stored. Optional — "as soon as it's ready" is the common case.
+const maxFulfillmentLeadDays = 30
+
+// Parses an optional requestedFulfillmentTime. Returns { value } (a Date,
+// or null when the field was absent/blank) or { error }.
+function parseFulfillmentTime(raw) {
+  if (raw == null || String(raw).trim() === '') return { value: null }
+  const value = new Date(raw)
+  if (Number.isNaN(value.getTime())) return { error: 'Enter a valid date and time.' }
+  const now = Date.now()
+  if (value.getTime() < now) return { error: 'The requested time has already passed.' }
+  if (value.getTime() > now + maxFulfillmentLeadDays * 24 * 60 * 60 * 1000) return { error: `Orders can be placed up to ${maxFulfillmentLeadDays} days ahead.` }
+  return { value }
+}
 
 const mapOrderSummary = (row) => ({
   id: row.order_id,
@@ -41,6 +71,7 @@ const mapOrderSummary = (row) => ({
   status: row.status,
   totalAmount: row.total_amount,
   orderDate: row.order_date,
+  requestedFulfillmentTime: row.requested_fulfillment_time,
   // Phase 6: what this order still owes, carried on the LIST as well as
   // the detail. Without it, the only way to answer "which orders still owe
   // money" — the question the Payment & Billing screen exists to answer —
@@ -53,7 +84,7 @@ const mapOrderSummary = (row) => ({
   ...mapBillingColumns(row),
 })
 
-const orderSummarySelectQuery = `SELECT o.order_id, o.customer_id, c.name AS customer_name, o.order_type, o.status, o.total_amount, o.order_date,
+const orderSummarySelectQuery = `SELECT o.order_id, o.customer_id, c.name AS customer_name, o.order_type, o.status, o.total_amount, o.order_date, o.requested_fulfillment_time,
             ${billingListSql.columns}
      FROM orders o
      LEFT JOIN customers c ON c.customer_id = o.customer_id
@@ -131,6 +162,26 @@ router.get('/:id', async (request, response) => {
   // their own order" guard above already covers who may reach this far.
   const payment = await getBillingSummary(pool, order.order_id)
 
+  // PHASE 7, DECISION 2 — deliveries.status is where a delivery order's
+  // progress actually lives, and orders.status stops at OUT_FOR_DELIVERY
+  // (DELIVERED never syncs, Decision 4). Without this a customer's own
+  // order looked in transit until staff marked it COMPLETED, and the
+  // /api/deliveries router does not admit customers at all. Read-only,
+  // and only the fields a customer or cashier needs to answer "where is
+  // it": no address (they know it), no note (the driver's own log).
+  const deliveryResult = order.order_type === 'DELIVERY'
+    ? await pool.query(
+      `SELECT d.status, d.assigned_at, d.delivered_at, dp.name AS delivery_personnel_name
+         FROM deliveries d LEFT JOIN delivery_personnel dp ON dp.delivery_personnel_id = d.delivery_personnel_id
+        WHERE d.order_id = $1`,
+      [order.order_id],
+    )
+    : null
+  const deliveryRow = deliveryResult?.rows[0]
+  const delivery = deliveryRow
+    ? { status: deliveryRow.status, deliveryPersonnelName: deliveryRow.delivery_personnel_name, assignedAt: deliveryRow.assigned_at, deliveredAt: deliveryRow.delivered_at }
+    : null
+
   return response.json({
     order: {
       id: order.order_id,
@@ -146,6 +197,7 @@ router.get('/:id', async (request, response) => {
       items: itemsResult.rows.map((row) => ({ productId: row.product_id, productName: row.product_name, quantity: row.quantity, unitPrice: row.unit_price })),
       statusHistory: historyResult.rows.map((row) => ({ status: row.status, note: row.note, updatedAt: row.updated_at, updatedByName: row.updated_by_name })),
       payment,
+      delivery,
     },
   })
 })
@@ -155,6 +207,8 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
   if (orderType !== 'PICKUP' && orderType !== 'DELIVERY') return response.status(422).json({ message: 'Enter a valid order type.', errors: { orderType: 'Enter a valid order type.' } })
 
   const instructions = request.body.instructions == null ? null : String(request.body.instructions).trim().slice(0, instructionsMaxLength)
+  const fulfillment = parseFulfillmentTime(request.body.requestedFulfillmentTime)
+  if (fulfillment.error) return response.status(422).json({ message: fulfillment.error, errors: { requestedFulfillmentTime: fulfillment.error } })
   const items = Array.isArray(request.body.items) ? request.body.items : []
   if (items.length === 0) return response.status(422).json({ message: 'Add at least one item to the order.', errors: { items: 'Add at least one item to the order.' } })
 
@@ -174,7 +228,10 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
   for (const item of items) {
     const productId = parseId(item?.productId)
     const quantity = Number(item?.quantity)
-    if (!productId || !Number.isInteger(quantity) || quantity <= 0) {
+    // The upper bound is order_details.quantity's own INTEGER range —
+    // Number.isInteger alone admits 1e12, which fails inside the INSERT
+    // as an out-of-range 22003 and surfaces as a 500 instead of this 422.
+    if (!productId || !Number.isInteger(quantity) || quantity <= 0 || quantity > maxItemQuantity) {
       return response.status(422).json({ message: 'Each item needs a valid productId and a positive whole-number quantity.', errors: { items: 'Each item needs a valid productId and a positive whole-number quantity.' } })
     }
     quantityByProductId.set(productId, (quantityByProductId.get(productId) ?? 0) + quantity)
@@ -201,7 +258,10 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     const cashierResult = await pool.query('SELECT cashier_id FROM cashiers WHERE user_id = $1', [request.user.id])
     processedBy = cashierResult.rows[0]?.cashier_id
     if ('customerId' in request.body && request.body.customerId != null) {
-      const requestedCustomerId = Number(request.body.customerId)
+      // parseId, not Number(): a non-numeric id would reach Postgres as
+      // NaN and fail inside the query as a 500 rather than this 422.
+      const requestedCustomerId = parseId(request.body.customerId)
+      if (!requestedCustomerId) return response.status(422).json({ message: 'Selected customer does not exist.', errors: { customerId: 'Selected customer does not exist.' } })
       const customerCheck = await pool.query('SELECT customer_id FROM customers WHERE customer_id = $1', [requestedCustomerId])
       if (!customerCheck.rows[0]) return response.status(422).json({ message: 'Selected customer does not exist.', errors: { customerId: 'Selected customer does not exist.' } })
       customerId = requestedCustomerId
@@ -235,7 +295,17 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     const productIds = parsedItems.map((item) => item.productId)
     // ::bigint[] casts the array explicitly rather than leaving Postgres to
     // infer a type for the string values parseId produced.
-    const productsResult = await client.query('SELECT product_id, price, availability_status FROM products WHERE product_id = ANY($1::bigint[])', [productIds])
+    // The expiry check joins inventory here, in the same read: a product
+    // past its expiration_date is not for sale whatever availability_status
+    // says (products.js hides it from the catalogue by the same rule), and
+    // the stock guard further down cannot express "there is stock, but it
+    // is expired".
+    const productsResult = await client.query(
+      `SELECT p.product_id, p.price, p.availability_status, ${expiredSql('i')} AS expired
+         FROM products p LEFT JOIN inventory i ON i.product_id = p.product_id
+        WHERE p.product_id = ANY($1::bigint[])`,
+      [productIds],
+    )
     // pg returns bigint columns (product_id) as STRINGS, not numbers, to
     // avoid precision loss for values beyond Number.MAX_SAFE_INTEGER — and
     // parseId above kept item.productId a string for the same reason, so
@@ -243,7 +313,7 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     const productsById = new Map(productsResult.rows.map((row) => [row.product_id, row]))
     for (const item of parsedItems) {
       const product = productsById.get(item.productId)
-      if (!product || !product.availability_status) {
+      if (!product || !product.availability_status || product.expired) {
         await client.query('ROLLBACK')
         return response.status(422).json({ message: `Product ${item.productId} is not available.`, errors: { items: `Product ${item.productId} is not available.` } })
       }
@@ -252,10 +322,10 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     // total_amount is left to its DEFAULT 0 here and filled in below, once
     // the line items exist to add up.
     const orderResult = await client.query(
-      `INSERT INTO orders (customer_id, processed_by, order_type, address_id, instructions)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO orders (customer_id, processed_by, order_type, address_id, instructions, requested_fulfillment_time)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING order_id`,
-      [customerId, processedBy, orderType, addressId, instructions],
+      [customerId, processedBy, orderType, addressId, instructions, fulfillment.value],
     )
     const orderId = orderResult.rows[0].order_id
 
@@ -384,6 +454,52 @@ router.patch('/:id', async (request, response) => {
   try {
     await client.query('BEGIN')
 
+    // Lock the order row and read the state the rules below are judged
+    // against. FOR UPDATE, so nothing else can change status or
+    // order_type between this read and the claim that follows — the same
+    // lock-the-parent-first convention routes/deliveries.js and
+    // routes/payments.js use, taken on the same row, in the same order.
+    const locked = await client.query('SELECT status, order_type FROM orders WHERE order_id = $1 FOR UPDATE', [orderId])
+    const lockedOrder = locked.rows[0]
+    if (!lockedOrder) {
+      await client.query('ROLLBACK')
+      return response.status(404).json({ message: 'Order not found.' })
+    }
+    if (terminalStatuses.has(lockedOrder.status)) {
+      await client.query('ROLLBACK')
+      return response.status(409).json({ message: `This order is already ${lockedOrder.status.toLowerCase()} and cannot be changed further.` })
+    }
+    if (status === lockedOrder.status) {
+      await client.query('ROLLBACK')
+      return response.status(409).json({ message: `This order is already ${status.toLowerCase().replaceAll('_', ' ')}.` })
+    }
+    if (status !== 'CANCELLED' && statusRank[status] <= statusRank[lockedOrder.status]) {
+      await client.query('ROLLBACK')
+      return response.status(409).json({ message: `An order cannot move back from ${lockedOrder.status.toLowerCase().replaceAll('_', ' ')} to ${status.toLowerCase().replaceAll('_', ' ')}.` })
+    }
+    // The two "ready" stages belong to one order type each. A DELIVERY
+    // order is never ready for pickup, and a PICKUP order is never out for
+    // delivery — the status is not merely unusual there, it is untrue.
+    if (status === 'READY_FOR_PICKUP' && lockedOrder.order_type !== 'PICKUP') {
+      await client.query('ROLLBACK')
+      return response.status(409).json({ message: 'A delivery order cannot be marked ready for pickup.' })
+    }
+    // OUT_FOR_DELIVERY is never written by this route at all. For a
+    // PICKUP order it is untrue; for a DELIVERY order it belongs to the
+    // driver's own workflow — PATCH /api/deliveries/:id/status — because
+    // deliveries.status is the source of truth and orders.status is synced
+    // FROM it, one direction only (PHASE7_PLAN.md, Decision 2 / Pattern
+    // F). A manual write here could disagree with deliveries.status with
+    // nothing able to say which is true.
+    if (status === 'OUT_FOR_DELIVERY') {
+      await client.query('ROLLBACK')
+      return response.status(409).json({
+        message: lockedOrder.order_type === 'PICKUP'
+          ? 'A pickup order cannot be marked out for delivery.'
+          : "This order's delivery status is managed through Delivery Management, not here.",
+      })
+    }
+
     // CLAIM THE TRANSITION FIRST, atomically, before restoring anything.
     //
     // This conditional UPDATE — not the pre-check above — is what makes
@@ -421,27 +537,6 @@ router.patch('/:id', async (request, response) => {
       return response.status(409).json({ message: 'This order was updated by someone else — reload it and try again.' })
     }
 
-    // PHASE 7, DECISION 2 — deliveries.status is the source of truth for a
-    // delivery order's progress; orders.status is synced FROM it, one
-    // direction only (see routes/deliveries.js, Pattern F). If this order
-    // has a deliveries row at all, it IS a delivery order (Decision 3
-    // creates one with every delivery order, never lazily), and moving it
-    // to OUT_FOR_DELIVERY must go through the driver's own workflow —
-    // PATCH /api/deliveries/:id/status — not through here. Without this
-    // refusal, a manual write here could disagree with deliveries.status
-    // with nothing able to say which is true, the exact drift this
-    // decision exists to prevent. Checked here, AFTER the claim, inside
-    // the transaction — the same reasoning PHASE6_PLAN.md's Decision 7
-    // uses for the COMPLETED check just below: a condition checked outside
-    // the write it gates is only ever a suggestion, never a guarantee.
-    if (status === 'OUT_FOR_DELIVERY') {
-      const deliveryCheck = await client.query('SELECT delivery_id FROM deliveries WHERE order_id = $1', [orderId])
-      if (deliveryCheck.rows[0]) {
-        await client.query('ROLLBACK')
-        return response.status(409).json({ message: 'This order\'s delivery status is managed through Delivery Management, not here.' })
-      }
-    }
-
     // PHASE 6, DECISION 7 — an order cannot be marked COMPLETED while
     // money is still owed. This has to live INSIDE the transaction, AFTER
     // the claim above, using the same client — reading the balance before
@@ -460,6 +555,20 @@ router.patch('/:id', async (request, response) => {
       if (!billing.isFullyPaid) {
         await client.query('ROLLBACK')
         return response.status(409).json({ message: `This order still owes ₱${billing.balanceDue} — it can only be marked COMPLETED once it is fully paid.` })
+      }
+      // A delivery order is "done" only once the goods arrived. Completing
+      // it earlier left its deliveries row live — still in the queue, or
+      // on a driver's list — with every forward move then refused by the
+      // terminal-order guard in routes/deliveries.js, so the only way out
+      // was an admin failing it by hand. deliveries.status is the source
+      // of truth for that (PHASE7_PLAN.md, Decision 2), so it is what
+      // gets asked here.
+      if (lockedOrder.order_type === 'DELIVERY') {
+        const delivery = await client.query('SELECT status FROM deliveries WHERE order_id = $1', [orderId])
+        if (delivery.rows[0]?.status !== 'DELIVERED') {
+          await client.query('ROLLBACK')
+          return response.status(409).json({ message: 'A delivery order can only be marked COMPLETED once its delivery is marked delivered.' })
+        }
       }
     }
 
@@ -534,6 +643,19 @@ router.patch('/:id', async (request, response) => {
         )
       }
 
+      // A PENDING gateway intent (routes/payments.js POST /intent) is not
+      // money in hand, so it is not part of hasPayments above — but left
+      // PENDING it is a live checkout link for an order nobody will fill.
+      // Closing it here is what lets the webhook tell "paid before the
+      // cancel" (PAID, refunded above) from "paid after it" (this row,
+      // now CANCELLED — see POST /webhook for how a late payment.paid on
+      // it is recorded). Runs regardless of role: a customer cancelling
+      // their own PLACED order can hold an open intent too.
+      await client.query(
+        `UPDATE payments SET status = 'CANCELLED' WHERE order_id = $1 AND status = 'PENDING'`,
+        [orderId],
+      )
+
       // PHASE 7, DECISION 6 — cancelling an order must resolve its
       // delivery row, in this same transaction. Without this, cancelling
       // an order that's ASSIGNED or OUT_FOR_DELIVERY leaves that row
@@ -561,7 +683,25 @@ router.patch('/:id', async (request, response) => {
     client.release()
   }
 
-  return response.json({ message: 'Order updated.', order: { id: Number(orderId), status } })
+  // The gateway side of the refund, AFTER the commit and with the client
+  // released — a network call to PayMongo must never run while this
+  // transaction holds the order lock (see lib/refunds.js). The ledger is
+  // already right whatever happens here; the message tells the admin
+  // whether the money moved too.
+  let gatewayNote = null
+  if (status === 'CANCELLED') {
+    try {
+      gatewayNote = describeGatewayRefunds(await settleGatewayRefunds(orderId))
+    } catch (error) {
+      // The cancel is committed; a failure HERE (a database blip while
+      // reading the owed rows, say) must not report it as failed. The
+      // rows stay owed, and the admin retry route picks them up.
+      console.error(`Gateway refund settlement failed after cancelling order ${orderId}:`, error)
+      gatewayNote = 'Online refunds could not be sent to PayMongo right now — an admin can retry from Payment & Billing.'
+    }
+  }
+
+  return response.json({ message: gatewayNote ? `Order updated. ${gatewayNote}` : 'Order updated.', order: { id: Number(orderId), status } })
 })
 
 export default router

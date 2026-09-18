@@ -17,6 +17,7 @@ export function CheckoutPage() {
   const [orderType, setOrderType] = useState('PICKUP')
   const [addressId, setAddressId] = useState(null)
   const [instructions, setInstructions] = useState('')
+  const [requestedFulfillmentTime, setRequestedFulfillmentTime] = useState('')
 
   const [errors, setErrors] = useState({})
   const [message, setMessage] = useState('')
@@ -69,6 +70,7 @@ export function CheckoutPage() {
     try {
       const body = { orderType, items: validLines.map(({ line }) => ({ productId: line.productId, quantity: line.quantity })) }
       if (instructions.trim()) body.instructions = instructions.trim()
+      if (requestedFulfillmentTime) body.requestedFulfillmentTime = new Date(requestedFulfillmentTime).toISOString()
       if (orderType === 'DELIVERY') body.addressId = addressId
 
       const data = await apiPost('/api/orders', body)
@@ -163,6 +165,13 @@ export function CheckoutPage() {
             <label htmlFor="checkout-instructions" className="text-sm font-bold text-stone-900">Special instructions (optional)</label>
             <textarea id="checkout-instructions" value={instructions} onChange={(event) => setInstructions(event.target.value.slice(0, instructionsMaxLength))} rows={3} placeholder="e.g. Less sugar, birthday message on the cake" className="mt-3 w-full rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700" />
             <p className="mt-1 text-right text-[10px] text-stone-400">{instructions.length}/{instructionsMaxLength}</p>
+          </div>
+
+          <div className="rounded-2xl border border-green-100 bg-white p-5">
+            <label htmlFor="checkout-needed-by" className="text-sm font-bold text-stone-900">When do you need it? (optional)</label>
+            <input id="checkout-needed-by" type="datetime-local" value={requestedFulfillmentTime} onChange={(event) => setRequestedFulfillmentTime(event.target.value)} className="mt-3 w-full rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700" />
+            <p className="mt-1 text-[10px] text-stone-400">Leave blank for as soon as it's ready. Orders can be placed up to 30 days ahead.</p>
+            {errors.requestedFulfillmentTime && <p className="mt-2 text-[10px] font-medium text-red-700">{errors.requestedFulfillmentTime}</p>}
           </div>
 
           <button type="button" onClick={handleSubmit} disabled={submitting} className="w-full rounded-2xl bg-green-700 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Placing your order…' : 'Place order'}</button>

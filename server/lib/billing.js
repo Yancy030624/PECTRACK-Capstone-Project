@@ -105,20 +105,19 @@ export async function getBillingSummary(client, orderId) {
   }
 }
 
-// recorded_by is only ever written by POST /api/payments, which requires
-// CASHIER or ADMIN — never a customer, delivery person, or a bare user
-// row — so joining just those two role tables (rather than all four, the
-// way order_status_history.updated_by has to) is enough to name whoever
-// took the payment. refunded_by is narrower still: only the admin-only
-// branch of PATCH /api/orders/:id ever sets it, so it only ever needs the
-// admins table. Same reasoning routes/inventory.js already uses for
-// requested_by (cashiers only) and reviewed_by (admins only).
+// recorded_by is only ever written by POST /api/payments — CASHIER, ADMIN,
+// or (cash on delivery) the DELIVERY_PERSONNEL who collected it — never a
+// customer, so those three role tables name whoever took the payment.
+// refunded_by is narrower still: only the admin-only branch of PATCH
+// /api/orders/:id ever sets it, so it only ever needs the admins table.
 const paymentsForOrderSelectQuery = `SELECT p.payment_id, p.payment_method, p.amount, p.status, p.gateway_reference, p.payment_date, p.created_at,
-            COALESCE(ra.name, rc.name) AS recorded_by_name,
-            p.refunded_at, p.refund_reason, fa.name AS refunded_by_name
+            COALESCE(ra.name, rc.name, rd.name) AS recorded_by_name,
+            p.refunded_at, p.refund_reason, fa.name AS refunded_by_name,
+            p.gateway_payment_id, p.refund_reference
        FROM payments p
        LEFT JOIN admins ra ON ra.user_id = p.recorded_by
        LEFT JOIN cashiers rc ON rc.user_id = p.recorded_by
+       LEFT JOIN delivery_personnel rd ON rd.user_id = p.recorded_by
        LEFT JOIN admins fa ON fa.user_id = p.refunded_by
       WHERE p.order_id = $1
       ORDER BY p.created_at`
@@ -134,5 +133,9 @@ const mapPaymentRow = (row) => ({
   refundedAt: row.refunded_at,
   refundReason: row.refund_reason,
   refundedByName: row.refunded_by_name,
+  // Migration 009 — the receipt can say whether an online refund actually
+  // reached PayMongo (refundReference set) or is still owed there.
+  gatewayPaymentId: row.gateway_payment_id,
+  refundReference: row.refund_reference,
   createdAt: row.created_at,
 })

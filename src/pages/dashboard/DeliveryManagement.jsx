@@ -173,7 +173,13 @@ function StaffDeliveryView({ user }) {
                   <StatusBadge status={delivery.status} />
                 </div>
 
-                {delivery.status === 'PENDING_ASSIGNMENT' && (
+                {/* routes/deliveries.js refuses assignment while the order is
+                    still PLACED — the kitchen has not accepted it yet. Say so
+                    here instead of offering a button that can only 409. */}
+                {delivery.status === 'PENDING_ASSIGNMENT' && delivery.orderStatus === 'PLACED' && (
+                  <p className="mt-3 border-t border-line-100 pt-3 text-xs text-ink-500">Confirm the order in Order Management before assigning a driver.</p>
+                )}
+                {delivery.status === 'PENDING_ASSIGNMENT' && delivery.orderStatus !== 'PLACED' && (
                   <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line-100 pt-3">
                     <div className="min-w-40 flex-1">
                       <Select value={assignChoice[delivery.id] ?? ''} onChange={(event) => setAssignChoice({ ...assignChoice, [delivery.id]: event.target.value })} aria-label={`Assign a driver for order #${delivery.orderId}`}>

@@ -10,6 +10,7 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
+import { billingListSql, mapBillingColumns } from '../lib/billing.js'
 import { deleteFile, filePath, saveFile } from '../lib/storage.js'
 import { normalize, parseId } from '../lib/validation.js'
 
@@ -76,6 +77,14 @@ const mapDeliveryRow = (row) => ({
   deliveredAt: row.delivered_at,
   note: row.note,
   proofCount: Number(row.proof_count),
+  // What the customer asked for, and what they still owe — the driver at
+  // the door needs both: the first to know it is a timed order, the
+  // second to know how much cash to collect (POST /api/payments, the
+  // cash-on-delivery path). Same lib/billing.js columns the order list
+  // uses, never a second SUM written out here.
+  instructions: row.instructions,
+  requestedFulfillmentTime: row.requested_fulfillment_time,
+  ...mapBillingColumns(row),
   address: {
     label: row.label,
     recipientName: row.recipient_name,
@@ -100,12 +109,14 @@ const mapProofRow = (row) => ({
 
 const deliverySelectQuery = `SELECT d.delivery_id, d.order_id, d.delivery_personnel_id, dp.name AS delivery_personnel_name,
             d.status, d.assigned_at, d.delivered_at, d.note,
-            o.status AS order_status, o.total_amount, c.name AS customer_name,
+            o.status AS order_status, o.total_amount, o.instructions, o.requested_fulfillment_time, c.name AS customer_name,
             a.label, a.recipient_name, a.contact_num, a.address_line_1, a.address_line_2,
             a.barangay, a.municipality, a.province, a.postal_code, a.delivery_notes,
-            (SELECT COUNT(*) FROM delivery_proofs dpf WHERE dpf.delivery_id = d.delivery_id) AS proof_count
+            (SELECT COUNT(*) FROM delivery_proofs dpf WHERE dpf.delivery_id = d.delivery_id) AS proof_count,
+            ${billingListSql.columns}
        FROM deliveries d
        JOIN orders o ON o.order_id = d.order_id
+       ${billingListSql.join}
        LEFT JOIN customers c ON c.customer_id = o.customer_id
        LEFT JOIN customer_addresses a ON a.address_id = o.address_id
        LEFT JOIN delivery_personnel dp ON dp.delivery_personnel_id = d.delivery_personnel_id`
@@ -168,18 +179,37 @@ router.patch('/:id/assign', requireRole('ADMIN', 'CASHIER'), async (request, res
   const deliveryPersonnelId = parseId(request.body.deliveryPersonnelId)
   if (!deliveryPersonnelId) return response.status(422).json({ message: 'Select a delivery person.', errors: { deliveryPersonnelId: 'Select a delivery person.' } })
 
-  const personnelCheck = await pool.query('SELECT delivery_personnel_id FROM delivery_personnel WHERE delivery_personnel_id = $1', [deliveryPersonnelId])
+  // is_active is checked here, not only in GET /personnel's dropdown: a
+  // deactivated driver can no longer sign in, so handing them a delivery
+  // parks it in ASSIGNED with nobody able to move it — the exact stuck
+  // state the admin recovery transitions exist to dig out of.
+  const personnelCheck = await pool.query(
+    `SELECT u.is_active FROM delivery_personnel dp JOIN users u ON u.user_id = dp.user_id WHERE dp.delivery_personnel_id = $1`,
+    [deliveryPersonnelId],
+  )
   if (!personnelCheck.rows[0]) return response.status(422).json({ message: 'Selected delivery person does not exist.', errors: { deliveryPersonnelId: 'Selected delivery person does not exist.' } })
+  if (!personnelCheck.rows[0].is_active) return response.status(422).json({ message: "That delivery person's account is deactivated.", errors: { deliveryPersonnelId: 'Select an active delivery person.' } })
 
+  // The order's own state is part of the claim. A delivery may only be
+  // handed out once the kitchen has accepted the order (CONFIRMED or
+  // later): a PLACED order is one nobody has looked at yet — the customer
+  // can still cancel it themselves — and a driver holding it was on the
+  // road for an order that might never be made. And one already COMPLETED
+  // or CANCELLED must not be handed to anyone: cancel fails the delivery
+  // itself (Decision 6), but COMPLETED used to leave the row in the queue.
   const claimed = await pool.query(
-    `UPDATE deliveries SET delivery_personnel_id = $1, status = 'ASSIGNED', assigned_at = CURRENT_TIMESTAMP
-      WHERE delivery_id = $2 AND status = 'PENDING_ASSIGNMENT'
-    RETURNING delivery_id`,
+    `UPDATE deliveries d SET delivery_personnel_id = $1, status = 'ASSIGNED', assigned_at = CURRENT_TIMESTAMP
+       FROM orders o
+      WHERE d.order_id = o.order_id AND d.delivery_id = $2 AND d.status = 'PENDING_ASSIGNMENT'
+        AND o.status NOT IN ('PLACED', 'COMPLETED', 'CANCELLED')
+    RETURNING d.delivery_id`,
     [deliveryPersonnelId, deliveryId],
   )
   if (claimed.rowCount === 0) {
-    const exists = await pool.query('SELECT delivery_id FROM deliveries WHERE delivery_id = $1', [deliveryId])
+    const exists = await pool.query('SELECT d.status, o.status AS order_status FROM deliveries d JOIN orders o ON o.order_id = d.order_id WHERE d.delivery_id = $1', [deliveryId])
     if (!exists.rows[0]) return response.status(404).json({ message: 'Delivery not found.' })
+    if (terminalOrderStatuses.has(exists.rows[0].order_status)) return response.status(409).json({ message: `This order is already ${exists.rows[0].order_status.toLowerCase()} — its delivery cannot be assigned.` })
+    if (exists.rows[0].order_status === 'PLACED') return response.status(409).json({ message: 'Confirm the order first — a delivery is assigned once the kitchen has accepted it.' })
     return response.status(409).json({ message: 'This delivery is no longer pending assignment — reload it and try again.' })
   }
 

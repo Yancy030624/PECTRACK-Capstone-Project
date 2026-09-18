@@ -36,6 +36,10 @@ export function NewOrderForm({ onCreated }) {
 
   const [lines, setLines] = useState([])
   const [instructions, setInstructions] = useState('')
+  // datetime-local value ('YYYY-MM-DDTHH:mm', local time); '' means "as
+  // soon as it's ready", which is the common case and what the server
+  // stores as NULL.
+  const [requestedFulfillmentTime, setRequestedFulfillmentTime] = useState('')
 
   const [errors, setErrors] = useState({})
   const [message, setMessage] = useState('')
@@ -99,6 +103,7 @@ export function NewOrderForm({ onCreated }) {
   const resetDraft = () => {
     setLines([])
     setInstructions('')
+    setRequestedFulfillmentTime('')
     setCustomerId('')
     setCustomerSearch('')
     setOrderType('PICKUP')
@@ -124,6 +129,9 @@ export function NewOrderForm({ onCreated }) {
       if (customerId) body.customerId = customerId
       if (orderType === 'DELIVERY') body.addressId = addressId
       if (instructions.trim()) body.instructions = instructions.trim()
+      // new Date() on a datetime-local value interprets it in the
+      // browser's own zone, which is the zone the cashier typed it in.
+      if (requestedFulfillmentTime) body.requestedFulfillmentTime = new Date(requestedFulfillmentTime).toISOString()
 
       const data = await apiPost('/api/orders', body)
       resetDraft()
@@ -301,6 +309,12 @@ export function NewOrderForm({ onCreated }) {
           <p className="mt-1 text-right text-xs text-ink-500">
             {instructions.length}/{instructionsMaxLength}
           </p>
+          <div className="mt-3">
+            <Field label="Needed by (optional)" error={errors.requestedFulfillmentTime}>
+              <Input type="datetime-local" value={requestedFulfillmentTime} onChange={(event) => setRequestedFulfillmentTime(event.target.value)} />
+            </Field>
+            <p className="mt-1 text-xs text-ink-500">Leave blank for as soon as it's ready. Up to 30 days ahead.</p>
+          </div>
         </Card>
       </div>
 

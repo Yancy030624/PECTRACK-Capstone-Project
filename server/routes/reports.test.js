@@ -565,6 +565,39 @@ describe('reporting & analytics', () => {
       throw lastError
     })
 
+    // inventory.expiration_date was writable since Phase 5 and never read
+    // back. Expired stock on the shelf now: shows up here for staff to
+    // write off, disappears from the customer catalogue, and is refused at
+    // checkout — all from the same "before today" comparison.
+    test('expired stock is listed on the summary, hidden from customers, and refused at checkout', async () => {
+      // Stock is 1000 from the setup; only the date changes.
+      const setExpiry = (expirationDate) => pool.query('UPDATE inventory SET expiration_date = $1 WHERE product_id = $2', [expirationDate, productId])
+      await setExpiry('2020-01-01')
+      try {
+        const summary = await (await fetch(`${baseUrl}/api/reports/summary`, { headers: { Cookie: adminCookie } })).json()
+        const listed = summary.expiredStock.find((item) => item.productId === productId)
+        assert.ok(listed, 'the expired product appears on the summary')
+        assert.equal(listed.expirationDate, '2020-01-01')
+        assert.ok(summary.expiredStockTotal >= 1)
+
+        const catalogue = await (await fetch(`${baseUrl}/api/products`)).json()
+        assert.ok(!catalogue.products.some((product) => product.id === productId), 'hidden from the public catalogue')
+        assert.equal((await fetch(`${baseUrl}/api/products/${productId}`)).status, 404)
+        assert.equal((await fetch(`${baseUrl}/api/products/${productId}/image`)).status, 404, 'the photo follows the product')
+        const staffView = await fetch(`${baseUrl}/api/products/${productId}`, { headers: { Cookie: adminCookie } })
+        assert.equal(staffView.status, 200, 'staff still see it')
+
+        const order = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId, quantity: 1 }] }) })
+        assert.equal(order.status, 422)
+        assert.match((await order.json()).message, /not available/)
+
+        const inventory = await (await fetch(`${baseUrl}/api/inventory`, { headers: { Cookie: adminCookie } })).json()
+        assert.equal(inventory.inventory.find((row) => row.productId === productId).expired, true)
+      } finally {
+        await setExpiry(null)
+      }
+    })
+
     // The one query in Phase 8 whose cost grows with a BUSINESS problem
     // rather than with time: every open alert, on every dashboard load, for
     // every admin and cashier. A bakery with a bad week — a supplier that
@@ -710,7 +743,7 @@ describe('reporting & analytics', () => {
       assert.equal(reported.RESTOCK, 50)
       assert.equal(reported.SPOILAGE, -8)
       assert.equal(reported.CORRECTION, -2)
-      assert.equal(response.spoilageUnits, 8, 'spoilageUnits is the positive magnitude')
+      assert.equal(response.lossUnits, 8, 'lossUnits is the positive magnitude')
 
       // Reconciliation: sum of what the report shows for THIS product's
       // movements must equal the ledger's own signed SUM for those same

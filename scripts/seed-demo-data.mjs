@@ -156,6 +156,10 @@ async function main() {
   log('Logging in...')
   const cashierCookie = await login('cashier1', 'Cashier@Pectrack1')
   const customerCookie = await login('customer1', 'Customer@Pectrack1')
+  // The driver's own session: a delivery order only reaches COMPLETED
+  // once its delivery is DELIVERED, and only the assigned driver can
+  // drive ASSIGNED -> OUT_FOR_DELIVERY -> DELIVERED (Phase 7, Pattern H).
+  const driverCookie = await login('delivery1', 'Delivery@Pectrack1')
   const { cookie: adminCookie } = await createTempAdmin()
   log('Logged in as cashier1, customer1, and a helper admin (see createTempAdmin\'s own comment).\n')
 
@@ -172,8 +176,11 @@ async function main() {
   const address = addressesResult.body.addresses[0]
   if (!address) throw new Error('customer1 has no saved address — DELIVERY orders in this seed need one. Save one via My Profile > Addresses first.')
 
-  const personnelResult = await call('GET', '/api/deliveries/personnel', cashierCookie)
-  const driver = personnelResult.body.personnel.find((p) => p.name === 'Test Delivery Personnel') ?? personnelResult.body.personnel[0]
+  // Must be delivery1 specifically — driverCookie above is what moves the
+  // deliveries assigned here, and a driver can only move their own.
+  const driverRow = (await pool.query(`SELECT dp.delivery_personnel_id, dp.name FROM delivery_personnel dp JOIN users u ON u.user_id = dp.user_id WHERE u.username = 'delivery1'`)).rows[0]
+  if (!driverRow) throw new Error('delivery1 has no delivery_personnel row — run create-test-accounts.mjs first.')
+  const driver = { id: driverRow.delivery_personnel_id, name: driverRow.name }
 
   // Randomly builds 1-3 lines, mostly from `pool`, occasionally reaching
   // into rareProducts for variety — never from scarceProducts (those are
@@ -210,6 +217,19 @@ async function main() {
   async function advanceStatus(orderId, status) {
     const result = await call('PATCH', `/api/orders/${orderId}`, cashierCookie, { status })
     if (result.status !== 200) throw new Error(`Status update to ${status} failed for order ${orderId}: ${JSON.stringify(result.body)}`)
+  }
+
+  // Hands a DELIVERY order's delivery to delivery1 and drives it to
+  // DELIVERED through the real routes. Assignment needs the order
+  // CONFIRMED or later (routes/deliveries.js), so callers confirm first.
+  async function deliverOrder(orderId) {
+    const delivery = (await pool.query('SELECT delivery_id FROM deliveries WHERE order_id = $1', [orderId])).rows[0]
+    const assigned = await call('PATCH', `/api/deliveries/${delivery.delivery_id}/assign`, cashierCookie, { deliveryPersonnelId: driver.id })
+    if (assigned.status !== 200) throw new Error(`Delivery assignment failed for order ${orderId}: ${JSON.stringify(assigned.body)}`)
+    for (const status of ['OUT_FOR_DELIVERY', 'DELIVERED']) {
+      const moved = await call('PATCH', `/api/deliveries/${delivery.delivery_id}/status`, driverCookie, { status })
+      if (moved.status !== 200) throw new Error(`Delivery ${status} failed for order ${orderId}: ${JSON.stringify(moved.body)}`)
+    }
   }
 
   async function recordPayment(orderId, amount, method = 'CASH') {
@@ -249,11 +269,11 @@ async function main() {
     })
     await advanceStatus(order.id, 'CONFIRMED')
     await advanceStatus(order.id, 'IN_PRODUCTION')
-    if (!isDelivery) await advanceStatus(order.id, 'READY_FOR_PICKUP')
     // A DELIVERY order's status is driven by deliveries.js, not this
-    // route (Phase 7, Decision 2) — going straight to COMPLETED after
-    // IN_PRODUCTION skips the OUT_FOR_DELIVERY step this seed doesn't
-    // need to model for a completed historical order.
+    // route (Phase 7, Decision 2): the driver's own routes take it to
+    // OUT_FOR_DELIVERY and DELIVERED, and COMPLETED requires DELIVERED.
+    if (isDelivery) await deliverOrder(order.id)
+    else await advanceStatus(order.id, 'READY_FOR_PICKUP')
     const useGcash = Math.random() < 0.2
     const paymentId = await recordPayment(order.id, order.totalAmount, useGcash ? 'GCASH' : 'CASH')
     await advanceStatus(order.id, 'COMPLETED')
@@ -339,6 +359,8 @@ async function main() {
     addressId: address.id,
     items: randomItems(commonProducts),
   })
+  // Assignment requires the kitchen to have accepted the order first.
+  await advanceStatus(deliveryOrder.id, 'CONFIRMED')
   const queue = await call('GET', '/api/deliveries?status=PENDING_ASSIGNMENT', cashierCookie)
   const queueRow = queue.body.deliveries.find((d) => String(d.orderId) === String(deliveryOrder.id))
   const assignResult = await call('PATCH', `/api/deliveries/${queueRow.id}/assign`, cashierCookie, { deliveryPersonnelId: driver.id })

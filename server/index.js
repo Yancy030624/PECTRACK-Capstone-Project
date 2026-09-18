@@ -10,7 +10,7 @@ const pruneIntervalMs = 60 * 60 * 1000
 async function pruneExpiredRows() {
   try {
     const removed = await pruneExpiredAuthRows()
-    if (removed.sessions || removed.otpCodes) console.log(`Pruned ${removed.sessions} expired session(s) and ${removed.otpCodes} old OTP code(s).`)
+    if (removed.sessions || removed.otpCodes || removed.resetTokens) console.log(`Pruned ${removed.sessions} expired session(s), ${removed.otpCodes} old OTP code(s), and ${removed.resetTokens} old password reset token(s).`)
   } catch (error) {
     // Housekeeping failing must never take the API down with it — the
     // server serves requests perfectly well with stale rows sitting in

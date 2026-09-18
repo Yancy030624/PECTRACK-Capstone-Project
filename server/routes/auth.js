@@ -5,9 +5,11 @@
 import crypto from 'node:crypto'
 import bcrypt from 'bcrypt'
 import express from 'express'
+import { config } from '../config.js'
 import { pool } from '../db.js'
-import { bcryptRounds, findDuplicateAccount, roleTables } from '../lib/accounts.js'
-import { createSession, parseCookies, requireAuth, sessionCookieName, sessionCookieOptions } from '../lib/auth.js'
+import { bcryptRounds, findDuplicateAccount, profileColumnsSql, profileEmailMatchesSql, profileJoinsSql, roleTables } from '../lib/accounts.js'
+import { createSession, parseCookies, requireAuth, sessionCookieName, sessionCookieOptions, sessionCookieOptionsForBrowserSession } from '../lib/auth.js'
+import { sendMail } from '../lib/mail.js'
 import { normalize, normalizeEmail, validateAccountFields, validateContactNumberField, validateEmailField, validateName, validatePasswordField } from '../lib/validation.js'
 
 const router = express.Router()
@@ -16,6 +18,20 @@ const lockAfterAttempts = 5
 const lockDurationMinutes = 15
 const otpCodeDurationMs = 5 * 60 * 1000
 const otpMaxAttempts = 5
+// A reset link lives 30 minutes — long enough to find the email, short
+// enough that a forgotten inbox is not a standing way in.
+const passwordResetDurationMs = 30 * 60 * 1000
+// One reset email per account per this window. Without it a known address
+// can be flooded — every request sends a mail — and the SMTP quota burned.
+// Still a 200 either way: the cooldown must not become an oracle for
+// which addresses exist any more than a miss does.
+const passwordResetCooldownMinutes = 2
+
+// The reset token is hashed the same way an OTP code is: the table holds
+// only a digest, the token itself exists once, in the email.
+function hashResetToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex')
+}
 
 // A real bcrypt hash of a value no one can submit, used only to give
 // /login something to compare against when there's no account. See the
@@ -94,15 +110,10 @@ router.post('/login', async (request, response) => {
 
   const result = await pool.query(
     `SELECT u.user_id, u.username, u.password_hash, u.user_type, u.is_active, u.locked_until,
-            COALESCE(a.name, ca.name, c.name, d.name) AS name,
-            COALESCE(a.email, ca.email, c.email, d.email) AS email,
-            COALESCE(a.contact_num, ca.contact_num, c.contact_num, d.contact_num) AS contact_num
+            ${profileColumnsSql}
      FROM users u
-     LEFT JOIN admins a ON a.user_id = u.user_id
-     LEFT JOIN cashiers ca ON ca.user_id = u.user_id
-     LEFT JOIN customers c ON c.user_id = u.user_id
-     LEFT JOIN delivery_personnel d ON d.user_id = u.user_id
-     WHERE LOWER(u.username) = $1 OR LOWER(a.email) = $1 OR LOWER(ca.email) = $1 OR LOWER(c.email) = $1 OR LOWER(d.email) = $1
+     ${profileJoinsSql}
+     WHERE LOWER(u.username) = $1 OR ${profileEmailMatchesSql('$1')}
      LIMIT 1`,
     [identifier],
   )
@@ -170,8 +181,128 @@ router.post('/login', async (request, response) => {
   // real second factor (once an SMS gateway exists) is restoring the
   // three-line branch this comment replaced, not rebuilding the feature.
   const sessionId = await createSession(user.user_id)
-  response.cookie(sessionCookieName, sessionId, sessionCookieOptions)
+  // rememberMe defaults to TRUE — a caller that never sends the field
+  // (an older client, a script) keeps the 7-day cookie every login has
+  // always produced; only an explicit false asks for a browser-session
+  // cookie instead.
+  response.cookie(sessionCookieName, sessionId, request.body.rememberMe === false ? sessionCookieOptionsForBrowserSession : sessionCookieOptions)
   return response.json({ user: { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' '), email: user.email, contactNumber: user.contact_num } })
+})
+
+// POST /api/auth/forgot-password — step one of email password recovery.
+// ALWAYS answers 200 with the same message, whether or not the email is
+// on file: the response must not become a way to test which addresses
+// have accounts (the same reasoning /login's timing fix makes for
+// usernames). Any role may use it — the email is looked up across every
+// role table the way /login already does.
+//
+// A new request replaces any earlier unconsumed token for the account,
+// so at most one live link exists per user, and the link goes to the
+// email ON FILE, never to an address supplied in the request.
+router.post('/forgot-password', async (request, response) => {
+  const email = normalizeEmail(request.body.email)
+  const genericResponse = { message: 'If that email belongs to an account, a reset link has been sent to it.' }
+  if (validateEmailField(email)) return response.status(422).json({ message: 'Enter a valid email address.', errors: { email: 'Enter a valid email address.' } })
+
+  const result = await pool.query(
+    `SELECT u.user_id, u.is_active, ${profileColumnsSql}
+       FROM users u
+       ${profileJoinsSql}
+      WHERE ${profileEmailMatchesSql('$1')}
+      LIMIT 1`,
+    [email],
+  )
+  const user = result.rows[0]
+  if (!user || !user.is_active) return response.json(genericResponse)
+
+  const recent = await pool.query(
+    `SELECT 1 FROM password_reset_tokens WHERE user_id = $1 AND consumed_at IS NULL AND created_at > CURRENT_TIMESTAMP - ($2 * INTERVAL '1 minute')`,
+    [user.user_id, passwordResetCooldownMinutes],
+  )
+  if (recent.rowCount > 0) return response.json(genericResponse)
+
+  const token = crypto.randomBytes(32).toString('base64url')
+  const expiresAt = new Date(Date.now() + passwordResetDurationMs)
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query('DELETE FROM password_reset_tokens WHERE user_id = $1 AND consumed_at IS NULL', [user.user_id])
+    await client.query('INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)', [user.user_id, hashResetToken(token), expiresAt])
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+
+  const resetUrl = `${config.clientOrigin}/reset-password?token=${token}`
+  try {
+    await sendMail({
+      to: email,
+      subject: 'Reset your PECTRACK password',
+      text: `Hello ${user.name},\n\nSomeone asked to reset the password for your PECTRACK account. If that was you, open this link within 30 minutes:\n\n${resetUrl}\n\nIf you did not ask for this, you can ignore this email — your password stays as it is.`,
+    })
+  } catch (error) {
+    // The token is already stored, so a mail failure is logged, not
+    // surfaced: surfacing it would tell the caller the address exists.
+    console.error('Could not send a password reset email:', error)
+  }
+  return response.json(genericResponse)
+})
+
+// POST /api/auth/reset-password — step two. The token from the email plus
+// a new password. Single use, time-bounded, and it ends every existing
+// session for the account — the same reasoning PATCH /password gives:
+// someone resetting a password after a compromise needs the intruder's
+// session gone too, and here there is no "own session" to spare.
+router.post('/reset-password', async (request, response) => {
+  const token = normalize(request.body.token)
+  const newPassword = String(request.body.newPassword ?? '')
+  const confirmPassword = String(request.body.confirmPassword ?? '')
+  const invalidTokenResponse = { message: 'This reset link is invalid or has expired. Request a new one.' }
+  if (!token) return response.status(400).json(invalidTokenResponse)
+
+  const tokenResult = await pool.query(
+    `SELECT t.token_id, u.user_id, u.username, u.is_active, ${profileColumnsSql}
+       FROM password_reset_tokens t
+       JOIN users u ON u.user_id = t.user_id
+       ${profileJoinsSql}
+      WHERE t.token_hash = $1 AND t.consumed_at IS NULL AND t.expires_at > CURRENT_TIMESTAMP`,
+    [hashResetToken(token)],
+  )
+  const row = tokenResult.rows[0]
+  if (!row || !row.is_active) return response.status(400).json(invalidTokenResponse)
+
+  const errors = {}
+  const passwordError = validatePasswordField(newPassword, { username: row.username, email: row.email })
+  if (passwordError) errors.newPassword = passwordError
+  if (newPassword !== confirmPassword) errors.confirmPassword = 'Passwords do not match.'
+  if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
+
+  const passwordHash = await bcrypt.hash(newPassword, bcryptRounds)
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    // Consuming the token is conditional, so two submissions of the same
+    // link cannot both get through: the second finds it consumed.
+    const consumed = await client.query('UPDATE password_reset_tokens SET consumed_at = CURRENT_TIMESTAMP WHERE token_id = $1 AND consumed_at IS NULL RETURNING token_id', [row.token_id])
+    if (consumed.rowCount === 0) {
+      await client.query('ROLLBACK')
+      return response.status(400).json(invalidTokenResponse)
+    }
+    // A reset also clears a lockout: the person proving they own the
+    // email is exactly who the lockout was protecting.
+    await client.query('UPDATE users SET password_hash = $1, failed_login_attempts = 0, locked_until = NULL WHERE user_id = $2', [passwordHash, row.user_id])
+    await client.query('DELETE FROM sessions WHERE user_id = $1', [row.user_id])
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+  return response.json({ message: 'Password updated. You can now sign in with your new password.' })
 })
 
 // Second step of the admin login. Requires BOTH the challenge token issued
@@ -352,21 +483,13 @@ router.patch('/me', requireAuth, async (request, response) => {
     client.release()
   }
 
-  // Same 4-way role-table join used by login and requireAuth, kept
-  // inline here rather than shared — this call site only needs a plain
-  // lookup by a known, already-authenticated user_id, while the other
-  // two also handle credential checks or session validity, so they
-  // aren't quite the same query underneath the similar shape.
+  // The same profile shape login and requireAuth read, from the one
+  // definition in lib/accounts.js — only the WHERE differs per caller.
   const refreshed = await pool.query(
     `SELECT u.user_id, u.username, u.user_type,
-            COALESCE(a.name, ca.name, c.name, d.name) AS name,
-            COALESCE(a.email, ca.email, c.email, d.email) AS email,
-            COALESCE(a.contact_num, ca.contact_num, c.contact_num, d.contact_num) AS contact_num
+            ${profileColumnsSql}
      FROM users u
-     LEFT JOIN admins a ON a.user_id = u.user_id
-     LEFT JOIN cashiers ca ON ca.user_id = u.user_id
-     LEFT JOIN customers c ON c.user_id = u.user_id
-     LEFT JOIN delivery_personnel d ON d.user_id = u.user_id
+     ${profileJoinsSql}
      WHERE u.user_id = $1`,
     [current.user_id],
   )

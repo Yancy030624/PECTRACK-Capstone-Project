@@ -26,7 +26,20 @@ import { NewOrderForm } from './NewOrderForm.jsx'
 // cashier-only "New order" tab, cancellation) is unchanged — this is a
 // presentation and accessibility pass, same as CustomerManagement.jsx's
 // Stage 1 conversion.
-const statusOptions = ['PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP', 'OUT_FOR_DELIVERY', 'COMPLETED', 'CANCELLED']
+// Mirrors routes/orders.js's statusRank: a status change may only move
+// FORWARD, READY_FOR_PICKUP belongs to PICKUP orders and OUT_FOR_DELIVERY
+// to DELIVERY orders (and is set through Delivery Management, never here),
+// and CANCELLED is reachable from anywhere. The dropdown offers only what
+// the server would accept, so a cashier is never handed a list where most
+// choices are a guaranteed 409.
+const statusRank = { PLACED: 0, CONFIRMED: 1, IN_PRODUCTION: 2, READY_FOR_PICKUP: 3, OUT_FOR_DELIVERY: 3, COMPLETED: 4 }
+function nextStatusOptions(order) {
+  const forward = Object.keys(statusRank).filter((status) => statusRank[status] > statusRank[order.status])
+  return forward
+    .filter((status) => status !== 'OUT_FOR_DELIVERY')
+    .filter((status) => status !== 'READY_FOR_PICKUP' || order.orderType === 'PICKUP')
+    .concat('CANCELLED')
+}
 
 export function OrderManagement({ user }) {
   return user.role === 'ADMIN' || user.role === 'CASHIER' ? <StaffOrderManagement user={user} /> : <CustomerOrders user={user} />
@@ -69,7 +82,7 @@ function StaffOrderManagement({ user }) {
     try {
       const data = await apiGet(`/api/orders/${orderId}`)
       setOrderDetail(data.order)
-      setStatusChoice(data.order.status)
+      setStatusChoice('')
       setStatusNote('')
     } catch (error) {
       setMessage(error.message)
@@ -80,6 +93,11 @@ function StaffOrderManagement({ user }) {
 
   const handleStatusSubmit = async (event) => {
     event.preventDefault()
+    if (!statusChoice) return
+    // Cancelling restores stock and, on a paid order, refunds it — none of
+    // which can be undone. The customer's own cancel button already asks;
+    // the staff path, with broader powers, asked nothing.
+    if (statusChoice === 'CANCELLED' && !window.confirm(`Cancel order #${selectedOrderId}? Stock is restored and any payment is refunded. This cannot be undone.`)) return
     setStatusSubmitting(true)
     try {
       await apiPatch(`/api/orders/${selectedOrderId}`, { status: statusChoice, note: statusNote || null })
@@ -145,6 +163,7 @@ function StaffOrderManagement({ user }) {
                   <Tr className="hover:bg-transparent">
                     <Th>Order</Th>
                     <Th>Customer</Th>
+                    <Th>Needed by</Th>
                     <Th align="right">Total</Th>
                     <Th>Status</Th>
                   </Tr>
@@ -173,6 +192,7 @@ function StaffOrderManagement({ user }) {
                         </button>
                       </Td>
                       <Td>{order.customerName ?? 'Walk-in'}</Td>
+                      <Td>{order.requestedFulfillmentTime ? new Date(order.requestedFulfillmentTime).toLocaleString() : <span className="text-ink-500">ASAP</span>}</Td>
                       <Td numeric>₱{order.totalAmount}</Td>
                       <Td>
                         <StatusBadge status={order.status} />
@@ -203,6 +223,8 @@ function StaffOrderManagement({ user }) {
                   {orderDetail.cashierName ? ` · Processed by ${orderDetail.cashierName}` : ''}
                 </p>
                 {orderDetail.instructions && <p className="mt-1">Instructions: {orderDetail.instructions}</p>}
+                {orderDetail.requestedFulfillmentTime && <p className="mt-1 font-semibold text-ink-900">Needed by: {new Date(orderDetail.requestedFulfillmentTime).toLocaleString()}</p>}
+                {orderDetail.delivery && <p className="mt-1">Delivery: {orderDetail.delivery.status.replaceAll('_', ' ')}{orderDetail.delivery.deliveryPersonnelName ? ` · ${orderDetail.delivery.deliveryPersonnelName}` : ''}{orderDetail.delivery.deliveredAt ? ` · delivered ${new Date(orderDetail.delivery.deliveredAt).toLocaleString()}` : ''}</p>}
               </div>
 
               <div>
@@ -226,15 +248,17 @@ function StaffOrderManagement({ user }) {
                 <form className="space-y-3 border-t border-line-100 pt-3" onSubmit={handleStatusSubmit}>
                   <Field label="Update status">
                     <Select value={statusChoice} onChange={(event) => setStatusChoice(event.target.value)}>
-                      {statusOptions.map((status) => (
+                      <option value="">Select a new status</option>
+                      {nextStatusOptions(orderDetail).map((status) => (
                         <option key={status} value={status}>
                           {status.replaceAll('_', ' ')}
                         </option>
                       ))}
                     </Select>
                   </Field>
+                  {orderDetail.orderType === 'DELIVERY' && <p className="text-xs text-ink-500">Out for delivery is set from Delivery Management. Completed needs the delivery marked delivered and the order fully paid.</p>}
                   <Input value={statusNote} onChange={(event) => setStatusNote(event.target.value)} placeholder="Optional note" aria-label="Status note" />
-                  <Button type="submit" size="sm" disabled={statusSubmitting}>
+                  <Button type="submit" size="sm" disabled={statusSubmitting || !statusChoice}>
                     {statusSubmitting ? 'Saving…' : 'Save status'}
                   </Button>
                 </form>
@@ -393,6 +417,17 @@ function CustomerOrders({ user }) {
                 <StatusBadge status={orderDetail.status} />
               </div>
               {orderDetail.instructions && <p className="text-xs text-ink-500">Instructions: {orderDetail.instructions}</p>}
+              {orderDetail.requestedFulfillmentTime && <p className="text-xs text-ink-500">Needed by: <span className="font-semibold text-ink-900">{new Date(orderDetail.requestedFulfillmentTime).toLocaleString()}</span></p>}
+              {/* Where a delivery order actually stands — deliveries.status,
+                  which orders.status stops short of (it never reaches
+                  DELIVERED; staff mark COMPLETED separately once paid). */}
+              {orderDetail.delivery && (
+                <div className="rounded-panel border border-line-200 bg-surface-warm p-3 text-xs text-ink-700">
+                  <p className="font-semibold text-ink-900">Delivery: {orderDetail.delivery.status.replaceAll('_', ' ')}</p>
+                  {orderDetail.delivery.deliveryPersonnelName && <p className="mt-0.5">Driver: {orderDetail.delivery.deliveryPersonnelName}</p>}
+                  {orderDetail.delivery.deliveredAt && <p className="mt-0.5">Delivered {new Date(orderDetail.delivery.deliveredAt).toLocaleString()}</p>}
+                </div>
+              )}
 
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Items</p>

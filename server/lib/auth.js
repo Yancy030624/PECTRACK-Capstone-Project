@@ -4,12 +4,19 @@
 import crypto from 'node:crypto'
 import { config } from '../config.js'
 import { pool } from '../db.js'
+import { profileColumnsSql, profileJoinsSql } from './accounts.js'
 
 // Session cookie settings. The cookie holds only a random session id — never
 // user data — so a stolen cookie without database access reveals nothing.
 export const sessionCookieName = 'pectrack_sid'
 const sessionDurationMs = 7 * 24 * 60 * 60 * 1000 // fixed 7-day expiry, no renewal
 export const sessionCookieOptions = { httpOnly: true, sameSite: 'lax', secure: config.isProduction, path: '/', maxAge: sessionDurationMs }
+// "Remember me" unticked: the SAME server-side session (7 days in the
+// sessions table, unchanged), but the cookie carrying its id is a browser
+// session cookie — no maxAge, so it is dropped when the browser closes.
+// That is what the checkbox on the login form promises, and until now it
+// was wired to nothing: every login was remembered for 7 days regardless.
+export const sessionCookieOptionsForBrowserSession = { httpOnly: true, sameSite: 'lax', secure: config.isProduction, path: '/' }
 
 // Express has no built-in request-cookie parser (only res.cookie() for
 // setting them), so we parse the raw "Cookie" header ourselves rather than
@@ -44,7 +51,10 @@ const expiredOtpGraceDays = 1
 export async function pruneExpiredAuthRows() {
   const sessions = await pool.query('DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP')
   const otpCodes = await pool.query(`DELETE FROM otp_codes WHERE expires_at <= CURRENT_TIMESTAMP - ($1 * INTERVAL '1 day')`, [expiredOtpGraceDays])
-  return { sessions: sessions.rowCount, otpCodes: otpCodes.rowCount }
+  // Password reset tokens (migration 010) get the same grace period, for
+  // the same support-question reason.
+  const resetTokens = await pool.query(`DELETE FROM password_reset_tokens WHERE expires_at <= CURRENT_TIMESTAMP - ($1 * INTERVAL '1 day')`, [expiredOtpGraceDays])
+  return { sessions: sessions.rowCount, otpCodes: otpCodes.rowCount, resetTokens: resetTokens.rowCount }
 }
 
 export async function createSession(userId) {
@@ -57,15 +67,10 @@ export async function createSession(userId) {
 async function findSessionUser(sessionId) {
   const result = await pool.query(
     `SELECT u.user_id, u.username, u.user_type, u.is_active,
-            COALESCE(a.name, ca.name, c.name, d.name) AS name,
-            COALESCE(a.email, ca.email, c.email, d.email) AS email,
-            COALESCE(a.contact_num, ca.contact_num, c.contact_num, d.contact_num) AS contact_num
+            ${profileColumnsSql}
      FROM sessions s
      JOIN users u ON u.user_id = s.user_id
-     LEFT JOIN admins a ON a.user_id = u.user_id
-     LEFT JOIN cashiers ca ON ca.user_id = u.user_id
-     LEFT JOIN customers c ON c.user_id = u.user_id
-     LEFT JOIN delivery_personnel d ON d.user_id = u.user_id
+     ${profileJoinsSql}
      WHERE s.session_id = $1 AND s.expires_at > CURRENT_TIMESTAMP`,
     [sessionId],
   )
