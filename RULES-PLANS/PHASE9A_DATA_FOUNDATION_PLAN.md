@@ -186,14 +186,22 @@ and is one line of arithmetic.
 four decimals keeps that exact until the batch total is rounded to
 centavos.
 
-### Decision 4 — A recipe belongs to a product; batch lines snapshot it
+### Decision 4 — A recipe is a dough, not a product; products map onto it with a packaging ratio
+
+Confirmed with the bakery: "Broas 1 Gallon", "Broas Pack" and "Broas
+Plate" are one dough packed three ways; "Pandesal Small" and "Pandesal
+Big" are one dough portioned two ways. A recipe per sellable product would
+make the baker enter the same flour three times and would put the yield in
+the wrong unit. So:
 
 ```sql
 CREATE TABLE recipes (
   recipe_id      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  product_id     BIGINT NOT NULL UNIQUE REFERENCES products(product_id),
-  yield_quantity INTEGER NOT NULL CHECK (yield_quantity > 0),   -- units of the product one batch makes
+  name           VARCHAR(150) NOT NULL UNIQUE,                 -- 'Broas dough', 'Pandesal dough'
+  base_unit      VARCHAR(30)  NOT NULL,                        -- what one batch is counted in: 'piece', 'gram', 'tray'
+  yield_quantity NUMERIC(12,3) NOT NULL CHECK (yield_quantity > 0),  -- base units one batch makes
   note           TEXT,
+  is_active      BOOLEAN NOT NULL DEFAULT TRUE,
   created_at / updated_at TIMESTAMPTZ
 );
 
@@ -203,103 +211,133 @@ CREATE TABLE recipe_ingredients (
   quantity      NUMERIC(12,3) NOT NULL CHECK (quantity > 0),   -- in the ingredient's unit, per batch
   PRIMARY KEY (recipe_id, ingredient_id)
 );
+
+ALTER TABLE products
+  ADD COLUMN recipe_id      BIGINT REFERENCES recipes(recipe_id) ON DELETE SET NULL,
+  ADD COLUMN units_per_item NUMERIC(12,3) CHECK (units_per_item > 0),   -- base units in ONE sellable item: gallon = 120 pieces, pack = 12
+  ADD CONSTRAINT products_packaging_check CHECK ((recipe_id IS NULL) = (units_per_item IS NULL));
 ```
 
-One recipe per product (`UNIQUE`). A product without a recipe cannot be
-produced through this system — it can still be restocked (bought-in), and
-the production form says so rather than guessing.
+A product with `recipe_id` NULL is bought-in or not yet mapped: it can be
+restocked (`RESTOCK`) but not produced. A product with a recipe is
+produced by running that recipe and packing the base units into items.
 
-**No recipe versioning table.** When a recipe is edited, the current
-recipe changes; history is preserved because every production batch
-*snapshots* the quantities it actually used into
-`production_batch_ingredients` (Decision 5). This is the `order_details`
-pattern again: the catalogue is mutable, the event record is not. A
-version table would duplicate what the batch lines already hold.
+`base_unit` is free text chosen per recipe. For Broas the natural unit is
+"piece" (gallon = 120, pack = 12, plate = 10). For pandesal it may be
+"gram of dough" (small = 30, big = 60) — the ratio does the portioning
+arithmetic, so one recipe covers both sizes.
 
-Recipe quantities are **per batch**, and `yield_quantity` says how many
-finished units a batch makes. Recording a batch of a different size scales
-the ingredient quantities proportionally (`planned_quantity / yield_quantity`)
-and lets the baker adjust any line before saving — the recipe is the
-default, the batch is the truth.
+**No recipe versioning table.** Every batch snapshots the ingredient
+quantities it used (Decision 5). The recipe is the default; the batch is
+the truth — the `order_details` pattern.
 
-### Decision 5 — A production batch is one transaction that writes both ledgers
+### Decision 5 — A production batch runs one recipe, packs into several products, and is applied on admin approval
+
+Confirmed with the adviser: a cashier's batch is **proposed**, an admin
+**approves** it, and only approval touches stock — the same
+propose/approve shape `inventory_change_requests` already has (Phase 5,
+Step 6). An admin recording a batch approves it in the same request.
 
 ```sql
+CREATE TYPE production_batch_status AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED');
+
 CREATE TABLE production_batches (
   batch_id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  product_id        BIGINT NOT NULL REFERENCES products(product_id),
-  recipe_id         BIGINT REFERENCES recipes(recipe_id) ON DELETE SET NULL,  -- nullable: the recipe may be deleted later; lines below are the record
+  recipe_id         BIGINT REFERENCES recipes(recipe_id) ON DELETE SET NULL,
+  recipe_name       VARCHAR(150) NOT NULL,                         -- snapshot: the recipe may be renamed or deleted later
+  base_unit         VARCHAR(30)  NOT NULL,                         -- snapshot
+  planned_quantity  NUMERIC(12,3) NOT NULL CHECK (planned_quantity > 0),   -- base units the batch was meant to make
+  produced_quantity NUMERIC(12,3) NOT NULL CHECK (produced_quantity >= 0),  -- base units that came out good
+  loss_quantity     NUMERIC(12,3) NOT NULL DEFAULT 0 CHECK (loss_quantity >= 0),  -- base units burned/defective, never packed
+  total_cost        NUMERIC(12,2) NOT NULL DEFAULT 0,               -- SUM(lines.quantity_used × lines.unit_cost), filled on approval
+  status            production_batch_status NOT NULL DEFAULT 'PENDING',
   recorded_by       BIGINT NOT NULL REFERENCES users(user_id),
-  planned_quantity  INTEGER NOT NULL CHECK (planned_quantity > 0),   -- what the batch was meant to make
-  produced_quantity INTEGER NOT NULL CHECK (produced_quantity >= 0),  -- good units that reached the shelf
-  loss_quantity     INTEGER NOT NULL DEFAULT 0 CHECK (loss_quantity >= 0),  -- burned/defective, never sellable
-  total_cost        NUMERIC(12,2) NOT NULL DEFAULT 0,               -- SUM(lines.quantity_used × lines.unit_cost), rounded
-  produced_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  reviewed_by       BIGINT REFERENCES users(user_id),
+  reviewed_at       TIMESTAMPTZ,
+  reviewer_note     TEXT,
+  produced_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,   -- when it was baked (the cashier may backdate within the day)
   note              TEXT,
   data_source       data_source NOT NULL DEFAULT 'RECORDED',         -- Decision 9
-  CHECK (produced_quantity + loss_quantity <= planned_quantity * 2)   -- a sanity bound, not a rule: yield can exceed plan slightly
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- What went in. Quantities are what the baker says was used (the recipe
+-- scaled to planned_quantity by default, adjustable before submitting).
+-- unit_cost is NULL while PENDING and filled from the ingredient's
+-- average at the moment of approval — cost is a fact of when stock moved.
 CREATE TABLE production_batch_ingredients (
   batch_id      BIGINT NOT NULL REFERENCES production_batches(batch_id) ON DELETE CASCADE,
   ingredient_id BIGINT NOT NULL REFERENCES ingredients(ingredient_id),
   quantity_used NUMERIC(12,3) NOT NULL CHECK (quantity_used > 0),
-  unit_cost     NUMERIC(12,4) NOT NULL,      -- ingredient.average_unit_cost at the moment
+  unit_cost     NUMERIC(12,4),
   PRIMARY KEY (batch_id, ingredient_id)
+);
+
+-- What came out, packed. units_per_item is snapshotted so a later change
+-- to a product's packaging ratio cannot restate an old batch's yield.
+CREATE TABLE production_batch_outputs (
+  batch_id       BIGINT NOT NULL REFERENCES production_batches(batch_id) ON DELETE CASCADE,
+  product_id     BIGINT NOT NULL REFERENCES products(product_id),
+  quantity       INTEGER NOT NULL CHECK (quantity > 0),            -- sellable items packed
+  units_per_item NUMERIC(12,3) NOT NULL CHECK (units_per_item > 0),
+  PRIMARY KEY (batch_id, product_id)
 );
 ```
 
-`POST /api/production` does, in ONE transaction, in this order (lock order
-matters — see Pattern C in `PHASE5_PLAN.md`):
+Rule enforced at submission: `SUM(outputs.quantity × units_per_item) =
+produced_quantity` (base units in equals base units packed). A batch that
+does not pack everything records the unpacked remainder as an output to a
+per-piece product if the bakery sells one, or as loss. The route refuses
+a mismatch with 422 rather than guessing where the difference went.
 
-1. Lock the product's `inventory` row `FOR UPDATE`.
-2. Lock every ingredient row `FOR UPDATE`, **ordered by `ingredient_id`**
-   — the same deadlock-avoidance ordering `routes/orders.js` uses for
-   products.
-3. For each line: `UPDATE ingredients SET stock_quantity = stock_quantity − $q WHERE ingredient_id = $1 AND stock_quantity >= $q` — the conditional-write idiom. `rowCount = 0` means insufficient stock: ROLLBACK, 409 naming the ingredient. Insert the `ingredient_movements` row (`PRODUCTION_USE`, `−q`, `unit_cost = average_unit_cost`, `batch_id`).
-4. Insert `production_batches` and its lines; `total_cost` summed in
-   Postgres from the lines.
-5. `UPDATE inventory SET stock_quantity = stock_quantity + produced_quantity`;
-   insert `inventory_movements` (`reason = 'PRODUCTION'`, `+produced_quantity`,
-   `batch_id`); `syncStockAlert` — exactly what a cancellation restore does
-   today, with a different reason.
+**Approval — `PATCH /api/production/:id` `{ status: 'APPROVED' | 'REJECTED' }`
+(ADMIN) — is one transaction, in this order:**
+
+1. Claim the batch: `UPDATE production_batches SET status = 'APPROVED', reviewed_by, reviewed_at WHERE batch_id = $1 AND status = 'PENDING'`. `rowCount = 0` → 409 (already reviewed). The conditional claim, as everywhere else.
+2. Lock every ingredient on the batch `FOR UPDATE`, **ordered by `ingredient_id`**.
+3. For each line: `UPDATE ingredients SET stock_quantity = stock_quantity − $q WHERE ingredient_id = $1 AND stock_quantity >= $q`. `rowCount = 0` → ROLLBACK (the claim rolls back too), 409 naming the ingredient and the shortfall. Write `ingredient_movements` (`PRODUCTION_USE`, `−q`, `unit_cost = average_unit_cost`, `batch_id`); set the line's `unit_cost`.
+4. `total_cost` = SUM over lines, in Postgres.
+5. Lock the output products' `inventory` rows **ordered by `product_id`**; for each output `UPDATE inventory SET stock_quantity = stock_quantity + quantity`; write `inventory_movements` (`reason = 'PRODUCTION'`, `+quantity`, `batch_id`); `syncStockAlert` — the same call a cancellation restore makes.
 6. COMMIT.
 
-`inventory_movements` gains two things (migration): `'PRODUCTION'` in
-`stock_movement_reason`, and a nullable `batch_id` column next to
-`order_id` / `request_id` — the ledger points at its cause, as it already
-does for orders and requests.
+Lock order across the two ledgers is ingredients first, then inventory —
+recorded here so a future route touching both takes them the same way
+(the ABBA lesson from `PHASE7_PLAN.md`, Decision 2).
 
-**Loss is a column on the batch, not a ledger row.** `loss_quantity` never
-entered `inventory`, so deducting it from `inventory` would be wrong. The
-yield stream (`INVENTORY_REVIEW.md` §8) reads
-`SUM(produced_quantity)` vs `SUM(loss_quantity)` from `production_batches`
-directly — a cleaner source than the ledger. The existing
-`PRODUCTION_LOSS` reason keeps its current meaning: goods that were counted
-into stock and were later found defective. The two are different events
-and stay separate.
+A CASHIER may `PATCH` their own PENDING batch to `CANCELLED` (withdraw),
+exactly as they may withdraw a change request since commit 29bbd5a.
 
-**A batch is immutable once recorded.** No PATCH, no DELETE. A mistake is
-corrected the way every other ledger mistake is: a `CORRECTION` on the
-ingredient or the product, with a note. This is the same rule that makes
-`inventory_movements` trustworthy, and it is what an auditor (or a panel)
-expects from a production log.
+`inventory_movements` gains `'PRODUCTION'` in `stock_movement_reason` and a
+nullable `batch_id` column beside `order_id` / `request_id`.
+
+**Loss never enters `inventory`.** `loss_quantity` is base units that were
+baked and discarded before packing; the yield stream reads
+`SUM(produced_quantity)` vs `SUM(loss_quantity)` from
+`production_batches`. The existing `PRODUCTION_LOSS` ledger reason keeps
+its meaning: packed goods later found defective.
+
+**An approved batch is immutable.** Corrections go through the ledgers
+(`CORRECTION` on an ingredient or a product, with a note), never by
+editing the batch.
 
 ### Decision 6 — Costing is derived, never stored on the product
 
-- **Batch cost**: `production_batches.total_cost`, stored at record time
-  from the snapshotted lines (it cannot change, so storing it is safe).
-- **Batch unit cost**: `total_cost / produced_quantity` — computed in the
-  query. A batch with `produced_quantity = 0` (everything burned) has a
-  cost and no unit cost; the report shows the loss, not a division.
-- **Product current cost**: the unit cost of its **most recent batch**.
-  A SQL view, `product_costing`, joins each product to its latest batch and
-  its price: `unit_cost`, `price`, `margin = price − unit_cost`,
-  `margin_percent`. `routes/reports.js` reads the view; nothing writes it.
+- **Batch cost**: `production_batches.total_cost`, set on approval from
+  the snapshotted lines. It cannot change afterwards, so storing it is safe.
+- **Cost per base unit**: `total_cost / produced_quantity`. A batch with
+  `produced_quantity = 0` (everything burned) has a cost and no unit cost;
+  the report shows the loss, not a division.
+- **Cost per sellable item** for each output of a batch: cost per base
+  unit × `units_per_item`. A gallon of 120 pieces costs ten times a pack of
+  12, from the same batch, automatically.
+- **Product current cost**: its cost per item from the **most recent
+  approved batch** that packed it. A SQL view `product_costing` — product,
+  latest batch, `unit_cost`, `price`, `margin`, `margin_percent`.
+  `routes/reports.js` reads it; nothing writes it.
 - **Recipe theoretical cost** (what one batch *should* cost at today's
-  average ingredient costs): computed in `GET /api/recipes/:productId` from
-  `recipe_ingredients × ingredients.average_unit_cost`, shown on the recipe
-  editor so an admin sees the effect of a price change before baking.
+  ingredient averages, and per base unit): computed in
+  `GET /api/recipes/:id` from `recipe_ingredients × ingredients.average_unit_cost`,
+  shown on the recipe editor next to each mapped product's price.
 
 ### Decision 7 — Roles
 
@@ -309,16 +347,15 @@ expects from a production log.
 | Record a purchase (stock in + cost) | ADMIN | Money enters the books |
 | Record ingredient waste / correction | ADMIN | Same as the finished-goods direct edit today |
 | View ingredient stock and movements | ADMIN, CASHIER | Same as finished-goods inventory |
-| Create/edit recipes | ADMIN | Master data |
-| **Record a production batch** | **ADMIN, CASHIER** | A batch is a fact that happened, like a sale — the cashier records sales without approval today. Requiring approval would mean stock stays wrong until an admin arrives, which is worse than the risk. Every batch names `recorded_by`. |
+| Create/edit recipes; map products to a recipe | ADMIN | Master data |
+| Propose a production batch | CASHIER, ADMIN | The person at the oven records it |
+| Approve / reject a batch (writes both ledgers) | ADMIN | Confirmed with the adviser: the same propose/approve gate finished-goods changes have |
+| Withdraw own PENDING batch | CASHIER | Mirrors change-request withdrawal |
 | View production history and costing | ADMIN, CASHIER | Reports are already both |
 
-This is the one place Phase 9A departs from Phase 5's "cashier proposes,
-admin approves". It is deliberate and should be stated in the paper: the
-approval workflow exists for *disputed counts*; production is a *recorded
-event*. If the adviser disagrees, the fallback is a `PENDING` status on
-`production_batches` with admin approval writing the ledgers — the table
-shape above does not need to change for that, only the route.
+An ADMIN's own `POST /api/production` is created and approved in one
+request (status `APPROVED`, `reviewed_by` = self) — there is nobody
+above them to wait for.
 
 Ingredient low-stock is computed on read (`stock_quantity <=
 min_stock_level`) and surfaced in `GET /api/reports/summary` as
@@ -394,49 +431,51 @@ touching the database.
 
 | # | File | Contents |
 | --- | --- | --- |
-| 011 | `011_ingredients.sql` | `ingredients`, `ingredient_movement_reason`, `ingredient_movements` (without `batch_id` FK yet), `updated_at` trigger |
-| 012 | `012_recipes.sql` | `recipes`, `recipe_ingredients`, `products.shelf_life_days` |
-| 013 | `013_production.sql` | `data_source` enum; `production_batches`, `production_batch_ingredients`; `ingredient_movements.batch_id` FK; `stock_movement_reason` `+ 'PRODUCTION'`; `inventory_movements.batch_id`; `orders.data_source` |
+| 011 | `011_ingredients.sql` | `ingredients`, `ingredient_movement_reason`, `ingredient_movements` (no `batch_id` yet), `updated_at` trigger |
+| 012 | `012_recipes.sql` | `recipes`, `recipe_ingredients`, `products.recipe_id` / `units_per_item` + packaging CHECK, `products.shelf_life_days` |
+| 013 | `013_production.sql` | `data_source` enum; `production_batch_status`; `production_batches`, `production_batch_ingredients`, `production_batch_outputs`; `ingredient_movements.batch_id`; `stock_movement_reason + 'PRODUCTION'`; `inventory_movements.batch_id`; `orders.data_source`, `ingredient_movements.data_source` |
 | 014 | `014_analytics_views.sql` | `product_costing`, `analytics_daily_sales`, `analytics_daily_production`, `analytics_daily_waste` |
 
 Each folded into `schema.sql` and listed in `database/README.md`, as
 migrations 001–010 are. Each idempotent (`IF NOT EXISTS`, `DO $$ … duplicate_object`).
-
----
 
 ## Part 4 — API surface
 
 All under `requireAuth`; roles per Decision 7.
 
 ```
-GET    /api/ingredients                     list (stock, min, average cost, lowStock computed)
-POST   /api/ingredients                     create            ADMIN
-PATCH  /api/ingredients/:id                 name/unit/min/is_active   ADMIN
-POST   /api/ingredients/:id/purchase        { quantity, unitCost, note }   ADMIN — PURCHASE movement, average updated
-POST   /api/ingredients/:id/adjust          { quantity, reason: WASTE|CORRECTION, note }   ADMIN
-GET    /api/ingredients/:id/movements       ledger, newest first
+GET    /api/ingredients                     list (stock, min, average cost, lowStock computed); ?includeInactive=true
+POST   /api/ingredients                     { name, unit, minStockLevel }                     ADMIN
+PATCH  /api/ingredients/:id                 name / unit / minStockLevel / isActive            ADMIN
+POST   /api/ingredients/:id/purchase        { quantity, unitCost, note }                      ADMIN — PURCHASE, average updated
+POST   /api/ingredients/:id/adjust          { quantityChange, reason: WASTE|CORRECTION, note } ADMIN — WASTE must be negative
+GET    /api/ingredients/:id/movements       ledger, newest first, limit/offset
 
-GET    /api/recipes/:productId              recipe + lines + theoretical cost (404 if none)
-PUT    /api/recipes/:productId              { yieldQuantity, note, ingredients: [{ ingredientId, quantity }] }   ADMIN — replaces lines atomically
-DELETE /api/recipes/:productId              ADMIN — allowed at any time: batch lines are snapshotted, and production_batches.recipe_id is ON DELETE SET NULL
+GET    /api/recipes                         list, with mapped products and theoretical cost
+GET    /api/recipes/:id                     recipe + lines + products + theoretical cost per batch and per base unit
+POST   /api/recipes                         { name, baseUnit, yieldQuantity, note, ingredients: [{ ingredientId, quantity }] }   ADMIN
+PUT    /api/recipes/:id                     same body — replaces lines atomically                                             ADMIN
+PATCH  /api/recipes/:id                     { isActive }                                                                       ADMIN
+PATCH  /api/products/:id                    + recipeId (nullable) and unitsPerItem — both or neither (the CHECK)              ADMIN, existing route
 
-POST   /api/production                      { productId, plannedQuantity, producedQuantity, lossQuantity, note, ingredients?: [{ ingredientId, quantityUsed }] }
-                                            ingredients omitted = scale the recipe; supplied = the baker's adjusted lines (each must be a recipe ingredient)
-GET    /api/production?from=&to=&productId= batches with lines
+POST   /api/production                      { recipeId, plannedQuantity, producedQuantity, lossQuantity, producedAt?, note,
+                                              ingredients?: [{ ingredientId, quantityUsed }],   omitted = recipe scaled to plannedQuantity
+                                              outputs: [{ productId, quantity }] }               products mapped to this recipe; sum must equal producedQuantity
+                                            CASHIER → PENDING; ADMIN → APPROVED and applied
+PATCH  /api/production/:id                  { status: APPROVED|REJECTED, reviewerNote }  ADMIN;   { status: CANCELLED }  CASHIER, own PENDING
+GET    /api/production?status=&from=&to=    batches with lines and outputs
 GET    /api/production/:id                  one batch
 
-GET    /api/reports/production?from=&to=    per-product totals: batches, planned, produced, loss, yield %, total cost, unit cost
+GET    /api/reports/production?from=&to=    per recipe and per product: batches, planned, produced, loss, yield %, total cost, cost per item
 GET    /api/reports/costing                 product_costing view + recipe theoretical cost
-GET    /api/reports/analytics?from=&to=&format=csv   the three views joined
-GET    /api/reports/summary                 + lowIngredients (list, total)
+GET    /api/reports/analytics?from=&to=&format=csv   the three views joined by (date, product)
+GET    /api/reports/summary                 + lowIngredients (list, total), pendingBatches (count)
 ```
 
 Validation follows `lib/validation.js` conventions (`parseId`, 422 with
-`errors` per field). Quantities: `NUMERIC` strings in, `Number.isFinite`
-and range-checked, three decimals; never JavaScript arithmetic on money —
-sums in Postgres, as everywhere else.
-
----
+`errors` per field). Quantities arrive as strings or numbers, are checked
+with `Number.isFinite`, range, and at most three decimals, and are passed
+to Postgres as strings so `NUMERIC` stays exact; sums happen in Postgres.
 
 ## Part 5 — UI
 
@@ -445,50 +484,57 @@ Fits the existing shell; no new design.
 - **Ingredients** (new module; ADMIN, CASHIER): table — name, unit, stock,
   min, average cost, low-stock badge — with column priorities; ADMIN gets
   "Purchase" (quantity, unit cost, note) and "Adjust" (waste/correction)
-  forms, and add/edit ingredient. Movements per ingredient in the detail
-  overlay, same list/detail shape as Order Management.
-- **Recipes**: inside Product Management (ADMIN) — a "Recipe" action per
-  product opening the editor: yield, lines (ingredient select + quantity +
-  unit shown), theoretical cost per batch and per unit next to the price.
-- **Production** (new module; ADMIN, CASHIER): "Record a batch" form —
-  product (only those with a recipe; others say "no recipe yet"), planned
-  quantity, the scaled ingredient lines editable, produced and loss
-  quantities, note. Below it, the batch history with cost and yield.
-- **Product Management**: `shelf_life_days` field; current unit cost and
-  margin column from `product_costing`.
-- **Reporting & Analytics**: a "Production" tab (yield and cost per
-  product over the range) and the CSV export of the analytics views.
-- **Dashboard**: "Low ingredients" tile and list next to low stock.
-
----
+  forms in the detail overlay, plus add/edit. Movements per ingredient in
+  the same overlay. Same list/detail shape as Order Management.
+- **Recipes** (new module; ADMIN): recipe list; editor with name, base
+  unit, yield, ingredient lines (select + quantity + unit), theoretical
+  cost per batch and per base unit; the products mapped to it with their
+  `units_per_item` and the resulting cost per item next to the price.
+- **Product Management**: "Recipe" and "Units per item" fields on the
+  edit form; `shelf_life_days`; current unit cost and margin column from
+  `product_costing`.
+- **Production** (new module; ADMIN, CASHIER): "Record a batch" —
+  recipe select, planned base units, the scaled ingredient lines
+  (editable), produced and loss base units, outputs (one row per mapped
+  product, quantity of items; a running "packed = produced" check),
+  optional produced-at time, note. Below it the batch list with status;
+  ADMIN sees Approve/Reject on PENDING, CASHIER sees Withdraw on their own.
+- **Reporting & Analytics**: "Production" tab (yield and cost per recipe
+  and product over the range) and the analytics CSV export.
+- **Dashboard**: "Low ingredients" tile and list; "Batches to approve"
+  tile for ADMIN.
 
 ## Part 6 — Tests
 
 `node:test` against the real database, as every route has. The ones that
 matter:
 
-- Ingredient ledger reconciles: after purchase, waste, correction and
-  production, `SUM(ingredient_movements.quantity_change) = stock_quantity`.
+- Ingredient ledger reconciles: after purchase, waste, correction and an
+  approved batch, `SUM(ingredient_movements.quantity_change) = stock_quantity`.
 - Moving average: two purchases at different prices give the expected
   average to four decimals; waste does not change it.
-- Production is atomic: a batch whose second ingredient is short leaves
-  `inventory`, every ingredient, and both ledgers untouched (rowCount = 0
-  → ROLLBACK → 409 naming the ingredient).
-- Production writes exactly one `PRODUCTION` movement with `batch_id`, and
-  `syncStockAlert` closes an open low-stock alert when the batch clears it.
-- Lines snapshot: editing the recipe after a batch does not change the
-  batch's lines or `total_cost`.
-- Recipe scaling: planned 60 on a yield-30 recipe doubles every line;
-  supplied lines override; a line for an ingredient not in the recipe is 422.
-- Roles: CASHIER can record a batch and cannot purchase; CUSTOMER and
-  DELIVERY_PERSONNEL reach none of it.
+- A cashier's batch is PENDING and touches nothing; approval writes both
+  ledgers; rejection writes nothing; a second review is 409; a cashier
+  cannot approve (403); a cashier can withdraw their own PENDING batch
+  and not another cashier's (404).
+- Approval is atomic: a batch whose second ingredient is short leaves
+  `inventory`, every ingredient, both ledgers and the batch status
+  untouched (rowCount = 0 → ROLLBACK → 409 naming the ingredient).
+- Outputs must pack the produced quantity exactly (422 otherwise); each
+  output product must be mapped to the batch's recipe (422 otherwise).
+- Approval writes one `PRODUCTION` movement per output with `batch_id`,
+  and `syncStockAlert` closes an open low-stock alert the batch clears.
+- Lines snapshot: editing the recipe or a product's `units_per_item` after
+  approval changes neither the batch's lines, outputs, nor `total_cost`.
+- Recipe scaling: planned 2× yield doubles every line; supplied lines
+  override; a line for an ingredient not in the recipe is 422.
+- `product_costing`: the latest approved batch's per-item cost, allocated
+  by `units_per_item` (gallon = 10 × pack when 120 vs 12).
 - Views: a known day of seeded events produces the expected
   `analytics_daily_sales` row, including `stocked_out = true` on a day the
   ledger hit zero, and `data_source` carried through.
 - Seed: orders and batches it creates are `ASSUMED`; `clear-demo-data.mjs`
   removes them and their ingredient movements.
-
----
 
 ## Part 7 — What this phase deliberately leaves out
 
@@ -505,18 +551,12 @@ matter:
 
 ---
 
-## Open questions for the adviser / client before implementation
+## Decisions confirmed (2026-09-20)
 
-1. **Approval on production** (Decision 7): direct recording by cashier
-   acceptable, or must an admin approve?
-2. **Cost method** (Decision 3): moving average acceptable for the paper?
-3. **Recipe scope**: one recipe per product+variant is what `products`
-   supports (each variant is its own product row). Confirm the bakery
-   thinks of "Broas 1 Gallon" and "Broas Pack" as separate recipes, or as
-   one dough with different packaging — if the latter, a `packaging`
-   step is a later phase, not this one.
-4. **Historical data**: if the client's production history arrives as a
-   spreadsheet, it will be loaded as `IMPORTED` batches through a one-off
-   script against these tables — confirm the columns they can supply
-   (date, product, quantity made, quantity lost, ingredients?) so the
-   tables above are shaped to receive them.
+1. **Production is approved by an admin** — Decision 5 and 7 as written.
+2. **Moving-average ingredient cost** — accepted for the paper.
+3. **One dough, several packagings** — Decision 4: recipes are doughs;
+   products map to a recipe with `units_per_item`.
+4. **Historical data import** — deferred. Nothing in this phase depends
+   on it; when the client's columns are known, an `IMPORTED` loader is a
+   script against these tables, not a schema change.
