@@ -412,6 +412,14 @@ async function main() {
   }
   log(`  Restocked; logged SPOILAGE on ${spoilageTargets.map((p) => p.name).join(', ')}.\n`)
 
+  // ============ Provenance (PHASE9A_DATA_FOUNDATION_PLAN.md, Decision 9) ============
+  // Every order this script placed went through the real API, which writes
+  // data_source = 'RECORDED' because from the API's point of view it was.
+  // From the bakery's point of view it was not — these are demo rows — and
+  // the whole point of the column is that a model can tell the two apart.
+  await pool.query(`UPDATE orders SET data_source = 'ASSUMED' WHERE order_id = ANY($1)`, [orderIds])
+  log('Marked every seeded order data_source = ASSUMED.')
+
   // ============ Manifest ============
   await fs.writeFile(manifestPath, JSON.stringify({ seededAt: new Date().toISOString(), orderIds }, null, 2))
   log(`Done. ${orderIds.length} orders seeded. Manifest written to ${manifestPath}.`)

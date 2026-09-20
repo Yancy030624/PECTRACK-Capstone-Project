@@ -14,7 +14,7 @@ import { pool } from '../db.js'
 import { optionalAuth, requireAuth, requireRole } from '../lib/auth.js'
 import { expiredSql } from '../lib/inventory.js'
 import { deleteFile, filePath, saveFile } from '../lib/storage.js'
-import { normalize, parseId } from '../lib/validation.js'
+import { normalize, parseId, parseQuantity } from '../lib/validation.js'
 
 const router = express.Router()
 
@@ -23,7 +23,10 @@ const router = express.Router()
 // at it. null means "no photo yet" (show the Menu's placeholder tile),
 // never an empty string or a key it would have to know how to turn into
 // a URL itself — that translation happens exactly once, here.
-const mapProductRow = (row) => ({
+// `staff` adds the production-side fields (recipe, packaging ratio, shelf
+// life). They are internal: the public catalogue keeps exactly the shape
+// it has always had — products.test.js guards that list by name.
+const mapProductRow = (row, { staff = false } = {}) => ({
   id: row.product_id,
   categoryId: row.category_id,
   categoryName: row.category_name,
@@ -33,6 +36,7 @@ const mapProductRow = (row) => ({
   variant: row.variant,
   availabilityStatus: row.availability_status,
   imageUrl: row.image_key ? `/api/products/${row.product_id}/image` : null,
+  ...(staff ? { recipeId: row.recipe_id, recipeName: row.recipe_name ?? null, unitsPerItem: row.units_per_item, shelfLifeDays: row.shelf_life_days } : {}),
   // A boolean, never the count. availability_status is what the bakery
   // CHOOSES to sell; this is whether there is any to sell right now.
   // Without it the Menu offered a product at stock 0 as if it were on the
@@ -44,10 +48,12 @@ const mapProductRow = (row) => ({
 })
 
 const productSelectQuery = `SELECT p.product_id, p.category_id, c.category_name, p.product_name, p.description, p.price, p.variant, p.availability_status, p.image_key,
+            p.recipe_id, r.name AS recipe_name, p.units_per_item, p.shelf_life_days,
             COALESCE(i.stock_quantity, 0) > 0 AS in_stock
      FROM products p
      JOIN categories c ON c.category_id = p.category_id
-     LEFT JOIN inventory i ON i.product_id = p.product_id`
+     LEFT JOIN inventory i ON i.product_id = p.product_id
+     LEFT JOIN recipes r ON r.recipe_id = p.recipe_id`
 // Requires the inventory join above (alias i). The rule itself lives in
 // lib/inventory.js so this router, order placement, and the dashboard can
 // never disagree on what "expired" is.
@@ -103,6 +109,36 @@ function validateProductFields(body, { partial }) {
     if (typeof availabilityStatus !== 'boolean') errors.availabilityStatus = 'availabilityStatus must be true or false.'
     else values.availabilityStatus = availabilityStatus
   }
+  // Phase 9A packaging. Checked with `in body`, never has(): all three
+  // are nullable columns with no default an absence should trigger.
+  // recipeId and unitsPerItem travel together — the products_packaging_check
+  // constraint says so, and this mirrors it with a friendlier message.
+  if ('recipeId' in body || 'unitsPerItem' in body) {
+    const rawRecipeId = body.recipeId
+    const rawUnits = body.unitsPerItem
+    const clearing = (rawRecipeId == null || rawRecipeId === '') && (rawUnits == null || rawUnits === '')
+    if (clearing) {
+      values.recipeId = null
+      values.unitsPerItem = null
+    } else {
+      const recipeId = parseId(rawRecipeId)
+      const unitsPerItem = parseQuantity(rawUnits)
+      if (!recipeId) errors.recipeId = 'Select a recipe, or clear both recipe and units per item.'
+      if (unitsPerItem === null) errors.unitsPerItem = 'Enter how many base units one item holds, greater than zero.'
+      if (recipeId && unitsPerItem !== null) {
+        values.recipeId = recipeId
+        values.unitsPerItem = unitsPerItem
+      }
+    }
+  }
+  if ('shelfLifeDays' in body) {
+    if (body.shelfLifeDays == null || body.shelfLifeDays === '') values.shelfLifeDays = null
+    else {
+      const days = Number(body.shelfLifeDays)
+      if (!Number.isInteger(days) || days <= 0) errors.shelfLifeDays = 'Enter a whole number of days, greater than zero.'
+      else values.shelfLifeDays = days
+    }
+  }
 
   return { errors, values }
 }
@@ -127,7 +163,7 @@ router.get('/', optionalAuth, async (request, response) => {
   const restrictToAvailable = !request.user || request.user.role === 'CUSTOMER'
   const query = restrictToAvailable ? `${productSelectQuery} WHERE p.availability_status = TRUE AND ${notExpiredSql} ORDER BY p.product_name` : `${productSelectQuery} ORDER BY p.product_name`
   const result = await pool.query(query)
-  return response.json({ products: result.rows.map(mapProductRow) })
+  return response.json({ products: result.rows.map((row) => mapProductRow(row, { staff: !restrictToAvailable })) })
 })
 
 router.get('/:id', optionalAuth, async (request, response) => {
@@ -142,7 +178,7 @@ router.get('/:id', optionalAuth, async (request, response) => {
   // product gets the same 404 as a nonexistent one — no confirmation that
   // it exists at all. Staff ($2 true above) still see it.
   if (!row || ((!request.user || request.user.role === 'CUSTOMER') && !row.availability_status)) return response.status(404).json({ message: 'Product not found.' })
-  return response.json({ product: mapProductRow(row) })
+  return response.json({ product: mapProductRow(row, { staff: Boolean(request.user && request.user.role !== 'CUSTOMER') }) })
 })
 
 // GET /api/products/:id/image — public, same visibility rule as the
@@ -201,7 +237,7 @@ router.post('/', requireRole('ADMIN'), async (request, response) => {
     await client.query('COMMIT')
 
     const created = await pool.query(`${productSelectQuery} WHERE p.product_id = $1`, [productId])
-    return response.status(201).json({ product: mapProductRow(created.rows[0]) })
+    return response.status(201).json({ product: mapProductRow(created.rows[0], { staff: true }) })
   } catch (error) {
     await client.query('ROLLBACK')
     if (error.code === '23505') return response.status(409).json({ message: 'A product with that name and variant already exists in this category.' })
@@ -236,7 +272,10 @@ router.patch('/:id', requireRole('ADMIN'), async (request, response) => {
            description = CASE WHEN $3 THEN $4 ELSE description END,
            variant = CASE WHEN $5 THEN $6 ELSE variant END,
            price = COALESCE($7, price),
-           availability_status = COALESCE($8, availability_status)
+           availability_status = COALESCE($8, availability_status),
+           recipe_id = CASE WHEN $10 THEN $11::bigint ELSE recipe_id END,
+           units_per_item = CASE WHEN $10 THEN $12::numeric ELSE units_per_item END,
+           shelf_life_days = CASE WHEN $13 THEN $14::int ELSE shelf_life_days END
        WHERE product_id = $9`,
       [
         values.categoryId ?? null,
@@ -248,16 +287,22 @@ router.patch('/:id', requireRole('ADMIN'), async (request, response) => {
         values.price ?? null,
         values.availabilityStatus ?? null,
         productId,
+        'recipeId' in values,
+        values.recipeId ?? null,
+        values.unitsPerItem ?? null,
+        'shelfLifeDays' in values,
+        values.shelfLifeDays ?? null,
       ],
     )
   } catch (error) {
     if (error.code === '23505') return response.status(409).json({ message: 'A product with that name and variant already exists in this category.' })
+    if (error.code === '23503' && error.constraint === 'products_recipe_id_fkey') return response.status(422).json({ message: 'Selected recipe does not exist.', errors: { recipeId: 'Selected recipe does not exist.' } })
     if (error.code === '23503') return response.status(422).json({ message: 'Selected category does not exist.', errors: { categoryId: 'Selected category does not exist.' } })
     throw error
   }
 
   const updated = await pool.query(`${productSelectQuery} WHERE p.product_id = $1`, [productId])
-  return response.json({ product: mapProductRow(updated.rows[0]) })
+  return response.json({ product: mapProductRow(updated.rows[0], { staff: true }) })
 })
 
 // POST /api/products/:id/image — ADMIN only (STOREFRONT_PLAN.md, Decision
@@ -297,7 +342,7 @@ router.post(
     if (oldKey) await deleteFile(oldKey)
 
     const updated = await pool.query(`${productSelectQuery} WHERE p.product_id = $1`, [productId])
-    return response.status(201).json({ product: mapProductRow(updated.rows[0]) })
+    return response.status(201).json({ product: mapProductRow(updated.rows[0], { staff: true }) })
   },
 )
 

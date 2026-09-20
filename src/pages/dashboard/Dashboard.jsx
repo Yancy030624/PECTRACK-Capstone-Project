@@ -6,12 +6,15 @@ import { ModuleIcon } from '../../components/ui/ModuleIcon.jsx'
 import { CustomerManagement } from './CustomerManagement.jsx'
 import { DashboardHome } from './DashboardHome.jsx'
 import { DeliveryManagement } from './DeliveryManagement.jsx'
+import { IngredientManagement } from './IngredientManagement.jsx'
 import { InventoryManagement } from './InventoryManagement.jsx'
 import { modules } from './modules.js'
 import { MyProfile } from './MyProfile.jsx'
 import { OrderManagement } from './OrderManagement.jsx'
 import { PaymentBilling } from './PaymentBilling.jsx'
 import { ProductManagement } from './ProductManagement.jsx'
+import { ProductionManagement } from './ProductionManagement.jsx'
+import { RecipeManagement } from './RecipeManagement.jsx'
 import { ReportingAnalytics } from './ReportingAnalytics.jsx'
 import { StaffManagement } from './StaffManagement.jsx'
 
@@ -20,6 +23,9 @@ const moduleComponents = {
   'Staff Management': StaffManagement,
   'Product Management': ProductManagement,
   'Inventory Management': InventoryManagement,
+  Ingredients: IngredientManagement,
+  Recipes: RecipeManagement,
+  Production: ProductionManagement,
   'Customer Management': CustomerManagement,
   'My Profile': MyProfile,
   'Order Management': OrderManagement,

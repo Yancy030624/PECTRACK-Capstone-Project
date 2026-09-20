@@ -48,6 +48,15 @@ export const modules = [
   // UI_REVISIONS_PLAN.md Decision 13.
   { name: 'Product Management', icon: 'products', roles: ['ADMIN'] },
   { name: 'Inventory Management', icon: 'inventory', roles: ['ADMIN', 'CASHIER'] },
+  // Phase 9A (RULES-PLANS/PHASE9A_DATA_FOUNDATION_PLAN.md) — the raw
+  // materials ledger, the doughs, and the batches that turn one into the
+  // other. Ingredients is readable by CASHIER (a low flour level is the
+  // counter's problem too) with writes ADMIN-gated server-side; Recipes
+  // is ADMIN only, the same call Product Management made; Production is
+  // both roles because a cashier records a batch and an admin approves it.
+  { name: 'Ingredients', icon: 'ingredients', roles: ['ADMIN', 'CASHIER'] },
+  { name: 'Recipes', icon: 'recipes', roles: ['ADMIN'] },
+  { name: 'Production', icon: 'production', roles: ['ADMIN', 'CASHIER'] },
   { name: 'Payment & Billing', icon: 'payments', roles: ['ADMIN', 'CASHIER'] },
   // A customer does not "bill" anyone — same screen (PaymentBilling.jsx
   // dispatches on role), named for what they do there.

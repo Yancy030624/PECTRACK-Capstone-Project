@@ -9,7 +9,7 @@ import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
-import { formatDateTime, formatPeso } from '../../lib/format.js'
+import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
 
 const paymentMethodOptions = ['CASH', 'GCASH']
 const paymentStatusOptions = ['PENDING', 'PAID', 'FAILED', 'CANCELLED', 'REFUNDED']
@@ -44,9 +44,13 @@ function manilaDateIsoDaysAgo(days) {
 // hand-picked hex palette in this file — the same values index.css
 // defines are what the canvases use, so a Figma re-skin that changes the
 // tokens re-skins the charts too, with nothing to update here.
+const formatQuantity = (value) => Number(value).toLocaleString(undefined, { maximumFractionDigits: 3 })
+
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 
-const tabsFor = (role) => (role === 'ADMIN' ? ['Sales', 'Products', 'Inventory', 'Transactions', 'Report History'] : ['Sales', 'Products', 'Inventory', 'Transactions'])
+// Phase 9A adds 'Production' (yield and cost per recipe and product from
+// approved batches, plus the analytics export) for both roles.
+const tabsFor = (role) => (role === 'ADMIN' ? ['Sales', 'Products', 'Inventory', 'Production', 'Transactions', 'Report History'] : ['Sales', 'Products', 'Inventory', 'Production', 'Transactions'])
 
 // Stage 5.5 (RULES-PLANS/UI_AUDIT.md) — the largest dashboard screen and
 // the only one with Chart.js canvases, done last per the stage's own
@@ -78,6 +82,8 @@ export function ReportingAnalytics({ user }) {
   const [sales, setSales] = useState(null)
   const [products, setProducts] = useState(null)
   const [inventory, setInventory] = useState(null)
+  const [production, setProduction] = useState(null)
+  const [costing, setCosting] = useState(null)
   const [appliedRange, setAppliedRange] = useState(null)
   const [generating, setGenerating] = useState(false)
   const [errors, setErrors] = useState({})
@@ -90,14 +96,18 @@ export function ReportingAnalytics({ user }) {
     setMessage('')
     try {
       const range = { from: fromInput, to: toInput }
-      const [salesData, productsData, inventoryData] = await Promise.all([
+      const [salesData, productsData, inventoryData, productionData, costingData] = await Promise.all([
         apiGet(`/api/reports/sales?${new URLSearchParams({ ...range, groupBy })}`),
         apiGet(`/api/reports/products?${new URLSearchParams({ ...range, limit: productLimit })}`),
         apiGet(`/api/reports/inventory?${new URLSearchParams(range)}`),
+        apiGet(`/api/reports/production?${new URLSearchParams(range)}`),
+        apiGet('/api/reports/costing'),
       ])
       setSales(salesData)
       setProducts(productsData)
       setInventory(inventoryData)
+      setProduction(productionData)
+      setCosting(costingData)
       setAppliedRange({ from: fromInput, to: toInput, groupBy })
     } catch (error) {
       setErrors(error.errors ?? {})
@@ -232,6 +242,10 @@ export function ReportingAnalytics({ user }) {
   }, [user.role, activeTab, logsOffset])
 
   const csvHref = appliedRange ? `/api/reports/sales?${new URLSearchParams({ ...appliedRange, format: 'csv' })}` : null
+  // Phase 9A — the analytics-ready export (migration 014's views joined by
+  // day and product, data_source carried through). What a notebook reads
+  // when the predictive work starts; nothing here predicts anything.
+  const analyticsCsvHref = appliedRange ? `/api/reports/analytics?${new URLSearchParams({ from: appliedRange.from, to: appliedRange.to, format: 'csv' })}` : null
 
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
@@ -272,6 +286,11 @@ export function ReportingAnalytics({ user }) {
               // primitive to render an anchor for one call site.
               <a href={csvHref} download className="inline-flex h-8 items-center rounded-control border border-line-200 bg-surface px-3 text-xs font-medium text-ink-700 transition hover:bg-surface-sunk">
                 Export sales CSV
+              </a>
+            )}
+            {analyticsCsvHref && (
+              <a href={analyticsCsvHref} download className="inline-flex h-8 items-center rounded-control border border-line-200 bg-surface px-3 text-xs font-medium text-ink-700 transition hover:bg-surface-sunk">
+                Export analytics CSV
               </a>
             )}
           </form>
@@ -420,6 +439,115 @@ export function ReportingAnalytics({ user }) {
           </>
         ) : <p className="mt-6 text-sm text-ink-500">Loading inventory activity…</p>}
       </div>
+      <div hidden={activeTab !== 'Production'}>
+        {production && costing ? (
+          <>
+            <Card className="mt-6 p-6">
+              <h2 className="text-lg font-semibold text-ink-900">Yield and cost by recipe</h2>
+              <p className="mt-1 text-xs text-ink-500">Approved batches baked in this range. Yield is good output over good plus lost; cost per base unit is the ingredient cost fixed at approval.</p>
+              {production.recipes.length === 0 ? <p className="mt-4 text-sm text-ink-500">No approved batch in this range.</p> : (
+                <div className="mt-4">
+                  <Table caption="Yield and cost by recipe">
+                    <Thead>
+                      <Tr className="hover:bg-transparent">
+                        <Th>Recipe</Th>
+                        <Th align="right">Batches</Th>
+                        <Th align="right" priority="md">Planned</Th>
+                        <Th align="right">Good</Th>
+                        <Th align="right" priority="md">Lost</Th>
+                        <Th align="right" priority="lg">Yield</Th>
+                        <Th align="right">Total cost</Th>
+                        <Th align="right" priority="lg">Cost / unit</Th>
+                      </Tr>
+                    </Thead>
+                    <Tbody>
+                      {production.recipes.map((row) => (
+                        <Tr key={row.recipeId ?? row.recipeName}>
+                          <Td className="font-semibold text-ink-900">{row.recipeName}<span className="block text-xs font-normal text-ink-500">per {row.baseUnit}</span></Td>
+                          <Td numeric>{row.batches}</Td>
+                          <Td numeric priority="md">{formatQuantity(row.planned)}</Td>
+                          <Td numeric>{formatQuantity(row.produced)}</Td>
+                          <Td numeric priority="md">{formatQuantity(row.loss)}</Td>
+                          <Td numeric priority="lg">{row.yieldPercent == null ? '—' : `${Number(row.yieldPercent).toFixed(1)}%`}</Td>
+                          <Td numeric>{formatPeso(row.totalCost)}</Td>
+                          <Td numeric priority="lg">{row.costPerBaseUnit == null ? '—' : formatPeso(row.costPerBaseUnit)}</Td>
+                        </Tr>
+                      ))}
+                    </Tbody>
+                  </Table>
+                </div>
+              )}
+            </Card>
+
+            <Card className="mt-6 p-6">
+              <h2 className="text-lg font-semibold text-ink-900">Items produced by product</h2>
+              <p className="mt-1 text-xs text-ink-500">Each batch's cost is shared across what it was packed into, by base units.</p>
+              {production.products.length === 0 ? <p className="mt-4 text-sm text-ink-500">Nothing packed in this range.</p> : (
+                <div className="mt-4">
+                  <Table caption="Items produced by product">
+                    <Thead>
+                      <Tr className="hover:bg-transparent">
+                        <Th>Product</Th>
+                        <Th align="right" priority="md">Batches</Th>
+                        <Th align="right">Items</Th>
+                        <Th align="right">Cost</Th>
+                        <Th align="right">Cost / item</Th>
+                      </Tr>
+                    </Thead>
+                    <Tbody>
+                      {production.products.map((row) => (
+                        <Tr key={row.productId}>
+                          <Td className="font-semibold text-ink-900">{row.productName}{row.variant ? <span className="block text-xs font-normal text-ink-500">{row.variant}</span> : null}</Td>
+                          <Td numeric priority="md">{row.batches}</Td>
+                          <Td numeric>{row.itemsProduced}</Td>
+                          <Td numeric>{formatPeso(row.allocatedCost)}</Td>
+                          <Td numeric>{row.costPerItem == null ? '—' : formatPeso(row.costPerItem)}</Td>
+                        </Tr>
+                      ))}
+                    </Tbody>
+                  </Table>
+                </div>
+              )}
+            </Card>
+
+            <Card className="mt-6 p-6">
+              <h2 className="text-lg font-semibold text-ink-900">Current cost and margin</h2>
+              <p className="mt-1 text-xs text-ink-500">Every product mapped to a recipe, costed from its most recent approved batch — not the date range above. A product with no approved batch yet shows no cost.</p>
+              {costing.products.length === 0 ? <p className="mt-4 text-sm text-ink-500">No product is mapped to a recipe yet.</p> : (
+                <div className="mt-4">
+                  <Table caption="Current cost and margin by product">
+                    <Thead>
+                      <Tr className="hover:bg-transparent">
+                        <Th>Product</Th>
+                        <Th priority="lg">Recipe</Th>
+                        <Th align="right">Price</Th>
+                        <Th align="right">Unit cost</Th>
+                        <Th align="right" priority="md">Margin</Th>
+                        <Th align="right" priority="lg">Margin %</Th>
+                        <Th priority="xl">Costed from</Th>
+                      </Tr>
+                    </Thead>
+                    <Tbody>
+                      {costing.products.map((row) => (
+                        <Tr key={row.productId}>
+                          <Td className="font-semibold text-ink-900">{row.productName}{row.variant ? <span className="block text-xs font-normal text-ink-500">{row.variant}</span> : null}</Td>
+                          <Td priority="lg">{row.recipeName ?? '—'}</Td>
+                          <Td numeric>{formatPeso(row.price)}</Td>
+                          <Td numeric>{row.unitCost == null ? '—' : formatPeso(row.unitCost)}</Td>
+                          <Td numeric priority="md" className={row.margin != null && Number(row.margin) < 0 ? 'font-semibold text-status-fail-fg' : ''}>{row.margin == null ? '—' : formatPeso(row.margin)}</Td>
+                          <Td numeric priority="lg">{row.marginPercent == null ? '—' : `${Number(row.marginPercent).toFixed(1)}%`}</Td>
+                          <Td priority="xl">{row.costedFromBatchId == null ? 'No approved batch yet' : `Batch #${row.costedFromBatchId} · ${formatDate(row.costedAt)}`}</Td>
+                        </Tr>
+                      ))}
+                    </Tbody>
+                  </Table>
+                </div>
+              )}
+            </Card>
+          </>
+        ) : <p className="mt-6 text-sm text-ink-500">Loading production activity…</p>}
+      </div>
+
       <div hidden={activeTab !== 'Transactions'}>
         <Card className="mt-6 p-6">
           <form onSubmit={applyTxFilters} className="flex flex-wrap items-end gap-3">

@@ -215,7 +215,7 @@ CREATE TABLE recipe_ingredients (
 ALTER TABLE products
   ADD COLUMN recipe_id      BIGINT REFERENCES recipes(recipe_id) ON DELETE SET NULL,
   ADD COLUMN units_per_item NUMERIC(12,3) CHECK (units_per_item > 0),   -- base units in ONE sellable item: gallon = 120 pieces, pack = 12
-  ADD CONSTRAINT products_packaging_check CHECK ((recipe_id IS NULL) = (units_per_item IS NULL));
+  ADD CONSTRAINT products_packaging_check CHECK (recipe_id IS NULL OR units_per_item IS NOT NULL);  -- one-way: ON DELETE SET NULL must be able to clear recipe_id alone
 ```
 
 A product with `recipe_id` NULL is bought-in or not yet mapped: it can be
@@ -560,3 +560,53 @@ matter:
 4. **Historical data import** — deferred. Nothing in this phase depends
    on it; when the client's columns are known, an `IMPORTED` loader is a
    script against these tables, not a schema change.
+
+---
+
+## Implemented (2026-09-20)
+
+Shipped as one commit against the plan above:
+
+- **Migrations 011–014** (`database/migrations/`, folded into
+  `database/schema.sql`): ingredients + movements, recipes + lines +
+  product packaging columns, production batches + lines + outputs,
+  `data_source` on orders and both ledgers, `PRODUCTION` movement reason,
+  and the five analytics views. Idempotent; applied to the local DB.
+- **API**: `routes/ingredients.js`, `routes/recipes.js`,
+  `routes/production.js` (mounted in `app.js`); `routes/products.js`
+  reads and writes `recipeId` / `unitsPerItem` / `shelfLifeDays` for
+  staff; `routes/reports.js` adds `/production`, `/costing`,
+  `/analytics?format=json|csv`, and the summary's `lowIngredients` /
+  `pendingBatches`. `lib/validation.js` gains `parseQuantity` (NUMERIC
+  strings, never floats). Each new router has an `*Explanation.js` twin.
+- **Tests**: `routes/production.test.js` — 16 tests covering the ledger
+  invariant on both sides, approval claim races, insufficient-stock
+  refusal, output/produced mismatch, role gates, costing, and the
+  analytics export. Full suite: 365 passing.
+- **UI**: Ingredients (both roles; purchase / adjust / edit / movements,
+  writes admin-only), Recipes (admin; whole-recipe editor with live cost
+  preview and the mapped-product table), Production (record a batch with
+  scaled editable lines and packed-equals-produced check; list with
+  details, Approve / Reject / Withdraw), Product Management edit form
+  (recipe, base units per item, shelf life), Reporting → **Production**
+  tab (yield and cost by recipe, items by product, current cost and
+  margin) and **Export analytics CSV**, Dashboard tiles (Low ingredients,
+  Batches to approve) and a low-ingredients list.
+- **Seed**: `seed-demo-data.mjs` marks every order it places
+  `data_source = 'ASSUMED'` after the fact (the API only ever writes
+  `RECORDED`). The 57 demo orders already in the local DB were marked the
+  same way.
+
+Deviations from the plan text, all deliberate:
+
+- `products_packaging_check` is one-way (`recipe_id IS NULL OR
+  units_per_item IS NOT NULL`) because `recipe_id` is `ON DELETE SET
+  NULL` and a two-way CHECK made deleting a recipe fail on every mapped
+  product. A ratio with no recipe is inert; the product route clears both
+  together.
+- The seed does **not** create ingredients, recipes, or batches. Doing so
+  would put `ASSUMED` production history in front of the adviser before
+  the historical-data question (Decision 4 above) is settled. Enter real
+  ingredients and recipes through the UI; nothing in this phase needs
+  seeded production data to work. `clear-demo-data.mjs` is therefore
+  unchanged.
