@@ -1,4 +1,32 @@
 // ============================================================================
+// WHAT CHANGED SINCE THIS ANNOTATED COPY WAS WRITTEN (commits 29bbd5a, 7d8c651)
+//
+// This file is a frozen, annotated copy of routes/orders.js as it stood when the
+// module was first explained. The live file has moved on; the annotations
+// below still explain the ideas correctly, but the code they sit next to
+// is no longer line-for-line what runs. The differences, in plain terms:
+//
+//   - PATCH /:id locks the order row FOR UPDATE first and judges the
+//     requested status against a rank table: forward moves only, the same
+//     status is refused, READY_FOR_PICKUP is PICKUP-only, OUT_FOR_DELIVERY
+//     is never written here (both types), and COMPLETED on a DELIVERY order
+//     requires deliveries.status = 'DELIVERED' on top of the fully-paid
+//     rule.
+//   - Cancelling also closes any PENDING gateway payment intent (PENDING ->
+//     CANCELLED), and after COMMIT calls lib/refunds.js to refund PAID
+//     online payments at PayMongo — outside the lock, never inside it.
+//   - POST / accepts an optional requestedFulfillmentTime (future, at most
+//     30 days ahead) and refuses products whose inventory.expiration_date is
+//     before today; customerId goes through parseId; item quantity is capped
+//     at INTEGER range.
+//   - GET /:id returns a `delivery` object (status, driver, timestamps) for
+//     DELIVERY orders; the list carries requestedFulfillmentTime.
+//
+// Read the live file for the current behaviour — every change above is
+// commented in place there, in the same voice as this file.
+// ============================================================================
+
+// ============================================================================
 // PECTRACK API — routes/orders.js (annotated for learning)
 // Order creation, listing, detail, and status updates. Both PICKUP and
 // DELIVERY orders (Phase 7 — see PHASE7_PLAN.md). A DELIVERY order needs

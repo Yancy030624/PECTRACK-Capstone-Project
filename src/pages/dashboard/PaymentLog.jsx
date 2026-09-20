@@ -15,6 +15,7 @@ import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
+import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDateTime, formatPeso } from '../../lib/format.js'
 
 const pageSize = 25
@@ -103,7 +104,7 @@ export function PaymentLog({ user }) {
         </div>
       )}
       {loading ? (
-        <p className="mt-4 text-sm text-ink-500">Loading…</p>
+        <LoadingRows className="mt-4" />
       ) : payments.length === 0 ? (
         <EmptyState title={total === 0 && applied === emptyFilters ? 'No payments recorded yet' : 'No payments match'} description={applied === emptyFilters ? undefined : 'Try a wider date range or clear the filters.'} />
       ) : (

@@ -49,7 +49,7 @@ export function CustomerMenu() {
       )}
 
       {loading ? (
-        <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="mt-10 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3 xl:grid-cols-4">
           {Array.from({ length: 8 }).map((_, index) => <div key={index} className="h-64 animate-pulse rounded-2xl bg-white/70" />)}
         </div>
       ) : visibleSections.length === 0 ? (
@@ -58,7 +58,7 @@ export function CustomerMenu() {
         visibleSections.map(({ category, items }) => (
           <div key={category.id} id={sectionAnchor(category.id)} className="scroll-mt-20 pt-10">
             <h2 className="text-xl font-bold text-stone-900">{category.name}</h2>
-            <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3 xl:grid-cols-4">
               {items.map((product) => <CustomerMenuCard key={product.id} product={product} onAdd={addItem} />)}
             </div>
           </div>
@@ -93,12 +93,12 @@ function CustomerMenuCard({ product, onAdd }) {
           ? <img src={product.imageUrl} alt={product.name} loading="lazy" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" />
           : <div className="grid h-full w-full place-items-center text-5xl">🥐</div>}
       </div>
-      <div className="flex flex-1 flex-col p-4">
-        <h3 className="font-bold text-stone-900">{product.name}{soldOut && <span className="ml-2 rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-stone-500">Sold out</span>}</h3>
+      <div className="flex flex-1 flex-col p-3 sm:p-4">
+        <h3 className="text-sm font-bold text-stone-900 sm:text-base">{product.name}{soldOut && <span className="ml-2 rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-stone-500">Sold out</span>}</h3>
         {product.variant && <p className="text-xs font-semibold text-green-700">{product.variant}</p>}
         {product.description && <p className="mt-1 flex-1 text-xs text-stone-500">{product.description}</p>}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-          <span className="text-lg font-extrabold text-green-800">{formatPeso(product.price)}</span>
+          <span className="text-base font-extrabold text-green-800 sm:text-lg">{formatPeso(product.price)}</span>
           <div className="flex items-center gap-1.5">
             <div className="flex items-center rounded-full border border-green-100">
               <button type="button" disabled={soldOut} onClick={() => setQuantity((q) => Math.max(1, q - 1))} aria-label="Decrease quantity" className="grid h-9 w-9 place-items-center text-base font-bold text-green-800 disabled:opacity-40">−</button>

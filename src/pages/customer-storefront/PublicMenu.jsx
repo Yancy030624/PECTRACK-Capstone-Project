@@ -25,7 +25,7 @@ export function PublicMenu({ openLogin }) {
       )}
 
       {loading ? (
-        <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="mt-10 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3 xl:grid-cols-4">
           {Array.from({ length: 8 }).map((_, index) => <div key={index} className="h-64 animate-pulse rounded-2xl bg-white/70" />)}
         </div>
       ) : sections.length === 0 ? (
@@ -34,7 +34,7 @@ export function PublicMenu({ openLogin }) {
         sections.map(({ category, items }) => (
           <div key={category.id} id={sectionAnchor(category.id)} className="scroll-mt-20 pt-10">
             <h2 className="text-xl font-bold text-stone-900">{category.name}</h2>
-            <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3 xl:grid-cols-4">
               {items.map((product) => <PublicMenuCard key={product.id} product={product} openLogin={openLogin} />)}
             </div>
           </div>
@@ -52,12 +52,12 @@ function PublicMenuCard({ product, openLogin }) {
           ? <img src={product.imageUrl} alt={product.name} loading="lazy" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" />
           : <div className="grid h-full w-full place-items-center text-5xl">🥐</div>}
       </div>
-      <div className="flex flex-1 flex-col p-4">
-        <h3 className="font-bold text-stone-900">{product.name}</h3>
+      <div className="flex flex-1 flex-col p-3 sm:p-4">
+        <h3 className="text-sm font-bold text-stone-900 sm:text-base">{product.name}</h3>
         {product.variant && <p className="text-xs font-semibold text-green-700">{product.variant}</p>}
         {product.description && <p className="mt-1 flex-1 text-xs text-stone-500">{product.description}</p>}
-        <div className="mt-3 flex items-center justify-between gap-2">
-          <span className="text-lg font-extrabold text-green-800">{formatPeso(product.price)}</span>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <span className="text-base font-extrabold text-green-800 sm:text-lg">{formatPeso(product.price)}</span>
           <button type="button" onClick={openLogin} className="min-h-9 whitespace-nowrap rounded-full bg-green-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-green-800">Sign in to order</button>
         </div>
       </div>

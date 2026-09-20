@@ -1,4 +1,23 @@
 // ============================================================================
+// WHAT CHANGED SINCE THIS ANNOTATED COPY WAS WRITTEN (commits 29bbd5a, 7d8c651)
+//
+// This file is a frozen, annotated copy of routes/products.js as it stood when the
+// module was first explained. The live file has moved on; the annotations
+// below still explain the ideas correctly, but the code they sit next to
+// is no longer line-for-line what runs. The differences, in plain terms:
+//
+//   - The public catalogue hides expired stock (expiration_date before
+//     today) as well as unavailable products, and GET /:id and /:id/image
+//     follow the same rule for anonymous/customer callers.
+//   - Rows carry `inStock` (a boolean; the count itself stays private).
+//     DELETE refuses a product with stock-movement history. categoryId goes
+//     through parseId.
+//
+// Read the live file for the current behaviour — every change above is
+// commented in place there, in the same voice as this file.
+// ============================================================================
+
+// ============================================================================
 // PECTRACK API — routes/products.js (annotated for learning)
 // Product catalog management — the actual bakery items. Admin has full
 // CRUD; cashiers and customers can only view, and customers specifically

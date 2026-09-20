@@ -10,6 +10,7 @@ import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { Textarea } from '../../components/ui/Textarea.jsx'
+import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatPeso } from '../../lib/format.js'
 
 const emptyProductForm = { categoryId: '', name: '', description: '', price: '', variant: '', availabilityStatus: true }
@@ -251,7 +252,7 @@ export function ProductManagement({ user }) {
           </form>
         )}
         {loading ? (
-          <p className="mt-4 text-sm text-ink-500">Loading…</p>
+          <LoadingRows className="mt-4" />
         ) : categories.length === 0 ? (
           <EmptyState title="No categories yet" />
         ) : (
@@ -322,7 +323,7 @@ export function ProductManagement({ user }) {
             see triggerPhotoUpload above for why one input, not one per row. */}
         <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePhotoSelected} className="hidden" />
         {loading ? (
-          <p className="mt-4 text-sm text-ink-500">Loading…</p>
+          <LoadingRows className="mt-4" />
         ) : products.length === 0 ? (
           <EmptyState title="No products yet" />
         ) : (

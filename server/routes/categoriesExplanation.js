@@ -1,4 +1,19 @@
 // ============================================================================
+// WHAT CHANGED SINCE THIS ANNOTATED COPY WAS WRITTEN (commits 29bbd5a, 7d8c651)
+//
+// This file is a frozen, annotated copy of routes/categories.js as it stood when the
+// module was first explained. The live file has moved on; the annotations
+// below still explain the ideas correctly, but the code they sit next to
+// is no longer line-for-line what runs. The differences, in plain terms:
+//
+//   - PATCH /:id and DELETE /:id validate the id with parseId, so a
+//     malformed id is a 404 rather than a 500 from Postgres.
+//
+// Read the live file for the current behaviour — every change above is
+// commented in place there, in the same voice as this file.
+// ============================================================================
+
+// ============================================================================
 // PECTRACK API — routes/categories.js (annotated for learning)
 // Category management — the grouping products belong to (Breads, Cakes,
 // etc.). Anyone can list them — including an anonymous storefront visitor,

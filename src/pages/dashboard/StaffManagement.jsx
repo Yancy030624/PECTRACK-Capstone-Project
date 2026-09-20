@@ -9,6 +9,7 @@ import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
+import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 
 const emptyForm = { role: 'CASHIER', name: '', username: '', email: '', contactNumber: '', password: '', confirmPassword: '' }
 const roleLabels = { CASHIER: 'Cashier', DELIVERY_PERSONNEL: 'Delivery Personnel' }
@@ -242,7 +243,7 @@ export function StaffManagement() {
       <Card className="mt-6 p-6">
         <h2 className="text-lg font-semibold text-ink-900">Current staff</h2>
         {loading ? (
-          <p className="mt-4 text-sm text-ink-500">Loading…</p>
+          <LoadingRows className="mt-4" />
         ) : staff.length === 0 ? (
           <EmptyState title="No staff accounts yet" />
         ) : (

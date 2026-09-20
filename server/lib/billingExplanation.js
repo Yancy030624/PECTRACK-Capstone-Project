@@ -1,4 +1,20 @@
 // ============================================================================
+// WHAT CHANGED SINCE THIS ANNOTATED COPY WAS WRITTEN (commits 29bbd5a, 7d8c651)
+//
+// This file is a frozen, annotated copy of lib/billing.js as it stood when the
+// module was first explained. The live file has moved on; the annotations
+// below still explain the ideas correctly, but the code they sit next to
+// is no longer line-for-line what runs. The differences, in plain terms:
+//
+//   - Payment rows include gatewayPaymentId and refundReference;
+//     recorded_by_name also joins delivery_personnel for cash collected on
+//     delivery.
+//
+// Read the live file for the current behaviour — every change above is
+// commented in place there, in the same voice as this file.
+// ============================================================================
+
+// ============================================================================
 // PECTRACK API — lib/billing.js (annotated for learning)
 // Shared "what does this order owe" calculation (Phase 6 — see
 // PHASE6_PLAN.md). FIVE call sites need this exact figure: POST

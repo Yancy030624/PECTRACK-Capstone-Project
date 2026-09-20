@@ -8,6 +8,7 @@ import { Field } from '../../components/ui/Field.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
+import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 
 // Stage 1's proof screen (RULES-PLANS/UI_AUDIT.md — "Stage 1: The
 // primitive kit"). Smallest table in the dashboard, so it's the cheapest
@@ -117,7 +118,7 @@ export function CustomerManagement({ user }) {
 
       <Card className="mt-4 p-6">
         {loading ? (
-          <p className="text-sm text-ink-500">Loading…</p>
+          <LoadingRows className="mt-4" />
         ) : customers.length === 0 ? (
           <EmptyState title="No customers found" description="Try a different name, email, or contact number." />
         ) : (

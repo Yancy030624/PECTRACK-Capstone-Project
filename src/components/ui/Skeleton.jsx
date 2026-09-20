@@ -9,3 +9,20 @@
 export function Skeleton({ className = '' }) {
   return <div className={`animate-pulse rounded-control bg-line-100 ${className}`} />
 }
+
+// Three placeholder rows, the shape a table or card list will take once
+// its request answers. The dashboard used a bare "Loading…" line while the
+// storefront already used pulsing blocks; one primitive for both.
+export function LoadingRows({ rows = 3, className = '' }) {
+  return (
+    <div role="status" aria-live="polite" aria-label="Loading" className={`space-y-2 ${className}`}>
+      {Array.from({ length: rows }).map((_, index) => (
+        <div key={index} className="flex items-center gap-3">
+          <Skeleton className="h-4 w-1/4" />
+          <Skeleton className="h-4 flex-1" />
+          <Skeleton className="h-4 w-16" />
+        </div>
+      ))}
+    </div>
+  )
+}

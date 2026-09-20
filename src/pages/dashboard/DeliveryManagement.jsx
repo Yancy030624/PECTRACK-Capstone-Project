@@ -7,6 +7,7 @@ import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
+import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatPeso } from '../../lib/format.js'
 import { MyDeliveries } from './MyDeliveries.jsx'
 
@@ -150,7 +151,7 @@ function StaffDeliveryView({ user }) {
         </div>
 
         {loading ? (
-          <p className="mt-4 text-sm text-ink-500">Loading…</p>
+          <LoadingRows className="mt-4" />
         ) : deliveries.length === 0 ? (
           <EmptyState title="No deliveries match this filter." />
         ) : (

@@ -21,6 +21,7 @@ import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
+import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
 import { useIsLargeScreen } from '../../lib/useMediaQuery.js'
 import { NewOrderForm } from './NewOrderForm.jsx'
@@ -231,7 +232,7 @@ function StaffOrderManagement({ user }) {
       {!selectedOrderId ? (
         <p className="mt-4 text-sm text-ink-500">Select an order to view its details.</p>
       ) : detailLoading ? (
-        <p className="mt-4 text-sm text-ink-500">Loading…</p>
+        <LoadingRows className="mt-4" />
       ) : orderDetail ? (
         <div className="mt-4 space-y-4">
           {notice && <Alert variant="success">{notice}</Alert>}
@@ -333,7 +334,7 @@ function StaffOrderManagement({ user }) {
             </div>
           </div>
           {loading ? (
-            <p className="mt-4 text-sm text-ink-500">Loading…</p>
+            <LoadingRows className="mt-4" />
           ) : visibleOrders.length === 0 ? (
             <EmptyState title={orders.length === 0 ? 'No orders yet' : 'No orders match'} description={orders.length === 0 ? undefined : 'Try another status or clear the search.'} />
           ) : (
@@ -471,7 +472,7 @@ function CustomerOrders({ user, onNavigate }) {
       {!selectedOrderId ? (
         <p className="mt-4 text-sm text-ink-500">Select an order to see its items and status.</p>
       ) : detailLoading ? (
-        <p className="mt-4 text-sm text-ink-500">Loading…</p>
+        <LoadingRows className="mt-4" />
       ) : orderDetail ? (
         <div className="mt-4 space-y-4">
           {notice && <Alert variant="success">{notice}</Alert>}
@@ -546,7 +547,7 @@ function CustomerOrders({ user, onNavigate }) {
         <Card className="min-w-0 p-6">
           <h2 className="text-lg font-semibold text-ink-900">Your orders</h2>
           {loading ? (
-            <p className="mt-4 text-sm text-ink-500">Loading…</p>
+            <LoadingRows className="mt-4" />
           ) : orders.length === 0 ? (
             <div className="mt-4">
               <EmptyState

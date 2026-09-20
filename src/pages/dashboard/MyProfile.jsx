@@ -7,6 +7,7 @@ import { Card } from '../../components/ui/Card.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Field } from '../../components/ui/Field.jsx'
 import { Input } from '../../components/ui/Input.jsx'
+import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 
 const emptyPasswordForm = { currentPassword: '', newPassword: '', confirmPassword: '' }
 
@@ -249,7 +250,7 @@ function AddressesTab() {
 
       <div className="mt-4 border-t border-line-100 pt-4">
         {loading ? (
-          <p className="text-sm text-ink-500">Loading…</p>
+          <LoadingRows className="mt-4" />
         ) : addresses.length === 0 ? (
           <EmptyState title="No addresses saved yet" />
         ) : (

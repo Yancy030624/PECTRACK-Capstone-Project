@@ -1,4 +1,20 @@
 // ============================================================================
+// WHAT CHANGED SINCE THIS ANNOTATED COPY WAS WRITTEN (commits 29bbd5a, 7d8c651)
+//
+// This file is a frozen, annotated copy of lib/inventory.js as it stood when the
+// module was first explained. The live file has moved on; the annotations
+// below still explain the ideas correctly, but the code they sit next to
+// is no longer line-for-line what runs. The differences, in plain terms:
+//
+//   - Exports expiredSql(alias) — the one definition of expired stock,
+//     shared by the catalogue, order placement, the inventory list and the
+//     dashboard.
+//
+// Read the live file for the current behaviour — every change above is
+// commented in place there, in the same voice as this file.
+// ============================================================================
+
+// ============================================================================
 // PECTRACK API — lib/inventory.js (annotated for learning)
 // Shared low-stock alerting (Phase 5, Step 5 — see PHASE5_PLAN.md). Stock
 // can change in THREE different places in this app: an order being placed

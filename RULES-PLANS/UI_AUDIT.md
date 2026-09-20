@@ -859,3 +859,125 @@ you'll need to log in again.
 - **`npm run build` clean, `npm run lint` unchanged at 8 pre-existing
   warnings, `npm test` 312/312** — verified after all fixes in this
   section, not before.
+
+---
+
+## Stage 7 — responsive audit (2026-09-18, commit 7d8c651)
+
+### What the audit measured
+
+Every screen for every role — public, customer, cashier, admin, driver;
+42 screens per viewport — rendered headless at 1920×1080, 1366×768,
+1024×768, 768×1024, 390×844 and 375×667, with a script that recorded
+`document.documentElement.scrollWidth` against the viewport, every
+element whose box crossed the viewport edge, every interactive element
+under 32px in either dimension, and every text node under 11px. The
+screenshots were then read by eye. (Driver: a Playwright script against
+the running dev server; not committed — it is a one-off that needs
+account passwords.)
+
+Result before this stage: **no horizontal overflow at any viewport**
+(Stage 5.5's reflow work held), but the phone and tablet flows had dead
+ends the desktop layout was hiding.
+
+### Findings and fixes
+
+**C1 — No storefront navigation below `md`.** `MarketingHeader`'s nav was
+`hidden md:flex` with no substitute; a phone visitor could reach About and
+Contact only from the Home hero. Fixed: a pill row of the four links under
+the header below `md` (the same strip the Menu page already uses for
+categories), plus links in the footer.
+
+**C2 — Master/detail put the detail under the whole list.** Order
+Management, Payment & Billing and My Orders rendered the detail card after
+the list; with 57 orders that was ~3,500px down, so tapping a row on a
+phone appeared to do nothing. Fixed: below `lg` the detail opens in the
+existing `Modal` (with a Close button); on `lg+` the two-column layout is
+unchanged. `useIsLargeScreen()` (src/lib/useMediaQuery.js) is the switch.
+
+**C3 — Every table's only responsive strategy was `overflow-x-auto`.**
+Which hides the rightmost columns — Status and Actions — first. Fixed:
+`Th`/`Td` take `priority="md|lg|xl"`, the breakpoint a column first
+appears at. Applied per table:
+
+| Table | Below `md` | `md` | `lg` | `xl` |
+| --- | --- | --- | --- | --- |
+| Orders (staff) | card list | +Customer, Total, Status | — | +Placed, Needed by |
+| Billing orders | card list | +Customer, Owed, Status | — | +Placed, Total |
+| Payment log | Order, Method, Amount, Status | +Customer, When | +Recorded by | +Reference |
+| Inventory | Product, Stock, Status, Actions | +Min level | +Category, Expiry | — |
+| Products | Name, Price, Status, Actions | +Photo | +Variant | +Category |
+| Customers / Staff | Name (+username, contact stacked), Role, Status, Actions | +Contact | +Username | +Email |
+| Transactions (reports) | Order, Method, Amount, Status | +Customer | +When | — |
+| Sales / Products / Movements / Logs (reports) | horizontal scroll — numeric comparison needs aligned columns | | | |
+
+Edit rows (Inventory, Products, Customers, Staff) used to place one input
+per column, so a hidden column swallowed its input. They now collapse to a
+single `<td colSpan>` holding a stacked `Field` form.
+
+**C4 — Assign offered on deliveries whose order was COMPLETED.** Seed
+leftovers, but the button could only 409. Fixed in
+`DeliveryManagement.jsx`; `/api/reports/summary` no longer counts them.
+
+**H1 — 10–11px text in storefront forms.** `AddressForm`, `LoginForm`,
+registration, recovery pages and checkout: labels to 12px, errors to 12px,
+inputs to 14px (iOS also stops zooming on focus at 16px+ only, but 14px is
+the design system's body size). Badge pills keep 10px as uppercase
+micro-labels. `StatusBadge` 10px → 11px.
+
+**H2 — Touch targets under 32px.** Menu/cart steppers 24–28px → 36px;
+Add-to-cart / Sign-in-to-order → 36px; order-id buttons in tables get a
+36px hit area; category Edit/Delete 16px → 32px; radios/checkbox 13–16px →
+20px; footer, contact and "Forgot password?" links padded.
+
+**H3 — Sidebar at 768–1023px took a third of the screen.** Sidebar now
+appears from `lg`; tablets use the pill nav phones already had.
+
+**H4 — Three "Broas" rows, no variant.** `/api/inventory` and change
+requests return `variant`; shown in the list, the edit form, the propose
+dropdown and request cards.
+
+**H5 — `₱12289.50`.** `formatPeso()` / `formatDateTime()` /
+`formatDate()` in src/lib/format.js, used everywhere money or a timestamp
+is displayed. Seconds dropped from timestamps.
+
+**H6 — Checkout's "Place order" rendered above the order summary on
+phones.** Summary is `order-first lg:order-none`.
+
+**H7 — No filters where the API already had them.** Orders: status
+filter (default "Open"), search, Placed column. Billing: "Still owed / All"
+toggle. Payment log: the date/method/status filters and paging
+`/api/payments` has supported since Phase 8.
+
+Medium/low, all fixed: SVG `ModuleIcon` replaces Unicode glyphs (M1); KPI
+tiles use a fixed inner layout so values align (M2); low-stock alerts read
+"7 left · minimum 10" instead of repeating the product name (M3);
+role-specific nav labels "My Payments" / "My Deliveries", "Estimated
+total", the "N permitted modules" box removed (M4); item lines show the
+line total with the unit price muted (M5); customer order detail shows the
+balance and a "Pay now" that switches module (M6); reports generate on
+open (M7); report copy in plain words (M8); "Open Mon–Sat" (M9);
+`AddressForm variant="dashboard"` so the same form matches the primitive
+kit inside the dashboard (M11); nowrap table headers (L5); confirm on
+"Mark failed" (L7); "—" instead of "ASAP" (UX 8); product search on the
+counter order form (UX 10); success `Alert` after status save, payment
+record, cancel attempt, refund retry (UX 13); `Modal` keeps Tab inside the
+dialog; `HeaderIcon` shows its ring only on keyboard focus.
+
+### Verified after
+
+Re-run at 390, 768 and 1024 after the fixes: still zero horizontal
+overflow; every remaining sub-32px target is a footer/contact text link or
+a native checkbox. `npm run build` clean, `npm run lint` unchanged at 8
+pre-existing warnings, `npm test` 349/349.
+
+### What remains open
+
+- Two-column product grid on phones (one 4:3 card per row makes the Menu
+  ~14,000px tall at 390) — a `grid-cols-2` from the smallest size.
+- Dashboard tables show "Loading…" text while the storefront uses skeleton
+  blocks; the `Skeleton` primitive exists but the dashboard does not use it.
+- Product photos carry baked-in price stickers (`Apas 60.00`); they match
+  today and will lie after the first price change. Content, not code.
+- 1920×1080 keeps 240px gutters at the new `2xl:max-w-[1440px]` cap and
+  a tall empty detail card; acceptable.

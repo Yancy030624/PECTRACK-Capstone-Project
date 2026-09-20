@@ -8,6 +8,7 @@ import { Field } from '../../components/ui/Field.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
+import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDateTime, formatPeso } from '../../lib/format.js'
 
 const paymentMethodOptions = ['CASH', 'GCASH']
@@ -446,7 +447,7 @@ export function ReportingAnalytics({ user }) {
           )}
 
           {txLoading ? (
-            <p className="mt-4 text-sm text-ink-500">Loading…</p>
+            <LoadingRows className="mt-4" />
           ) : txMessage ? null : !txResult || txResult.payments.length === 0 ? (
             <p className="mt-4 text-sm text-ink-500">No payments match these filters.</p>
           ) : (
@@ -501,7 +502,7 @@ export function ReportingAnalytics({ user }) {
             )}
 
             {logsLoading ? (
-              <p className="mt-4 text-sm text-ink-500">Loading…</p>
+              <LoadingRows className="mt-4" />
             ) : logsMessage ? null : !logsResult || logsResult.logs.length === 0 ? (
               <p className="mt-4 text-sm text-ink-500">No reports have been generated yet.</p>
             ) : (

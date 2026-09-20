@@ -250,6 +250,14 @@ async function main() {
 
   async function backdateOrder(orderId, instant) {
     await pool.query('UPDATE orders SET order_date = $1 WHERE order_id = $2', [sqlInstant(instant), orderId])
+    // A historical delivery order's delivery happened when the order did,
+    // not on the day the seed ran. The driver flow above stamped both
+    // columns with "now"; move them alongside the order, an hour apart.
+    await pool.query(
+      `UPDATE deliveries SET assigned_at = $1::timestamptz + INTERVAL '1 hour', delivered_at = CASE WHEN delivered_at IS NULL THEN NULL ELSE $1::timestamptz + INTERVAL '2 hours' END
+        WHERE order_id = $2 AND assigned_at IS NOT NULL`,
+      [sqlInstant(instant), orderId],
+    )
   }
   async function backdatePayment(paymentId, instant) {
     await pool.query('UPDATE payments SET payment_date = $1 WHERE payment_id = $2', [sqlInstant(instant), paymentId])

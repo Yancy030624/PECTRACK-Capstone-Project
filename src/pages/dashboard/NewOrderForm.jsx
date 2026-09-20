@@ -7,6 +7,7 @@ import { Card } from '../../components/ui/Card.jsx'
 import { Field } from '../../components/ui/Field.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
+import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { Textarea } from '../../components/ui/Textarea.jsx'
 import { formatPeso } from '../../lib/format.js'
 
@@ -157,7 +158,7 @@ export function NewOrderForm({ onCreated }) {
     }
   }
 
-  if (loading) return <p className="mt-6 text-sm text-ink-500">Loading…</p>
+  if (loading) return <LoadingRows className="mt-6" />
 
   return (
     <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">

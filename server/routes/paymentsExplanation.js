@@ -1,4 +1,30 @@
 // ============================================================================
+// WHAT CHANGED SINCE THIS ANNOTATED COPY WAS WRITTEN (commits 29bbd5a, 7d8c651)
+//
+// This file is a frozen, annotated copy of routes/payments.js as it stood when the
+// module was first explained. The live file has moved on; the annotations
+// below still explain the ideas correctly, but the code they sit next to
+// is no longer line-for-line what runs. The differences, in plain terms:
+//
+//   - The payment.paid webhook decides by the ORDER's status, not the row's:
+//     a PENDING or CANCELLED intent becomes PAID if the order still stands,
+//     or PAID-then-REFUNDED if the order was cancelled. It also stores
+//     PayMongo's Payment id (gateway_payment_id, migration 009) and triggers
+//     the gateway refund when it refunds.
+//   - DELIVERY_PERSONNEL may POST / (cash on delivery): CASH only, and only
+//     for an order whose delivery is theirs and OUT_FOR_DELIVERY or
+//     DELIVERED. GET / and POST /intent stay staff/customer only.
+//   - New: PATCH /:id { status: 'CANCELLED' } closes an abandoned PENDING
+//     intent (staff any, customer own); POST /:id/refund (ADMIN) retries a
+//     gateway refund that is still owed.
+//   - Rows now carry gatewayPaymentId and refundReference; recorded_by may
+//     name a driver.
+//
+// Read the live file for the current behaviour — every change above is
+// commented in place there, in the same voice as this file.
+// ============================================================================
+
+// ============================================================================
 // PECTRACK API — routes/payments.js (annotated for learning)
 // Payment & Billing (Phase 6). Recording money against an order, and
 // listing what has been recorded. Mounted at /api/payments in app.js.

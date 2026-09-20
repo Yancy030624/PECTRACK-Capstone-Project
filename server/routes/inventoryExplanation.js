@@ -1,4 +1,24 @@
 // ============================================================================
+// WHAT CHANGED SINCE THIS ANNOTATED COPY WAS WRITTEN (commits 29bbd5a, 7d8c651)
+//
+// This file is a frozen, annotated copy of routes/inventory.js as it stood when the
+// module was first explained. The live file has moved on; the annotations
+// below still explain the ideas correctly, but the code they sit next to
+// is no longer line-for-line what runs. The differences, in plain terms:
+//
+//   - A CASHIER may PATCH their own PENDING request to CANCELLED (withdraw
+//     it); admin review is unchanged.
+//   - The admin direct edit checks the reason's direction: RESTOCK must
+//     increase stock, the loss reasons must decrease it, CORRECTION goes
+//     either way.
+//   - Rows carry `variant` and an `expired` flag (lib/inventory.js
+//     expiredSql).
+//
+// Read the live file for the current behaviour — every change above is
+// commented in place there, in the same voice as this file.
+// ============================================================================
+
+// ============================================================================
 // PECTRACK API — routes/inventory.js (annotated for learning)
 // Inventory management (Phase 5). Every product already has exactly one
 // inventory row — routes/products.js creates it at product-creation time,

@@ -1,4 +1,21 @@
 // ============================================================================
+// WHAT CHANGED SINCE THIS ANNOTATED COPY WAS WRITTEN (commits 29bbd5a, 7d8c651)
+//
+// This file is a frozen, annotated copy of lib/paymongo.js as it stood when the
+// module was first explained. The live file has moved on; the annotations
+// below still explain the ideas correctly, but the code they sit next to
+// is no longer line-for-line what runs. The differences, in plain terms:
+//
+//   - New createRefund({ secretKey, paymentId, amountCentavos, notes }) —
+//     POST /v1/refunds against the Payment id the webhook stored; same
+//     PaymongoApiError and Idempotency-Key discipline as
+//     createCheckoutSession.
+//
+// Read the live file for the current behaviour — every change above is
+// commented in place there, in the same voice as this file.
+// ============================================================================
+
+// ============================================================================
 // PECTRACK API — lib/paymongo.js (annotated for learning)
 // Phase 6.5 — see PHASE6.5_PLAN.md. Everything PayMongo-specific lives
 // here: the base URL, the auth header construction, the exact webhook HMAC

@@ -8,6 +8,7 @@ import { Field } from '../../components/ui/Field.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
+import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 
 const emptyProposeForm = { productId: '', proposedStockQuantity: '', proposedMinStockLevel: '', movementReason: '', quantityLost: '', reason: '' }
 // The reasons selectable for a LOSS report — narrower than
@@ -242,7 +243,7 @@ export function InventoryRequests({ user, inventory }) {
       <Card className="p-6">
         <h2 className="text-lg font-semibold text-ink-900">{isAdmin ? 'All change requests' : 'My requests'}</h2>
         {loading ? (
-          <p className="mt-4 text-sm text-ink-500">Loading…</p>
+          <LoadingRows className="mt-4" />
         ) : requests.length === 0 ? (
           <EmptyState title="No requests yet" />
         ) : (

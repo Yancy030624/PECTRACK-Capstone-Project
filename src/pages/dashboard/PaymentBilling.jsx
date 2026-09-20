@@ -23,6 +23,7 @@ import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
+import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
 import { useIsLargeScreen } from '../../lib/useMediaQuery.js'
 import { PaymentLog } from './PaymentLog.jsx'
@@ -190,7 +191,7 @@ export function PaymentBilling({ user }) {
       {!selectedOrderId ? (
         <p className="mt-4 text-sm text-ink-500">Select an order to view its receipt.</p>
       ) : detailLoading ? (
-        <p className="mt-4 text-sm text-ink-500">Loading…</p>
+        <LoadingRows className="mt-4" />
       ) : orderDetail ? (
         <div className="mt-4 space-y-4">
           {notice && <Alert variant="success">{notice}</Alert>}
@@ -351,7 +352,7 @@ export function PaymentBilling({ user }) {
               </div>
             </div>
             {loading ? (
-              <p className="mt-4 text-sm text-ink-500">Loading…</p>
+              <LoadingRows className="mt-4" />
             ) : visibleOrders.length === 0 ? (
               <EmptyState title={orders.length === 0 ? 'No orders yet' : 'Nothing is owed right now'} description={orders.length === 0 || !owedOnly ? undefined : 'Switch to All to see paid and cancelled orders.'} />
             ) : (

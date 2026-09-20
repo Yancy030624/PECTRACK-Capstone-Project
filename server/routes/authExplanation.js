@@ -1,4 +1,26 @@
 // ============================================================================
+// WHAT CHANGED SINCE THIS ANNOTATED COPY WAS WRITTEN (commits 29bbd5a, 7d8c651)
+//
+// This file is a frozen, annotated copy of routes/auth.js as it stood when the
+// module was first explained. The live file has moved on; the annotations
+// below still explain the ideas correctly, but the code they sit next to
+// is no longer line-for-line what runs. The differences, in plain terms:
+//
+//   - New: POST /forgot-password (same 200 whether or not the email exists;
+//     one email per account per 2 minutes) and POST /reset-password
+//     (30-minute single-use token, ends all sessions, clears a lockout).
+//     Migration 010 adds password_reset_tokens; lib/mail.js sends the link.
+//   - POST /login honours rememberMe: false with a browser-session cookie
+//     (no Max-Age).
+//   - The four role-table joins come from lib/accounts.js (profileJoinsSql /
+//     profileColumnsSql / profileEmailMatchesSql) instead of being written
+//     out per query.
+//
+// Read the live file for the current behaviour — every change above is
+// commented in place there, in the same voice as this file.
+// ============================================================================
+
+// ============================================================================
 // PECTRACK API — routes/auth.js (annotated for learning)
 // The actual HTTP endpoints for registration, login, logout, and the
 // current-session check. Mounted at /api/auth in index.js — see

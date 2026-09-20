@@ -9,6 +9,7 @@ import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
+import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { InventoryRequests } from './InventoryRequests.jsx'
 
 const emptyEditForm = { stockQuantity: '', minStockLevel: '', expirationDate: '', reason: '', note: '' }
@@ -153,7 +154,7 @@ export function InventoryManagement({ user }) {
       {activeTab === 'levels' && (
         <Card className="mt-6 p-6">
           {loading ? (
-            <p className="text-sm text-ink-500">Loading…</p>
+            <LoadingRows className="mt-4" />
           ) : inventory.length === 0 ? (
             <EmptyState title="No products yet" />
           ) : (

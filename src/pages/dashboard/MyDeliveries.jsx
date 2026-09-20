@@ -6,6 +6,7 @@ import { Card } from '../../components/ui/Card.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
+import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDateTime, formatPeso } from '../../lib/format.js'
 
 // Stage 5 (RULES-PLANS/UI_AUDIT.md) — the delivery role's only screen, and
@@ -141,7 +142,7 @@ export function MyDeliveries({ user }) {
       <h2 className="mt-6 text-lg font-semibold text-ink-900">Assigned to you</h2>
 
       {loading ? (
-        <p className="mt-4 text-sm text-ink-500">Loading…</p>
+        <LoadingRows className="mt-4" />
       ) : deliveries.length === 0 ? (
         <div className="mt-4">
           <EmptyState title="Nothing assigned right now." />

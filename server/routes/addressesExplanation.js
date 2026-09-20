@@ -1,4 +1,21 @@
 // ============================================================================
+// WHAT CHANGED SINCE THIS ANNOTATED COPY WAS WRITTEN (commits 29bbd5a, 7d8c651)
+//
+// This file is a frozen, annotated copy of routes/addresses.js as it stood when the
+// module was first explained. The live file has moved on; the annotations
+// below still explain the ideas correctly, but the code they sit next to
+// is no longer line-for-line what runs. The differences, in plain terms:
+//
+//   - PATCH /:id refuses changes to the destination fields (recipient,
+//     contact, address lines, barangay, municipality, province, postal code)
+//     once any order references the address; label, delivery notes,
+//     isDefault and isActive stay editable.
+//
+// Read the live file for the current behaviour — every change above is
+// commented in place there, in the same voice as this file.
+// ============================================================================
+
+// ============================================================================
 // PECTRACK API — routes/addresses.js (annotated for learning)
 // Customer address management — Phase 7 (see PHASE7_PLAN.md, Decision 1).
 // This is the hard prerequisite for delivery orders: a DELIVERY order needs
