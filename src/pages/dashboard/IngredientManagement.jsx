@@ -286,7 +286,7 @@ function IngredientRow({ ingredient, isAdmin, columnCount, panel, panelForm, pan
           {/* Cashiers get the ledger read-only: Movements is the one
               button every role has; the writes are admin's. */}
           <div className="flex flex-wrap gap-2">
-            {isAdmin && ingredient.isActive && <Button type="button" size="sm" onClick={() => onOpen(ingredient, 'purchase')}>Purchase</Button>}
+            {isAdmin && ingredient.isActive && <Button type="button" size="sm" variant="secondary" onClick={() => onOpen(ingredient, 'purchase')}>Purchase</Button>}
             {isAdmin && ingredient.isActive && <Button type="button" size="sm" variant="secondary" onClick={() => onOpen(ingredient, 'adjust')}>Adjust</Button>}
             {isAdmin && <Button type="button" size="sm" variant="secondary" onClick={() => onOpen(ingredient, 'edit')}>Edit</Button>}
             <Button type="button" size="sm" variant="ghost" onClick={() => onOpen(ingredient, 'movements')}>Movements</Button>

@@ -11,7 +11,9 @@
 -- WHERE clause rather than a second database.
 --
 -- CREATE OR REPLACE so re-running this file after a definition change is
--- safe; a view has no data of its own to migrate.
+-- safe; a view has no data of its own to migrate. analytics_daily_waste
+-- is dropped first because its column list changed (data_source added)
+-- and CREATE OR REPLACE cannot add a column in the middle of a view.
 
 BEGIN;
 
@@ -138,9 +140,11 @@ SELECT (b.produced_at AT TIME ZONE 'Asia/Manila')::date AS local_date,
 -- per day, by cause, as positive magnitudes. correction is the signed net
 -- of CORRECTION rows (a recount can go either way).
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW analytics_daily_waste AS
+DROP VIEW IF EXISTS analytics_daily_waste;
+CREATE VIEW analytics_daily_waste AS
 SELECT (im.created_at AT TIME ZONE 'Asia/Manila')::date AS local_date,
        i.product_id,
+       im.data_source,
        SUM(CASE WHEN im.reason = 'EXPIRED' THEN -im.quantity_change ELSE 0 END)::int AS expired,
        SUM(CASE WHEN im.reason = 'SPOILAGE' THEN -im.quantity_change ELSE 0 END)::int AS spoiled,
        SUM(CASE WHEN im.reason = 'DAMAGED' THEN -im.quantity_change ELSE 0 END)::int AS damaged,
@@ -149,6 +153,6 @@ SELECT (im.created_at AT TIME ZONE 'Asia/Manila')::date AS local_date,
   FROM inventory_movements im
   JOIN inventory i ON i.inventory_id = im.inventory_id
  WHERE im.reason IN ('EXPIRED', 'SPOILAGE', 'DAMAGED', 'PRODUCTION_LOSS', 'CORRECTION')
- GROUP BY 1, 2;
+ GROUP BY 1, 2, 3;
 
 COMMIT;

@@ -611,7 +611,7 @@ router.get('/analytics', async (request, response) => {
     `WITH days AS (
        SELECT local_date, product_id, data_source FROM analytics_daily_sales
        UNION SELECT local_date, product_id, data_source FROM analytics_daily_output
-       UNION SELECT local_date, product_id, 'RECORDED'::data_source FROM analytics_daily_waste
+       UNION SELECT local_date, product_id, data_source FROM analytics_daily_waste
      )
      SELECT d.local_date, d.product_id, p.product_name, p.variant, d.data_source,
             COALESCE(s.units_sold, 0) AS units_sold, COALESCE(s.revenue, 0)::numeric(12, 2) AS revenue, COALESCE(s.orders, 0) AS orders,
@@ -623,7 +623,7 @@ router.get('/analytics', async (request, response) => {
        JOIN products p ON p.product_id = d.product_id
        LEFT JOIN analytics_daily_sales s ON s.local_date = d.local_date AND s.product_id = d.product_id AND s.data_source = d.data_source
        LEFT JOIN analytics_daily_output o ON o.local_date = d.local_date AND o.product_id = d.product_id AND o.data_source = d.data_source
-       LEFT JOIN analytics_daily_waste w ON w.local_date = d.local_date AND w.product_id = d.product_id AND d.data_source = 'RECORDED'
+       LEFT JOIN analytics_daily_waste w ON w.local_date = d.local_date AND w.product_id = d.product_id AND w.data_source = d.data_source
       WHERE d.local_date >= $1::date AND d.local_date <= $2::date
       ORDER BY d.local_date, p.product_name, p.variant, d.data_source`,
     [from, to],

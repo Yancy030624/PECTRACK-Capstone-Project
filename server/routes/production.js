@@ -125,6 +125,9 @@ async function applyBatch(client, batchId, reviewerUserId) {
     [batchId],
   )
   for (const line of lines.rows) {
+    // POST / refuses this at record time; a batch recorded BEFORE the
+    // deactivation gets the same answer at approval, not a silent deduct.
+    if (!line.is_active) return { status: 409, body: { message: `${line.name} was deactivated after this batch was recorded. Reactivate it in Ingredients, or reject the batch.`, errors: { ingredients: `${line.name} is deactivated.` } } }
     const deducted = await client.query(
       `UPDATE ingredients SET stock_quantity = stock_quantity - $2::numeric
         WHERE ingredient_id = $1 AND stock_quantity >= $2::numeric

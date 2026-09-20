@@ -253,7 +253,7 @@ export function ProductionManagement({ user }) {
           {listLoading && !batches ? (
             <LoadingRows className="mt-4" />
           ) : !batches || batches.batches.length === 0 ? (
-            <EmptyState title="No batches yet" description="Record the first one from the tab above." />
+            <EmptyState title={statusFilter ? 'No batches match this filter' : 'No batches yet'} description={statusFilter ? 'Try another status.' : 'Record the first one from the tab above.'} />
           ) : (
             <div className="mt-4">
               <Table caption="Production batches">
@@ -315,7 +315,7 @@ export function ProductionManagement({ user }) {
               <>
                 <div>
                   <p className="text-xs font-semibold text-ink-700">Ingredients used</p>
-                  <p className="mt-1 text-xs text-ink-500">Pre-filled from the recipe, scaled to the planned size. Change any line to what was actually used.</p>
+                  <p className="mt-1 text-xs text-ink-500">Pre-filled from the recipe, scaled to the planned size. Change any line to what was actually used — set Planned first, because changing it re-scales every line.</p>
                   {errors.ingredients && <p className="mt-1 text-xs text-red-700">{errors.ingredients}</p>}
                   <div className="mt-2">
                     <Table caption="Ingredients used in this batch">

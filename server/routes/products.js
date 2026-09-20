@@ -388,8 +388,9 @@ router.delete('/:id', requireRole('ADMIN'), async (request, response) => {
     if (existing.rows[0]?.image_key) await deleteFile(existing.rows[0].image_key)
     return response.status(204).end()
   } catch (error) {
-    // 23503 = foreign_key_violation — order_details or inventory_change_requests still reference this product.
-    if (error.code === '23503') return response.status(409).json({ message: 'This product has order or change-request history and cannot be deleted. Set it to unavailable instead.' })
+    // 23503 = foreign_key_violation — order_details, inventory_change_requests,
+    // or production_batch_outputs still reference this product.
+    if (error.code === '23503') return response.status(409).json({ message: 'This product has order, change-request, or production history and cannot be deleted. Set it to unavailable instead.' })
     throw error
   }
 })

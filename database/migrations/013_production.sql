@@ -103,8 +103,12 @@ ALTER TABLE ingredient_movements
 
 ALTER TYPE stock_movement_reason ADD VALUE IF NOT EXISTS 'PRODUCTION';
 
+-- data_source on this ledger too: the demo seed's RESTOCK / SPOILAGE
+-- rows and the ORDER_PLACED rows of its orders are not real waste or
+-- real demand, and analytics_daily_waste must be able to say so.
 ALTER TABLE inventory_movements
-  ADD COLUMN IF NOT EXISTS batch_id BIGINT REFERENCES production_batches(batch_id);
+  ADD COLUMN IF NOT EXISTS batch_id BIGINT REFERENCES production_batches(batch_id),
+  ADD COLUMN IF NOT EXISTS data_source data_source NOT NULL DEFAULT 'RECORDED';
 
 ALTER TABLE orders
   ADD COLUMN IF NOT EXISTS data_source data_source NOT NULL DEFAULT 'RECORDED';

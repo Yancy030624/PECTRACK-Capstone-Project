@@ -153,6 +153,9 @@ const rareProductNames = [
 const scarceProductNames = ['Otap', 'Camachile', 'Paborita']
 
 async function main() {
+  // Everything this run writes to inventory_movements is dated after this
+  // instant and by the helper admin — see the provenance pass at the end.
+  const runStartedAt = new Date()
   log('Logging in...')
   const cashierCookie = await login('cashier1', 'Cashier@Pectrack1')
   const customerCookie = await login('customer1', 'Customer@Pectrack1')
@@ -160,7 +163,7 @@ async function main() {
   // once its delivery is DELIVERED, and only the assigned driver can
   // drive ASSIGNED -> OUT_FOR_DELIVERY -> DELIVERED (Phase 7, Pattern H).
   const driverCookie = await login('delivery1', 'Delivery@Pectrack1')
-  const { cookie: adminCookie } = await createTempAdmin()
+  const { cookie: adminCookie, userId: seedAdminUserId } = await createTempAdmin()
   log('Logged in as cashier1, customer1, and a helper admin (see createTempAdmin\'s own comment).\n')
 
   const productsResult = await call('GET', '/api/products', cashierCookie)
@@ -418,7 +421,17 @@ async function main() {
   // From the bakery's point of view it was not — these are demo rows — and
   // the whole point of the column is that a model can tell the two apart.
   await pool.query(`UPDATE orders SET data_source = 'ASSUMED' WHERE order_id = ANY($1)`, [orderIds])
-  log('Marked every seeded order data_source = ASSUMED.')
+  // The ledger rows those orders wrote, and the RESTOCK / SPOILAGE rows
+  // Decision 10's pass wrote through the helper admin, are marked the same
+  // way: the stock they moved is real state, the events are not real
+  // history. analytics_daily_waste would otherwise report the two seeded
+  // spoilages as genuine waste.
+  const marked = await pool.query(
+    `UPDATE inventory_movements SET data_source = 'ASSUMED'
+      WHERE order_id = ANY($1) OR (changed_by = $2 AND created_at >= $3)`,
+    [orderIds, seedAdminUserId, runStartedAt.toISOString()],
+  )
+  log(`Marked every seeded order and ${marked.rowCount} inventory movements data_source = ASSUMED.`)
 
   // ============ Manifest ============
   await fs.writeFile(manifestPath, JSON.stringify({ seededAt: new Date().toISOString(), orderIds }, null, 2))

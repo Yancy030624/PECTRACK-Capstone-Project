@@ -449,6 +449,7 @@ CREATE TABLE inventory_movements (
   order_id BIGINT REFERENCES orders(order_id),
   request_id BIGINT REFERENCES inventory_change_requests(request_id),
   batch_id BIGINT REFERENCES production_batches(batch_id),
+  data_source data_source NOT NULL DEFAULT 'RECORDED',
   -- users(user_id), not a role table: a movement can be caused by a customer
   -- placing an order, a cashier, or an admin — the same reasoning as
   -- order_status_history.updated_by.
@@ -661,6 +662,7 @@ SELECT (b.produced_at AT TIME ZONE 'Asia/Manila')::date AS local_date,
 CREATE OR REPLACE VIEW analytics_daily_waste AS
 SELECT (im.created_at AT TIME ZONE 'Asia/Manila')::date AS local_date,
        i.product_id,
+       im.data_source,
        SUM(CASE WHEN im.reason = 'EXPIRED' THEN -im.quantity_change ELSE 0 END)::int AS expired,
        SUM(CASE WHEN im.reason = 'SPOILAGE' THEN -im.quantity_change ELSE 0 END)::int AS spoiled,
        SUM(CASE WHEN im.reason = 'DAMAGED' THEN -im.quantity_change ELSE 0 END)::int AS damaged,
@@ -669,6 +671,6 @@ SELECT (im.created_at AT TIME ZONE 'Asia/Manila')::date AS local_date,
   FROM inventory_movements im
   JOIN inventory i ON i.inventory_id = im.inventory_id
  WHERE im.reason IN ('EXPIRED', 'SPOILAGE', 'DAMAGED', 'PRODUCTION_LOSS', 'CORRECTION')
- GROUP BY 1, 2;
+ GROUP BY 1, 2, 3;
 
 COMMIT;

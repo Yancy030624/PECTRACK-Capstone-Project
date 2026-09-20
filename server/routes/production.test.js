@@ -373,6 +373,17 @@ describe('ingredients, recipes and production', () => {
     assert.equal(gallonRow.itemsProduced, 3)
     assert.equal(gallonRow.unitsSold, 0)
 
+    // Waste carries data_source too: a SPOILAGE row marked ASSUMED (the way
+    // the demo seed marks its rows) lands on its own ASSUMED line, not on
+    // the RECORDED one.
+    const gallonStock = (await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [gallonId])).rows[0].stock_quantity
+    assert.equal((await json(adminCookie, 'PATCH', `/api/inventory/${gallonId}`, { stockQuantity: gallonStock - 1, reason: 'SPOILAGE' })).status, 200)
+    await pool.query(`UPDATE inventory_movements SET data_source = 'ASSUMED' WHERE reason = 'SPOILAGE' AND inventory_id = (SELECT inventory_id FROM inventory WHERE product_id = $1)`, [gallonId])
+    const split = await (await json(cashierCookie, 'GET', `/api/reports/analytics?from=${from}&to=${today}`)).json()
+    const gallonRows = split.rows.filter((r) => r.productId === gallonId)
+    assert.equal(gallonRows.find((r) => r.dataSource === 'ASSUMED')?.spoiled, 1)
+    assert.equal(gallonRows.find((r) => r.dataSource === 'RECORDED')?.spoiled, 0)
+
     const csv = await json(adminCookie, 'GET', `/api/reports/analytics?from=${from}&to=${today}&format=csv`)
     assert.equal(csv.status, 200)
     assert.match(csv.headers.get('content-type'), /text\/csv/)
@@ -395,5 +406,20 @@ describe('ingredients, recipes and production', () => {
     assert.equal((await json(adminCookie, 'POST', `/api/ingredients/${yeastId}/purchase`, { quantity: '1', unitCost: '1' })).status, 409)
     const recipe = await json(adminCookie, 'POST', '/api/recipes', { name: `Yeast dough ${runId}`, baseUnit: 'piece', yieldQuantity: '10', ingredients: [{ ingredientId: yeastId, quantity: '1' }] })
     assert.equal(recipe.status, 422)
+  })
+
+  test('approving a pending batch is refused when one of its ingredients was deactivated after it was recorded', async () => {
+    await json(adminCookie, 'POST', `/api/ingredients/${flourId}/purchase`, { quantity: '20', unitCost: '40' })
+    const pending = await json(cashierCookie, 'POST', '/api/production', { recipeId, plannedQuantity: '24', producedQuantity: '24', outputs: [{ productId: packId, quantity: 2 }] })
+    assert.equal(pending.status, 201)
+    const batchId = (await pending.json()).batch.id
+    assert.equal((await json(adminCookie, 'PATCH', `/api/ingredients/${flourId}`, { isActive: false })).status, 200)
+    const refused = await json(adminCookie, 'PATCH', `/api/production/${batchId}`, { status: 'APPROVED' })
+    assert.equal(refused.status, 409)
+    assert.match((await refused.json()).message, /deactivated/)
+    // Nothing moved and the batch is still reviewable.
+    assert.equal((await (await json(adminCookie, 'GET', `/api/production/${batchId}`)).json()).batch.status, 'PENDING')
+    assert.equal((await json(adminCookie, 'PATCH', `/api/ingredients/${flourId}`, { isActive: true })).status, 200)
+    assert.equal((await json(adminCookie, 'PATCH', `/api/production/${batchId}`, { status: 'REJECTED' })).status, 200)
   })
 })
