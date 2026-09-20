@@ -161,7 +161,9 @@ export function DashboardHome({ user, onNavigate }) {
         )}
       </Card>
 
-      {summary && summary.lowIngredients.length > 0 && (
+      {/* Optional chaining: an API server started before Phase 9A does not
+          send this field, and one missing list must not blank the screen. */}
+      {summary?.lowIngredients?.length > 0 && (
         <Card className="mt-6 p-6">
           <h2 className="text-lg font-semibold text-ink-900">Low ingredients</h2>
           <p className="mt-1 text-sm text-ink-500">At or under their minimum. Record the purchase in Ingredients when it arrives.</p>
