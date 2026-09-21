@@ -10,6 +10,7 @@ import { pool } from '../db.js'
 import { bcryptRounds, findDuplicateAccount, profileColumnsSql, profileEmailMatchesSql, profileJoinsSql, roleTables } from '../lib/accounts.js'
 import { createSession, parseCookies, requireAuth, sessionCookieName, sessionCookieOptions, sessionCookieOptionsForBrowserSession } from '../lib/auth.js'
 import { authLimiter, passwordResetLimiter, registerLimiter } from '../lib/security.js'
+import { recordSecurityEvent } from '../lib/securityEvents.js'
 import { sendMail, sendOtpEmail } from '../lib/mail.js'
 import { normalize, normalizeEmail, validateAccountFields, validateContactNumberField, validateEmailField, validateName, validatePasswordField } from '../lib/validation.js'
 
@@ -106,6 +107,7 @@ router.post('/register', registerLimiter, async (request, response) => {
       [user.user_id, values.name, values.contactNumber, values.email],
     )
     await client.query('COMMIT')
+    recordSecurityEvent({ request, type: 'ACCOUNT_CREATED', userId: user.user_id, username: user.username, detail: 'CUSTOMER self-registration' })
     return response.status(201).json({ message: 'Account created. You can now sign in.', user: { username: user.username } })
   } catch (error) {
     await client.query('ROLLBACK')
@@ -198,6 +200,18 @@ router.post('/login', authLimiter, async (request, response) => {
         [user.user_id, lockAfterAttempts, lockDurationMinutes],
       )
     }
+    // Recorded whether or not the account exists: a burst of failures
+    // against usernames that do not exist is exactly the pattern worth
+    // seeing, and it is invisible to a per-account counter. The RESPONSE
+    // stays identical either way — this writes to a table, not to the
+    // reply, so it cannot become an enumeration oracle.
+    recordSecurityEvent({
+      request,
+      type: isLocked ? 'LOGIN_LOCKED_OUT' : 'LOGIN_FAILURE',
+      userId: user?.user_id ?? null,
+      username: identifier,
+      detail: !user ? 'no such account' : !user.is_active ? 'account deactivated' : isLocked ? 'account locked' : 'wrong password',
+    })
     return response.status(401).json({ message: 'Invalid credentials or unavailable account.' })
   }
 
@@ -211,6 +225,7 @@ router.post('/login', authLimiter, async (request, response) => {
   // was right, this is not a failed login.
   const actualAudience = audienceOf(user.user_type)
   if (audiences.has(requestedAudience) && requestedAudience !== actualAudience) {
+    recordSecurityEvent({ request, type: 'LOGIN_FAILURE', userId: user.user_id, username: user.username, detail: `correct password at the wrong door (${requestedAudience})` })
     return response.status(403).json({
       message: actualAudience === 'staff'
         ? 'This is a staff account. Use the staff sign-in to continue.'
@@ -246,10 +261,13 @@ router.post('/login', authLimiter, async (request, response) => {
       // development machine.
       console.error('Could not send an admin sign-in code:', error)
     }
+    // The code itself is never logged — only that one was issued.
+    recordSecurityEvent({ request, type: 'OTP_ISSUED', userId: user.user_id, username: user.username })
     return response.json({ otpRequired: true, username: user.username, challengeToken })
   }
 
   const sessionId = await createSession(user.user_id)
+  recordSecurityEvent({ request, type: 'LOGIN_SUCCESS', userId: user.user_id, username: user.username, detail: user.user_type })
   // rememberMe defaults to TRUE — a caller that never sends the field
   // (an older client, a script) keeps the 7-day cookie every login has
   // always produced; only an explicit false asks for a browser-session
@@ -307,6 +325,7 @@ router.post('/forgot-password', passwordResetLimiter, async (request, response) 
 
   const resetUrl = `${config.clientOrigin}/reset-password?token=${token}`
   try {
+    recordSecurityEvent({ request, type: 'PASSWORD_RESET_REQUESTED', userId: user.user_id, username: user.username })
     await sendMail({
       to: email,
       subject: 'Reset your PECTRACK password',
@@ -330,6 +349,10 @@ router.post('/reset-password', authLimiter, async (request, response) => {
   const newPassword = String(request.body.newPassword ?? '')
   const confirmPassword = String(request.body.confirmPassword ?? '')
   const invalidTokenResponse = { message: 'This reset link is invalid or has expired. Request a new one.' }
+  // Captured inside the transaction so the audit event below can name who
+  // the reset was for without a second lookup.
+  let resetUserId = null
+  let resetUsername = null
   if (!token) return response.status(400).json(invalidTokenResponse)
 
   const tokenResult = await pool.query(
@@ -362,6 +385,8 @@ router.post('/reset-password', authLimiter, async (request, response) => {
     }
     // A reset also clears a lockout: the person proving they own the
     // email is exactly who the lockout was protecting.
+    resetUserId = row.user_id
+    resetUsername = row.username ?? null
     await client.query('UPDATE users SET password_hash = $1, failed_login_attempts = 0, locked_until = NULL WHERE user_id = $2', [passwordHash, row.user_id])
     await client.query('DELETE FROM sessions WHERE user_id = $1', [row.user_id])
     await client.query('COMMIT')
@@ -371,6 +396,7 @@ router.post('/reset-password', authLimiter, async (request, response) => {
   } finally {
     client.release()
   }
+  recordSecurityEvent({ request, type: 'PASSWORD_RESET_COMPLETED', userId: resetUserId, username: resetUsername, detail: 'all sessions ended' })
   return response.json({ message: 'Password updated. You can now sign in with your new password.' })
 })
 
@@ -414,23 +440,35 @@ router.post('/verify-otp', authLimiter, async (request, response) => {
     [challengeToken],
   )
   const otp = otpResult.rows[0]
-  if (!otp || !otp.is_active || otp.attempt_count >= otpMaxAttempts) return response.status(401).json(invalidCodeResponse)
+  if (!otp || !otp.is_active || otp.attempt_count >= otpMaxAttempts) {
+    recordSecurityEvent({ request, type: 'OTP_FAILURE', userId: otp?.user_id ?? null, username: otp?.username ?? null, detail: !otp ? 'unknown or expired challenge' : otp.attempt_count >= otpMaxAttempts ? 'too many attempts on this code' : 'account unavailable' })
+    return response.status(401).json(invalidCodeResponse)
+  }
 
   if (otp.code_hash !== hashOtpCode(code)) {
     await pool.query('UPDATE otp_codes SET attempt_count = attempt_count + 1 WHERE otp_id = $1', [otp.otp_id])
+    recordSecurityEvent({ request, type: 'OTP_FAILURE', userId: otp.user_id, username: otp.username, detail: `wrong code (attempt ${otp.attempt_count + 1} of ${otpMaxAttempts})` })
     return response.status(401).json(invalidCodeResponse)
   }
 
   await pool.query('UPDATE otp_codes SET consumed_at = CURRENT_TIMESTAMP WHERE otp_id = $1', [otp.otp_id])
   const user = { user_id: otp.user_id, username: otp.username, user_type: otp.user_type, name: otp.name, email: otp.email, contact_num: otp.contact_num }
   const sessionId = await createSession(user.user_id)
+  recordSecurityEvent({ request, type: 'OTP_SUCCESS', userId: user.user_id, username: user.username })
+  recordSecurityEvent({ request, type: 'LOGIN_SUCCESS', userId: user.user_id, username: user.username, detail: 'ADMIN, second factor verified' })
   response.cookie(sessionCookieName, sessionId, sessionCookieOptions)
   return response.json({ user: { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' '), email: user.email, contactNumber: user.contact_num } })
 })
 
 router.post('/logout', async (request, response) => {
   const sessionId = parseCookies(request.headers.cookie)[sessionCookieName]
-  if (sessionId) await pool.query('DELETE FROM sessions WHERE session_id = $1', [sessionId])
+  if (sessionId) {
+    // Read the owner BEFORE the delete, so the event can name them. The
+    // session id itself is never written to the log.
+    const owner = await pool.query('SELECT u.user_id, u.username FROM sessions s JOIN users u ON u.user_id = s.user_id WHERE s.session_id = $1', [sessionId])
+    await pool.query('DELETE FROM sessions WHERE session_id = $1', [sessionId])
+    if (owner.rows[0]) recordSecurityEvent({ request, type: 'LOGOUT', userId: owner.rows[0].user_id, username: owner.rows[0].username })
+  }
   response.clearCookie(sessionCookieName, { path: '/' })
   return response.status(204).end()
 })
@@ -489,6 +527,7 @@ router.patch('/password', requireAuth, async (request, response) => {
   // the person doing this isn't logged out of the page they're standing on.
   const endedElsewhere = await pool.query('DELETE FROM sessions WHERE user_id = $1 AND session_id <> $2', [user.user_id, request.sessionId])
 
+  recordSecurityEvent({ request, type: 'PASSWORD_CHANGED', userId: user.user_id, username: user.username, detail: `self-service; ${endedElsewhere.rowCount} other session(s) ended` })
   return response.json({ message: 'Password updated.', otherSessionsEnded: endedElsewhere.rowCount })
 })
 

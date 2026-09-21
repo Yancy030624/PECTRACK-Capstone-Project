@@ -8,6 +8,7 @@ import express from 'express'
 import { pool } from '../db.js'
 import { bcryptRounds, findDuplicateAccount } from '../lib/accounts.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
+import { recordSecurityEvent } from '../lib/securityEvents.js'
 import { normalize, normalizeEmail, parseId, validateAccountFields, validateContactNumberField, validateEmailField, validateName, validatePasswordField } from '../lib/validation.js'
 
 const router = express.Router()
@@ -83,6 +84,7 @@ router.post('/', async (request, response) => {
       [user.user_id, values.name, values.contactNumber, values.email],
     )
     await client.query('COMMIT')
+    recordSecurityEvent({ request, type: 'ACCOUNT_CREATED', userId: user.user_id, username: user.username, detail: `${role}, created by ${request.user.username}` })
     return response.status(201).json({ message: 'Staff account created.', user: { username: user.username, role } })
   } catch (error) {
     await client.query('ROLLBACK')
@@ -224,6 +226,15 @@ router.patch('/:id', async (request, response) => {
   }
 
   const updated = await pool.query(`${staffSelectQuery} WHERE u.user_id = $1`, [userId])
+  // Recorded after the COMMIT, so the log never claims a change that was
+  // rolled back. Each is a separate event because they answer different
+  // questions: "who can still sign in" and "whose password was replaced".
+  if (updates.isActive !== undefined) {
+    recordSecurityEvent({ request, type: updates.isActive ? 'ACCOUNT_REACTIVATED' : 'ACCOUNT_DEACTIVATED', userId, username: updated.rows[0]?.username, detail: `by ${request.user.username}` })
+  }
+  if (updates.password !== undefined) {
+    recordSecurityEvent({ request, type: 'STAFF_PASSWORD_RESET', userId, username: updated.rows[0]?.username, detail: `by ${request.user.username}; all sessions ended` })
+  }
   return response.json({ staff: mapStaffRow(updated.rows[0]) })
 })
 

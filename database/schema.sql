@@ -35,6 +35,15 @@ CREATE TYPE production_batch_status AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 
 -- IMPORTED is client history loaded by a script; ASSUMED is synthetic data
 -- if the adviser ever calls for it. A model filters on this, never guesses.
 CREATE TYPE data_source AS ENUM ('RECORDED', 'IMPORTED', 'ASSUMED');
+-- The security audit trail's fixed vocabulary (migration 015). A fixed
+-- list, not free text, so a query for "failed sign-ins this week" cannot
+-- miss rows because two call sites spelled the same event differently.
+CREATE TYPE security_event_type AS ENUM (
+  'LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGIN_LOCKED_OUT', 'LOGOUT',
+  'OTP_ISSUED', 'OTP_SUCCESS', 'OTP_FAILURE',
+  'PASSWORD_RESET_REQUESTED', 'PASSWORD_RESET_COMPLETED', 'PASSWORD_CHANGED',
+  'ACCOUNT_CREATED', 'ACCOUNT_DEACTIVATED', 'ACCOUNT_REACTIVATED', 'STAFF_PASSWORD_RESET'
+);
 
 -- Keeps every updated_at column honest. Without this, those columns take
 -- their DEFAULT CURRENT_TIMESTAMP on INSERT and are then never touched
@@ -470,6 +479,25 @@ CREATE TABLE report_logs (
   generated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- What happened to an ACCOUNT, as opposed to what happened to an order.
+-- See migration 015 for the three rules this table is built around; the
+-- one that matters most: it never holds a secret — no password, no OTP
+-- code, no session id, no reset token.
+--
+-- user_id is nullable and ON DELETE SET NULL on purpose: a failed sign-in
+-- against a username nobody owns has no account to point at, and deleting
+-- an account must not erase the record that it once did something.
+CREATE TABLE security_events (
+  event_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  event_type security_event_type NOT NULL,
+  user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  username VARCHAR(50),
+  ip_address VARCHAR(64),
+  user_agent VARCHAR(255),
+  detail VARCHAR(255),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE order_status_history (
   history_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   order_id BIGINT NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,
@@ -493,6 +521,9 @@ CREATE INDEX inventory_change_requests_status_idx ON inventory_change_requests (
 CREATE UNIQUE INDEX inventory_change_requests_one_pending_per_product_idx
   ON inventory_change_requests (product_id) WHERE status = 'PENDING';
 CREATE INDEX order_status_history_order_id_idx ON order_status_history (order_id, updated_at);
+CREATE INDEX security_events_user_id_idx ON security_events (user_id, created_at DESC);
+CREATE INDEX security_events_type_idx ON security_events (event_type, created_at DESC);
+CREATE INDEX security_events_ip_idx ON security_events (ip_address, created_at DESC);
 CREATE INDEX inventory_movements_inventory_id_idx ON inventory_movements (inventory_id, created_at DESC);
 CREATE INDEX ingredient_movements_ingredient_id_idx ON ingredient_movements (ingredient_id, created_at DESC);
 CREATE INDEX products_recipe_id_idx ON products (recipe_id);
