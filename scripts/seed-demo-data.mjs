@@ -157,12 +157,12 @@ async function main() {
   // instant and by the helper admin — see the provenance pass at the end.
   const runStartedAt = new Date()
   log('Logging in...')
-  const cashierCookie = await login('cashier1', 'Cashier@Pectrack1')
-  const customerCookie = await login('customer1', 'Customer@Pectrack1')
+  const cashierCookie = await login('cashier1', 'carlaCashier#1')
+  const customerCookie = await login('customer1', 'valenciaCustomer#1')
   // The driver's own session: a delivery order only reaches COMPLETED
   // once its delivery is DELIVERED, and only the assigned driver can
   // drive ASSIGNED -> OUT_FOR_DELIVERY -> DELIVERED (Phase 7, Pattern H).
-  const driverCookie = await login('delivery1', 'Delivery@Pectrack1')
+  const driverCookie = await login('delivery1', 'luzaDelivery#1')
   const { cookie: adminCookie, userId: seedAdminUserId } = await createTempAdmin()
   log('Logged in as cashier1, customer1, and a helper admin (see createTempAdmin\'s own comment).\n')
 

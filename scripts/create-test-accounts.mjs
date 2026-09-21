@@ -16,7 +16,6 @@
 //
 // Run with the database reachable, the API server does NOT need to be
 // running (this writes directly to Postgres): node scripts/create-test-accounts.mjs
-import crypto from 'node:crypto'
 import bcrypt from 'bcrypt'
 import { bcryptRounds } from '../server/lib/accounts.js'
 import { pool } from '../server/db.js'
@@ -85,11 +84,17 @@ async function createAdmin({ username, password, name, email, contactNumber }) {
 async function main() {
   console.log('Creating accounts...')
 
-  // A generated password, printed once below — there is no "the real
-  // admin password" for a script to reuse, and generating one beats
-  // hardcoding a guessable default for the one role that can do
-  // anything in this app.
-  const adminPassword = `Admin-${crypto.randomBytes(6).toString('base64url')}!`
+  // This used to be generated per run and printed once, on the reasoning
+  // that a guessable default is a bad idea for the one role that can do
+  // anything in this app. That reasoning still holds for a deployed
+  // system — but this script exists to stand a DEMO machine up, and a
+  // password that only appears in one line of console output is a
+  // password someone loses five minutes before a panel starts. Fixed, at
+  // the user's instruction (2026-09-21), and chosen to satisfy
+  // validatePasswordField: 12+ characters with upper, lower, digit and
+  // symbol, and not containing the username. Change it before this is
+  // ever deployed anywhere real.
+  const adminPassword = 'ymataAdmin#1'
 
   await createAdmin({
     username: 'admin1',
@@ -101,7 +106,7 @@ async function main() {
 
   await createStaffOrCustomer({
     username: 'cashier1',
-    password: 'Cashier@Pectrack1',
+    password: 'carlaCashier#1',
     userType: 'CASHIER',
     table: 'cashiers',
     name: 'Carla Zoleta',
@@ -111,7 +116,7 @@ async function main() {
 
   await createStaffOrCustomer({
     username: 'delivery1',
-    password: 'Delivery@Pectrack1',
+    password: 'luzaDelivery#1',
     userType: 'DELIVERY_PERSONNEL',
     table: 'delivery_personnel',
     name: 'Christian Luza',
@@ -121,7 +126,7 @@ async function main() {
 
   await createStaffOrCustomer({
     username: 'customer1',
-    password: 'Customer@Pectrack1',
+    password: 'valenciaCustomer#1',
     userType: 'CUSTOMER',
     table: 'customers',
     name: 'Christian Valencia',
@@ -130,10 +135,10 @@ async function main() {
   })
 
   console.log('\nDone. Credentials:')
-  console.log('  admin1    /', adminPassword, '  <- write this down, it is not stored anywhere else')
-  console.log('  cashier1  / Cashier@Pectrack1')
-  console.log('  delivery1 / Delivery@Pectrack1')
-  console.log('  customer1 / Customer@Pectrack1')
+  console.log('  admin1    /', adminPassword)
+  console.log('  cashier1  / carlaCashier#1')
+  console.log('  delivery1 / luzaDelivery#1')
+  console.log('  customer1 / valenciaCustomer#1')
   console.log('\nAdmin login no longer needs an OTP step (see routes/auth.js) — a correct password signs in immediately.')
   console.log('Next: with the API server running, `node scripts/seed-demo-data.mjs` to populate orders/payments/deliveries.')
 
