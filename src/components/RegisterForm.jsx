@@ -51,7 +51,7 @@ export function RegisterForm({ onSwitchToLogin }) {
   const fieldClass = 'w-full rounded-2xl border border-stone-200 bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition focus:border-green-700 focus:ring-4 focus:ring-green-100'
 
   return (
-    <div className="bg-[#fffedc] p-7 sm:p-10 md:p-11">
+    <div className="bg-[#fffedc] p-5 sm:p-8 md:p-11">
       <div className="md:hidden"><Brand compact /></div>
       <div className="mt-6 flex items-start justify-between gap-4 md:mt-2">
         <div>

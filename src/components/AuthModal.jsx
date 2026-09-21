@@ -24,7 +24,14 @@ export function AuthModal({ request, onClose, onLogin, onView }) {
 
   return (
     <Modal open={Boolean(request)} onClose={onClose} labelledBy={isRegister ? 'auth-heading' : 'login-heading'}>
-      <div className={`relative grid w-full overflow-hidden rounded-[26px] bg-[#fffedc] shadow-2xl shadow-[#102d71]/25 ${isRegister ? 'max-w-190 md:grid-cols-[340px_420px] xl:max-w-207.5 xl:grid-cols-[370px_460px]' : 'max-w-179 md:grid-cols-[340px_376px] xl:max-w-200 xl:grid-cols-[370px_430px]'}`}>
+      {/* Columns are minmax(0,…), not fixed pixels. The register dialog's
+          old 340px + 420px demanded 760px of track at the md breakpoint
+          itself — wider than the 736px an iPad in portrait actually has
+          once the overlay's padding is taken out — so it overflowed at
+          exactly the width the two-column layout switched on. Flexible
+          tracks let the panel take whatever the viewport allows, and
+          max-w still caps it on a desktop. */}
+      <div className={`relative grid w-full overflow-hidden rounded-[26px] bg-[#fffedc] shadow-2xl shadow-[#102d71]/25 md:grid-cols-[minmax(0,300px)_minmax(0,1fr)] xl:grid-cols-[minmax(0,370px)_minmax(0,1fr)] ${isRegister ? 'max-w-190 xl:max-w-207.5' : 'max-w-179 xl:max-w-200'}`}>
         <button type="button" onClick={onClose} aria-label="Close" className="absolute right-3 top-3 z-10 grid h-8 w-8 place-items-center rounded-full bg-white/90 text-lg leading-none text-stone-500 shadow-md transition hover:text-stone-900">✕</button>
         <WelcomePanel register={isRegister} onNavigateAway={onClose} />
         {isRegister ? (

@@ -93,7 +93,7 @@ export function CustomerAccount({ user, onLogout, onUserUpdated }) {
           customer's way back to shopping should never be more than one
           click from anywhere in their account. */}
       <header className="border-t-[7px] border-[#26752a] bg-[#fffedc]">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-7">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-7">
           <Link to="/" aria-label="Go to home"><Brand compact /></Link>
           <div className="flex items-center gap-2">
             <Link to="/menu" className="inline-flex min-h-9 items-center rounded-full bg-green-700 px-4 text-xs font-bold text-white shadow-sm transition hover:bg-green-800">Order now</Link>
@@ -115,7 +115,7 @@ export function CustomerAccount({ user, onLogout, onUserUpdated }) {
             </div>
           </div>
 
-          <div className="mt-7 grid grid-cols-3 gap-2 sm:gap-4">
+          <div className="mt-6 grid gap-2 sm:mt-7 sm:grid-cols-3 sm:gap-4">
             <Stat label="Orders placed" value={stats ? stats.total : '—'} />
             <Stat label="In progress" value={stats ? stats.active : '—'} />
             <Stat label="Total ordered" value={stats ? formatPeso(stats.spent) : '—'} />
@@ -129,7 +129,7 @@ export function CustomerAccount({ user, onLogout, onUserUpdated }) {
           three places to be, and naming what each one holds is cheaper
           than making them guess from a one-word label. */}
       <nav aria-label="Account sections" className="sticky top-0 z-30 border-b border-green-100 bg-[#f5f7f2]/95 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl gap-2 overflow-x-auto px-4 py-3 sm:px-7">
+        <div className="mx-auto grid max-w-5xl grid-cols-3 gap-2 px-4 py-3 sm:flex sm:px-7">
           {tabs.map((tab) => {
             const active = tab.key === activeTab
             return (
@@ -138,11 +138,15 @@ export function CustomerAccount({ user, onLogout, onUserUpdated }) {
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
                 aria-current={active ? 'page' : undefined}
-                className={`flex min-w-0 shrink-0 items-center gap-2.5 rounded-2xl px-4 py-2.5 text-left transition ${active ? 'bg-green-700 text-white shadow-md shadow-green-900/20' : 'bg-white text-green-900 ring-1 ring-green-100 hover:bg-green-50'}`}
+                className={`flex min-w-0 flex-col items-center gap-1 rounded-2xl px-2 py-2.5 text-center transition sm:flex-row sm:items-center sm:gap-2.5 sm:px-4 sm:text-left ${active ? 'bg-green-700 text-white shadow-md shadow-green-900/20' : 'bg-white text-green-900 ring-1 ring-green-100 hover:bg-green-50'}`}
               >
                 <svg viewBox="0 0 24 24" className={`h-5 w-5 shrink-0 ${active ? 'text-lime-200' : 'text-green-700'}`} fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{tab.icon}</svg>
                 <span className="min-w-0">
-                  <span className="block text-sm font-bold whitespace-nowrap">{tab.label}</span>
+                  {/* The label drops "My " on a phone: three tabs share
+                      the width there, and the word is already implied by
+                      the page it sits on. */}
+                  <span className="block text-xs font-bold sm:hidden">{tab.label.replace('My ', '')}</span>
+                  <span className="hidden text-sm font-bold whitespace-nowrap sm:block">{tab.label}</span>
                   <span className={`hidden text-[11px] whitespace-nowrap sm:block ${active ? 'text-green-50/80' : 'text-stone-500'}`}>{tab.caption}</span>
                 </span>
               </button>
@@ -169,9 +173,9 @@ export function CustomerAccount({ user, onLogout, onUserUpdated }) {
 
 function Stat({ label, value }) {
   return (
-    <div className="rounded-2xl bg-white/10 px-3 py-3 ring-1 ring-white/15 sm:px-4 sm:py-4">
-      <p className="text-[10px] font-semibold tracking-wide text-green-50/70 uppercase sm:text-[11px]">{label}</p>
-      <p className="mt-1 text-lg font-extrabold tabular-nums sm:text-2xl">{value}</p>
+    <div className="flex items-baseline justify-between gap-3 rounded-2xl bg-white/10 px-4 py-2.5 ring-1 ring-white/15 sm:block sm:px-4 sm:py-4">
+      <p className="text-[11px] font-semibold tracking-wide text-green-50/70 uppercase">{label}</p>
+      <p className="text-lg font-extrabold tabular-nums sm:mt-1 sm:text-2xl">{value}</p>
     </div>
   )
 }

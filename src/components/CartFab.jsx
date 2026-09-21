@@ -31,7 +31,7 @@ export function CartFab({ user }) {
       // `fixed` and bottom-right, clear of the iOS home indicator via
       // env(safe-area-inset-bottom). z-40 keeps it under the auth dialog's
       // z-50 overlay rather than floating on top of it.
-      className="group fixed right-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-40 flex items-center gap-3 rounded-full bg-green-700 py-3 pr-5 pl-4 text-white shadow-xl shadow-green-900/25 transition hover:bg-green-800 hover:shadow-2xl focus-visible:ring-4 focus-visible:ring-green-300 sm:right-7"
+      className="group fixed right-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-40 flex items-center gap-0 rounded-full bg-green-700 p-3.5 text-white shadow-xl shadow-green-900/25 transition hover:bg-green-800 hover:shadow-2xl focus-visible:ring-4 focus-visible:ring-green-300 sm:right-7 sm:gap-3 sm:py-3 sm:pr-5 sm:pl-4"
       aria-label={`View cart, ${itemCount} item${itemCount === 1 ? '' : 's'}`}
     >
       <span className="relative grid h-7 w-7 place-items-center">
@@ -46,7 +46,7 @@ export function CartFab({ user }) {
           {itemCount > 99 ? '99+' : itemCount}
         </span>
       </span>
-      <span className="text-sm font-bold whitespace-nowrap">View cart</span>
+      <span className="hidden text-sm font-bold whitespace-nowrap sm:inline">View cart</span>
     </Link>
   )
 }

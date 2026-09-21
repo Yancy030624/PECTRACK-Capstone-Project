@@ -119,7 +119,7 @@ export function LoginForm({ onLogin, onRegister, onNavigateAway = () => {}, init
   const toggleMode = () => switchTo(isStaffMode ? 'customer' : 'staff')
 
   return (
-    <div className="min-h-142.5 bg-[#fffedc] p-7 sm:p-10 md:p-12">
+    <div className="bg-[#fffedc] p-5 sm:p-8 md:min-h-142.5 md:p-12">
       <div className="md:hidden"><Brand compact /></div>
       {pendingOtp ? (
         <>

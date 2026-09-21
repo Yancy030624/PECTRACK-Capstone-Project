@@ -42,7 +42,7 @@ export function MarketingHeader({ user, onOpenLogin = () => {}, onOpenRegister =
             </Link>
             {/* Signing out from the storefront used to mean going to the
                 dashboard first to find the button. */}
-            <button type="button" onClick={onLogout} className="inline-flex min-h-9 items-center rounded-full border border-green-200 bg-white px-3 text-xs font-bold text-green-800 shadow-sm transition hover:bg-green-50">Sign out</button>
+            <button type="button" onClick={onLogout} className="hidden min-h-9 items-center rounded-full border border-green-200 bg-white px-3 text-xs font-bold text-green-800 shadow-sm transition hover:bg-green-50 sm:inline-flex">Sign out</button>
           </>
         ) : (
           <button type="button" onClick={onOpenLogin} aria-label="Sign in">
