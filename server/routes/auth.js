@@ -9,6 +9,7 @@ import { config } from '../config.js'
 import { pool } from '../db.js'
 import { bcryptRounds, findDuplicateAccount, profileColumnsSql, profileEmailMatchesSql, profileJoinsSql, roleTables } from '../lib/accounts.js'
 import { createSession, parseCookies, requireAuth, sessionCookieName, sessionCookieOptions, sessionCookieOptionsForBrowserSession } from '../lib/auth.js'
+import { authLimiter, passwordResetLimiter, registerLimiter } from '../lib/security.js'
 import { sendMail } from '../lib/mail.js'
 import { normalize, normalizeEmail, validateAccountFields, validateContactNumberField, validateEmailField, validateName, validatePasswordField } from '../lib/validation.js'
 
@@ -67,7 +68,7 @@ async function createOtpCode(userId) {
   return { code, challengeToken }
 }
 
-router.post('/register', async (request, response) => {
+router.post('/register', registerLimiter, async (request, response) => {
   const { errors, values } = validateAccountFields(request.body)
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
 
@@ -126,7 +127,7 @@ router.post('/register', async (request, response) => {
 const audiences = new Set(['customer', 'staff'])
 const audienceOf = (userType) => (userType === 'CUSTOMER' ? 'customer' : 'staff')
 
-router.post('/login', async (request, response) => {
+router.post('/login', authLimiter, async (request, response) => {
   const identifier = normalize(request.body.identifier).toLowerCase()
   const password = String(request.body.password ?? '')
   const requestedAudience = normalize(request.body.audience).toLowerCase()
@@ -239,7 +240,7 @@ router.post('/login', async (request, response) => {
 // A new request replaces any earlier unconsumed token for the account,
 // so at most one live link exists per user, and the link goes to the
 // email ON FILE, never to an address supplied in the request.
-router.post('/forgot-password', async (request, response) => {
+router.post('/forgot-password', passwordResetLimiter, async (request, response) => {
   const email = normalizeEmail(request.body.email)
   const genericResponse = { message: 'If that email belongs to an account, a reset link has been sent to it.' }
   if (validateEmailField(email)) return response.status(422).json({ message: 'Enter a valid email address.', errors: { email: 'Enter a valid email address.' } })
@@ -296,7 +297,7 @@ router.post('/forgot-password', async (request, response) => {
 // session for the account — the same reasoning PATCH /password gives:
 // someone resetting a password after a compromise needs the intruder's
 // session gone too, and here there is no "own session" to spare.
-router.post('/reset-password', async (request, response) => {
+router.post('/reset-password', authLimiter, async (request, response) => {
   const token = normalize(request.body.token)
   const newPassword = String(request.body.newPassword ?? '')
   const confirmPassword = String(request.body.confirmPassword ?? '')
@@ -359,7 +360,7 @@ router.post('/reset-password', async (request, response) => {
 // identifies the OTP row, which identifies the user. That's strictly
 // better than validating a username, because it removes a guessable input
 // from the endpoint entirely rather than checking it.
-router.post('/verify-otp', async (request, response) => {
+router.post('/verify-otp', authLimiter, async (request, response) => {
   const challengeToken = normalize(request.body.challengeToken)
   const code = normalize(request.body.code)
   if (!challengeToken || !code) return response.status(422).json({ message: 'Enter the code sent to your phone.' })

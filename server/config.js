@@ -7,6 +7,16 @@ import 'dotenv/config'
 export const config = {
   port: Number(process.env.PORT ?? 3001),
   isProduction: process.env.NODE_ENV === 'production',
+  // How many reverse proxies sit in front of this server — 0 locally, 1
+  // behind a single load balancer (Render, Railway, an nginx in front).
+  // Opt-in on purpose, because BOTH defaults are wrong somewhere:
+  // trusting a proxy that is not there lets any caller forge
+  // X-Forwarded-For and so forge the key the rate limiter counts by;
+  // not trusting one that IS there makes every request look like it came
+  // from the proxy, so all users share one rate-limit bucket and
+  // request.secure is always false. See RULES-PLANS/SECURITY_REVIEW.md,
+  // finding K.
+  trustProxyHops: Number(process.env.TRUST_PROXY_HOPS ?? 0),
   clientOrigin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5173',
   db: {
     host: process.env.PGHOST ?? 'localhost',

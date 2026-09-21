@@ -2,6 +2,7 @@ import cors from 'cors'
 import express from 'express'
 import { config } from './config.js'
 import { pool } from './db.js'
+import { apiLimiter, httpsRedirect, securityHeaders } from './lib/security.js'
 import addressesRouter from './routes/addresses.js'
 import authRouter from './routes/auth.js'
 import categoriesRouter from './routes/categories.js'
@@ -18,6 +19,19 @@ import reportsRouter from './routes/reports.js'
 import staffRouter from './routes/staff.js'
 
 const app = express()
+
+// How many proxy hops to trust when reading request.ip and
+// request.secure. Set FIRST, because the two middlewares directly below
+// both depend on it: the redirect asks whether the ORIGINAL connection
+// was secure, and the rate limiter keys on the ORIGINAL client address.
+// See config.js for why this is opt-in rather than defaulted either way.
+if (config.trustProxyHops > 0) app.set('trust proxy', config.trustProxyHops)
+
+// Before everything, including CORS: a response that is about to be
+// refused, redirected, or rate-limited should still carry the headers
+// that protect the browser rendering it.
+app.use(securityHeaders)
+app.use(httpsRedirect)
 
 app.use(cors({ origin: config.clientOrigin, credentials: true }))
 // The `verify` option here exists for exactly one route:
@@ -39,10 +53,18 @@ app.use(express.json({
   verify: (request, _response, buffer) => { request.rawBody = buffer },
 }))
 
+// A blanket ceiling so no single caller can flood the API. The strict
+// per-route limits live on the auth routes themselves (routes/auth.js),
+// where the damage from flooding is not load but real email sent to a
+// real customer. /api/health is deliberately below this line: it is what
+// a hosting platform polls, and rate-limiting a health check into a 429
+// reads to that platform as an outage.
 app.get('/api/health', async (_request, response) => {
   await pool.query('SELECT 1')
   response.json({ status: 'ok' })
 })
+
+app.use(apiLimiter)
 
 app.use('/api/addresses', addressesRouter)
 app.use('/api/auth', authRouter)

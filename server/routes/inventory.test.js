@@ -3,15 +3,23 @@
 // app on an ephemeral port, real database. Run with: npm test
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
-import { after, before, describe, test } from 'node:test'
+import { after, before, beforeEach, describe, test } from 'node:test'
 import bcrypt from 'bcrypt'
 import app from '../app.js'
+import { resetRateLimits } from '../lib/security.js'
 import { pool } from '../db.js'
 
 const runId = crypto.randomUUID().slice(0, 8)
 const randomContactNumber = () => `09${Math.floor(100000000 + Math.random() * 899999999)}`
 
 describe('inventory list', () => {
+  // The rate limiter (lib/security.js) counts by client IP, and every
+  // request in this suite comes from the same one — so without a reset
+  // the tests would throttle each other rather than the abuse the limiter
+  // exists to stop. Resetting per test is ordinary test isolation: the
+  // limiter itself is untouched and fully active in production.
+  beforeEach(resetRateLimits)
+
   let server
   let baseUrl
   let adminCookie
@@ -129,6 +137,13 @@ describe('inventory list', () => {
 })
 
 describe('editing stock directly', () => {
+  // The rate limiter (lib/security.js) counts by client IP, and every
+  // request in this suite comes from the same one — so without a reset
+  // the tests would throttle each other rather than the abuse the limiter
+  // exists to stop. Resetting per test is ordinary test isolation: the
+  // limiter itself is untouched and fully active in production.
+  beforeEach(resetRateLimits)
+
   let server
   let baseUrl
   let adminCookie
@@ -361,6 +376,13 @@ describe('editing stock directly', () => {
 })
 
 describe('cashier proposes, admin approves (Phase 5, Step 6)', () => {
+  // The rate limiter (lib/security.js) counts by client IP, and every
+  // request in this suite comes from the same one — so without a reset
+  // the tests would throttle each other rather than the abuse the limiter
+  // exists to stop. Resetting per test is ordinary test isolation: the
+  // limiter itself is untouched and fully active in production.
+  beforeEach(resetRateLimits)
+
   let server
   let baseUrl
   let adminCookie
@@ -826,6 +848,13 @@ describe('cashier proposes, admin approves (Phase 5, Step 6)', () => {
 // own product at a known starting stock rather than sharing one already
 // being driven through recount scenarios.
 describe('cashier reports a loss (migration 008)', () => {
+  // The rate limiter (lib/security.js) counts by client IP, and every
+  // request in this suite comes from the same one — so without a reset
+  // the tests would throttle each other rather than the abuse the limiter
+  // exists to stop. Resetting per test is ordinary test isolation: the
+  // limiter itself is untouched and fully active in production.
+  beforeEach(resetRateLimits)
+
   let server
   let baseUrl
   let adminCookie

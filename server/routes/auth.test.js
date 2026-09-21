@@ -9,9 +9,10 @@
 // The account lockout IS covered, in the last describe block below.
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
-import { after, before, describe, test } from 'node:test'
+import { after, before, beforeEach, describe, test } from 'node:test'
 import bcrypt from 'bcrypt'
 import app from '../app.js'
+import { resetRateLimits } from '../lib/security.js'
 import { pool } from '../db.js'
 
 const runId = crypto.randomUUID().slice(0, 8)
@@ -28,6 +29,13 @@ async function deleteTestUser(userId) {
 }
 
 describe('customer registration and session lifecycle', () => {
+  // The rate limiter (lib/security.js) counts by client IP, and every
+  // request in this suite comes from the same one — so without a reset
+  // the tests would throttle each other rather than the abuse the limiter
+  // exists to stop. Resetting per test is ordinary test isolation: the
+  // limiter itself is untouched and fully active in production.
+  beforeEach(resetRateLimits)
+
   let server
   let baseUrl
   let sessionCookie
@@ -372,6 +380,13 @@ describe('customer registration and session lifecycle', () => {
 // why). Renamed from 'admin login requires OTP', which stopped being
 // true the moment that branch was switched off.
 describe('admin login, and the (currently unreachable from /login) OTP second factor', () => {
+  // The rate limiter (lib/security.js) counts by client IP, and every
+  // request in this suite comes from the same one — so without a reset
+  // the tests would throttle each other rather than the abuse the limiter
+  // exists to stop. Resetting per test is ordinary test isolation: the
+  // limiter itself is untouched and fully active in production.
+  beforeEach(resetRateLimits)
+
   let server
   let baseUrl
   let adminUserId
@@ -536,6 +551,13 @@ describe('admin login, and the (currently unreachable from /login) OTP second fa
 // wrong passwords. Needs its own throwaway account because locking one out
 // is destructive.
 describe('account lockout cannot be extended indefinitely', () => {
+  // The rate limiter (lib/security.js) counts by client IP, and every
+  // request in this suite comes from the same one — so without a reset
+  // the tests would throttle each other rather than the abuse the limiter
+  // exists to stop. Resetting per test is ordinary test isolation: the
+  // limiter itself is untouched and fully active in production.
+  beforeEach(resetRateLimits)
+
   let server
   let baseUrl
   let createdUserId
@@ -613,6 +635,14 @@ describe('account lockout cannot be extended indefinitely', () => {
         // Keep the account unlocked so this measures the password hash,
         // not the (much faster) already-locked path.
         await pool.query('UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE user_id = $1', [createdUserId])
+        // And keep the rate limiter out of the way for the same reason.
+        // 18 attempts from one IP is exactly what lib/security.js exists
+        // to refuse, and its 429 is returned BEFORE bcrypt runs — which is
+        // the point of a limiter, but it would make this measure the
+        // limiter instead of the hash. The limiter cannot leak account
+        // existence anyway: it counts by IP, so it answers identically
+        // whether or not the username is real.
+        resetRateLimits()
         const startedAt = process.hrtime.bigint()
         await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier, password: 'definitely-the-wrong-password' }) })
         samples.push(Number(process.hrtime.bigint() - startedAt) / 1e6)
