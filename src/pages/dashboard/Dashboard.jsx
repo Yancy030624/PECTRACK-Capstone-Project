@@ -29,15 +29,14 @@ const moduleComponents = {
   'Customer Management': CustomerManagement,
   'My Profile': MyProfile,
   'Order Management': OrderManagement,
-  'My Orders': OrderManagement,
   'Payment & Billing': PaymentBilling,
-  'My Payments': PaymentBilling,
   'Delivery Management': DeliveryManagement,
   'My Deliveries': DeliveryManagement,
   'Reporting & Analytics': ReportingAnalytics,
 }
+// Staff only — a customer never reaches this shell (App.jsx routes them
+// to /account instead), so there is no CUSTOMER case to answer here.
 const defaultModuleFor = (role) => {
-  if (role === 'CUSTOMER') return 'My Orders'
   if (role === 'DELIVERY PERSONNEL') return 'My Deliveries'
   return 'Dashboard'
 }

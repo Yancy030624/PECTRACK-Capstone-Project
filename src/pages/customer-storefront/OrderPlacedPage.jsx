@@ -46,8 +46,8 @@ export function OrderPlacedPage() {
 
         <p className="mt-5 text-xs text-stone-500">Pay at pickup or on delivery, or pay online now from Payment &amp; Billing.</p>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-center">
-          <Link to="/dashboard" className="rounded-full bg-green-700 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-green-800">View My Orders</Link>
-          <Link to="/dashboard" className="rounded-full border border-green-700 px-5 py-2.5 text-xs font-bold text-green-800 transition hover:bg-green-50">Pay now</Link>
+          <Link to="/account" className="rounded-full bg-green-700 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-green-800">View My Orders</Link>
+          <Link to="/account" className="rounded-full border border-green-700 px-5 py-2.5 text-xs font-bold text-green-800 transition hover:bg-green-50">Pay now</Link>
         </div>
       </div>
     </section>

@@ -35,7 +35,7 @@ export function MarketingHeader({ user, onOpenLogin = () => {}, onOpenRegister =
         {isCustomer && <HeaderIcon type="search" onClick={() => navigate('/menu?focus=search')} label="Search the menu" />}
         {user ? (
           <>
-            <Link to="/dashboard" aria-label="My account">
+            <Link to={isCustomer ? '/account' : '/dashboard'} aria-label="My account">
               <span className="grid h-9 w-9 place-items-center rounded-full bg-white text-stone-900 shadow-md transition hover:-translate-y-0.5 hover:text-green-800">
                 <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.4"><circle cx="12" cy="8" r="3.2" /><path d="M5 20c.8-3.4 3.1-5.1 7-5.1s6.2 1.7 7 5.1" /></svg>
               </span>

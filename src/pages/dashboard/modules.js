@@ -1,5 +1,14 @@
 // Define the available modules and the roles that can open each one.
 //
+// STAFF ONLY, as of 2026-09-21. A customer no longer passes through this
+// shell at all: /dashboard sends them to /account, where
+// customer-account/CustomerAccount.jsx gives them the same three screens
+// (My Profile, My Orders, My Payments — in that order) in the
+// storefront's own design instead of the staff console's. The CUSTOMER
+// entries that used to live here were removed with that change; the
+// components themselves are shared and still dispatch on role, so
+// nothing was duplicated.
+//
 // 'Inventory Management' used to be the nav label for the CATALOG screen
 // (categories + products — see InventoryManagement.jsx's own file header),
 // which was a misnomer once Phase 5 introduced actual stock management.
@@ -33,7 +42,6 @@ export const modules = [
   // internally — the exact shape Delivery Management already established
   // for ADMIN/CASHIER vs DELIVERY PERSONNEL below.
   { name: 'Order Management', icon: 'orders', roles: ['ADMIN', 'CASHIER'] },
-  { name: 'My Orders', icon: 'orders', roles: ['CUSTOMER'] },
   // Read-only for CASHIER (CustomerManagement.jsx hides Edit/Deactivate
   // for anyone but ADMIN, and customers.js:53's PATCH route backs that up
   // server-side) — a cashier still needs to look a customer up to attach
@@ -58,9 +66,6 @@ export const modules = [
   { name: 'Recipes', icon: 'recipes', roles: ['ADMIN'] },
   { name: 'Production', icon: 'production', roles: ['ADMIN', 'CASHIER'] },
   { name: 'Payment & Billing', icon: 'payments', roles: ['ADMIN', 'CASHIER'] },
-  // A customer does not "bill" anyone — same screen (PaymentBilling.jsx
-  // dispatches on role), named for what they do there.
-  { name: 'My Payments', icon: 'payments', roles: ['CUSTOMER'] },
   // Phase 7 (see PHASE7_PLAN.md) — one nav entry shared by three roles.
   // ADMIN/CASHIER get the assignment queue; DELIVERY PERSONNEL get their
   // own workflow instead — DeliveryManagement.jsx dispatches between the
@@ -70,9 +75,5 @@ export const modules = [
   // said "Delivery Management". One name, the driver's own.
   { name: 'My Deliveries', icon: 'deliveries', roles: ['DELIVERY PERSONNEL'] },
   { name: 'Reporting & Analytics', icon: 'reports', roles: ['ADMIN', 'CASHIER'] },
-  { name: 'My Profile', icon: 'profile', roles: ['ADMIN', 'CUSTOMER', 'CASHIER', 'DELIVERY PERSONNEL'] },
-  // No separate 'Address Book' entry any more — a customer's saved
-  // delivery addresses moved INTO My Profile as a tab (MyProfile.jsx),
-  // alongside their profile details and password. One place for
-  // "everything about my account" instead of two.
+  { name: 'My Profile', icon: 'profile', roles: ['ADMIN', 'CASHIER', 'DELIVERY PERSONNEL'] },
 ]

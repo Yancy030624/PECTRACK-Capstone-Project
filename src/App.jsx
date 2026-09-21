@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { apiGet, apiPost } from './api/client.js'
 import { AuthModal } from './components/AuthModal.jsx'
+import { CartFab } from './components/CartFab.jsx'
 import { CartProvider } from './cart/CartContext.jsx'
+import { CustomerAccount } from './pages/customer-account/CustomerAccount.jsx'
 import { Dashboard } from './pages/dashboard/Dashboard.jsx'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage.jsx'
 import { ResetPasswordPage } from './pages/ResetPasswordPage.jsx'
@@ -34,7 +36,7 @@ const afterLogoutPath = '/'
 // Pages a guest cannot use. Instead of navigating them to a sign-in page
 // and stranding them there, both guards send them to a public page and
 // open the sign-in pop-up over it, remembering where they were headed.
-function RequireAuth({ user, openAuth, children }) {
+function RequireStaff({ user, openAuth, children }) {
   const location = useLocation()
   useEffect(() => {
     // /dashboard is staff territory, so the pop-up opens on the staff
@@ -43,6 +45,22 @@ function RequireAuth({ user, openAuth, children }) {
     if (!user) openAuth({ view: 'login', mode: 'staff', returnTo: location.pathname })
   }, [user, openAuth, location.pathname])
   if (!user) return <Navigate to="/" replace />
+  // A customer who lands on the staff dashboard URL goes to their own
+  // account page instead of being shown a shell full of modules their
+  // role cannot open.
+  if (user.role === 'CUSTOMER') return <Navigate to="/account" replace />
+  return children
+}
+
+// /account is the customer's own page — the staff dashboard's counterpart,
+// not a page staff have any use for.
+function RequireCustomerAccount({ user, openAuth, children }) {
+  const location = useLocation()
+  useEffect(() => {
+    if (!user) openAuth({ view: 'login', mode: 'customer', returnTo: location.pathname })
+  }, [user, openAuth, location.pathname])
+  if (!user) return <Navigate to="/" replace />
+  if (user.role !== 'CUSTOMER') return <Navigate to="/dashboard" replace />
   return children
 }
 
@@ -150,7 +168,8 @@ function AppRoutes() {
             belongs with it. */}
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
-        <Route path="/dashboard" element={<RequireAuth user={user} openAuth={openAuth}><Dashboard user={user} onLogout={handleLogout} onUserUpdated={setUser} /></RequireAuth>} />
+        <Route path="/dashboard" element={<RequireStaff user={user} openAuth={openAuth}><Dashboard user={user} onLogout={handleLogout} onUserUpdated={setUser} /></RequireStaff>} />
+        <Route path="/account" element={<RequireCustomerAccount user={user} openAuth={openAuth}><CustomerAccount user={user} onLogout={handleLogout} onUserUpdated={setUser} /></RequireCustomerAccount>} />
         <Route element={<StorefrontLayout user={user} onOpenAuth={openAuth} onLogout={handleLogout} />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/menu" element={<MenuPage user={user} />} />
@@ -165,6 +184,9 @@ function AppRoutes() {
       {/* Outside <Routes> on purpose: the same dialog covers the storefront,
           the dashboard, and a redirect in progress. */}
       <AuthModal request={authRequest} onClose={closeAuth} onLogin={handleLogin} onView={setAuthView} />
+      {/* Likewise: the cart follows a customer across every storefront
+          page, so it cannot live inside one route's layout. */}
+      <CartFab user={user} />
     </CartProvider>
   )
 }
