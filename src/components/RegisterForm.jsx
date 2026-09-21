@@ -79,7 +79,7 @@ export function RegisterForm({ onSwitchToLogin }) {
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label htmlFor="register-username" className="mb-1.5 block text-xs font-bold">Username</label>
-                <input id="register-username" value={form.username} onChange={(event) => updateField('username', event.target.value)} autoComplete="username" placeholder="e.g. maria.santos" className={fieldClass} />
+                <input id="register-username" value={form.username} onChange={(event) => updateField('username', event.target.value)} autoComplete="username" placeholder="e.g. Yancy Ymata" className={fieldClass} />
                 {errors.username && <p className="mt-1 text-xs font-medium text-red-700">{errors.username}</p>}
               </div>
               <div>
@@ -96,12 +96,12 @@ export function RegisterForm({ onSwitchToLogin }) {
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label htmlFor="register-password" className="mb-1.5 block text-xs font-bold">Password</label>
-                <input id="register-password" type="password" value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" placeholder="Create password" className={fieldClass} />
+                <input id="register-password" type="password" value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" className={fieldClass} />
                 {errors.password && <p className="mt-1 text-xs font-medium text-red-700">{errors.password}</p>}
               </div>
               <div>
                 <label htmlFor="confirm-password" className="mb-1.5 block text-xs font-bold">Confirm password</label>
-                <input id="confirm-password" type="password" value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} autoComplete="new-password" placeholder="Repeat password" className={fieldClass} />
+                <input id="confirm-password" type="password" value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} autoComplete="new-password" className={fieldClass} />
                 {errors.confirmPassword && <p className="mt-1 text-xs font-medium text-red-700">{errors.confirmPassword}</p>}
               </div>
             </div>
