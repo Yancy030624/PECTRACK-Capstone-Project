@@ -1,7 +1,10 @@
 import { Link } from 'react-router-dom'
 import logoCircle from '../assets/logo-circle.png'
 
-export function WelcomePanel({ register }) {
+// `onNavigateAway` closes the dialog this panel sits in — "Continue
+// browsing" is a real link to /menu, and the pop-up must not stay floating
+// over the page it just sent someone to.
+export function WelcomePanel({ register, onNavigateAway = () => {} }) {
   const copy = register
     ? { tag: 'Customer Registration', title: 'New Account Registration', body: 'Create a PECTRACK account to start ordering with ease.' }
     // Deliberately role-neutral. This panel sits beside a form that now
@@ -22,7 +25,7 @@ export function WelcomePanel({ register }) {
         <span className="inline-flex rounded-full bg-yellow-200 px-3 py-1 text-[10px] font-bold text-green-800">{copy.tag}</span>
         <h1 className="mt-3 text-3xl font-extrabold leading-tight">{copy.title}</h1>
         <p className="mt-2 text-[11px] leading-5 text-green-50">{copy.body}</p>
-        <Link to="/menu" className="mt-5 inline-block rounded-full border border-white px-5 py-2 text-xs font-bold transition hover:bg-white hover:text-green-900">Continue browsing</Link>
+        <Link to="/menu" onClick={onNavigateAway} className="mt-5 inline-block rounded-full border border-white px-5 py-2 text-xs font-bold transition hover:bg-white hover:text-green-900">Continue browsing</Link>
       </div>
     </aside>
   )

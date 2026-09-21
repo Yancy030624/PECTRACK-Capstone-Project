@@ -12,10 +12,10 @@ const navLinkClass = ({ isActive }) => `inline-flex min-h-9 items-center font-se
 const mobileLinkClass = ({ isActive }) => `whitespace-nowrap rounded-full px-4 py-2 text-xs font-bold shadow-sm ring-1 ring-green-100 transition ${isActive ? 'bg-green-700 text-white' : 'bg-white text-green-800 hover:bg-green-50'}`
 const links = [['/', 'Home', true], ['/menu', 'Menu'], ['/about', 'About'], ['/contact', 'Contact']]
 
-// `onOpenLogin` defaults to a no-op because this header also renders bare
-// (no props) on /login and /register themselves — clicking the sign-in
-// icon while already on the login page should just do nothing, not throw.
-export function MarketingHeader({ user, onOpenLogin = () => {} }) {
+// The three callbacks default to no-ops because this header also renders
+// bare (no props) on the password-recovery pages, where there is no auth
+// pop-up to open and no session to end.
+export function MarketingHeader({ user, onOpenLogin = () => {}, onOpenRegister = () => {}, onLogout = () => {} }) {
   const navigate = useNavigate()
   const { itemCount } = useCart()
   // Search and cart only ever meant something for a signed-in customer —
@@ -34,11 +34,16 @@ export function MarketingHeader({ user, onOpenLogin = () => {} }) {
       <div className="ml-auto flex items-center gap-3">
         {isCustomer && <HeaderIcon type="search" onClick={() => navigate('/menu?focus=search')} label="Search the menu" />}
         {user ? (
-          <Link to="/dashboard" aria-label="My account">
-            <span className="grid h-9 w-9 place-items-center rounded-full bg-white text-stone-900 shadow-md transition hover:-translate-y-0.5 hover:text-green-800">
-              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.4"><circle cx="12" cy="8" r="3.2" /><path d="M5 20c.8-3.4 3.1-5.1 7-5.1s6.2 1.7 7 5.1" /></svg>
-            </span>
-          </Link>
+          <>
+            <Link to="/dashboard" aria-label="My account">
+              <span className="grid h-9 w-9 place-items-center rounded-full bg-white text-stone-900 shadow-md transition hover:-translate-y-0.5 hover:text-green-800">
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.4"><circle cx="12" cy="8" r="3.2" /><path d="M5 20c.8-3.4 3.1-5.1 7-5.1s6.2 1.7 7 5.1" /></svg>
+              </span>
+            </Link>
+            {/* Signing out from the storefront used to mean going to the
+                dashboard first to find the button. */}
+            <button type="button" onClick={onLogout} className="inline-flex min-h-9 items-center rounded-full border border-green-200 bg-white px-3 text-xs font-bold text-green-800 shadow-sm transition hover:bg-green-50">Sign out</button>
+          </>
         ) : (
           <button type="button" onClick={onOpenLogin} aria-label="Sign in">
             <span className="grid h-9 w-9 place-items-center rounded-full bg-white text-stone-900 shadow-md transition hover:-translate-y-0.5 hover:text-green-800">
@@ -47,7 +52,7 @@ export function MarketingHeader({ user, onOpenLogin = () => {} }) {
           </button>
         )}
         {isCustomer && <HeaderIcon type="cart" onClick={() => navigate('/cart')} badge={itemCount} label={`Cart, ${itemCount} item${itemCount === 1 ? '' : 's'}`} />}
-        {!user && <Link to="/register" className="inline-flex min-h-9 items-center rounded-full bg-green-700 px-3 text-xs font-bold text-white shadow-sm transition hover:bg-green-800 md:hidden">JOIN</Link>}
+        {!user && <button type="button" onClick={onOpenRegister} className="inline-flex min-h-9 items-center rounded-full bg-green-700 px-3 text-xs font-bold text-white shadow-sm transition hover:bg-green-800 md:hidden">JOIN</button>}
       </div>
       </div>
       <nav aria-label="Site" className="flex gap-2 overflow-x-auto px-4 pb-3 sm:px-7 md:hidden">

@@ -20,7 +20,9 @@ import { Brand } from './Brand.jsx'
 // longer applies. A refusal is not a dead end here: the reply names the
 // right door, and the button below the error switches to it with what was
 // typed still in the fields.
-export function LoginForm({ onLogin, onRegister, initialMode = 'customer' }) {
+// `onNavigateAway` lets the shell close itself when a link inside the form
+// leaves for a real page — the pop-up must not float over /forgot-password.
+export function LoginForm({ onLogin, onRegister, onNavigateAway = () => {}, initialMode = 'customer' }) {
   // Which door is open. Defaults to 'customer' — who lands on /login and
   // opens the header pop-up far more often — and /staff-login passes
   // 'staff' instead. Sent to the server as `audience`, which is what makes
@@ -145,7 +147,7 @@ export function LoginForm({ onLogin, onRegister, initialMode = 'customer' }) {
             {/* Email password recovery (routes/auth.js /forgot-password)
                 works for every role, so the link is the same in both
                 modes; staff can also still ask an admin. */}
-            <div className="flex items-center justify-between gap-2 py-2 text-xs font-bold"><label className="flex cursor-pointer items-center gap-1.5"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className="h-5 w-5 accent-green-700" />Remember me</label><Link to="/forgot-password" className="inline-block py-2 text-green-700 hover:underline">Forgot password?</Link></div>
+            <div className="flex items-center justify-between gap-2 py-2 text-xs font-bold"><label className="flex cursor-pointer items-center gap-1.5"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className="h-5 w-5 accent-green-700" />Remember me</label><Link to="/forgot-password" onClick={onNavigateAway} className="inline-block py-2 text-green-700 hover:underline">Forgot password?</Link></div>
             {error && (
               <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
                 {error}
