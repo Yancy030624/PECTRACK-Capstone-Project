@@ -231,3 +231,47 @@ decides the privacy trade is worth it.
   one for a four-account system.
 - **The split enforces nothing.** Decision 1, stated here so the paper
   does not overclaim it.
+
+---
+
+## Decision 1 reversed (2026-09-21)
+
+At the user's instruction, the two modes are now two **doors**, not two
+skins. `POST /api/auth/login` accepts an optional `audience` of
+`customer` or `staff`, and refuses a valid credential that belongs to the
+other audience with 403 — after verifying the password, before creating
+any session.
+
+Why the original objection no longer holds:
+
+- *"The session cookie is already set by the time the client learns the
+  role."* True of a CLIENT-side check only. The server knows
+  `user.user_type` one line before it calls `createSession`, so the
+  refusal costs nothing and leaves no session to undo.
+- *"Turning away a valid credential is hostile."* Answered by the reply.
+  It does not claim the password was wrong; it names the door that would
+  have worked and returns that audience, and the form turns it into a
+  one-click switch that keeps what was typed.
+
+What did NOT change, and must still be described this way in the paper:
+
+- **This is not an access control.** The audience is self-declared, so a
+  caller that omits the field is unaffected — which is exactly what keeps
+  `scripts/seed-demo-data.mjs`, `create-test-accounts.mjs`, and every
+  test suite working unchanged. What guards each route is `requireRole`,
+  untouched. The doors are a usability and clarity measure: they stop a
+  cashier landing on the customer storefront and a customer reaching the
+  staff front page, through the app's own pages.
+- Decision 2 stands: still one `LoginForm`, now with an `initialMode`
+  prop. `/login` opens the customer door, `/staff-login` opens the staff
+  one, and `RequireAuth` (which guards `/dashboard`, staff territory)
+  redirects to `/staff-login` so an expired staff session is not sent to
+  a door that would refuse it.
+- The door switch was promoted from a plain text link to a full-width
+  outlined control with an icon, label, and sub-label naming who it is
+  for. A door that can turn someone away has to be findable.
+
+Tests: three cases in `auth.test.js` — a customer accepted at its door
+and refused at the staff one, an admin the reverse, and a wrong password
+still answering 401 (never 403) whatever audience was declared, so the
+check cannot become an account-enumeration oracle.

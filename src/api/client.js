@@ -13,6 +13,9 @@ async function handleResponse(response) {
     const error = new Error(data?.message ?? 'Something went wrong. Please try again later.')
     error.errors = data?.errors
     error.status = response.status
+    // /api/auth/login's wrong-door refusal names the door that WOULD have
+    // worked; LoginForm turns it into a one-click switch.
+    error.audience = data?.audience
     throw error
   }
   return data

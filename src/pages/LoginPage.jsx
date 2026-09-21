@@ -6,7 +6,13 @@ import { WelcomePanel } from '../components/WelcomePanel.jsx'
 // a returnTo redirect, a fresh tab) even though most visitors now reach
 // the same form through the header's pop-up (LoginModal.jsx). Both render
 // LoginForm, so there is exactly one copy of the auth logic to maintain.
-export function LoginPage({ onRegister, onLogin }) {
+//
+// `initialMode` is which door the page opens on: /login opens the customer
+// door, /staff-login opens the staff one. Staff sign in far less often
+// than customers but far more repeatedly — a bookmarkable URL saves the
+// counter a click every shift, and gives the refusal message somewhere
+// concrete to point.
+export function LoginPage({ onRegister, onLogin, initialMode = 'customer' }) {
   return (
     <main className="min-h-screen bg-[#202120] p-0 text-stone-900">
       <section className="min-h-screen w-full overflow-hidden bg-white shadow-2xl">
@@ -18,7 +24,7 @@ export function LoginPage({ onRegister, onLogin }) {
           <div className="absolute right-[8%] top-[32%] hidden h-56 w-56 rotate-45 rounded-[45px] border-26 border-white/50 xl:block" />
           <div className="relative grid w-full max-w-179 overflow-hidden rounded-[26px] bg-[#fffedc] shadow-2xl shadow-[#102d71]/25 md:grid-cols-[340px_376px] xl:max-w-200 xl:grid-cols-[370px_430px]">
             <WelcomePanel />
-            <LoginForm onLogin={onLogin} onRegister={onRegister} />
+            <LoginForm onLogin={onLogin} onRegister={onRegister} initialMode={initialMode} />
           </div>
         </div>
       </section>

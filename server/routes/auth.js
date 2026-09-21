@@ -103,9 +103,33 @@ router.post('/register', async (request, response) => {
   }
 })
 
+// Which sign-in door the request came through. 'customer' and 'staff' are
+// the two the app sends; anything else (including a missing field) means
+// "no door was declared" and no audience check runs — the seed scripts and
+// the test suites sign in that way, and so would any future integration.
+//
+// This REVERSES LOGIN_SPLIT_PLAN.md Decision 1, deliberately and at the
+// user's instruction (2026-09-21). That decision refused the check on two
+// grounds. The second — "the session cookie is already set by the time the
+// client learns the role" — was only ever true of a CLIENT-side check; the
+// server knows the role one line before it calls createSession, so the
+// refusal below costs nothing and leaks no session. The first — that
+// turning away a valid credential is hostile — is answered by the message:
+// it names the right door instead of pretending the password was wrong,
+// and the form offers a one-click switch that keeps what was typed.
+//
+// It is still NOT an access control, and must not be described as one in
+// the paper: an audience is self-declared, so a caller that omits it is
+// unaffected. What actually guards every route is requireRole, unchanged.
+// This stops a cashier from landing on the customer storefront, and a
+// customer from reaching the staff door, through the app's own front pages.
+const audiences = new Set(['customer', 'staff'])
+const audienceOf = (userType) => (userType === 'CUSTOMER' ? 'customer' : 'staff')
+
 router.post('/login', async (request, response) => {
   const identifier = normalize(request.body.identifier).toLowerCase()
   const password = String(request.body.password ?? '')
+  const requestedAudience = normalize(request.body.audience).toLowerCase()
   if (!identifier || !password) return response.status(422).json({ message: 'Enter your username or email and password.' })
 
   const result = await pool.query(
@@ -165,6 +189,22 @@ router.post('/login', async (request, response) => {
   }
 
   await pool.query('UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE user_id = $1', [user.user_id])
+
+  // The door check — after the password is proven correct, so the reply
+  // can name the right door without telling an attacker anything a
+  // correct password did not already tell them, and BEFORE createSession,
+  // so a wrong-door attempt leaves no session behind to clean up. The
+  // failed-attempt counter was reset just above on purpose: the password
+  // was right, this is not a failed login.
+  const actualAudience = audienceOf(user.user_type)
+  if (audiences.has(requestedAudience) && requestedAudience !== actualAudience) {
+    return response.status(403).json({
+      message: actualAudience === 'staff'
+        ? 'This is a staff account. Use the staff sign-in to continue.'
+        : 'This is a customer account. Use the customer sign-in to continue.',
+      audience: actualAudience,
+    })
+  }
 
   // ADMIN used to require a second factor here (createOtpCode + a
   // {otpRequired: true} response, forcing a trip through /verify-otp

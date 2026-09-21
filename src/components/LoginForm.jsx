@@ -10,26 +10,27 @@ import { Brand } from './Brand.jsx'
 //
 // LOGIN_SPLIT_PLAN.md Decision 2 — one component with a `mode` prop/state,
 // not a separate CustomerLoginForm/StaffLoginForm pair, so there stays
-// exactly one copy of the submit handler to keep in sync. `mode` lives
-// entirely in this component's own state (nothing above it passes one
-// in) and only ever changes four things: the badge, the heading, whether
-// "Create account" shows, and the recovery hint below the fields. It is
-// NOT sent to the server and does not change which endpoint is called —
-// see Decision 1 just below.
-export function LoginForm({ onLogin, onRegister }) {
-  // Which audience is using the form right now. Defaults to 'customer'
-  // because that's who lands on /login and opens the header pop-up far
-  // more often; a switch button lets either audience flip it. This is
-  // presentation only — LOGIN_SPLIT_PLAN.md Decision 1 is explicit that
-  // both modes post to the very same /api/auth/login, and a cashier who
-  // signs in through staff mode or a customer who signs in through staff
-  // mode both succeed and land wherever their role already routes them.
-  // Do NOT wire this into the request body or reject a mismatched role
-  // here — that would be enforcement the plan deliberately rejected as
-  // both hostile (punishing a valid credential for using "the wrong
-  // door") and impossible to do cleanly (the session cookie is already
-  // set by the time the client learns the role).
-  const [mode, setMode] = useState('customer')
+// exactly one copy of the submit handler to keep in sync.
+//
+// CHANGED 2026-09-21: the two modes are now two real doors. `mode` is sent
+// as `audience` with the credentials, and routes/auth.js refuses a staff
+// account at the customer door and a customer account at the staff door —
+// after checking the password, before creating any session. See that
+// route's own comment for why the objection recorded in Decision 1 no
+// longer applies. A refusal is not a dead end here: the reply names the
+// right door, and the button below the error switches to it with what was
+// typed still in the fields.
+export function LoginForm({ onLogin, onRegister, initialMode = 'customer' }) {
+  // Which door is open. Defaults to 'customer' — who lands on /login and
+  // opens the header pop-up far more often — and /staff-login passes
+  // 'staff' instead. Sent to the server as `audience`, which is what makes
+  // these two doors rather than two skins.
+  const [mode, setMode] = useState(initialMode === 'staff' ? 'staff' : 'customer')
+  const isStaffMode = mode === 'staff'
+  // Set when the server says the credentials are valid but belong to the
+  // other door. Holds the audience to switch to, so the error can carry a
+  // button that gets there in one click.
+  const [wrongDoor, setWrongDoor] = useState(null)
   // Store what the person entered in the username field.
   const [username, setUsername] = useState('')
   // Store the password so the form feels like a real sign-in flow.
@@ -65,13 +66,17 @@ export function LoginForm({ onLogin, onRegister }) {
       return
     }
     try {
-      const data = await apiPost('/api/auth/login', { identifier: username, password, rememberMe })
+      const data = await apiPost('/api/auth/login', { identifier: username, password, rememberMe, audience: mode })
       setError('')
+      setWrongDoor(null)
       // Admin accounts don't get a session yet — the server wants a
       // verification code first. Everyone else is signed in immediately.
       if (data.otpRequired) setPendingOtp({ username: data.username, challengeToken: data.challengeToken })
       else onLogin(data.user)
     } catch (error) {
+      // 403 with an `audience` is the wrong-door refusal: right password,
+      // wrong front page. Everything typed stays put.
+      setWrongDoor(error.status === 403 && error.audience ? error.audience : null)
       setError(error.message)
     }
   }
@@ -100,11 +105,16 @@ export function LoginForm({ onLogin, onRegister }) {
     setError('')
   }
 
-  // Flip between customer and staff mode. Decision 2: this is component
-  // state changing, not navigation — the URL never moves, and nothing the
-  // person already typed is cleared, since neither field's meaning depends
-  // on mode (only which affordances are visible does).
-  const toggleMode = () => setMode((current) => (current === 'staff' ? 'customer' : 'staff'))
+  // Flip between the two doors. Still component state, not navigation —
+  // the URL never moves and nothing typed is cleared, since neither field's
+  // meaning depends on the door. The stale error goes, because the reason
+  // for it (wrong door) is exactly what this button fixes.
+  const switchTo = (next) => {
+    setMode(next)
+    setWrongDoor(null)
+    setError('')
+  }
+  const toggleMode = () => switchTo(isStaffMode ? 'customer' : 'staff')
 
   return (
     <div className="min-h-142.5 bg-[#fffedc] p-7 sm:p-10 md:p-12">
@@ -121,12 +131,13 @@ export function LoginForm({ onLogin, onRegister }) {
         </>
       ) : (
         <>
-          {/* Badge + heading are the two purely-cosmetic differences from
-              Decision 2's table — swapped by `mode` and nothing else. */}
+          {/* The badge, heading and subtitle all name the door, because a
+              door that turns the wrong account away has to say which
+              accounts it is for BEFORE the password is typed. */}
           <div className="mt-6 md:mt-8">
-            <span className="rounded-full bg-lime-200 px-3 py-1.5 text-[10px] font-bold text-green-800">{mode === 'staff' ? 'Staff Login' : 'Customer Login'}</span>
-            <h2 id="login-heading" className="mt-3 text-3xl font-extrabold leading-[1.05] text-brand-700">{mode === 'staff' ? <>Staff sign in</> : <>Sign in to your<br />account</>}</h2>
-            <p className="mt-2 text-xs font-medium text-stone-500">Use your username or email to continue</p>
+            <span className={`rounded-full px-3 py-1.5 text-[10px] font-bold ${isStaffMode ? 'bg-brand-700 text-white' : 'bg-lime-200 text-green-800'}`}>{isStaffMode ? 'Staff Login' : 'Customer Login'}</span>
+            <h2 id="login-heading" className="mt-3 text-3xl font-extrabold leading-[1.05] text-brand-700">{isStaffMode ? <>Staff sign in</> : <>Sign in to your<br />account</>}</h2>
+            <p className="mt-2 text-xs font-medium text-stone-500">{isStaffMode ? 'For admin, cashier, and delivery personnel accounts.' : 'For customer accounts. Use your username or email to continue.'}</p>
           </div>
           <form className="mt-6 space-y-3" onSubmit={handleSubmit} noValidate>
             <div><label htmlFor="username" className="mb-1.5 block text-xs font-bold">Username or Email</label><div className="relative"><svg viewBox="0 0 24 24" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="3" /><path d="M5.5 20c.8-3.3 2.9-5 6.5-5s5.7 1.7 6.5 5" /></svg><input id="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" placeholder="Email" className="w-full rounded-2xl border border-stone-200 bg-white py-2.5 pl-9 pr-3 text-sm shadow-sm outline-none transition focus:border-green-700 focus:ring-4 focus:ring-green-100" /></div></div>
@@ -135,7 +146,18 @@ export function LoginForm({ onLogin, onRegister }) {
                 works for every role, so the link is the same in both
                 modes; staff can also still ask an admin. */}
             <div className="flex items-center justify-between gap-2 py-2 text-xs font-bold"><label className="flex cursor-pointer items-center gap-1.5"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className="h-5 w-5 accent-green-700" />Remember me</label><Link to="/forgot-password" className="inline-block py-2 text-green-700 hover:underline">Forgot password?</Link></div>
-            {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{error}</p>}
+            {error && (
+              <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                {error}
+                {/* A refusal that names the right door has to be able to
+                    open it — one click, nothing retyped. */}
+                {wrongDoor && (
+                  <button type="button" onClick={() => switchTo(wrongDoor)} className="mt-2 block w-full rounded-xl bg-red-700 py-2 text-xs font-bold text-white transition hover:bg-red-800">
+                    {wrongDoor === 'staff' ? 'Go to staff sign in →' : 'Go to customer sign in →'}
+                  </button>
+                )}
+              </div>
+            )}
             <button type="submit" className="mt-5 w-full rounded-2xl bg-brand-600 py-2.5 text-xs font-bold text-white shadow-md transition hover:bg-brand-700 ">Log In</button>
             {/* Hidden in staff mode (Decision 2's table) — self-registration
                 only ever creates CUSTOMER accounts (auth.js hard-codes it),
@@ -145,10 +167,30 @@ export function LoginForm({ onLogin, onRegister }) {
               <button type="button" onClick={onRegister} className="w-full rounded-2xl bg-white py-2.5 py-2 text-xs font-bold text-brand-700 shadow-md ring-1 ring-stone-100 transition hover:bg-stone-50">Create account</button>
             )}
           </form>
-          {/* The switch itself. Plain text under the form, not a nav link —
-              flipping `mode` is the only effect (Decision 2). */}
-          <button type="button" onClick={toggleMode} className="mt-3 w-full text-center py-2 text-xs font-bold text-green-700 hover:underline">
-            {mode === 'staff' ? '← Customer sign in' : 'Staff sign in →'}
+          {/* The door switch. It used to be a plain text link, which read
+              as fine print next to two solid buttons — and now that the
+              doors actually turn the wrong account away, a cashier who
+              cannot find it is stuck. It is a full-width control with its
+              own icon, label and sub-label, styled deliberately UNLIKE the
+              two buttons above it (outlined, not filled) so it reads as
+              "somewhere else to go", not as a third thing to submit. */}
+          <button
+            type="button"
+            onClick={toggleMode}
+            className="group mt-4 flex w-full items-center gap-3 rounded-2xl border-2 border-brand-600/30 bg-white/70 px-4 py-3 text-left transition hover:border-brand-600 hover:bg-white hover:shadow-md"
+          >
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-600/10 text-brand-700 transition group-hover:bg-brand-600 group-hover:text-white">
+              {isStaffMode ? (
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 10.5 12 4l9 6.5" /><path d="M5 10v9h14v-9" /><path d="M10 19v-5h4v5" /></svg>
+              ) : (
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="7" width="16" height="13" rx="2" /><path d="M9 7V5a3 3 0 0 1 6 0v2" /><path d="M9 13h6" /></svg>
+              )}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-extrabold text-brand-700">{isStaffMode ? 'Customer sign in' : 'Staff sign in'}</span>
+              <span className="block text-[11px] font-medium text-stone-500">{isStaffMode ? 'Shopping as a customer? Sign in here.' : 'Admin, cashier, and delivery personnel'}</span>
+            </span>
+            <span aria-hidden="true" className="shrink-0 text-lg font-bold text-brand-600 transition group-hover:translate-x-0.5">→</span>
           </button>
         </>
       )}

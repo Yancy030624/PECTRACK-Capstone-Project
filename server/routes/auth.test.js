@@ -124,6 +124,43 @@ describe('customer registration and session lifecycle', () => {
     sessionCookie = setCookie.split(';')[0]
   })
 
+  test('POST /api/auth/login accepts a customer at the customer door and turns them away at the staff door', async () => {
+    const login = (audience) => fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: customer.username, password: customer.password, audience }),
+    })
+
+    const rightDoor = await login('customer')
+    assert.equal(rightDoor.status, 200)
+
+    const wrongDoor = await login('staff')
+    assert.equal(wrongDoor.status, 403)
+    const body = await wrongDoor.json()
+    // The refusal names the door that WOULD have worked, so the form can
+    // offer a one-click switch — and it leaves no session behind.
+    assert.equal(body.audience, 'customer')
+    assert.match(body.message, /customer account/i)
+    assert.equal(wrongDoor.headers.get('set-cookie'), null)
+
+    // An unknown audience is treated as "no door declared", the same as
+    // omitting the field — that is what keeps the seed scripts working.
+    const noDoor = await login('something-else')
+    assert.equal(noDoor.status, 200)
+  })
+
+  test('POST /api/auth/login still answers 401, not 403, when the password is wrong at the other door', async () => {
+    // The door check must never become an oracle: a wrong password gets
+    // the same enumeration-safe 401 whatever audience was declared.
+    const response = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: customer.username, password: 'not-the-password', audience: 'staff' }),
+    })
+    assert.equal(response.status, 401)
+    assert.equal((await response.json()).audience, undefined)
+  })
+
   test('GET /api/auth/me rejects a request with no session cookie', async () => {
     const response = await fetch(`${baseUrl}/api/auth/me`)
     assert.equal(response.status, 401)
@@ -366,6 +403,24 @@ describe('admin login, and the (currently unreachable from /login) OTP second fa
   after(async () => {
     if (adminUserId) await deleteTestUser(adminUserId)
     await new Promise((resolve) => server.close(resolve))
+  })
+
+  test('POST /api/auth/login accepts an admin at the staff door and turns them away at the customer door', async () => {
+    const login = (audience) => fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: admin.username, password: admin.password, audience }),
+    })
+
+    const rightDoor = await login('staff')
+    assert.equal(rightDoor.status, 200)
+
+    const wrongDoor = await login('customer')
+    assert.equal(wrongDoor.status, 403)
+    const body = await wrongDoor.json()
+    assert.equal(body.audience, 'staff')
+    assert.match(body.message, /staff account/i)
+    assert.equal(wrongDoor.headers.get('set-cookie'), null)
   })
 
   test('POST /api/auth/login gives an admin an immediate session, same as any other role', async () => {

@@ -22,8 +22,11 @@ function landingPathFor(user) {
   if (user?.role === 'CUSTOMER') return '/menu'
   return '/'
 }
+// /dashboard is staff territory, so an expired or missing session goes to
+// the STAFF door — sending a cashier to the customer one would now refuse
+// their correct password (routes/auth.js's audience check) for no reason.
 function RequireAuth({ user, children }) {
-  if (!user) return <Navigate to="/login" replace />
+  if (!user) return <Navigate to="/staff-login" replace />
   return children
 }
 
@@ -39,13 +42,17 @@ function safeReturnTo(raw) {
   return raw
 }
 
-function LoginRoute({ user, onLogin }) {
+// `initialMode` is the door this route opens on — /login the customer one,
+// /staff-login the staff one. Everything else about the two is identical,
+// including the returnTo handling, so they share one component.
+function LoginRoute({ user, onLogin, initialMode = 'customer' }) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const returnTo = safeReturnTo(searchParams.get('returnTo'))
   if (user) return <Navigate to={returnTo ?? landingPathFor(user)} replace />
   return (
     <LoginPage
+      initialMode={initialMode}
       onRegister={() => navigate('/register')}
       onLogin={(loggedInUser) => {
         onLogin(loggedInUser)
@@ -100,6 +107,7 @@ function App() {
       <CartProvider user={user}>
         <Routes>
           <Route path="/login" element={<LoginRoute user={user} onLogin={setUser} />} />
+          <Route path="/staff-login" element={<LoginRoute user={user} onLogin={setUser} initialMode="staff" />} />
           <Route path="/register" element={<RegisterRoute user={user} />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
