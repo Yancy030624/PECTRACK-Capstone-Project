@@ -267,6 +267,12 @@ Covered by B.
 7. **Move the reset token out of the URL query**, or shorten its
    lifetime, so the Referer-leak class is removed rather than mitigated.
 
+### Status
+
+Items 1-7 are implemented as of 2026-09-21 (commits `6d7b0c2`,
+`182c7e1`, `a87a2b5` and the reset-token change). Items 8-10 below are
+open, and are recorded as limitations rather than defects.
+
 ### Optional — scope-dependent
 
 8. Inactivity timeout alongside the 7-day absolute expiry.

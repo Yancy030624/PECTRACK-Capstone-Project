@@ -330,7 +330,10 @@ describe('customer registration and session lifecycle', () => {
 
     const mail = printed.find((line) => line.includes('[mail not configured]'))
     assert.ok(mail, 'with no SMTP configured the email is printed to the console')
-    const token = mail.match(/reset-password\?token=([A-Za-z0-9_-]+)/)[1]
+    // The token rides in the URL FRAGMENT now, not the query string — a
+    // fragment is never sent in a Referer header or to the server hosting
+    // the page (RULES-PLANS/SECURITY_REVIEW.md item 7).
+    const token = mail.match(/reset-password#token=([A-Za-z0-9_-]+)/)[1]
 
     // Cooldown: a second request straight away sends nothing and issues
     // no second token — but still answers exactly the same 200.

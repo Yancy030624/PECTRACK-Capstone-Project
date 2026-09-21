@@ -323,7 +323,13 @@ router.post('/forgot-password', passwordResetLimiter, async (request, response) 
     client.release()
   }
 
-  const resetUrl = `${config.clientOrigin}/reset-password?token=${token}`
+  // The token rides in the URL FRAGMENT, not the query string — item 7
+  // of RULES-PLANS/SECURITY_REVIEW.md. A fragment is never transmitted:
+  // not in a Referer header when the page links onward, and not to the
+  // server hosting the front end, so it cannot land in that host's access
+  // logs either. The Referrer-Policy header added in 6d7b0c2 mitigates
+  // the first of those; this removes the whole class instead.
+  const resetUrl = `${config.clientOrigin}/reset-password#token=${token}`
   try {
     recordSecurityEvent({ request, type: 'PASSWORD_RESET_REQUESTED', userId: user.user_id, username: user.username })
     await sendMail({

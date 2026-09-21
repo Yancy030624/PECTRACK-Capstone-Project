@@ -1,16 +1,38 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiPost } from '../api/client.js'
 import { passwordHint as describePassword, strongPasswordHint } from '../lib/password.js'
 import { AuthShell, authButtonClass, authInputClass } from './AuthShell.jsx'
 
 // Step two of email password recovery — reached only from the link in the
-// email, which carries the token as ?token=. The same strength rules as
-// registration apply (routes/auth.js reuses validatePasswordField), so
-// the hint below matches RegistrationPage's.
+// email. The same strength rules as registration apply (routes/auth.js
+// reuses validatePasswordField), so the hint below matches the
+// registration form's.
+//
+// The token arrives in the URL FRAGMENT (#token=...), which the browser
+// never transmits — not in a Referer header, not to the server hosting
+// this page. ?token= is still accepted so that any link already sitting
+// in someone's inbox keeps working; new links use the fragment.
+function readResetToken() {
+  if (typeof window === 'undefined') return ''
+  const fromFragment = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('token')
+  return fromFragment ?? ''
+}
+
 export function ResetPasswordPage() {
   const [searchParams] = useSearchParams()
-  const token = searchParams.get('token') ?? ''
+  // Read once, into state: the fragment is cleared immediately below, so
+  // re-reading the URL on a later render would find nothing.
+  const [token] = useState(() => readResetToken() || searchParams.get('token') || '')
+
+  // Take the token out of the address bar as soon as it has been read.
+  // It stays in memory for this page's lifetime, which is all the form
+  // needs, and stops the browser keeping it in history or showing it to
+  // whoever is looking at the screen.
+  useEffect(() => {
+    if (!window.location.hash && !window.location.search) return
+    window.history.replaceState(null, '', window.location.pathname)
+  }, [])
   const [form, setForm] = useState({ newPassword: '', confirmPassword: '' })
   const [errors, setErrors] = useState({})
   const [message, setMessage] = useState('')
