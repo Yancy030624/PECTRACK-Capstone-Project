@@ -63,8 +63,18 @@ describe('ingredients, recipes and production', () => {
     adminUserId = adminResult.rows[0].user_id
     createdUserIds.push(adminUserId)
     await pool.query('INSERT INTO admins (user_id, name, contact_num, email) VALUES ($1, $2, $3, $4)', [adminUserId, 'Prod Admin', randomContactNumber(), `prodadmin_${runId}@example.com`])
+    // An admin password is not a session on its own any more (the email
+    // second factor — RULES-PLANS/SECURITY_REVIEW.md item 5), so the
+    // fixture completes the challenge the way the other suites do: take
+    // the token /login issues, overwrite the stored hash with a code this
+    // test knows, and redeem it. Overwriting is necessary precisely
+    // BECAUSE otp_codes keeps only a hash — the real code is in an email.
     const adminLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: admin.username, password: admin.password }) })
-    adminCookie = adminLogin.headers.get('set-cookie').split(';')[0]
+    const challengeToken = (await adminLogin.json()).challengeToken
+    const rawCode = '314159'
+    await pool.query('UPDATE otp_codes SET code_hash = $2 WHERE challenge_token = $1', [challengeToken, crypto.createHash('sha256').update(rawCode).digest('hex')])
+    const verified = await fetch(`${baseUrl}/api/auth/verify-otp`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challengeToken, code: rawCode }) })
+    adminCookie = verified.headers.get('set-cookie').split(';')[0]
 
     for (const [person, setCookie] of [[cashier, (c) => { cashierCookie = c }], [secondCashier, (c) => { secondCashierCookie = c }]]) {
       const create = await json(adminCookie, 'POST', '/api/staff', { ...person, confirmPassword: person.password })

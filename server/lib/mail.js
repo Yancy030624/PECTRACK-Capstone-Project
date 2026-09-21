@@ -1,6 +1,7 @@
-// Outgoing email. One caller today — the password-reset link in
-// routes/auth.js — so this stays a single function over nodemailer rather
-// than a templating layer.
+// Outgoing email. Two callers, both in routes/auth.js — the
+// password-reset link and the admin sign-in code — so this stays a
+// couple of small functions over nodemailer rather than a templating
+// layer.
 //
 // Unconfigured is a supported state, not an error: with no SMTP_HOST the
 // message is written to the server console (outside production), the same
@@ -26,6 +27,26 @@ function getTransporter() {
     })
   }
   return transporter
+}
+
+// The admin second factor (RULES-PLANS/SECURITY_REVIEW.md item 5).
+// Phrased so the message itself is a security control: an admin who did
+// not just try to sign in learns from this email that someone else has
+// their password, and is told what to do about it. The code is the only
+// secret here and it appears exactly once — never in a subject line,
+// which mail clients show in notifications and previews.
+export async function sendOtpEmail({ to, code, minutes }) {
+  return sendMail({
+    to,
+    subject: 'Your PECTRACK sign-in code',
+    text: [
+      'Someone signed in to PECTRACK with your admin password and needs a code to finish.',
+      '',
+      `Your code is ${code}. It expires in ${minutes} minutes and can be used once.`,
+      '',
+      'If this was not you, your password is no longer private — change it as soon as you can.',
+    ].join('\n'),
+  })
 }
 
 export async function sendMail({ to, subject, text }) {

@@ -377,9 +377,9 @@ describe('customer registration and session lifecycle', () => {
 // The second factor itself (createOtpCode / /verify-otp) is still fully
 // working and still covered below — /login just doesn't reach it for
 // ADMIN any more (see routes/auth.js's own comment at that branch for
-// why). Renamed from 'admin login requires OTP', which stopped being
-// true the moment that branch was switched off.
-describe('admin login, and the (currently unreachable from /login) OTP second factor', () => {
+// why). The branch is reachable again as of the security review (item 5),
+// and by email rather than SMS.
+describe('admin login and the email OTP second factor', () => {
   // The rate limiter (lib/security.js) counts by client IP, and every
   // request in this suite comes from the same one — so without a reset
   // the tests would throttle each other rather than the abuse the limiter
@@ -390,11 +390,18 @@ describe('admin login, and the (currently unreachable from /login) OTP second fa
   let server
   let baseUrl
   let adminUserId
+  let cashierUserId
 
   const admin = {
     username: `testadmin_${runId}`,
     email: `testadmin_${runId}@example.com`,
     password: 'Admin-Only-Password-9!',
+  }
+  // A non-admin to prove the second factor is admin-only, not global.
+  const cashier = {
+    username: `testotpcash_${runId}`,
+    email: `testotpcash_${runId}@example.com`,
+    password: 'Cashier-Password-9!',
   }
 
   before(async () => {
@@ -413,9 +420,21 @@ describe('admin login, and the (currently unreachable from /login) OTP second fa
     )
     adminUserId = userResult.rows[0].user_id
     await pool.query('INSERT INTO admins (user_id, name, contact_num, email) VALUES ($1, $2, $3, $4)', [adminUserId, 'Test Admin', randomContactNumber(), admin.email])
+
+    const cashierHash = await bcrypt.hash(cashier.password, 4)
+    const cashierResult = await pool.query(
+      `INSERT INTO users (username, password_hash, user_type) VALUES ($1, $2, 'CASHIER') RETURNING user_id`,
+      [cashier.username, cashierHash],
+    )
+    cashierUserId = cashierResult.rows[0].user_id
+    await pool.query('INSERT INTO cashiers (user_id, name, contact_num, email) VALUES ($1, $2, $3, $4)', [cashierUserId, 'Test OTP Cashier', randomContactNumber(), cashier.email])
   })
 
   after(async () => {
+    if (cashierUserId) {
+      await pool.query('DELETE FROM cashiers WHERE user_id = $1', [cashierUserId])
+      await pool.query('DELETE FROM users WHERE user_id = $1', [cashierUserId])
+    }
     if (adminUserId) await deleteTestUser(adminUserId)
     await new Promise((resolve) => server.close(resolve))
   })
@@ -429,6 +448,9 @@ describe('admin login, and the (currently unreachable from /login) OTP second fa
 
     const rightDoor = await login('staff')
     assert.equal(rightDoor.status, 200)
+    // Right door, right password — and still no session, because an admin
+    // owes a second factor first.
+    assert.equal((await rightDoor.json()).otpRequired, true)
 
     const wrongDoor = await login('customer')
     assert.equal(wrongDoor.status, 403)
@@ -438,7 +460,9 @@ describe('admin login, and the (currently unreachable from /login) OTP second fa
     assert.equal(wrongDoor.headers.get('set-cookie'), null)
   })
 
-  test('POST /api/auth/login gives an admin an immediate session, same as any other role', async () => {
+  // The whole point of the second factor: a correct admin password, on
+  // its own, buys nothing an attacker can act on.
+  test('POST /api/auth/login gives an admin a challenge instead of a session', async () => {
     const response = await fetch(`${baseUrl}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -446,12 +470,84 @@ describe('admin login, and the (currently unreachable from /login) OTP second fa
     })
     assert.equal(response.status, 200)
     const body = await response.json()
-    assert.equal(body.otpRequired, undefined, 'no OTP branch is reachable from here any more')
-    assert.equal(body.user.username, admin.username)
-    assert.equal(body.user.role, 'ADMIN')
 
-    const setCookie = response.headers.get('set-cookie')
-    assert.ok(setCookie?.startsWith('pectrack_sid='), 'a correct admin password must set a session cookie directly')
+    assert.equal(body.otpRequired, true)
+    assert.ok(body.challengeToken, 'the browser needs the challenge token to redeem a code')
+    assert.equal(body.user, undefined, 'no profile is disclosed before the second factor')
+    assert.equal(response.headers.get('set-cookie'), null, 'a correct password alone must not create a session')
+
+    // The code itself never leaves the server in the response — it goes to
+    // the mailbox — and what is stored is a hash, not the code.
+    assert.equal(JSON.stringify(body).match(/\b\d{6}\b/), null, 'the response must not carry the code')
+    const stored = await pool.query('SELECT code_hash FROM otp_codes WHERE challenge_token = $1', [body.challengeToken])
+    assert.match(stored.rows[0].code_hash, /^[0-9a-f]{64}$/, 'the code is stored as a SHA-256 hash')
+  })
+
+  test('a non-admin is NOT asked for a code — the second factor is admin-only', async () => {
+    // Deliberate asymmetry: an admin can change prices, approve production
+    // and read every customer record; a cashier password is worth less,
+    // and a code every shift would be friction paid for nothing.
+    const response = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: cashier.username, password: cashier.password }),
+    })
+    assert.equal(response.status, 200)
+    assert.equal((await response.json()).otpRequired, undefined)
+    assert.ok(response.headers.get('set-cookie')?.startsWith('pectrack_sid='))
+  })
+
+  test('asking for a second code invalidates the first', async () => {
+    // The gap the security review found: without this, ten "resend" clicks
+    // left ten live codes, which is ten simultaneous guesses at a six-digit
+    // number instead of one.
+    const first = await (await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: admin.username, password: admin.password }),
+    })).json()
+    const knownCode = '135791'
+    await pool.query('UPDATE otp_codes SET code_hash = $2 WHERE challenge_token = $1', [first.challengeToken, crypto.createHash('sha256').update(knownCode).digest('hex')])
+
+    // Sign in again: this issues a second code and must retire the first.
+    await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: admin.username, password: admin.password }),
+    })
+
+    const stale = await fetch(`${baseUrl}/api/auth/verify-otp`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challengeToken: first.challengeToken, code: knownCode }),
+    })
+    assert.equal(stale.status, 401, 'the superseded code must no longer work')
+    assert.equal(stale.headers.get('set-cookie'), null)
+  })
+
+  test('a code redeemed through the real login flow creates the session', async () => {
+    // End to end, the way an admin actually signs in: password, then the
+    // code from the email. The code is overwritten with a known one
+    // because otp_codes stores only a hash — which is the property being
+    // relied on, not worked around.
+    const challenge = await (await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: admin.username, password: admin.password }),
+    })).json()
+    const knownCode = '246813'
+    await pool.query('UPDATE otp_codes SET code_hash = $2 WHERE challenge_token = $1', [challenge.challengeToken, crypto.createHash('sha256').update(knownCode).digest('hex')])
+
+    const verified = await fetch(`${baseUrl}/api/auth/verify-otp`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challengeToken: challenge.challengeToken, code: knownCode }),
+    })
+    assert.equal(verified.status, 200)
+    assert.ok(verified.headers.get('set-cookie')?.startsWith('pectrack_sid='))
+    assert.equal((await verified.json()).user.role, 'ADMIN')
+
+    // And it is single-use — a replayed code is not a second session.
+    const replay = await fetch(`${baseUrl}/api/auth/verify-otp`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challengeToken: challenge.challengeToken, code: knownCode }),
+    })
+    assert.equal(replay.status, 401)
   })
 
   // Seeds a known OTP directly rather than going through /login's random

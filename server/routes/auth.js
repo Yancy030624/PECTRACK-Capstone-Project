@@ -1,7 +1,7 @@
 // Registration, login, logout, and the current-session check. Mounted at
-// /api/auth in index.js. Admin login's second factor (createOtpCode /
-// /verify-otp, further down) is currently unused by /login itself — see
-// the comment at that route's own ADMIN branch for why.
+// /api/auth in index.js. An ADMIN password is not a session on its own:
+// /login answers with a challenge and emails a code, and /verify-otp
+// further down is the only thing that turns that pair into a session.
 import crypto from 'node:crypto'
 import bcrypt from 'bcrypt'
 import express from 'express'
@@ -10,7 +10,7 @@ import { pool } from '../db.js'
 import { bcryptRounds, findDuplicateAccount, profileColumnsSql, profileEmailMatchesSql, profileJoinsSql, roleTables } from '../lib/accounts.js'
 import { createSession, parseCookies, requireAuth, sessionCookieName, sessionCookieOptions, sessionCookieOptionsForBrowserSession } from '../lib/auth.js'
 import { authLimiter, passwordResetLimiter, registerLimiter } from '../lib/security.js'
-import { sendMail } from '../lib/mail.js'
+import { sendMail, sendOtpEmail } from '../lib/mail.js'
 import { normalize, normalizeEmail, validateAccountFields, validateContactNumberField, validateEmailField, validateName, validatePasswordField } from '../lib/validation.js'
 
 const router = express.Router()
@@ -48,15 +48,16 @@ function hashOtpCode(code) {
   return crypto.createHash('sha256').update(code).digest('hex')
 }
 
-// Currently called from nowhere — /login's own ADMIN branch that used to
-// call this was removed (see the comment at that call site). Left in
-// place, not deleted, because the plan is a real SMS-backed second
-// factor later, not "no OTP ever" — this is what that will call again.
+// Issues the two halves of an admin's second factor: the 6-digit code
+// (emailed) and the challenge token (returned to the browser that just
+// proved the password). Redeeming requires BOTH, so an intercepted email
+// is not a login and a stolen challenge token is not one either.
 //
-// Returns BOTH halves of the challenge: the 6-digit code (which goes to the
-// admin's phone) and the challenge token (which goes to the browser that
-// just proved the password). Redeeming the code requires presenting both,
-// so the SMS on its own is not a login — see /verify-otp below.
+// Consuming any earlier live code for this user is the fix for a gap the
+// security review found: without it, every "resend" left another valid
+// code alive, so asking for ten codes gave an attacker ten simultaneous
+// guesses at a six-digit number instead of one. Marking them consumed
+// rather than deleting them keeps the audit trail intact.
 async function createOtpCode(userId) {
   const code = generateOtpCode()
   // Same size and generator as a session id — this token is a bearer
@@ -64,7 +65,18 @@ async function createOtpCode(userId) {
   // unguessable, not merely unique.
   const challengeToken = crypto.randomBytes(32).toString('base64url')
   const expiresAt = new Date(Date.now() + otpCodeDurationMs)
-  await pool.query('INSERT INTO otp_codes (user_id, code_hash, challenge_token, expires_at) VALUES ($1, $2, $3, $4)', [userId, hashOtpCode(code), challengeToken, expiresAt])
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query('UPDATE otp_codes SET consumed_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND consumed_at IS NULL', [userId])
+    await client.query('INSERT INTO otp_codes (user_id, code_hash, challenge_token, expires_at) VALUES ($1, $2, $3, $4)', [userId, hashOtpCode(code), challengeToken, expiresAt])
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
   return { code, challengeToken }
 }
 
@@ -207,20 +219,36 @@ router.post('/login', authLimiter, async (request, response) => {
     })
   }
 
-  // ADMIN used to require a second factor here (createOtpCode + a
-  // {otpRequired: true} response, forcing a trip through /verify-otp
-  // below) — deliberately switched off for now: there is no SMS gateway
-  // wired in yet, so the code was only ever readable from the server's
-  // own console, which made every admin login a two-step process for no
-  // real second factor. Every role, admin included, now gets a session
-  // immediately on a correct password, same as CASHIER/CUSTOMER/
-  // DELIVERY_PERSONNEL below.
+  // ADMIN gets a second factor; nobody else does. The asymmetry is the
+  // point: an admin can change prices, delete products, approve
+  // production and read every customer's record, so a leaked admin
+  // password should not be enough on its own. A cashier or customer
+  // password is worth far less, and a code at every counter shift would
+  // be friction paid for nothing.
   //
-  // Nothing else was touched to make this reversible in one step later:
-  // createOtpCode, the otp_codes table, and /verify-otp (just below)
-  // are all still here, untouched and still fully working — re-adding a
-  // real second factor (once an SMS gateway exists) is restoring the
-  // three-line branch this comment replaced, not rebuilding the feature.
+  // This branch was dormant until now because it targeted SMS and no
+  // gateway existed (RULES-PLANS/SECURITY_REVIEW.md finding C — a control
+  // the thesis claimed but the code did not run). It is email now, over
+  // lib/mail.js, which already delivers password resets.
+  //
+  // No session is created here. The reply carries only the challenge
+  // token, which is useless without the code, so a correct password alone
+  // leaves the caller with nothing they can act on.
+  if (user.user_type === 'ADMIN') {
+    const { code, challengeToken } = await createOtpCode(user.user_id)
+    try {
+      await sendOtpEmail({ to: user.email, code, minutes: Math.round(otpCodeDurationMs / 60000) })
+    } catch (error) {
+      // A mail outage must not become a lockout for the one role that can
+      // fix a mail outage. The code is live in the database either way,
+      // and with SMTP unconfigured lib/mail.js prints it to the server
+      // console outside production, which is how this is exercised on a
+      // development machine.
+      console.error('Could not send an admin sign-in code:', error)
+    }
+    return response.json({ otpRequired: true, username: user.username, challengeToken })
+  }
+
   const sessionId = await createSession(user.user_id)
   // rememberMe defaults to TRUE — a caller that never sends the field
   // (an older client, a script) keeps the 7-day cookie every login has
@@ -348,12 +376,12 @@ router.post('/reset-password', authLimiter, async (request, response) => {
 
 // Second step of the admin login. Requires BOTH the challenge token issued
 // by /login (proof the password was verified, held by the browser) and the
-// 6-digit code (proof of the phone). Presenting only one of them is not a
-// login.
+// 6-digit code (proof of the mailbox). Presenting only one of them is not
+// a login.
 //
 // This endpoint used to take { username, code }. Nothing in that request
 // established that the password step had ever happened — the two halves of
-// the login shared no state — so a valid SMS code plus a guessable username
+// the login shared no state — so a valid emailed code plus a guessable username
 // was a complete admin session, and the password contributed nothing here.
 //
 // Note there is no username parameter any more: the challenge token
@@ -363,7 +391,7 @@ router.post('/reset-password', authLimiter, async (request, response) => {
 router.post('/verify-otp', authLimiter, async (request, response) => {
   const challengeToken = normalize(request.body.challengeToken)
   const code = normalize(request.body.code)
-  if (!challengeToken || !code) return response.status(422).json({ message: 'Enter the code sent to your phone.' })
+  if (!challengeToken || !code) return response.status(422).json({ message: 'Enter the code sent to your email.' })
 
   const invalidCodeResponse = { message: 'Invalid or expired code. Please sign in again.' }
 

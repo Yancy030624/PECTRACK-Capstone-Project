@@ -51,7 +51,7 @@ export function LoginForm({ onLogin, onRegister, onNavigateAway = () => {}, init
   // Holds two things: `username`, purely so the screen can say who the code
   // was sent for, and `challengeToken` — the server's proof that the
   // password step just succeeded. The token is what makes this a genuine
-  // second factor: /verify-otp needs it alongside the code, so an SMS code
+  // second factor: /verify-otp needs it alongside the code, so an emailed code
   // on its own can't sign anyone in. It deliberately lives in component
   // state and nowhere else, so it disappears the moment this form unmounts.
   const [pendingOtp, setPendingOtp] = useState(null)
@@ -123,9 +123,9 @@ export function LoginForm({ onLogin, onRegister, onNavigateAway = () => {}, init
       <div className="md:hidden"><Brand compact /></div>
       {pendingOtp ? (
         <>
-          <div className="mt-6 md:mt-8"><span className="rounded-full bg-lime-200 px-3 py-1.5 text-[10px] font-bold text-green-800">Verification Required</span><h2 id="login-heading" className="mt-3 text-3xl font-extrabold leading-[1.05] text-brand-700">Enter your<br />code</h2><p className="mt-2 text-xs font-medium text-stone-500">We sent a verification code to the phone on file for {pendingOtp.username}.</p></div>
+          <div className="mt-6 md:mt-8"><span className="rounded-full bg-lime-200 px-3 py-1.5 text-[10px] font-bold text-green-800">Verification Required</span><h2 id="login-heading" className="mt-3 text-3xl font-extrabold leading-[1.05] text-brand-700">Enter your<br />code</h2><p className="mt-2 text-xs font-medium text-stone-500">We sent a 6-digit code to the email on file for {pendingOtp.username}. It expires in 5 minutes.</p></div>
           <form className="mt-6 space-y-3" onSubmit={handleOtpSubmit} noValidate>
-            <div><label htmlFor="otp-code" className="mb-1.5 block text-xs font-bold">Verification code</label><input id="otp-code" value={otpCode} onChange={(event) => setOtpCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" placeholder="123456" maxLength={6} className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-2.5 text-center text-lg font-bold tracking-[0.4em] shadow-sm outline-none transition focus:border-green-700 focus:ring-4 focus:ring-green-100" /></div>
+            <div><label htmlFor="otp-code" className="mb-1.5 block text-xs font-bold">Email verification code</label><input id="otp-code" value={otpCode} onChange={(event) => setOtpCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" placeholder="123456" maxLength={6} className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-2.5 text-center text-lg font-bold tracking-[0.4em] shadow-sm outline-none transition focus:border-green-700 focus:ring-4 focus:ring-green-100" /></div>
             {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{error}</p>}
             <button type="submit" className="mt-5 w-full rounded-2xl bg-brand-600 py-2.5 text-xs font-bold text-white shadow-md transition hover:bg-brand-700 ">Verify</button>
             <button type="button" onClick={cancelOtp} className="w-full rounded-2xl bg-white py-2.5 py-2 text-xs font-bold text-brand-700 shadow-md ring-1 ring-stone-100 transition hover:bg-stone-50">Back to login</button>
