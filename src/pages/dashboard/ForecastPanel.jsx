@@ -42,6 +42,9 @@ const withAlpha = (hex, alpha) => {
 // Forecast dates are calendar days; read them in UTC so no timezone
 // shifts "Friday the 25th" to Thursday.
 const dayLabel = (iso) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', timeZone: 'UTC' })
+// Axis ticks name the month: "Sep 25" stays unambiguous across a month
+// boundary, where "25 Fri" beside "1 Mon" did not.
+const axisDay = (iso) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })
 const longDay = (iso) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 const whole = (value) => Math.round(Number(value)).toLocaleString()
 const percent = (value) => (value == null ? '—' : `${Math.round(Number(value) * 100)}%`)
@@ -125,11 +128,24 @@ export function ForecastPanel({ user, active }) {
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { position: 'bottom', labels: { color: ink, filter: (item) => item.text !== 'Likely low' } },
+          legend: {
+            position: 'bottom',
+            labels: {
+              color: ink,
+              // Chart.js draws the legend swatch with the line's own dash,
+              // which turned "Forecast" into a heavy dashed box. Solid
+              // swatches read cleaner; the chart itself keeps the dash.
+              generateLabels: (chartInstance) => Chart.defaults.plugins.legend.labels.generateLabels(chartInstance)
+                .filter((item) => item.text !== 'Likely low')
+                .map((item) => ({ ...item, lineDash: [], lineWidth: 0 })),
+            },
+          },
           tooltip: { filter: (item) => item.raw != null && item.dataset.label !== 'Likely low' },
         },
         scales: {
-          x: { ticks: { color: ink, maxTicksLimit: 10, callback: (_, index) => dayLabel(labels[index]) }, grid: { color: grid } },
+          // Never rotated: slanted dates were the hardest thing on the
+          // phone view to read. Fewer, level ticks instead.
+          x: { ticks: { color: ink, maxTicksLimit: 8, maxRotation: 0, autoSkip: true, callback: (_, index) => axisDay(labels[index]) }, grid: { color: grid } },
           y: { beginAtZero: true, ticks: { color: ink, precision: 0 }, grid: { color: grid } },
         },
       },
