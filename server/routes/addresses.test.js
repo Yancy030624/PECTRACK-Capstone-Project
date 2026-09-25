@@ -67,6 +67,10 @@ describe('customer address management', () => {
     cashierCookie = cashierLogin.headers.get('set-cookie').split(';')[0]
 
     await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...customer, confirmPassword: customer.password }) })
+    // Fixture: confirm the email the way clicking the emailed link would
+    // (migration 016). This suite is not testing verification — auth.test.js
+    // is — so its customers start verified and can place orders.
+    await pool.query('UPDATE customers SET email_verified_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT user_id FROM users WHERE username = $1)', [customer.username])
     const customerRow = await pool.query('SELECT user_id, (SELECT customer_id FROM customers WHERE user_id = users.user_id) AS customer_id FROM users WHERE username = $1', [customer.username])
     createdUserIds.push(customerRow.rows[0].user_id)
     customerId = customerRow.rows[0].customer_id
@@ -74,6 +78,10 @@ describe('customer address management', () => {
     customerCookie = customerLogin.headers.get('set-cookie').split(';')[0]
 
     await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...secondCustomer, confirmPassword: secondCustomer.password }) })
+    // Fixture: confirm the email the way clicking the emailed link would
+    // (migration 016). This suite is not testing verification — auth.test.js
+    // is — so its customers start verified and can place orders.
+    await pool.query('UPDATE customers SET email_verified_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT user_id FROM users WHERE username = $1)', [secondCustomer.username])
     const secondCustomerRow = await pool.query('SELECT user_id, (SELECT customer_id FROM customers WHERE user_id = users.user_id) AS customer_id FROM users WHERE username = $1', [secondCustomer.username])
     createdUserIds.push(secondCustomerRow.rows[0].user_id)
     secondCustomerId = secondCustomerRow.rows[0].customer_id
@@ -276,6 +284,10 @@ describe('customer address management', () => {
   test('the database itself refuses a second default address, even when the route\'s own lock is bypassed', async () => {
     const thirdCustomer = { name: 'Third Addr Customer', username: `addrtest_cust3_${runId}`, email: `addrtest_cust3_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
     await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...thirdCustomer, confirmPassword: thirdCustomer.password }) })
+    // Fixture: confirm the email the way clicking the emailed link would
+    // (migration 016). This suite is not testing verification — auth.test.js
+    // is — so its customers start verified and can place orders.
+    await pool.query('UPDATE customers SET email_verified_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT user_id FROM users WHERE username = $1)', [thirdCustomer.username])
     const thirdRow = await pool.query('SELECT user_id, (SELECT customer_id FROM customers WHERE user_id = users.user_id) AS customer_id FROM users WHERE username = $1', [thirdCustomer.username])
     createdUserIds.push(thirdRow.rows[0].user_id)
     const thirdCustomerId = thirdRow.rows[0].customer_id

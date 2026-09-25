@@ -68,12 +68,20 @@ describe('payment & billing', () => {
     cashierCookie = cashierLogin.headers.get('set-cookie').split(';')[0]
 
     await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...customer, confirmPassword: customer.password }) })
+    // Fixture: confirm the email the way clicking the emailed link would
+    // (migration 016). This suite is not testing verification — auth.test.js
+    // is — so its customers start verified and can place orders.
+    await pool.query('UPDATE customers SET email_verified_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT user_id FROM users WHERE username = $1)', [customer.username])
     const customerRow = await pool.query('SELECT user_id FROM users WHERE username = $1', [customer.username])
     createdUserIds.push(customerRow.rows[0].user_id)
     const customerLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: customer.username, password: customer.password }) })
     customerCookie = customerLogin.headers.get('set-cookie').split(';')[0]
 
     await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...secondCustomer, confirmPassword: secondCustomer.password }) })
+    // Fixture: confirm the email the way clicking the emailed link would
+    // (migration 016). This suite is not testing verification — auth.test.js
+    // is — so its customers start verified and can place orders.
+    await pool.query('UPDATE customers SET email_verified_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT user_id FROM users WHERE username = $1)', [secondCustomer.username])
     const secondCustomerRow = await pool.query('SELECT user_id FROM users WHERE username = $1', [secondCustomer.username])
     createdUserIds.push(secondCustomerRow.rows[0].user_id)
     const secondCustomerLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: secondCustomer.username, password: secondCustomer.password }) })
@@ -1081,6 +1089,10 @@ describe('payment & billing', () => {
     test('pagination returns a correct total and hasMore, scoped to a fresh customer', async () => {
       const paginationCustomer = { name: 'Pagination Customer', username: `paytest_page_${runId}`, email: `paytest_page_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
       await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...paginationCustomer, confirmPassword: paginationCustomer.password }) })
+      // Fixture: confirm the email the way clicking the emailed link would
+      // (migration 016). This suite is not testing verification — auth.test.js
+      // is — so its customers start verified and can place orders.
+      await pool.query('UPDATE customers SET email_verified_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT user_id FROM users WHERE username = $1)', [paginationCustomer.username])
       const paginationUserRow = await pool.query('SELECT user_id FROM users WHERE username = $1', [paginationCustomer.username])
       createdUserIds.push(paginationUserRow.rows[0].user_id)
       const paginationLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: paginationCustomer.username, password: paginationCustomer.password }) })
@@ -1117,6 +1129,10 @@ describe('payment & billing', () => {
     test('an empty result really is total 0 when nothing matches — the past-the-end fix must not invent a count', async () => {
       const emptyCustomer = { name: 'Empty History Customer', username: `paytest_empty_${runId}`, email: `paytest_empty_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
       await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...emptyCustomer, confirmPassword: emptyCustomer.password }) })
+      // Fixture: confirm the email the way clicking the emailed link would
+      // (migration 016). This suite is not testing verification — auth.test.js
+      // is — so its customers start verified and can place orders.
+      await pool.query('UPDATE customers SET email_verified_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT user_id FROM users WHERE username = $1)', [emptyCustomer.username])
       const emptyUserRow = await pool.query('SELECT user_id FROM users WHERE username = $1', [emptyCustomer.username])
       createdUserIds.push(emptyUserRow.rows[0].user_id)
       const emptyLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: emptyCustomer.username, password: emptyCustomer.password }) })

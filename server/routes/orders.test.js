@@ -71,6 +71,10 @@ describe('order management', () => {
     cashierCookie = cashierLogin.headers.get('set-cookie').split(';')[0]
 
     await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...customer, confirmPassword: customer.password }) })
+    // Fixture: confirm the email the way clicking the emailed link would
+    // (migration 016). This suite is not testing verification — auth.test.js
+    // is — so its customers start verified and can place orders.
+    await pool.query('UPDATE customers SET email_verified_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT user_id FROM users WHERE username = $1)', [customer.username])
     const customerRow = await pool.query('SELECT user_id, (SELECT customer_id FROM customers WHERE user_id = users.user_id) AS customer_id FROM users WHERE username = $1', [customer.username])
     createdUserIds.push(customerRow.rows[0].user_id)
     customerId = customerRow.rows[0].customer_id
@@ -78,6 +82,10 @@ describe('order management', () => {
     customerCookie = customerLogin.headers.get('set-cookie').split(';')[0]
 
     await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...secondCustomer, confirmPassword: secondCustomer.password }) })
+    // Fixture: confirm the email the way clicking the emailed link would
+    // (migration 016). This suite is not testing verification — auth.test.js
+    // is — so its customers start verified and can place orders.
+    await pool.query('UPDATE customers SET email_verified_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT user_id FROM users WHERE username = $1)', [secondCustomer.username])
     const secondCustomerRow = await pool.query('SELECT user_id, (SELECT customer_id FROM customers WHERE user_id = users.user_id) AS customer_id FROM users WHERE username = $1', [secondCustomer.username])
     createdUserIds.push(secondCustomerRow.rows[0].user_id)
     secondCustomerId = secondCustomerRow.rows[0].customer_id
@@ -103,6 +111,10 @@ describe('order management', () => {
     secondCustomerAddressId = secondCustomerAddress.rows[0].address_id
 
     await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...walkInCustomer, confirmPassword: walkInCustomer.password }) })
+    // Fixture: confirm the email the way clicking the emailed link would
+    // (migration 016). This suite is not testing verification — auth.test.js
+    // is — so its customers start verified and can place orders.
+    await pool.query('UPDATE customers SET email_verified_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT user_id FROM users WHERE username = $1)', [walkInCustomer.username])
     const walkInRow = await pool.query('SELECT user_id FROM users WHERE username = $1', [walkInCustomer.username])
     createdUserIds.push(walkInRow.rows[0].user_id)
 

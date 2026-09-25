@@ -7,9 +7,10 @@ import bcrypt from 'bcrypt'
 import express from 'express'
 import { config } from '../config.js'
 import { pool } from '../db.js'
-import { bcryptRounds, findDuplicateAccount, profileColumnsSql, profileEmailMatchesSql, profileJoinsSql, roleTables } from '../lib/accounts.js'
+import { bcryptRounds, findDuplicateAccount, profileColumnsSql, profileEmailMatchesSql, profileJoinsSql, roleTables, toPublicUser } from '../lib/accounts.js'
 import { createSession, parseCookies, requireAuth, sessionCookieName, sessionCookieOptions, sessionCookieOptionsForBrowserSession } from '../lib/auth.js'
-import { authLimiter, passwordResetLimiter, registerLimiter } from '../lib/security.js'
+import { authLimiter, passwordResetLimiter, registerLimiter, verificationLimiter } from '../lib/security.js'
+import { issueEmailVerification, redeemEmailVerification } from '../lib/emailVerification.js'
 import { recordSecurityEvent } from '../lib/securityEvents.js'
 import { sendMail, sendOtpEmail } from '../lib/mail.js'
 import { normalize, normalizeEmail, validateAccountFields, validateContactNumberField, validateEmailField, validateName, validatePasswordField } from '../lib/validation.js'
@@ -108,7 +109,20 @@ router.post('/register', registerLimiter, async (request, response) => {
     )
     await client.query('COMMIT')
     recordSecurityEvent({ request, type: 'ACCOUNT_CREATED', userId: user.user_id, username: user.username, detail: 'CUSTOMER self-registration' })
-    return response.status(201).json({ message: 'Account created. You can now sign in.', user: { username: user.username } })
+
+    // Migration 016. The account exists and can sign in and browse right
+    // away; placing an order is what needs a confirmed address. Sent after
+    // the COMMIT, never inside it: a slow mail server must not hold a
+    // transaction open, and a mail failure must not undo the account the
+    // customer just filled in — they can ask for another link.
+    const verification = await issueEmailVerification({ userId: user.user_id, email: values.email, name: values.name })
+    recordSecurityEvent({ request, type: 'EMAIL_VERIFICATION_SENT', userId: user.user_id, username: user.username, detail: verification.sent ? 'at registration' : 'at registration; mail not delivered' })
+
+    return response.status(201).json({
+      message: 'Account created. We sent a confirmation link to your email — confirm it before placing an order.',
+      user: { username: user.username },
+      verificationSent: verification.sent,
+    })
   } catch (error) {
     await client.query('ROLLBACK')
     if (error.code === '23505') return response.status(409).json({ message: 'An account already uses that username, email, or contact number.' })
@@ -273,7 +287,7 @@ router.post('/login', authLimiter, async (request, response) => {
   // always produced; only an explicit false asks for a browser-session
   // cookie instead.
   response.cookie(sessionCookieName, sessionId, request.body.rememberMe === false ? sessionCookieOptionsForBrowserSession : sessionCookieOptions)
-  return response.json({ user: { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' '), email: user.email, contactNumber: user.contact_num } })
+  return response.json({ user: toPublicUser(user) })
 })
 
 // POST /api/auth/forgot-password — step one of email password recovery.
@@ -463,7 +477,7 @@ router.post('/verify-otp', authLimiter, async (request, response) => {
   recordSecurityEvent({ request, type: 'OTP_SUCCESS', userId: user.user_id, username: user.username })
   recordSecurityEvent({ request, type: 'LOGIN_SUCCESS', userId: user.user_id, username: user.username, detail: 'ADMIN, second factor verified' })
   response.cookie(sessionCookieName, sessionId, sessionCookieOptions)
-  return response.json({ user: { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' '), email: user.email, contactNumber: user.contact_num } })
+  return response.json({ user: toPublicUser(user) })
 })
 
 router.post('/logout', async (request, response) => {
@@ -574,6 +588,7 @@ router.patch('/me', requireAuth, async (request, response) => {
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
   if (Object.keys(updates).length === 0) return response.status(422).json({ message: 'Provide at least one field to update.' })
 
+  let emailChanged = false
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -588,6 +603,21 @@ router.patch('/me', requireAuth, async (request, response) => {
       `UPDATE ${table} SET name = COALESCE($1, name), email = COALESCE($2, email), contact_num = COALESCE($3, contact_num) WHERE user_id = $4`,
       [updates.name ?? null, updates.email ?? null, updates.contactNumber ?? null, current.user_id],
     )
+    // A customer who changes their email has an unproven address again.
+    // Keeping the old verification would let anyone who knows a password
+    // swap in an address they do not control and keep ordering — and would
+    // point every future reset link at it. Only when the address actually
+    // CHANGED: re-saving the same email must not cost a verified customer
+    // their status.
+    if (current.user_type === 'CUSTOMER' && updates.email !== undefined) {
+      const changed = await client.query(
+        `UPDATE customers SET email_verified_at = NULL
+          WHERE user_id = $1 AND LOWER(email) = LOWER($2) AND LOWER(email) IS DISTINCT FROM LOWER($3)
+        RETURNING user_id`,
+        [current.user_id, updates.email, request.user.email],
+      )
+      emailChanged = changed.rowCount > 0
+    }
     await client.query('COMMIT')
   } catch (error) {
     await client.query('ROLLBACK')
@@ -608,7 +638,52 @@ router.patch('/me', requireAuth, async (request, response) => {
     [current.user_id],
   )
   const row = refreshed.rows[0]
-  return response.json({ user: { id: row.user_id, name: row.name, username: row.username, role: row.user_type.replaceAll('_', ' '), email: row.email, contactNumber: row.contact_num } })
+  if (emailChanged) {
+    const verification = await issueEmailVerification({ userId: row.user_id, email: row.email, name: row.name })
+    recordSecurityEvent({ request, type: 'EMAIL_VERIFICATION_SENT', userId: row.user_id, username: row.username, detail: verification.sent ? 'after an email change' : 'after an email change; mail not delivered' })
+  }
+  return response.json({ user: toPublicUser(row), verificationSent: emailChanged })
+})
+
+// POST /api/auth/verify-email — redeem the link from the email.
+//
+// Deliberately NOT behind requireAuth. The token is the credential: it
+// proves the caller opened that mailbox, which is the whole claim being
+// verified. Requiring a session too would break the most common case —
+// registering on a laptop and opening the email on a phone.
+router.post('/verify-email', authLimiter, async (request, response) => {
+  const token = normalize(request.body.token)
+  const invalidResponse = { message: 'This confirmation link is invalid or has expired. Sign in and request a new one.' }
+  if (!token) return response.status(400).json(invalidResponse)
+
+  const verified = await redeemEmailVerification(token)
+  if (!verified) return response.status(400).json(invalidResponse)
+
+  recordSecurityEvent({ request, type: 'EMAIL_VERIFIED', userId: verified.user_id, username: verified.username })
+  return response.json({ message: 'Your email is confirmed. You can now place orders.' })
+})
+
+// POST /api/auth/resend-verification — another link for a signed-in
+// customer who has not verified yet.
+//
+// Rate-limited per IP (verificationLimiter) AND given a per-account
+// cooldown: the limiter stops one caller spraying many accounts, the
+// cooldown stops a double-click mailing the customer twice.
+const verificationCooldownMinutes = 2
+
+router.post('/resend-verification', verificationLimiter, requireAuth, async (request, response) => {
+  if (request.user.role !== 'CUSTOMER') return response.status(403).json({ message: 'Only customer accounts confirm their email.' })
+  if (request.user.emailVerified) return response.status(409).json({ message: 'Your email is already confirmed.' })
+
+  const recent = await pool.query(
+    `SELECT 1 FROM email_verification_tokens WHERE user_id = $1 AND consumed_at IS NULL AND created_at > CURRENT_TIMESTAMP - ($2 * INTERVAL '1 minute')`,
+    [request.user.id, verificationCooldownMinutes],
+  )
+  if (recent.rowCount > 0) return response.status(429).json({ message: `A link was sent in the last ${verificationCooldownMinutes} minutes. Check your inbox and spam folder before asking for another.` })
+
+  const verification = await issueEmailVerification({ userId: request.user.id, email: request.user.email, name: request.user.name })
+  recordSecurityEvent({ request, type: 'EMAIL_VERIFICATION_SENT', userId: request.user.id, username: request.user.username, detail: verification.sent ? 'resend' : 'resend; mail not delivered' })
+  return response.json({ message: `We sent a new confirmation link to ${request.user.email}.` })
 })
 
 export default router

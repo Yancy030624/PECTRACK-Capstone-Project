@@ -7,7 +7,12 @@ import { formatPeso } from '../../lib/format.js'
 
 const instructionsMaxLength = 500
 
-export function CheckoutPage() {
+export function CheckoutPage({ user }) {
+  // Migration 016 — the server refuses an order from an unconfirmed email
+  // (routes/orders.js). Saying so here, before the button, is the kinder
+  // half: finding out only after pressing "Place order" means finding out
+  // after choosing a pickup time and typing instructions.
+  const needsVerification = user?.role === 'CUSTOMER' && user.emailVerified === false
   const navigate = useNavigate()
   const { lines, clear, removeItem } = useCart()
 
@@ -175,7 +180,12 @@ export function CheckoutPage() {
             {errors.requestedFulfillmentTime && <p className="mt-2 text-xs font-medium text-red-700">{errors.requestedFulfillmentTime}</p>}
           </div>
 
-          <button type="button" onClick={handleSubmit} disabled={submitting} className="w-full rounded-2xl bg-green-700 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Placing your order…' : 'Place order'}</button>
+          {needsVerification && (
+            <p role="status" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+              <span className="font-bold">Confirm your email to place this order.</span> Open the link we sent to {user.email} — your cart is kept, and this page updates when you come back.
+            </p>
+          )}
+          <button type="button" onClick={handleSubmit} disabled={submitting || needsVerification} className="w-full rounded-2xl bg-green-700 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Placing your order…' : needsVerification ? 'Confirm your email first' : 'Place order'}</button>
         </div>
 
         {/* order-first below lg: on a phone the summary used to render

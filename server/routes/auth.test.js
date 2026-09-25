@@ -678,6 +678,10 @@ describe('account lockout cannot be extended indefinitely', () => {
     baseUrl = `http://localhost:${server.address().port}`
 
     await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...victim, confirmPassword: victim.password }) })
+    // Fixture: confirm the email the way clicking the emailed link would
+    // (migration 016). This suite is not testing verification — auth.test.js
+    // is — so its customers start verified and can place orders.
+    await pool.query('UPDATE customers SET email_verified_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT user_id FROM users WHERE username = $1)', [victim.username])
     createdUserId = (await pool.query('SELECT user_id FROM users WHERE username = $1', [victim.username])).rows[0].user_id
   })
 
@@ -769,6 +773,226 @@ describe('account lockout cannot be extended indefinitely', () => {
     const state = await readLockState()
     assert.equal(state.failed_login_attempts, 1, 'the expired lock should reset the count, not carry it over')
     assert.equal(state.locked_until, null, 'one typo after an expired lock must not re-lock the account')
+  })
+})
+
+// Customer email verification — migration 016. A new customer can sign in
+// and browse at once, but cannot place an order until the emailed link is
+// opened. Staff are never asked; existing customers were grandfathered.
+describe('customer email verification', () => {
+  beforeEach(resetRateLimits)
+
+  let server
+  let baseUrl
+  let userId
+  const person = {
+    name: 'Verify Customer',
+    username: `verifycust_${runId}`,
+    email: `verifycust_${runId}@example.com`,
+    contactNumber: randomContactNumber(),
+    password: 'Correct-Horse-Battery-9!',
+  }
+  let cookie
+
+  const post = (path, body, sessionCookie) => fetch(`${baseUrl}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(sessionCookie ? { Cookie: sessionCookie } : {}) },
+    body: JSON.stringify(body ?? {}),
+  })
+
+  // The token only exists in the email, so a test captures it from the
+  // console — the path lib/mail.js takes under the test runner.
+  const captureMailedToken = async (action) => {
+    const printed = []
+    const original = console.log
+    console.log = (...args) => printed.push(args.join(' '))
+    try {
+      await action()
+    } finally {
+      console.log = original
+    }
+    const mail = printed.find((line) => line.includes('/verify-email#token='))
+    return mail?.match(/verify-email#token=([A-Za-z0-9_-]+)/)?.[1] ?? null
+  }
+
+  const placeOrder = async () => {
+    const product = await pool.query('SELECT product_id FROM products WHERE availability_status = TRUE LIMIT 1')
+    return post('/api/orders', { orderType: 'PICKUP', items: [{ productId: product.rows[0].product_id, quantity: 1 }] }, cookie)
+  }
+
+  before(async () => {
+    server = app.listen(0)
+    await new Promise((resolve) => server.once('listening', resolve))
+    baseUrl = `http://localhost:${server.address().port}`
+  })
+
+  after(async () => {
+    // try/finally so the server always closes: a cleanup query that throws
+    // would otherwise leave it listening and hang the whole test run.
+    try {
+      if (userId) {
+        // The order placed by the "once verified" test references this
+        // customer, so it — and everything hanging off it — goes first.
+        const orders = (await pool.query('SELECT o.order_id FROM orders o JOIN customers c ON c.customer_id = o.customer_id WHERE c.user_id = $1', [userId])).rows.map((row) => row.order_id)
+        if (orders.length > 0) {
+          await pool.query('DELETE FROM payments WHERE order_id = ANY($1)', [orders])
+          await pool.query('DELETE FROM inventory_movements WHERE order_id = ANY($1)', [orders])
+          await pool.query('DELETE FROM order_status_history WHERE order_id = ANY($1)', [orders])
+          await pool.query('DELETE FROM order_details WHERE order_id = ANY($1)', [orders])
+          await pool.query('DELETE FROM deliveries WHERE order_id = ANY($1)', [orders])
+          await pool.query('DELETE FROM orders WHERE order_id = ANY($1)', [orders])
+        }
+        await pool.query('DELETE FROM security_events WHERE user_id = $1', [userId])
+        await deleteTestUser(userId)
+      }
+    } finally {
+      await new Promise((resolve) => server.close(resolve))
+    }
+  })
+
+  let firstToken
+
+  test('registering sends a confirmation link, and the new account starts unverified', async () => {
+    let registration
+    firstToken = await captureMailedToken(async () => {
+      registration = await post('/api/auth/register', { ...person, confirmPassword: person.password })
+    })
+    assert.equal(registration.status, 201)
+    assert.ok(firstToken, 'the confirmation email carries a token in its link')
+
+    const row = await pool.query('SELECT u.user_id, c.email_verified_at FROM users u JOIN customers c ON c.user_id = u.user_id WHERE u.username = $1', [person.username])
+    userId = row.rows[0].user_id
+    assert.equal(row.rows[0].email_verified_at, null)
+
+    // Only a hash is stored — the token itself exists once, in the email.
+    const stored = await pool.query('SELECT token_hash FROM email_verification_tokens WHERE user_id = $1', [userId])
+    assert.notEqual(stored.rows[0].token_hash, firstToken)
+    assert.match(stored.rows[0].token_hash, /^[0-9a-f]{64}$/)
+  })
+
+  test('an unverified customer can sign in and browse, and the session says they are unverified', async () => {
+    const login = await post('/api/auth/login', { identifier: person.username, password: person.password, audience: 'customer' })
+    assert.equal(login.status, 200)
+    assert.equal((await login.json()).user.emailVerified, false)
+    cookie = login.headers.get('set-cookie').split(';')[0]
+
+    const me = await (await fetch(`${baseUrl}/api/auth/me`, { headers: { Cookie: cookie } })).json()
+    assert.equal(me.user.emailVerified, false)
+  })
+
+  test('an unverified customer cannot place an order', async () => {
+    const response = await placeOrder()
+    assert.equal(response.status, 403)
+    assert.equal((await response.json()).code, 'EMAIL_NOT_VERIFIED')
+  })
+
+  test('asking for a new link invalidates the first one', async () => {
+    // Past the per-account cooldown, so the resend is allowed.
+    await pool.query(`UPDATE email_verification_tokens SET created_at = created_at - INTERVAL '10 minutes' WHERE user_id = $1`, [userId])
+    let resend
+    const secondToken = await captureMailedToken(async () => {
+      resend = await post('/api/auth/resend-verification', {}, cookie)
+    })
+    assert.equal(resend.status, 200)
+    assert.ok(secondToken)
+
+    const stale = await post('/api/auth/verify-email', { token: firstToken })
+    assert.equal(stale.status, 400, 'only the newest link may work')
+
+    firstToken = secondToken
+  })
+
+  test('a second resend inside the cooldown is refused, so a double-click does not mail twice', async () => {
+    const again = await post('/api/auth/resend-verification', {}, cookie)
+    assert.equal(again.status, 429)
+  })
+
+  test('opening the link verifies the account — without needing to be signed in', async () => {
+    // No cookie: registering on a laptop and opening the email on a phone
+    // is the common case, and the token alone proves the mailbox.
+    const verified = await post('/api/auth/verify-email', { token: firstToken })
+    assert.equal(verified.status, 200)
+
+    const row = await pool.query('SELECT email_verified_at FROM customers WHERE user_id = $1', [userId])
+    assert.ok(row.rows[0].email_verified_at)
+
+    // And it is single-use.
+    const replay = await post('/api/auth/verify-email', { token: firstToken })
+    assert.equal(replay.status, 400)
+  })
+
+  test('once verified, the same session can place an order — no sign-out needed', async () => {
+    const response = await placeOrder()
+    assert.equal(response.status, 201)
+    const orderId = (await response.json()).order.id
+    // Cancel it so the stock this test borrowed goes straight back.
+    await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+  })
+
+  test('changing the email makes it unverified again and mails the NEW address', async () => {
+    const newEmail = `verifycust2_${runId}@example.com`
+    let edit
+    const token = await captureMailedToken(async () => {
+      edit = await fetch(`${baseUrl}/api/auth/me`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ email: newEmail }) })
+    })
+    assert.equal(edit.status, 200)
+    const body = await edit.json()
+    assert.equal(body.user.emailVerified, false)
+    assert.equal(body.verificationSent, true)
+    assert.ok(token)
+
+    const stored = await pool.query('SELECT email FROM email_verification_tokens WHERE user_id = $1 AND consumed_at IS NULL', [userId])
+    assert.equal(stored.rows[0].email, newEmail)
+  })
+
+  test('re-saving the SAME email does not cost a verified customer their status', async () => {
+    await pool.query('UPDATE customers SET email_verified_at = CURRENT_TIMESTAMP WHERE user_id = $1', [userId])
+    const current = (await pool.query('SELECT email FROM customers WHERE user_id = $1', [userId])).rows[0].email
+    const edit = await fetch(`${baseUrl}/api/auth/me`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ email: current.toUpperCase() }) })
+    assert.equal(edit.status, 200)
+    assert.equal((await edit.json()).user.emailVerified, true)
+  })
+
+  test('a link sent to an OLD address cannot verify the new one', async () => {
+    // Issue a link for the current address, then change the address before
+    // it is opened. The link verifies what it was MAILED to — not whatever
+    // the account holds by the time someone clicks it.
+    await pool.query(`UPDATE email_verification_tokens SET created_at = created_at - INTERVAL '10 minutes' WHERE user_id = $1`, [userId])
+    await pool.query('UPDATE customers SET email_verified_at = NULL WHERE user_id = $1', [userId])
+    const oldLink = await captureMailedToken(async () => {
+      await post('/api/auth/resend-verification', {}, cookie)
+    })
+    await pool.query('UPDATE customers SET email = $2 WHERE user_id = $1', [userId, `verifycust3_${runId}@example.com`])
+
+    const attempt = await post('/api/auth/verify-email', { token: oldLink })
+    assert.equal(attempt.status, 400)
+    const row = await pool.query('SELECT email_verified_at FROM customers WHERE user_id = $1', [userId])
+    assert.equal(row.rows[0].email_verified_at, null)
+  })
+
+  test('staff are never asked to verify — the key is absent, not false', async () => {
+    const cashierHash = await bcrypt.hash('Cashier-Password-9!', 4)
+    const created = await pool.query(`INSERT INTO users (username, password_hash, user_type) VALUES ($1, $2, 'CASHIER') RETURNING user_id`, [`verifycash_${runId}`, cashierHash])
+    const cashierId = created.rows[0].user_id
+    try {
+      await pool.query('INSERT INTO cashiers (user_id, name, contact_num, email) VALUES ($1, $2, $3, $4)', [cashierId, 'Verify Cashier', randomContactNumber(), `verifycash_${runId}@example.com`])
+      const login = await post('/api/auth/login', { identifier: `verifycash_${runId}`, password: 'Cashier-Password-9!', audience: 'staff' })
+      const user = (await login.json()).user
+      assert.equal('emailVerified' in user, false)
+      const resend = await post('/api/auth/resend-verification', {}, login.headers.get('set-cookie').split(';')[0])
+      assert.equal(resend.status, 403)
+    } finally {
+      await pool.query('DELETE FROM security_events WHERE user_id = $1', [cashierId])
+      await pool.query('DELETE FROM sessions WHERE user_id = $1', [cashierId])
+      await pool.query('DELETE FROM cashiers WHERE user_id = $1', [cashierId])
+      await pool.query('DELETE FROM users WHERE user_id = $1', [cashierId])
+    }
+  })
+
+  test('a made-up token is refused with the same message as an expired one', async () => {
+    const response = await post('/api/auth/verify-email', { token: 'not-a-real-token-at-all' })
+    assert.equal(response.status, 400)
+    assert.match((await response.json()).message, /invalid or has expired/)
   })
 })
 

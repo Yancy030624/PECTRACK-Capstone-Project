@@ -8,6 +8,7 @@ import { CustomerAccount } from './pages/customer-account/CustomerAccount.jsx'
 import { Dashboard } from './pages/dashboard/Dashboard.jsx'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage.jsx'
 import { ResetPasswordPage } from './pages/ResetPasswordPage.jsx'
+import { VerifyEmailPage } from './pages/VerifyEmailPage.jsx'
 import { AboutPage } from './pages/customer-storefront/AboutPage.jsx'
 import { CartPage } from './pages/customer-storefront/CartPage.jsx'
 import { CheckoutPage } from './pages/customer-storefront/CheckoutPage.jsx'
@@ -138,6 +139,28 @@ function AppRoutes() {
     navigate(destination, { replace: true })
   }
 
+  // Re-reads the signed-in account. Used when something outside this tab
+  // may have changed it — the email-confirmation link, most often opened
+  // in a different tab or on a phone.
+  const refreshUser = useCallback(() => {
+    apiGet('/api/auth/me')
+      .then((data) => setUser(data.user))
+      .catch(() => {})
+  }, [])
+
+  // An unconfirmed customer usually confirms in ANOTHER tab — the one the
+  // email client opened. When they come back to this one, re-read the
+  // account so the banner and the checkout block clear on their own
+  // instead of waiting for a reload they would not think to do. Only
+  // while unconfirmed: nobody else needs a request on every tab switch.
+  const awaitingVerification = user?.role === 'CUSTOMER' && user.emailVerified === false
+  useEffect(() => {
+    if (!awaitingVerification) return
+    const onVisible = () => { if (document.visibilityState === 'visible') refreshUser() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [awaitingVerification, refreshUser])
+
   // Ask the server to delete the session, then clear it locally either way
   // and return to the public home page.
   const handleLogout = async () => {
@@ -168,6 +191,9 @@ function AppRoutes() {
             belongs with it. */}
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
+        {/* A real page for the same reason: the confirmation link is opened
+            from an email, often on another device, with no session. */}
+        <Route path="/verify-email" element={<VerifyEmailPage onVerified={refreshUser} />} />
         <Route path="/dashboard" element={<RequireStaff user={user} openAuth={openAuth}><Dashboard user={user} onLogout={handleLogout} onUserUpdated={setUser} /></RequireStaff>} />
         <Route path="/account" element={<RequireCustomerAccount user={user} openAuth={openAuth}><CustomerAccount user={user} onLogout={handleLogout} onUserUpdated={setUser} /></RequireCustomerAccount>} />
         <Route element={<StorefrontLayout user={user} onOpenAuth={openAuth} onLogout={handleLogout} />}>
@@ -176,7 +202,7 @@ function AppRoutes() {
           <Route path="/about" element={<AboutPage />} />
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/cart" element={<RequireCustomer user={user} openAuth={openAuth}><CartPage /></RequireCustomer>} />
-          <Route path="/checkout" element={<RequireCustomer user={user} openAuth={openAuth}><CheckoutPage /></RequireCustomer>} />
+          <Route path="/checkout" element={<RequireCustomer user={user} openAuth={openAuth}><CheckoutPage user={user} /></RequireCustomer>} />
           <Route path="/order-placed/:orderId" element={<RequireCustomer user={user} openAuth={openAuth}><OrderPlacedPage /></RequireCustomer>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

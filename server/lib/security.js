@@ -181,6 +181,17 @@ export const passwordResetLimiter = rateLimit({
   message: 'Too many password reset requests. Please check your email, or try again later.',
 })
 
+// Resending a verification link mails a real address, like a password
+// reset — so it gets its own strict allowance rather than sharing the
+// reset one, where a customer resending a link would have spent the
+// allowance they might need to recover their password.
+export const verificationLimiter = rateLimit({
+  name: 'email-verification',
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: 'Too many verification emails requested. Please check your inbox, or try again later.',
+})
+
 export const apiLimiter = rateLimit({
   name: 'api',
   windowMs: 60 * 1000,

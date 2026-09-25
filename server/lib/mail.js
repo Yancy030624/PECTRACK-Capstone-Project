@@ -49,6 +49,28 @@ export async function sendOtpEmail({ to, code, minutes }) {
   })
 }
 
+// Customer email verification (migration 016). A link rather than a
+// code: the customer clicks once in their inbox instead of copying six
+// digits between tabs. It carries the token in the URL fragment, for the
+// same reason the password-reset link does.
+export async function sendVerificationEmail({ to, name, url, hours }) {
+  return sendMail({
+    to,
+    subject: 'Confirm your email for PECTRACK',
+    text: [
+      `Hello ${name},`,
+      '',
+      "Thanks for creating a PECTRACK account at Pecto's Bakery. Confirm this is your email by opening the link below:",
+      '',
+      url,
+      '',
+      `The link works once and expires in ${hours} hours. You need a confirmed email to place an order.`,
+      '',
+      'If you did not create this account, you can ignore this email.',
+    ].join('\n'),
+  })
+}
+
 export async function sendMail({ to, subject, text }) {
   const transport = getTransporter()
   if (!transport) {

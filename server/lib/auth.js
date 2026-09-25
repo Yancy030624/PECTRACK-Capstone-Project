@@ -4,7 +4,7 @@
 import crypto from 'node:crypto'
 import { config } from '../config.js'
 import { pool } from '../db.js'
-import { profileColumnsSql, profileJoinsSql } from './accounts.js'
+import { profileColumnsSql, profileJoinsSql, toPublicUser } from './accounts.js'
 
 // Session cookie settings. The cookie holds only a random session id — never
 // user data — so a stolen cookie without database access reveals nothing.
@@ -76,7 +76,7 @@ async function findSessionUser(sessionId) {
   )
   const user = result.rows[0]
   if (!user || !user.is_active) return null
-  return { id: user.user_id, name: user.name, username: user.username, role: user.user_type.replaceAll('_', ' '), email: user.email, contactNumber: user.contact_num }
+  return toPublicUser(user)
 }
 
 export async function requireAuth(request, response, next) {

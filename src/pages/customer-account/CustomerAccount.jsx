@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet } from '../../api/client.js'
 import { Brand } from '../../components/Brand.jsx'
+import { VerifyEmailBanner } from '../../components/VerifyEmailBanner.jsx'
 import { MyProfile } from '../dashboard/MyProfile.jsx'
 import { OrderManagement } from '../dashboard/OrderManagement.jsx'
 import { PaymentBilling } from '../dashboard/PaymentBilling.jsx'
@@ -101,6 +102,7 @@ export function CustomerAccount({ user, onLogout, onUserUpdated }) {
           </div>
         </div>
       </header>
+      <VerifyEmailBanner user={user} />
 
       {/* The hero carries identity and the three figures worth knowing at a
           glance. It is the one saturated block on the page; everything

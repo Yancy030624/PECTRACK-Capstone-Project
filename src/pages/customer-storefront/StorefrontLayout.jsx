@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { Link, Outlet } from 'react-router-dom'
 import { Brand } from '../../components/Brand.jsx'
 import { MarketingHeader } from '../../components/MarketingHeader.jsx'
+import { VerifyEmailBanner } from '../../components/VerifyEmailBanner.jsx'
 
 // The sign-in pop-up itself lives in App.jsx now — a guest hitting
 // /dashboard or /checkout needs the same dialog, and those are outside
@@ -17,6 +18,7 @@ export function StorefrontLayout({ user, onOpenAuth, onLogout }) {
   return (
     <div className="flex min-h-screen flex-col bg-[#f5f7f2] text-stone-900">
       <MarketingHeader user={user} onOpenLogin={openLogin} onOpenRegister={openRegister} onLogout={onLogout} />
+      <VerifyEmailBanner user={user} />
       <main className="flex-1">
         <Outlet context={{ openLogin }} />
       </main>

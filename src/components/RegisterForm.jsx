@@ -36,10 +36,12 @@ export function RegisterForm({ onSwitchToLogin }) {
     setMessage('')
     setErrors({})
     try {
-      await apiPost('/api/auth/register', form)
+      const data = await apiPost('/api/auth/register', form)
       setForm({ name: '', username: '', email: '', contactNumber: '', password: '', confirmPassword: '', agree: false })
       setCreated(true)
-      setMessage('Account created. You can now sign in with your username or email.')
+      // The server's own wording — it says a confirmation link went out,
+      // which is the one thing the customer has to act on next.
+      setMessage(data.message)
     } catch (error) {
       setErrors(error.errors ?? {})
       setMessage(error.message)

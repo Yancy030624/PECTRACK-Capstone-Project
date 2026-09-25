@@ -63,6 +63,10 @@ describe('staff routes require an authenticated admin', () => {
     // Register and log in an ordinary customer, to prove non-admins are
     // rejected by these routes.
     await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...customer, confirmPassword: customer.password }) })
+    // Fixture: confirm the email the way clicking the emailed link would
+    // (migration 016). This suite is not testing verification — auth.test.js
+    // is — so its customers start verified and can place orders.
+    await pool.query('UPDATE customers SET email_verified_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT user_id FROM users WHERE username = $1)', [customer.username])
     const { rows } = await pool.query('SELECT user_id FROM users WHERE username = $1', [customer.username])
     createdUserIds.push(rows[0].user_id)
     const loginResponse = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: customer.username, password: customer.password }) })
@@ -191,6 +195,10 @@ describe('editing and deactivating a staff account', () => {
     adminCookie = otpResponse.headers.get('set-cookie').split(';')[0]
 
     await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...customer, confirmPassword: customer.password }) })
+    // Fixture: confirm the email the way clicking the emailed link would
+    // (migration 016). This suite is not testing verification — auth.test.js
+    // is — so its customers start verified and can place orders.
+    await pool.query('UPDATE customers SET email_verified_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT user_id FROM users WHERE username = $1)', [customer.username])
     const customerRow = await pool.query('SELECT user_id FROM users WHERE username = $1', [customer.username])
     createdUserIds.push(customerRow.rows[0].user_id)
     const loginResponse = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: customer.username, password: customer.password }) })

@@ -42,7 +42,8 @@ CREATE TYPE security_event_type AS ENUM (
   'LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGIN_LOCKED_OUT', 'LOGOUT',
   'OTP_ISSUED', 'OTP_SUCCESS', 'OTP_FAILURE',
   'PASSWORD_RESET_REQUESTED', 'PASSWORD_RESET_COMPLETED', 'PASSWORD_CHANGED',
-  'ACCOUNT_CREATED', 'ACCOUNT_DEACTIVATED', 'ACCOUNT_REACTIVATED', 'STAFF_PASSWORD_RESET'
+  'ACCOUNT_CREATED', 'ACCOUNT_DEACTIVATED', 'ACCOUNT_REACTIVATED', 'STAFF_PASSWORD_RESET',
+  'EMAIL_VERIFICATION_SENT', 'EMAIL_VERIFIED'
 );
 
 -- Keeps every updated_at column honest. Without this, those columns take
@@ -124,6 +125,21 @@ CREATE TABLE password_reset_tokens (
 
 CREATE INDEX password_reset_tokens_user_id_idx ON password_reset_tokens (user_id);
 
+-- Migration 016. Same shape as password_reset_tokens — a SHA-256 hash,
+-- single-use, time-limited — plus the address the link was mailed to, so
+-- a link cannot verify an email the account changed to afterwards.
+CREATE TABLE email_verification_tokens (
+  token_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  token_hash CHAR(64) NOT NULL UNIQUE,
+  email VARCHAR(254) NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  consumed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX email_verification_tokens_user_id_idx ON email_verification_tokens (user_id, created_at DESC);
+
 CREATE TABLE admins (
   admin_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id BIGINT NOT NULL UNIQUE REFERENCES users(user_id),
@@ -146,6 +162,9 @@ CREATE TABLE customers (
   name VARCHAR(150) NOT NULL,
   contact_num VARCHAR(30) NOT NULL UNIQUE,
   email VARCHAR(254) NOT NULL UNIQUE,
+  -- Migration 016. NULL until the customer opens the emailed link; placing
+  -- an order requires it. Cleared again when the email is changed.
+  email_verified_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

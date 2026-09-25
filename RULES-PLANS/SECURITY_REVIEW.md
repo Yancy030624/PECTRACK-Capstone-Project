@@ -273,6 +273,23 @@ Items 1-7 are implemented as of 2026-09-21 (commits `6d7b0c2`,
 `182c7e1`, `a87a2b5` and the reset-token change). Items 8-10 below are
 open, and are recorded as limitations rather than defects.
 
+### Added after the review
+
+- **Customer email verification** (migration 016). Registration used to
+  check an email was well-formed and unique, never that it existed or
+  belonged to the person typing it — so a mistyped address silently
+  destroyed that customer's only account-recovery path. New customers now
+  receive a single-use, hashed, 24-hour link; they can sign in and browse
+  at once, but placing an order requires a confirmed email, and changing
+  the email clears it. The link is bound to the address it was mailed to,
+  so it cannot verify an address the account changed to afterwards.
+  Customers that existed before the migration were marked verified once.
+- **The test suite no longer sends real email.** With working SMTP in
+  `.env`, every test that signed in an admin or registered a customer sent
+  genuine mail through the developer's account until Gmail throttled it
+  (`454 Too many login attempts`). `config.js` now disables SMTP whenever
+  `NODE_TEST_CONTEXT` is set.
+
 ### Optional — scope-dependent
 
 8. Inactivity timeout alongside the 7-day absolute expiry.

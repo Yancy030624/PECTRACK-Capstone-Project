@@ -44,7 +44,16 @@ export const config = {
   // message is printed to the server console instead so the flow can be
   // exercised on a developer machine with no mail account at all.
   mail: {
-    host: process.env.SMTP_HOST,
+    // Never real mail under the test runner. Once .env holds working SMTP
+    // credentials, every test that signs in an admin, registers a customer
+    // or requests a reset would otherwise send a genuine email through the
+    // developer's own account — hundreds per run, to addresses at
+    // example.com. That happened: Gmail answered "454 Too many login
+    // attempts" and throttled the account, which also blocked the real
+    // admin sign-in code. `node --test` sets NODE_TEST_CONTEXT in every
+    // test process, so the suites fall back to the console path they were
+    // written against, whatever .env says.
+    host: process.env.NODE_TEST_CONTEXT ? undefined : process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT ?? 587),
     user: process.env.SMTP_USER,
     password: process.env.SMTP_PASS,

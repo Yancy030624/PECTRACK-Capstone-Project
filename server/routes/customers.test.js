@@ -59,6 +59,10 @@ describe('customer record management', () => {
     cashierCookie = cashierLogin.headers.get('set-cookie').split(';')[0]
 
     await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...targetCustomer, confirmPassword: targetCustomer.password }) })
+    // Fixture: confirm the email the way clicking the emailed link would
+    // (migration 016). This suite is not testing verification — auth.test.js
+    // is — so its customers start verified and can place orders.
+    await pool.query('UPDATE customers SET email_verified_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT user_id FROM users WHERE username = $1)', [targetCustomer.username])
     const targetRow = await pool.query('SELECT user_id FROM users WHERE username = $1', [targetCustomer.username])
     targetCustomerId = targetRow.rows[0].user_id
     createdUserIds.push(targetCustomerId)
@@ -66,6 +70,10 @@ describe('customer record management', () => {
     customerCookie = customerLogin.headers.get('set-cookie').split(';')[0]
 
     await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...otherCustomer, confirmPassword: otherCustomer.password }) })
+    // Fixture: confirm the email the way clicking the emailed link would
+    // (migration 016). This suite is not testing verification — auth.test.js
+    // is — so its customers start verified and can place orders.
+    await pool.query('UPDATE customers SET email_verified_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT user_id FROM users WHERE username = $1)', [otherCustomer.username])
     const otherRow = await pool.query('SELECT user_id FROM users WHERE username = $1', [otherCustomer.username])
     createdUserIds.push(otherRow.rows[0].user_id)
   })

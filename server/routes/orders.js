@@ -203,6 +203,23 @@ router.get('/:id', async (request, response) => {
 })
 
 router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) => {
+  // Migration 016 — a customer places an order only from a confirmed
+  // email. A bakery taking a delivery order needs a customer it can reach,
+  // and an account whose address was never proven cannot even recover its
+  // own password. Checked first, before any validation work, and ONLY for
+  // a customer ordering for themselves: a cashier's counter order is the
+  // cashier's act, and a walk-in has no account to verify at all.
+  //
+  // request.user comes from requireAuth, which re-reads the account on
+  // every request — so verifying in another tab takes effect on the very
+  // next order, with no sign-out needed.
+  if (request.user.role === 'CUSTOMER' && !request.user.emailVerified) {
+    return response.status(403).json({
+      message: 'Confirm your email before placing an order. Check your inbox for the link, or request a new one from your account.',
+      code: 'EMAIL_NOT_VERIFIED',
+    })
+  }
+
   const orderType = request.body.orderType ?? 'PICKUP'
   if (orderType !== 'PICKUP' && orderType !== 'DELIVERY') return response.status(422).json({ message: 'Enter a valid order type.', errors: { orderType: 'Enter a valid order type.' } })
 

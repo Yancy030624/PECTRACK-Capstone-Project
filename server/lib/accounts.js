@@ -15,7 +15,30 @@ export const profileJoinsSql = `LEFT JOIN admins a ON a.user_id = u.user_id
      LEFT JOIN delivery_personnel d ON d.user_id = u.user_id`
 export const profileColumnsSql = `COALESCE(a.name, ca.name, c.name, d.name) AS name,
             COALESCE(a.email, ca.email, c.email, d.email) AS email,
-            COALESCE(a.contact_num, ca.contact_num, c.contact_num, d.contact_num) AS contact_num`
+            COALESCE(a.contact_num, ca.contact_num, c.contact_num, d.contact_num) AS contact_num,
+            c.email_verified_at`
+
+// The one shape a signed-in user takes on the wire — login, /me, a
+// profile edit all return this. It used to be written out by hand at four
+// call sites, which is how one of them would have quietly missed a new
+// field.
+//
+// `emailVerified` exists only for CUSTOMER (migration 016). Staff accounts
+// are created by an admin and are not asked to verify, so the key is left
+// off rather than reported as false — false would read as "this person
+// must verify", which is not true of a cashier.
+export function toPublicUser(row) {
+  const user = {
+    id: row.user_id,
+    name: row.name,
+    username: row.username,
+    role: row.user_type.replaceAll('_', ' '),
+    email: row.email,
+    contactNumber: row.contact_num,
+  }
+  if (row.user_type === 'CUSTOMER') user.emailVerified = row.email_verified_at != null
+  return user
+}
 // "Any role's email matches" — the WHERE half of a lookup by email.
 export const profileEmailMatchesSql = (param) => `(LOWER(a.email) = ${param} OR LOWER(ca.email) = ${param} OR LOWER(c.email) = ${param} OR LOWER(d.email) = ${param})`
 
