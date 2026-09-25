@@ -9,10 +9,10 @@ import { config } from '../config.js'
 import { pool } from '../db.js'
 import { bcryptRounds, findDuplicateAccount, profileColumnsSql, profileEmailMatchesSql, profileJoinsSql, roleTables, toPublicUser } from '../lib/accounts.js'
 import { createSession, parseCookies, requireAuth, sessionCookieName, sessionCookieOptions, sessionCookieOptionsForBrowserSession } from '../lib/auth.js'
-import { authLimiter, passwordResetLimiter, registerLimiter, verificationLimiter } from '../lib/security.js'
+import { authLimiter, loginAccountLimiter, passwordResetLimiter, registerLimiter, verificationLimiter } from '../lib/security.js'
 import { issueEmailVerification, redeemEmailVerification } from '../lib/emailVerification.js'
 import { recordSecurityEvent } from '../lib/securityEvents.js'
-import { sendMail, sendOtpEmail } from '../lib/mail.js'
+import { sendEmailChangedNotice, sendMail, sendOtpEmail } from '../lib/mail.js'
 import { normalize, normalizeEmail, validateAccountFields, validateContactNumberField, validateEmailField, validateName, validatePasswordField } from '../lib/validation.js'
 
 const router = express.Router()
@@ -91,7 +91,11 @@ router.post('/register', registerLimiter, async (request, response) => {
     await client.query('BEGIN')
     if (await findDuplicateAccount(client, values)) {
       await client.query('ROLLBACK')
-      return response.status(409).json({ message: 'An account already uses that username, email, or contact number.' })
+      // The hint is how an address someone else registered gets reclaimed:
+      // a password reset goes to the real owner's inbox, and completing it
+      // confirms the email too. It reveals nothing the message did not
+      // already — see the enumeration note in SECURITY_REVIEW.md.
+      return response.status(409).json({ message: 'An account already uses that username, email, or contact number. If the email is yours, use "Forgot password?" to get into that account.' })
     }
 
     const passwordHash = await bcrypt.hash(values.password, bcryptRounds)
@@ -155,7 +159,11 @@ router.post('/register', registerLimiter, async (request, response) => {
 const audiences = new Set(['customer', 'staff'])
 const audienceOf = (userType) => (userType === 'CUSTOMER' ? 'customer' : 'staff')
 
-router.post('/login', authLimiter, async (request, response) => {
+// Two limiters: the per-address one stops password spraying across many
+// accounts, the per-account one stops guessing a single account — and
+// keeps one person's typos from counting against everyone else on the
+// same Wi-Fi. See lib/security.js.
+router.post('/login', authLimiter, loginAccountLimiter, async (request, response) => {
   const identifier = normalize(request.body.identifier).toLowerCase()
   const password = String(request.body.password ?? '')
   const requestedAudience = normalize(request.body.audience).toLowerCase()
@@ -219,11 +227,17 @@ router.post('/login', authLimiter, async (request, response) => {
     // seeing, and it is invisible to a per-account counter. The RESPONSE
     // stays identical either way — this writes to a table, not to the
     // reply, so it cannot become an enumeration oracle.
+    // The account's own username, never what was typed. People sometimes
+    // type their PASSWORD into the username box; storing the raw input
+    // would put that password in this table, which the audit trail
+    // promises never to hold. When no account matched, nothing typed is
+    // kept at all — the detail still says a sign-in failed against no
+    // account, which is the pattern worth watching for.
     recordSecurityEvent({
       request,
       type: isLocked ? 'LOGIN_LOCKED_OUT' : 'LOGIN_FAILURE',
       userId: user?.user_id ?? null,
-      username: identifier,
+      username: user?.username ?? null,
       detail: !user ? 'no such account' : !user.is_active ? 'account deactivated' : isLocked ? 'account locked' : 'wrong password',
     })
     return response.status(401).json({ message: 'Invalid credentials or unavailable account.' })
@@ -328,7 +342,7 @@ router.post('/forgot-password', passwordResetLimiter, async (request, response) 
   try {
     await client.query('BEGIN')
     await client.query('DELETE FROM password_reset_tokens WHERE user_id = $1 AND consumed_at IS NULL', [user.user_id])
-    await client.query('INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)', [user.user_id, hashResetToken(token), expiresAt])
+    await client.query('INSERT INTO password_reset_tokens (user_id, token_hash, expires_at, email) VALUES ($1, $2, $3, $4)', [user.user_id, hashResetToken(token), expiresAt, email])
     await client.query('COMMIT')
   } catch (error) {
     await client.query('ROLLBACK')
@@ -376,7 +390,7 @@ router.post('/reset-password', authLimiter, async (request, response) => {
   if (!token) return response.status(400).json(invalidTokenResponse)
 
   const tokenResult = await pool.query(
-    `SELECT t.token_id, u.user_id, u.username, u.is_active, ${profileColumnsSql}
+    `SELECT t.token_id, t.email AS token_email, u.user_id, u.username, u.user_type, u.is_active, ${profileColumnsSql}
        FROM password_reset_tokens t
        JOIN users u ON u.user_id = t.user_id
        ${profileJoinsSql}
@@ -409,6 +423,13 @@ router.post('/reset-password', authLimiter, async (request, response) => {
     resetUsername = row.username ?? null
     await client.query('UPDATE users SET password_hash = $1, failed_login_attempts = 0, locked_until = NULL WHERE user_id = $2', [passwordHash, row.user_id])
     await client.query('DELETE FROM sessions WHERE user_id = $1', [row.user_id])
+    // Opening this link proved the mailbox, so for a customer it also
+    // confirms their email (migration 017) — but only if the link went to
+    // the address the account holds NOW. A link from before an email
+    // change proves the old address, not the new one.
+    if (row.user_type === 'CUSTOMER' && row.token_email && row.email && row.token_email.toLowerCase() === row.email.toLowerCase()) {
+      await client.query('UPDATE customers SET email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP) WHERE user_id = $1', [row.user_id])
+    }
     await client.query('COMMIT')
   } catch (error) {
     await client.query('ROLLBACK')
@@ -588,6 +609,26 @@ router.patch('/me', requireAuth, async (request, response) => {
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
   if (Object.keys(updates).length === 0) return response.status(422).json({ message: 'Provide at least one field to update.' })
 
+  // Changing the email is a change of WHO CONTROLS THE ACCOUNT: afterwards
+  // every password-reset link — and for an admin, every sign-in code —
+  // goes to the new address. Without this check, anyone who found an
+  // account left signed in on a shared computer could swap in their own
+  // address, then reset the password and own it permanently; for an admin
+  // that also routes the second factor to them, which defeats it. So it
+  // asks for the current password, as changing the password already does.
+  //
+  // Only for a real change. The profile form sends the email back every
+  // time, and re-saving your own address (even in different case) must not
+  // demand a password.
+  const emailIsChanging = updates.email !== undefined && updates.email.toLowerCase() !== String(request.user.email ?? '').toLowerCase()
+  if (emailIsChanging) {
+    const currentPassword = String(request.body.currentPassword ?? '')
+    const hashResult = await pool.query('SELECT password_hash FROM users WHERE user_id = $1', [current.user_id])
+    if (!currentPassword || !(await bcrypt.compare(currentPassword, hashResult.rows[0].password_hash))) {
+      return response.status(422).json({ message: 'Enter your current password to change your email.', errors: { currentPassword: 'That is not your current password.' } })
+    }
+  }
+
   let emailChanged = false
   const client = await pool.connect()
   try {
@@ -638,6 +679,15 @@ router.patch('/me', requireAuth, async (request, response) => {
     [current.user_id],
   )
   const row = refreshed.rows[0]
+  if (emailIsChanging) {
+    recordSecurityEvent({ request, type: 'EMAIL_CHANGED', userId: row.user_id, username: row.username, detail: row.user_type })
+    try {
+      await sendEmailChangedNotice({ to: request.user.email, name: row.name, newEmail: row.email })
+    } catch (error) {
+      // The change has committed; a lost notice is logged, not surfaced.
+      console.error('Could not send an email-change notice to the previous address:', error)
+    }
+  }
   if (emailChanged) {
     const verification = await issueEmailVerification({ userId: row.user_id, email: row.email, name: row.name })
     recordSecurityEvent({ request, type: 'EMAIL_VERIFICATION_SENT', userId: row.user_id, username: row.username, detail: verification.sent ? 'after an email change' : 'after an email change; mail not delivered' })

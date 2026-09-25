@@ -113,14 +113,21 @@ export function resetRateLimits() {
 // `name` namespaces the counters so a limiter on /login and a limiter on
 // /register never share a bucket for the same IP.
 //
-// The key is the client IP. That is the only identifier available before
-// authentication, which is exactly where these limits matter, and it is
-// why `trust proxy` has to be right: behind a proxy without it, every
-// request looks like it came from the proxy and ALL users share one
-// bucket.
-export function rateLimit({ name, windowMs, max, message }) {
+// The key is the client IP by default. That is the only identifier
+// available before authentication, which is exactly where these limits
+// matter, and it is why `trust proxy` has to be right: behind a proxy
+// without it, every request looks like it came from the proxy and ALL
+// users share one bucket.
+//
+// `keyBy` narrows the bucket further. An IP alone is a poor identity on
+// a shared network — a school, a venue's Wi-Fi, and every Philippine
+// mobile carrier (CGNAT) put many people behind one address — so a
+// limiter meant to protect ONE ACCOUNT should count per account, not per
+// building. See the sign-in limiters below.
+export function rateLimit({ name, windowMs, max, message, keyBy }) {
   return (request, response, next) => {
-    const key = `${name}:${request.ip}`
+    const suffix = keyBy ? keyBy(request) : ''
+    const key = `${name}:${request.ip}${suffix ? `:${suffix}` : ''}`
     const now = Date.now()
     const bucket = buckets.get(key)
 
@@ -139,52 +146,76 @@ export function rateLimit({ name, windowMs, max, message }) {
   }
 }
 
-// The four limits the review asked for. Numbers chosen against how a real
-// person uses each route, not against a round number:
+// The limits, and why each number. Revised after review (2026-09-25):
+// the first version counted everything per IP alone, and one IP is often
+// a whole room. At a defense, every panelist is on the venue Wi-Fi; on
+// mobile data, a carrier puts thousands of customers behind one address.
+// Limits that assumed "one IP, one person" would have locked out a room
+// exactly when it mattered, so each is now keyed to what it protects.
 //
-//   auth    — signing in, verifying a code, or resetting a password.
-//             A person mistyping a password does so three or four times,
-//             not twenty. Ten in fifteen minutes leaves room for genuine
-//             confusion and still makes spraying one common password
-//             across many usernames pointless. Note this complements
-//             account lockout rather than replacing it: lockout defends
-//             ONE account against many guesses, this defends MANY
+//   sign-in, per account — ten attempts per username per fifteen minutes,
+//             from one address. A person mistyping their own password
+//             does so three or four times, not twenty. Keyed by
+//             IP + the identifier typed, so one person's typos never
+//             count against the classmate at the next table.
+//   sign-in, per address — sixty per fifteen minutes from one IP across
+//             ALL usernames. This is what stops password spraying (one
+//             common password tried against many accounts), which the
+//             per-account limit cannot see. Sixty leaves a full room room
+//             to sign in; a spraying script needs thousands.
+//             Together with account lockout: lockout defends one account
+//             against many guesses; the per-address limit defends many
 //             accounts against one guess each.
-//   register — nobody creates two accounts a minute. Five an hour stops a
-//             script filling the users table without ever inconveniencing
-//             a family sharing a connection.
-//   password reset — the review's sharpest finding, because the victim is
-//             the CUSTOMER: every request sends real mail to an address
-//             the attacker does not control. Three an hour.
-//   api     — a blanket ceiling so a signed-in account cannot flood any
-//             endpoint. 300 a minute is far above what the heaviest
-//             screen in this app generates (the reporting page fires five
-//             requests) and far below what a script does.
+//   register — twenty an hour per address. Enough for a class or a panel
+//             to create accounts to try the site from one Wi-Fi; still
+//             nothing like a script filling the users table.
+//   password reset — ten an hour per address. The real protection against
+//             flooding one customer's inbox is the per-ACCOUNT cooldown in
+//             routes/auth.js; this stops one caller cycling through many
+//             victims.
+//   verification — five an hour per address, for the same reason.
+//   images  — product photos get their own ceiling. The menu is ~40
+//             requests per view, almost all photos; counted against the
+//             general limit, about seven menu views a minute from one
+//             network exhausted it and the photos went blank.
+//   api     — a blanket ceiling so one caller cannot flood any endpoint.
+//             600 a minute: a room of people using the dashboard stays
+//             well under it, a script does not.
+const identifierOf = (request) => String(request.body?.identifier ?? '').trim().toLowerCase().slice(0, 254)
+
+export const loginAccountLimiter = rateLimit({
+  name: 'login-account',
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyBy: identifierOf,
+  message: 'Too many sign-in attempts. Please wait a few minutes and try again.',
+})
+
 export const authLimiter = rateLimit({
   name: 'auth',
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 60,
   message: 'Too many sign-in attempts. Please wait a few minutes and try again.',
 })
 
 export const registerLimiter = rateLimit({
   name: 'register',
   windowMs: 60 * 60 * 1000,
-  max: 5,
+  max: 20,
   message: 'Too many accounts created from this connection. Please try again later.',
 })
 
 export const passwordResetLimiter = rateLimit({
   name: 'password-reset',
   windowMs: 60 * 60 * 1000,
-  max: 3,
+  max: 10,
   message: 'Too many password reset requests. Please check your email, or try again later.',
 })
 
 // Resending a verification link mails a real address, like a password
-// reset — so it gets its own strict allowance rather than sharing the
-// reset one, where a customer resending a link would have spent the
-// allowance they might need to recover their password.
+// reset — so it gets its own allowance rather than sharing the reset one,
+// where a customer resending a link would have spent the allowance they
+// might need to recover their password.
 export const verificationLimiter = rateLimit({
   name: 'email-verification',
   windowMs: 60 * 60 * 1000,
@@ -192,8 +223,23 @@ export const verificationLimiter = rateLimit({
   message: 'Too many verification emails requested. Please check your inbox, or try again later.',
 })
 
-export const apiLimiter = rateLimit({
+export const imageLimiter = rateLimit({
+  name: 'images',
+  windowMs: 60 * 1000,
+  max: 2000,
+})
+
+// Product photos are routed to imageLimiter instead of this one; see
+// app.js.
+const imageRequest = /^\/api\/products\/\d+\/image$/
+export const isImageRequest = (request) => request.method === 'GET' && imageRequest.test(request.path)
+
+const generalLimiter = rateLimit({
   name: 'api',
   windowMs: 60 * 1000,
-  max: 300,
+  max: 600,
 })
+
+export function apiLimiter(request, response, next) {
+  return isImageRequest(request) ? imageLimiter(request, response, next) : generalLimiter(request, response, next)
+}

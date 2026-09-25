@@ -43,7 +43,7 @@ CREATE TYPE security_event_type AS ENUM (
   'OTP_ISSUED', 'OTP_SUCCESS', 'OTP_FAILURE',
   'PASSWORD_RESET_REQUESTED', 'PASSWORD_RESET_COMPLETED', 'PASSWORD_CHANGED',
   'ACCOUNT_CREATED', 'ACCOUNT_DEACTIVATED', 'ACCOUNT_REACTIVATED', 'STAFF_PASSWORD_RESET',
-  'EMAIL_VERIFICATION_SENT', 'EMAIL_VERIFIED'
+  'EMAIL_VERIFICATION_SENT', 'EMAIL_VERIFIED', 'EMAIL_CHANGED'
 );
 
 -- Keeps every updated_at column honest. Without this, those columns take
@@ -118,6 +118,9 @@ CREATE TABLE password_reset_tokens (
   token_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
   token_hash TEXT NOT NULL UNIQUE,
+  -- Migration 017: the address the link was mailed to. Completing a reset
+  -- confirms a customer's email only when this matches the current one.
+  email VARCHAR(254),
   expires_at TIMESTAMPTZ NOT NULL,
   consumed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP

@@ -929,11 +929,52 @@ describe('customer email verification', () => {
     await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
   })
 
+  test('changing the email requires the current password — a session alone is not enough', async () => {
+    // The takeover this closes: an account left signed in on a shared
+    // computer. Without a password check, whoever sits down next could
+    // swap in their own address and then reset the password.
+    const attempt = (body) => fetch(`${baseUrl}/api/auth/me`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(body) })
+
+    const without = await attempt({ email: `thief_${runId}@example.com` })
+    assert.equal(without.status, 422)
+    assert.ok((await without.json()).errors.currentPassword)
+
+    const wrong = await attempt({ email: `thief_${runId}@example.com`, currentPassword: 'not-my-password' })
+    assert.equal(wrong.status, 422)
+
+    const unchanged = await pool.query('SELECT email FROM customers WHERE user_id = $1', [userId])
+    assert.equal(unchanged.rows[0].email, person.email, 'a refused change must not have written anything')
+
+    // Editing something else, with the same email sent back as the form
+    // does, needs no password at all.
+    const nameOnly = await attempt({ name: 'Verify Customer Renamed', email: person.email })
+    assert.equal(nameOnly.status, 200)
+  })
+
+  test('changing the email warns the OLD address', async () => {
+    const printed = []
+    const original = console.log
+    console.log = (...args) => printed.push(args.join(' '))
+    const newEmail = `verifycust_warn_${runId}@example.com`
+    try {
+      const edit = await fetch(`${baseUrl}/api/auth/me`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ email: newEmail, currentPassword: person.password }) })
+      assert.equal(edit.status, 200)
+    } finally {
+      console.log = original
+    }
+    const notice = printed.find((line) => line.includes('Your PECTRACK email address was changed'))
+    assert.ok(notice, 'the previous address is told')
+    assert.ok(notice.includes(`To: ${person.email}`), 'and it goes to the OLD address, not the new one')
+
+    // Put it back for the tests that follow.
+    await pool.query('UPDATE customers SET email = $2 WHERE user_id = $1', [userId, person.email])
+  })
+
   test('changing the email makes it unverified again and mails the NEW address', async () => {
     const newEmail = `verifycust2_${runId}@example.com`
     let edit
     const token = await captureMailedToken(async () => {
-      edit = await fetch(`${baseUrl}/api/auth/me`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ email: newEmail }) })
+      edit = await fetch(`${baseUrl}/api/auth/me`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ email: newEmail, currentPassword: person.password }) })
     })
     assert.equal(edit.status, 200)
     const body = await edit.json()
@@ -987,6 +1028,54 @@ describe('customer email verification', () => {
       await pool.query('DELETE FROM cashiers WHERE user_id = $1', [cashierId])
       await pool.query('DELETE FROM users WHERE user_id = $1', [cashierId])
     }
+  })
+
+  test('completing a password reset confirms the email it was mailed to', async () => {
+    // This is also how the real owner reclaims an address someone else
+    // registered: the reset link goes to THEIR inbox.
+    await pool.query('UPDATE customers SET email_verified_at = NULL WHERE user_id = $1', [userId])
+    const current = (await pool.query('SELECT email FROM customers WHERE user_id = $1', [userId])).rows[0].email
+
+    const printed = []
+    const original = console.log
+    console.log = (...args) => printed.push(args.join(' '))
+    try {
+      await post('/api/auth/forgot-password', { email: current })
+    } finally {
+      console.log = original
+    }
+    const resetToken = printed.find((line) => line.includes('/reset-password#token='))?.match(/reset-password#token=([A-Za-z0-9_-]+)/)?.[1]
+    assert.ok(resetToken)
+
+    const reset = await post('/api/auth/reset-password', { token: resetToken, newPassword: 'Another-Strong-Pass-7!', confirmPassword: 'Another-Strong-Pass-7!' })
+    assert.equal(reset.status, 200)
+    const row = await pool.query('SELECT email_verified_at FROM customers WHERE user_id = $1', [userId])
+    assert.ok(row.rows[0].email_verified_at, 'owning the mailbox is exactly what confirmation proves')
+  })
+
+  test('a reset link from BEFORE an email change does not confirm the new address', async () => {
+    await pool.query(`UPDATE password_reset_tokens SET created_at = created_at - INTERVAL '10 minutes' WHERE user_id = $1`, [userId])
+    await pool.query('UPDATE customers SET email_verified_at = NULL WHERE user_id = $1', [userId])
+    const current = (await pool.query('SELECT email FROM customers WHERE user_id = $1', [userId])).rows[0].email
+
+    const printed = []
+    const original = console.log
+    console.log = (...args) => printed.push(args.join(' '))
+    try {
+      await post('/api/auth/forgot-password', { email: current })
+    } finally {
+      console.log = original
+    }
+    const resetToken = printed.find((line) => line.includes('/reset-password#token='))?.match(/reset-password#token=([A-Za-z0-9_-]+)/)?.[1]
+    assert.ok(resetToken)
+
+    // The address changes after the link went out.
+    await pool.query('UPDATE customers SET email = $2 WHERE user_id = $1', [userId, `verifycust_later_${runId}@example.com`])
+
+    const reset = await post('/api/auth/reset-password', { token: resetToken, newPassword: 'Yet-Another-Pass-8!', confirmPassword: 'Yet-Another-Pass-8!' })
+    assert.equal(reset.status, 200, 'the password reset itself still works')
+    const row = await pool.query('SELECT email_verified_at FROM customers WHERE user_id = $1', [userId])
+    assert.equal(row.rows[0].email_verified_at, null, 'but it proves the OLD address, not the new one')
   })
 
   test('a made-up token is refused with the same message as an expired one', async () => {

@@ -95,17 +95,54 @@ describe('rate limiting', () => {
     assert.ok(Number(refused.headers.get('retry-after')) > 0)
   })
 
-  test('the password-reset limiter is much stricter, because each request emails a real person', async () => {
+  test('the password-reset limiter refuses the 11th request from one address in an hour', async () => {
     const request = () => fetch(`${baseUrl}/api/auth/forgot-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'nobody-here@example.com' }),
     })
 
-    for (let index = 0; index < 3; index += 1) {
+    for (let index = 0; index < 10; index += 1) {
       assert.equal((await request()).status, 200, `request ${index + 1} should be allowed`)
     }
     assert.equal((await request()).status, 429)
+  })
+
+  test("one person's failed sign-ins do not lock out others on the same network", async () => {
+    // The shared-Wi-Fi case: everyone at a venue shares one address. The
+    // per-account limit counts per username, so exhausting it for one
+    // account leaves every other account free to sign in.
+    const attempt = (identifier) => fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier, password: 'wrong-password-here' }),
+    })
+    for (let index = 0; index < 10; index += 1) await attempt('nobody_shared_wifi_a')
+    assert.equal((await attempt('nobody_shared_wifi_a')).status, 429)
+    assert.equal((await attempt('nobody_shared_wifi_b')).status, 401, 'a different account from the same address still reaches the password check')
+  })
+
+  test('the per-address sign-in ceiling still stops spraying one password across many accounts', async () => {
+    const attempt = (identifier) => fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier, password: 'Summer2026!' }),
+    })
+    for (let index = 0; index < 60; index += 1) await attempt(`nobody_spray_${index}`)
+    assert.equal((await attempt('nobody_spray_final')).status, 429)
+  })
+
+  test('product photos do not count against the general API limit', async () => {
+    // Before this, one menu view was ~40 requests and a shared network
+    // exhausted the general limit in about seven views.
+    const limiterCountAfter = async (requests) => {
+      for (const path of requests) await fetch(`${baseUrl}${path}`)
+    }
+    // 700 photo requests (the product need not exist — the limiter runs
+    // first) would have tripped the old 300/minute ceiling twice over.
+    await limiterCountAfter(Array.from({ length: 700 }, () => '/api/products/999999999/image'))
+    const data = await fetch(`${baseUrl}/api/products`)
+    assert.equal(data.status, 200, 'the menu data still loads after hundreds of photo requests')
   })
 
   test('limiters do not share counters with each other', async () => {

@@ -71,6 +71,26 @@ export async function sendVerificationEmail({ to, name, url, hours }) {
   })
 }
 
+// Sent to the PREVIOUS address after an email change. It is the one
+// warning that reaches the real owner if someone else made the change:
+// after it, sign-in codes and reset links go to the new address, so the
+// old one will hear nothing further.
+export async function sendEmailChangedNotice({ to, name, newEmail }) {
+  return sendMail({
+    to,
+    subject: 'Your PECTRACK email address was changed',
+    text: [
+      `Hello ${name},`,
+      '',
+      `The email address on your PECTRACK account was just changed to ${newEmail}.`,
+      '',
+      'If you made this change, there is nothing to do.',
+      '',
+      "If you did NOT, someone has access to your account. Contact Pecto's Bakery at (042) 540-4366 so an administrator can secure it.",
+    ].join('\n'),
+  })
+}
+
 export async function sendMail({ to, subject, text }) {
   const transport = getTransporter()
   if (!transport) {

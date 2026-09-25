@@ -290,6 +290,42 @@ open, and are recorded as limitations rather than defects.
   (`454 Too many login attempts`). `config.js` now disables SMTP whenever
   `NODE_TEST_CONTEXT` is set.
 
+### Second review (2026-09-25)
+
+A review of everything above found six gaps. The first was a regression
+introduced by the hardening itself.
+
+1. **The rate limits assumed one IP is one person.** One IP is often a
+   whole room — a venue's Wi-Fi at a defense, or a mobile carrier's CGNAT.
+   Product photos also counted against the general limit, and the menu is
+   ~40 requests per view, so about seven views a minute from one network
+   blanked the photos. Fixed: photos have their own ceiling and a one-day
+   `private` cache with a versioned URL; sign-in is limited per account
+   (10 / 15 min) and separately per address (60 / 15 min, which is what
+   stops password spraying); registration and reset limits were raised.
+2. **Changing an email needed only a session.** Someone finding an account
+   left signed in could swap in their own address, then reset the password
+   — and for an admin, receive every sign-in code, defeating the second
+   factor. Fixed: an email change requires the current password, and the
+   old address is notified.
+3. **Email squatting.** Anyone could register another person's email
+   without confirming it. Fixed without deleting anything: the duplicate
+   message points the real owner at "Forgot password?", and completing a
+   reset now confirms the email — so the owner of the mailbox takes the
+   account. A reset link is bound to the address it was mailed to
+   (migration 017), so one sent before an email change cannot confirm the
+   new address. An automatic purge of unconfirmed accounts was considered
+   and rejected: an established customer who changes their email is also
+   unconfirmed, and could have been deleted by it.
+4. **A reset did not count as confirming the email** — now it does (above).
+5. **Failed sign-ins logged whatever was typed as the username**, which is
+   sometimes a password typed into the wrong box. Now only a matched
+   account's own username is stored, and nothing typed is kept otherwise.
+6. **Registration reveals whether an email already has an account.**
+   Accepted and recorded as a limitation: it is rate-limited, and hiding it
+   would mean a registration flow that cannot tell a person their address
+   is taken.
+
 ### Optional — scope-dependent
 
 8. Inactivity timeout alongside the 7-day absolute expiry.

@@ -35,7 +35,11 @@ const mapProductRow = (row, { staff = false } = {}) => ({
   price: row.price,
   variant: row.variant,
   availabilityStatus: row.availability_status,
-  imageUrl: row.image_key ? `/api/products/${row.product_id}/image` : null,
+  // ?v= is the first characters of the storage key, which is a fresh UUID
+  // on every upload. It lets the browser cache a photo for a day (see the
+  // image route) while a replaced photo still shows at once: new photo,
+  // new key, new URL. The route ignores the parameter.
+  imageUrl: row.image_key ? `/api/products/${row.product_id}/image?v=${row.image_key.slice(0, 8)}` : null,
   ...(staff ? { recipeId: row.recipe_id, recipeName: row.recipe_name ?? null, unitsPerItem: row.units_per_item, shelfLifeDays: row.shelf_life_days } : {}),
   // A boolean, never the count. availability_status is what the bakery
   // CHOOSES to sell; this is whether there is any to sell right now.
@@ -205,6 +209,12 @@ router.get('/:id/image', optionalAuth, async (request, response) => {
   // .type() reads it straight off the stored key rather than a second
   // database column just to remember what was already encoded in it.
   response.type(filePath(row.image_key).split('.').pop())
+  // A day, private. Before this every menu view re-requested every photo —
+  // about forty requests — which alone could exhaust a shared network's
+  // rate limit. `private` because what a photo request returns depends on
+  // who asks (a customer is refused an unavailable product's photo; staff
+  // are not), so no shared cache may store one answer for everybody.
+  response.set('Cache-Control', 'private, max-age=86400')
   return response.sendFile(filePath(row.image_key), (error) => {
     // Row and file can disagree (a hand-cleaned uploads/, a restored
     // backup) — same guard deliveries.js's own proof download uses, so a

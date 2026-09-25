@@ -134,7 +134,12 @@ describe('security event logging', () => {
     // not exist is exactly the pattern worth seeing, and a per-account
     // counter cannot see it. The RESPONSE stays identical, so this writes
     // to a table without becoming an enumeration oracle.
+    // The typed identifier is deliberately NOT kept when it matches no
+    // account: people type their password into the username box, and
+    // storing raw input would put that password in this table. So the
+    // event is found by time and detail rather than by name.
     const ghost = `evtghost_${runId}`
+    const startedAt = new Date()
     await fetch(`${baseUrl}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -142,12 +147,14 @@ describe('security event logging', () => {
     })
     let rows = []
     for (let attempt = 0; attempt < 40 && rows.length === 0; attempt += 1) {
-      rows = (await pool.query('SELECT user_id, event_type, detail FROM security_events WHERE username = $1', [ghost])).rows
+      rows = (await pool.query(`SELECT user_id, username, detail FROM security_events WHERE detail = 'no such account' AND created_at >= $1`, [startedAt])).rows
       if (rows.length === 0) await new Promise((resolve) => setTimeout(resolve, 25))
     }
-    assert.equal(rows.length, 1)
+    assert.ok(rows.length >= 1)
     assert.equal(rows[0].user_id, null, 'there is no account to attach it to, and that is expected')
-    assert.equal(rows[0].detail, 'no such account')
+    assert.equal(rows[0].username, null, 'and nothing the caller typed is stored')
+    const anywhere = await pool.query('SELECT 1 FROM security_events WHERE username = $1 OR detail LIKE $2', [ghost, `%${ghost}%`])
+    assert.equal(anywhere.rowCount, 0)
   })
 
   test('an admin OTP is recorded as issued, and the code itself never reaches the table', async () => {

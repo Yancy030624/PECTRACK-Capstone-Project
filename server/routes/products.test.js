@@ -371,7 +371,7 @@ describe('product catalog management', () => {
       assert.equal(upload.status, 201, `upload must succeed: ${JSON.stringify(uploadBody)}`)
 
       const { product: refetched } = await (await fetch(`${baseUrl}/api/products/${imageProductId}`)).json()
-      assert.match(refetched.imageUrl, new RegExp(`/api/products/${imageProductId}/image$`))
+      assert.match(refetched.imageUrl, new RegExp(`/api/products/${imageProductId}/image\\?v=[0-9a-f-]{8}$`))
 
       // Fetchable ANONYMOUSLY — a product photo is exactly as public as
       // the product itself (Decision 5), no cookie sent at all here.
@@ -391,9 +391,11 @@ describe('product catalog management', () => {
       assert.equal(second.status, 201)
       const secondUrl = (await (await fetch(`${baseUrl}/api/products/${imageProductId}`)).json()).product.imageUrl
 
-      // Same product, same URL shape (it's keyed by product id, not by
-      // upload) — what changed is what that URL now serves.
-      assert.equal(firstUrl, secondUrl)
+      // Same route, but a NEW version parameter: the browser caches photos
+      // for a day, so a replaced photo has to arrive under a new URL or
+      // customers would keep seeing the old one.
+      assert.notEqual(firstUrl, secondUrl)
+      assert.equal(firstUrl.split('?')[0], secondUrl.split('?')[0])
       const served = await fetch(`${baseUrl}${secondUrl}`)
       assert.match(served.headers.get('content-type'), /image\/png/)
       assert.deepEqual(Buffer.from(await served.arrayBuffer()), tinyPng, 'the OLD jpeg must be gone, not just shadowed')

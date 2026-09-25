@@ -57,6 +57,12 @@ export function MyProfile({ user, onUserUpdated }) {
 
 function ProfileTab({ user, onUserUpdated }) {
   const [form, setForm] = useState({ name: user.name, email: user.email ?? '', contactNumber: user.contactNumber ?? '' })
+  // Changing the email asks for the current password (routes/auth.js):
+  // afterwards every reset link — and for an admin every sign-in code —
+  // goes to the new address. The field appears only when the email
+  // actually differs, so editing a name or number never asks for it.
+  const [currentPassword, setCurrentPassword] = useState('')
+  const emailChanging = form.email.trim().toLowerCase() !== String(user.email ?? '').toLowerCase()
   const [errors, setErrors] = useState({})
   const [message, setMessage] = useState('')
   const [messageFailed, setMessageFailed] = useState(false)
@@ -70,8 +76,9 @@ function ProfileTab({ user, onUserUpdated }) {
     setErrors({})
     setMessage('')
     try {
-      const data = await apiPatch('/api/auth/me', form)
-      setMessage('Profile updated.')
+      const data = await apiPatch('/api/auth/me', emailChanging ? { ...form, currentPassword } : form)
+      setCurrentPassword('')
+      setMessage(data.verificationSent ? `Profile updated. We sent a confirmation link to ${data.user.email} — confirm it before placing another order.` : 'Profile updated.')
       setMessageFailed(false)
       onUserUpdated?.(data.user)
     } catch (error) {
@@ -98,6 +105,11 @@ function ProfileTab({ user, onUserUpdated }) {
         <Field label="Contact number" error={errors.contactNumber}>
           <Input value={form.contactNumber} onChange={(event) => updateField('contactNumber', event.target.value)} autoComplete="tel" inputMode="tel" />
         </Field>
+        {emailChanging && (
+          <Field label="Current password" error={errors.currentPassword} help="Needed to change your email. Your old address will be told about the change.">
+            <Input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} autoComplete="current-password" />
+          </Field>
+        )}
         {message && <Alert variant={messageFailed ? 'error' : 'success'}>{message}</Alert>}
         <Button type="submit" size="sm" disabled={submitting}>{submitting ? 'Saving…' : 'Save changes'}</Button>
       </form>
