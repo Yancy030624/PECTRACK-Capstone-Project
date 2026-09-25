@@ -1,7 +1,18 @@
 # PHASE9B_PREDICTIVE_ANALYSIS_PLAN.md — demand forecasting on assumed history
 
-Status: **plan, awaiting confirmation of the four decisions in Part 6.**
-Nothing here is built yet.
+Status: **implemented 2026-09-25** (commits `66c026c`, and the Forecast
+tab after it). The four questions in Part 6 were answered with the
+recommendations: a 7-day horizon; ADMIN and CASHIER can view, only ADMIN
+runs; ingredient needs stay empty until the owner's real recipes are
+entered; the assumption values in Decision 2 are used as written, to be
+adjusted with the owner later.
+
+One refinement made while building: a run trains on **either** assumed
+history **or** real sales, never both blended on the same day. Mixing
+them would average an invented number with a real one into something
+that is neither. It also gives the defense a clean demonstration — run on
+Real sales and the system correctly reports there is not enough history
+yet, then run on Assumed history to show the method working.
 
 Builds on Phase 9A (`PHASE9A_DATA_FOUNDATION_PLAN.md`), which created the
 data this reads: the `analytics_daily_sales` view with its stock-out

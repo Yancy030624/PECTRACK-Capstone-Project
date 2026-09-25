@@ -10,6 +10,7 @@ import { Select } from '../../components/ui/Select.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
+import { ForecastPanel } from './ForecastPanel.jsx'
 
 const paymentMethodOptions = ['CASH', 'GCASH']
 const paymentStatusOptions = ['PENDING', 'PAID', 'FAILED', 'CANCELLED', 'REFUNDED']
@@ -50,7 +51,9 @@ const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyV
 
 // Phase 9A adds 'Production' (yield and cost per recipe and product from
 // approved batches, plus the analytics export) for both roles.
-const tabsFor = (role) => (role === 'ADMIN' ? ['Sales', 'Products', 'Inventory', 'Production', 'Transactions', 'Report History'] : ['Sales', 'Products', 'Inventory', 'Production', 'Transactions'])
+// Phase 9B adds 'Forecast' for both roles: a cashier planning the morning
+// bake needs it; only an admin can start a new run (ForecastPanel.jsx).
+const tabsFor = (role) => (role === 'ADMIN' ? ['Sales', 'Products', 'Inventory', 'Production', 'Forecast', 'Transactions', 'Report History'] : ['Sales', 'Products', 'Inventory', 'Production', 'Forecast', 'Transactions'])
 
 // Stage 5.5 (RULES-PLANS/UI_AUDIT.md) — the largest dashboard screen and
 // the only one with Chart.js canvases, done last per the stage's own
@@ -260,7 +263,9 @@ export function ReportingAnalytics({ user }) {
           </Button>
         ))}
       </div>
-      <div hidden={activeTab === 'Transactions' || activeTab === 'Report History'}>
+      {/* The date-range form drives the historical reports only; a forecast
+          looks forward from today and has no range to pick. */}
+      <div hidden={activeTab === 'Transactions' || activeTab === 'Report History' || activeTab === 'Forecast'}>
         <Card className="mt-6 p-6">
           <form onSubmit={generate} className="flex flex-wrap items-end gap-3">
             <Field label="From" error={errors.from}>
@@ -546,6 +551,10 @@ export function ReportingAnalytics({ user }) {
             </Card>
           </>
         ) : <p className="mt-6 text-sm text-ink-500">Loading production activity…</p>}
+      </div>
+
+      <div hidden={activeTab !== 'Forecast'}>
+        <ForecastPanel user={user} active={activeTab === 'Forecast'} />
       </div>
 
       <div hidden={activeTab !== 'Transactions'}>
