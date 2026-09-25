@@ -433,6 +433,17 @@ async function main() {
   )
   log(`Marked every seeded order and ${marked.rowCount} inventory movements data_source = ASSUMED.`)
 
+  // ============ Retire the helper admin ============
+  // It cannot be deleted — the RESTOCK/SPOILAGE rows it wrote reference it
+  // through inventory_movements.changed_by, which is exactly the point of
+  // an audit trail. But it must not stay USABLE: it is a full admin whose
+  // sign-in codes go to a .local address nobody reads, and every run of
+  // this script used to leave one more behind. Deactivating it keeps the
+  // record of who restocked and makes the account inert.
+  await pool.query('UPDATE users SET is_active = FALSE WHERE user_id = $1', [seedAdminUserId])
+  await pool.query('DELETE FROM sessions WHERE user_id = $1', [seedAdminUserId])
+  log('Deactivated the helper admin account used for the restock pass.')
+
   // ============ Manifest ============
   await fs.writeFile(manifestPath, JSON.stringify({ seededAt: new Date().toISOString(), orderIds }, null, 2))
   log(`Done. ${orderIds.length} orders seeded. Manifest written to ${manifestPath}.`)
