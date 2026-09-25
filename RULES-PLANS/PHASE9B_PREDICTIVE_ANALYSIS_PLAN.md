@@ -89,7 +89,8 @@ table below, which goes into the paper verbatim:
 | Assumption | Value | Grounds |
 |---|---|---|
 | Products and prices | The 41 real products, real prices | From the system |
-| Base demand per product | Scaled from the seeded demo orders' relative popularity; cheap everyday items (Pandesal, Star Bread) highest | Demo data is assumed too — so this is stated, not hidden |
+| Base demand per product | 60 ÷ √price per day — about 27/day at ₱5, 11 at ₱30, 4 at ₱270, 2 at ₱850 | Assumed: cheaper everyday bread sells in far larger numbers |
+| Popularity | Base nudged by up to ±30%, ranked by the demo seed's orders | The demo orders are assumed too — used only so two same-priced products differ |
 | Day of week | Weekend +25%, Monday −10% | Common bakery pattern; to be confirmed with the owner |
 | Payday | +15% on the 15th and last day of the month, and the day after | Philippine semi-monthly pay |
 | Holidays | +40% on the days before Christmas and New Year; −30% on the holidays themselves | Assumed; bakery may close |
