@@ -8,6 +8,7 @@ import authRouter from './routes/auth.js'
 import categoriesRouter from './routes/categories.js'
 import customersRouter from './routes/customers.js'
 import deliveriesRouter from './routes/deliveries.js'
+import forecastsRouter from './routes/forecasts.js'
 import ingredientsRouter from './routes/ingredients.js'
 import inventoryRouter from './routes/inventory.js'
 import ordersRouter from './routes/orders.js'
@@ -80,6 +81,7 @@ app.use('/api/orders', ordersRouter)
 app.use('/api/payments', paymentsRouter)
 app.use('/api/deliveries', deliveriesRouter)
 app.use('/api/reports', reportsRouter)
+app.use('/api/forecasts', forecastsRouter)
 
 app.use((error, _request, response, _next) => {
   console.error(error)
