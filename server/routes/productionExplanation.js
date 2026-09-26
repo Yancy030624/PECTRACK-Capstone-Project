@@ -1,4 +1,19 @@
 // ============================================================================
+// WHAT CHANGED SINCE THIS ANNOTATED COPY WAS WRITTEN
+//
+// This file is a frozen, annotated copy of routes/production.js as it stood when the
+// module was first explained. The live file has moved on:
+//
+//   - Phase 10 B5: GET /schedule?date= — open orders due on a day, grouped
+//     by the hour they are due, with what is still to make per product;
+//     overdue and due-soon flags; today adds "as soon as possible" and
+//     late orders from earlier days.
+//
+// Read the live file for the current behaviour — every change above is
+// commented in place there, in the same voice as this file.
+// ============================================================================
+
+// ============================================================================
 // PECTRACK API — routes/production.js (annotated for learning)
 // Production batches — Phase 9A, Decisions 5–7 and 9 of
 // RULES-PLANS/PHASE9A_DATA_FOUNDATION_PLAN.md. Mounted at /api/production.

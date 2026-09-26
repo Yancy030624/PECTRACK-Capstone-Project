@@ -1,4 +1,18 @@
 // ============================================================================
+// WHAT CHANGED SINCE THIS ANNOTATED COPY WAS WRITTEN
+//
+// This file is a frozen, annotated copy of routes/forecasts.js as it stood when the
+// module was first explained. The live file has moved on:
+//
+//   - Phase 10 B1: every forecast response carries `restock` — per product,
+//     when it runs out and how many to bake to cover today and tomorrow
+//     (server/lib/restock.js).
+//
+// Read the live file for the current behaviour — every change above is
+// commented in place there, in the same voice as this file.
+// ============================================================================
+
+// ============================================================================
 // PECTRACK API — routes/forecasts.js and lib/forecasting.js (annotated for learning)
 // Demand forecasting — Phase 9B, RULES-PLANS/PHASE9B_PREDICTIVE_ANALYSIS_PLAN.md.
 // Mounted at /api/forecasts.

@@ -1,6 +1,13 @@
 # PHASE10_PAPER_ALIGNMENT_PLAN.md — closing the gaps between the paper and the system
 
-Status: **in progress.** Decisions (2026-09-26): **D1** staff 30 minutes
+Status: **built (2026-09-26)** — B1–B7 and D3 are in the code, each with
+tests (450 passing). D4 and Part 2 (rewording the paper) are the team's.
+Migrations as built: **019** `deliveries.failed_at` (B4 needed it — a failed
+delivery had no date), **020** session idle timeout (B6), **021** bulk-order
+approval (D3). D3 was built without a new order state: the schema's
+unused `orders.requires_admin_approval` marks the order, it stays PLACED,
+and an admin confirming it is the approval — no enum change, and every
+screen that already understands PLACED keeps working. Decisions (2026-09-26): **D1** staff 30 minutes
 idle, customers 7 days; **D2** peak periods include the demo orders,
 labelled assumed; **D3** build bulk-order approval, threshold an admin
 setting defaulting to 100 items; **D4** deferred — the team is settling
@@ -121,7 +128,7 @@ It answers exactly the baker's question: what has to be ready, by when.
 **Closes:** p.92 *"expires after a defined period of inactivity … idle
 accounts are automatically logged out."*
 
-- `sessions.last_seen_at` (migration 019). `requireAuth` refuses a session
+- `sessions.last_seen_at` (built as migration 020). `requireAuth` refuses a session
   idle longer than the role's limit, deletes it, and records a
   `SESSION_EXPIRED` security event.
 - `last_seen_at` is written at most once a minute per session, so an

@@ -20,6 +20,9 @@
 //   - Rows now carry gatewayPaymentId and refundReference; recorded_by may
 //     name a driver.
 //
+//   - Phase 10 D3: no payment, cash or GCash, is taken for a bulk order
+//     still waiting for an admin's approval (409).
+//
 // Read the live file for the current behaviour — every change above is
 // commented in place there, in the same voice as this file.
 // ============================================================================

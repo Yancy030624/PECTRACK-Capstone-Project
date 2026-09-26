@@ -11,6 +11,10 @@
 //     headline is lossUnits (SPOILAGE + PRODUCTION_LOSS + EXPIRED +
 //     DAMAGED), formerly spoilageUnits.
 //
+//   - Phase 10: GET /peak (orders by hour and weekday, demo orders counted
+//     and labelled, B2); /summary adds likelySellOut (B1) and
+//     ordersAwaitingApproval (D3).
+//
 // Read the live file for the current behaviour — every change above is
 // commented in place there, in the same voice as this file.
 // ============================================================================

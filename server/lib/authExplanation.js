@@ -10,6 +10,12 @@
 //     form's unticked "Remember me"; pruneExpiredAuthRows also prunes
 //     password_reset_tokens.
 //
+//   - Phase 10 B6: findSessionUser became resolveSession. A staff session
+//     idle for 30 minutes (sessions.last_seen_at, migration 020) is deleted
+//     and logged as SESSION_EXPIRED; its 401 carries code SESSION_IDLE, any
+//     other missing session SIGNED_OUT. last_seen_at is written at most
+//     once a minute, and never for a request marked X-Pectrack-Background.
+//
 // Read the live file for the current behaviour — every change above is
 // commented in place there, in the same voice as this file.
 // ============================================================================

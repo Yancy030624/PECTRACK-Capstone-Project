@@ -13,6 +13,11 @@
 //     requestedFulfillmentTime, and lib/billing.js's balance columns, so the
 //     driver sees what to collect.
 //
+//   - Phase 10 B4: GET /mine/history?from&to — the driver's own DELIVERED
+//     and FAILED deliveries in a range, with counts and cash collected.
+//     deliveries.failed_at (migration 019) is set on FAILED and cleared on
+//     an admin retry, so a failed delivery has a date.
+//
 // Read the live file for the current behaviour — every change above is
 // commented in place there, in the same voice as this file.
 // ============================================================================

@@ -22,6 +22,14 @@
 //   - GET /:id returns a `delivery` object (status, driver, timestamps) for
 //     DELIVERY orders; the list carries requestedFulfillmentTime.
 //
+//   - Phase 10 (PHASE10_PAPER_ALIGNMENT_PLAN.md): cancelling needs a
+//     reason of at least 5 characters, kept in the status history (B7); a
+//     DELIVERY order is refused unless the address is in Lucban (B7); an
+//     order with more items than app_settings.bulk_order_threshold sets
+//     requires_admin_approval and stays PLACED until an ADMIN moves it on
+//     — that move is the approval (D3). Order rows carry
+//     requiresAdminApproval and awaitingApproval.
+//
 // Read the live file for the current behaviour — every change above is
 // commented in place there, in the same voice as this file.
 // ============================================================================
