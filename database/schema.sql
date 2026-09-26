@@ -292,6 +292,9 @@ CREATE TABLE orders (
   order_type order_type NOT NULL,
   instructions TEXT,
   requested_fulfillment_time TIMESTAMPTZ,
+  -- Migration 021. Set when the order has more items than the admin's
+  -- bulk_order_threshold (app_settings); such an order stays PLACED until
+  -- an admin confirms it, and takes no payment before then.
   requires_admin_approval BOOLEAN NOT NULL DEFAULT FALSE,
   total_amount NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (total_amount >= 0),
   data_source data_source NOT NULL DEFAULT 'RECORDED',
@@ -539,6 +542,8 @@ CREATE TABLE order_status_history (
 CREATE INDEX orders_customer_id_idx ON orders (customer_id);
 CREATE INDEX orders_status_order_date_idx ON orders (status, order_date DESC);
 CREATE INDEX order_details_order_id_idx ON order_details (order_id);
+-- Migration 021. The admin's queue of bulk orders waiting for approval.
+CREATE INDEX orders_awaiting_approval_idx ON orders (order_date) WHERE requires_admin_approval AND status = 'PLACED';
 CREATE INDEX payments_order_id_idx ON payments (order_id);
 CREATE INDEX deliveries_personnel_status_idx ON deliveries (delivery_personnel_id, status);
 CREATE INDEX inventory_change_requests_status_idx ON inventory_change_requests (status, created_at);
@@ -835,3 +840,13 @@ CREATE TABLE IF NOT EXISTS forecasts (
 );
 
 COMMIT;
+
+-- Migration 021. Settings an admin can change, one row each, the value as
+-- text parsed by the code that owns it (server/lib/settings.js).
+CREATE TABLE app_settings (
+  setting_key VARCHAR(100) PRIMARY KEY,
+  setting_value TEXT NOT NULL,
+  updated_by BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+INSERT INTO app_settings (setting_key, setting_value) VALUES ('bulk_order_threshold', '100');

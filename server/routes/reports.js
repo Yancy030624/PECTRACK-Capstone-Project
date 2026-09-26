@@ -329,7 +329,7 @@ router.get('/sales', async (request, response) => {
 // database that already has to know the right answer (Decision 1) compute
 // it start to finish.
 router.get('/summary', async (_request, response) => {
-  const [todayResult, outstandingResult, lowStockAlerts, deliveriesResult, expiredStock, lowIngredients, pendingBatches, likelySellOut] = await Promise.all([
+  const [todayResult, outstandingResult, lowStockAlerts, deliveriesResult, expiredStock, lowIngredients, pendingBatches, likelySellOut, awaitingApproval] = await Promise.all([
     pool.query(`
       WITH today_range AS (
         SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date AS local_date,
@@ -383,6 +383,8 @@ router.get('/summary', async (_request, response) => {
     pool.query(`SELECT COUNT(*)::int AS n FROM production_batches WHERE status = 'PENDING'`),
     // PHASE10 B1 — products the latest forecast says run out by tomorrow.
     likelySellOutSummary(),
+    // PHASE10 D3 — bulk orders waiting for an admin.
+    pool.query(`SELECT COUNT(*)::int AS n FROM orders WHERE requires_admin_approval AND status = 'PLACED'`),
   ])
   const todayRow = todayResult.rows[0]
 
@@ -406,6 +408,7 @@ router.get('/summary', async (_request, response) => {
     lowIngredientsTotal: lowIngredients.rows[0]?.full_count ?? 0,
     pendingBatches: pendingBatches.rows[0].n,
     likelySellOut,
+    ordersAwaitingApproval: awaitingApproval.rows[0].n,
   })
 })
 

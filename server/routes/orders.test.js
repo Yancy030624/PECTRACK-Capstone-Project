@@ -937,6 +937,65 @@ describe('order management', () => {
     assert.equal(resolved.rows[0].is_resolved, true)
   })
 
+  // PHASE10 D3 — bulk orders wait for an admin. The threshold is read, never
+  // changed, here: test files run in parallel and share the database.
+  test('a bulk order waits for an admin: no confirming or paying by anyone else, and approval opens both', async () => {
+    const threshold = (await (await fetch(`${baseUrl}/api/settings`, { headers: { Cookie: cashierCookie } })).json()).settings.bulkOrderThreshold
+    const place = async (quantity) => {
+      const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: availableProductId, quantity }] }) })
+      assert.equal(response.status, 201)
+      const body = await response.json()
+      createdOrderIds.push(body.order.id)
+      return body
+    }
+    const atThreshold = await place(threshold)
+    assert.equal(atThreshold.order.requiresAdminApproval, false, 'exactly the threshold is not bulk')
+
+    const bulk = await place(threshold + 1)
+    assert.equal(bulk.order.awaitingApproval, true)
+    assert.match(bulk.message, /bulk order/)
+    const orderId = bulk.order.id
+    const patch = (cookie, body) => fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(body) })
+    const pay = () => fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ orderId, method: 'CASH', amount: 1 }) })
+
+    const listed = (await (await fetch(`${baseUrl}/api/orders`, { headers: { Cookie: cashierCookie } })).json()).orders.find((order) => order.id === orderId)
+    assert.equal(listed.awaitingApproval, true)
+
+    assert.equal((await patch(cashierCookie, { status: 'CONFIRMED' })).status, 403, 'a cashier cannot approve')
+    assert.equal((await pay()).status, 409, 'no payment before approval')
+
+    const approved = await patch(adminCookie, { status: 'CONFIRMED' })
+    assert.equal(approved.status, 200)
+    const detail = (await (await fetch(`${baseUrl}/api/orders/${orderId}`, { headers: { Cookie: adminCookie } })).json()).order
+    assert.equal(detail.awaitingApproval, false)
+    assert.equal(detail.statusHistory.find((entry) => entry.status === 'CONFIRMED').note, 'Bulk order approved.')
+    assert.equal((await pay()).status, 201, 'payment opens once approved')
+  })
+
+  test('rejecting a bulk order is cancelling it — allowed to a cashier, with a reason, and its stock returns', async () => {
+    const threshold = (await (await fetch(`${baseUrl}/api/settings`, { headers: { Cookie: adminCookie } })).json()).settings.bulkOrderThreshold
+    const stockBefore = (await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [availableProductId])).rows[0].stock_quantity
+    const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: availableProductId, quantity: threshold + 1 }] }) })
+    const orderId = (await response.json()).order.id
+    createdOrderIds.push(orderId)
+    const rejected = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Cannot bake that many by Saturday' }) })
+    assert.equal(rejected.status, 200)
+    const stockAfter = (await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [availableProductId])).rows[0].stock_quantity
+    assert.equal(stockAfter, stockBefore)
+  })
+
+  test('/api/settings: staff read it, only an admin changes it, and a bad value is refused', async () => {
+    const current = (await (await fetch(`${baseUrl}/api/settings`, { headers: { Cookie: cashierCookie } })).json()).settings.bulkOrderThreshold
+    const save = (cookie, bulkOrderThreshold) => fetch(`${baseUrl}/api/settings`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ bulkOrderThreshold }) })
+    assert.equal((await save(cashierCookie, current)).status, 403)
+    for (const bad of [0, -5, 2.5, 'lots', '', null, 100001]) assert.equal((await save(adminCookie, bad)).status, 422, `refuses ${bad}`)
+    // Saving the value it already has changes nothing for other suites.
+    const saved = await save(adminCookie, current)
+    assert.equal(saved.status, 200)
+    assert.equal((await saved.json()).settings.bulkOrderThreshold, current)
+    assert.equal((await fetch(`${baseUrl}/api/settings`, { headers: { Cookie: customerCookie } })).status, 403)
+  })
+
   test('routes reject delivery personnel entirely for now', async () => {
     const dpPasswordHash = await bcrypt.hash('Delivery-Password-9!', 4)
     const dpResult = await pool.query(`INSERT INTO users (username, password_hash, user_type) VALUES ($1, $2, 'DELIVERY_PERSONNEL') RETURNING user_id`, [`orderdp_${runId}`, dpPasswordHash])

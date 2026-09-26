@@ -17,6 +17,7 @@ import { billingListSql, getBillingSummary, mapBillingColumns } from '../lib/bil
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { expiredSql, syncStockAlert } from '../lib/inventory.js'
 import { describeGatewayRefunds, settleGatewayRefunds } from '../lib/refunds.js'
+import { getBulkOrderThreshold } from '../lib/settings.js'
 import { parseId } from '../lib/validation.js'
 
 const router = express.Router()
@@ -74,6 +75,9 @@ const mapOrderSummary = (row) => ({
   totalAmount: row.total_amount,
   orderDate: row.order_date,
   requestedFulfillmentTime: row.requested_fulfillment_time,
+  // PHASE10 D3 — a bulk order waits for an admin while it is PLACED.
+  requiresAdminApproval: row.requires_admin_approval,
+  awaitingApproval: row.requires_admin_approval && row.status === 'PLACED',
   // Phase 6: what this order still owes, carried on the LIST as well as
   // the detail. Without it, the only way to answer "which orders still owe
   // money" — the question the Payment & Billing screen exists to answer —
@@ -86,7 +90,7 @@ const mapOrderSummary = (row) => ({
   ...mapBillingColumns(row),
 })
 
-const orderSummarySelectQuery = `SELECT o.order_id, o.customer_id, c.name AS customer_name, o.order_type, o.status, o.total_amount, o.order_date, o.requested_fulfillment_time,
+const orderSummarySelectQuery = `SELECT o.order_id, o.customer_id, c.name AS customer_name, o.order_type, o.status, o.total_amount, o.order_date, o.requested_fulfillment_time, o.requires_admin_approval,
             ${billingListSql.columns}
      FROM orders o
      LEFT JOIN customers c ON c.customer_id = o.customer_id
@@ -119,7 +123,7 @@ router.get('/:id', async (request, response) => {
   const orderResult = await pool.query(
     `SELECT o.order_id, o.customer_id, c.name AS customer_name, o.processed_by, ca.name AS cashier_name,
             o.order_type, o.status, o.instructions, o.requested_fulfillment_time,
-            o.total_amount, o.order_date
+            o.total_amount, o.order_date, o.requires_admin_approval
      FROM orders o
      LEFT JOIN customers c ON c.customer_id = o.customer_id
      LEFT JOIN cashiers ca ON ca.cashier_id = o.processed_by
@@ -194,6 +198,8 @@ router.get('/:id', async (request, response) => {
       status: order.status,
       instructions: order.instructions,
       requestedFulfillmentTime: order.requested_fulfillment_time,
+      requiresAdminApproval: order.requires_admin_approval,
+      awaitingApproval: order.requires_admin_approval && order.status === 'PLACED',
       totalAmount: order.total_amount,
       orderDate: order.order_date,
       items: itemsResult.rows.map((row) => ({ productId: row.product_id, productName: row.product_name, quantity: row.quantity, unitPrice: row.unit_price })),
@@ -346,11 +352,18 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
 
     // total_amount is left to its DEFAULT 0 here and filled in below, once
     // the line items exist to add up.
+    // PHASE10 D3 — more items than the admin's threshold makes this a
+    // bulk order: it waits for an admin's approval before it is confirmed
+    // or paid. Stock is still reserved now, so the bakery is not promising
+    // the same bread twice while it decides.
+    const itemCount = parsedItems.reduce((sum, item) => sum + item.quantity, 0)
+    const bulkThreshold = await getBulkOrderThreshold(client)
+    const requiresAdminApproval = itemCount > bulkThreshold
     const orderResult = await client.query(
-      `INSERT INTO orders (customer_id, processed_by, order_type, address_id, instructions, requested_fulfillment_time)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO orders (customer_id, processed_by, order_type, address_id, instructions, requested_fulfillment_time, requires_admin_approval)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING order_id`,
-      [customerId, processedBy, orderType, addressId, instructions, fulfillment.value],
+      [customerId, processedBy, orderType, addressId, instructions, fulfillment.value, requiresAdminApproval],
     )
     const orderId = orderResult.rows[0].order_id
 
@@ -430,10 +443,13 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     // same '136.50' shape the old toFixed(2) produced.
     const totalAmount = totalResult.rows[0].total_amount
 
-    await client.query('INSERT INTO order_status_history (order_id, updated_by, status) VALUES ($1, $2, $3)', [orderId, request.user.id, 'PLACED'])
+    await client.query('INSERT INTO order_status_history (order_id, updated_by, status, note) VALUES ($1, $2, $3, $4)', [orderId, request.user.id, 'PLACED', requiresAdminApproval ? `Bulk order (${itemCount} items) — waiting for an admin's approval.` : null])
 
     await client.query('COMMIT')
-    return response.status(201).json({ message: 'Order placed.', order: { id: orderId, status: 'PLACED', totalAmount } })
+    return response.status(201).json({
+      message: requiresAdminApproval ? `Order placed. With ${itemCount} items it is a bulk order — the bakery will review it before confirming, and payment opens once it is approved.` : 'Order placed.',
+      order: { id: orderId, status: 'PLACED', totalAmount, requiresAdminApproval, awaitingApproval: requiresAdminApproval },
+    })
   } catch (error) {
     await client.query('ROLLBACK')
     throw error
@@ -490,7 +506,7 @@ router.patch('/:id', async (request, response) => {
     // order_type between this read and the claim that follows — the same
     // lock-the-parent-first convention routes/deliveries.js and
     // routes/payments.js use, taken on the same row, in the same order.
-    const locked = await client.query('SELECT status, order_type FROM orders WHERE order_id = $1 FOR UPDATE', [orderId])
+    const locked = await client.query('SELECT status, order_type, requires_admin_approval FROM orders WHERE order_id = $1 FOR UPDATE', [orderId])
     const lockedOrder = locked.rows[0]
     if (!lockedOrder) {
       await client.query('ROLLBACK')
@@ -503,6 +519,14 @@ router.patch('/:id', async (request, response) => {
     if (status === lockedOrder.status) {
       await client.query('ROLLBACK')
       return response.status(409).json({ message: `This order is already ${status.toLowerCase().replaceAll('_', ' ')}.` })
+    }
+    // PHASE10 D3 — a bulk order moves past PLACED only by an admin: that
+    // move IS the approval, recorded in the status history with who and
+    // when. Rejecting is cancelling, which anyone allowed to cancel may do.
+    const approvingBulkOrder = lockedOrder.requires_admin_approval && lockedOrder.status === 'PLACED' && status !== 'CANCELLED'
+    if (approvingBulkOrder && request.user.role !== 'ADMIN') {
+      await client.query('ROLLBACK')
+      return response.status(403).json({ message: 'This is a bulk order — an admin has to approve it before it moves on.' })
     }
     if (status !== 'CANCELLED' && statusRank[status] <= statusRank[lockedOrder.status]) {
       await client.query('ROLLBACK')
@@ -705,7 +729,7 @@ router.patch('/:id', async (request, response) => {
 
     // orders.status was already written by the claim at the top of this
     // transaction; only the history row is left to record.
-    await client.query('INSERT INTO order_status_history (order_id, updated_by, status, note) VALUES ($1, $2, $3, $4)', [orderId, request.user.id, status, note])
+    await client.query('INSERT INTO order_status_history (order_id, updated_by, status, note) VALUES ($1, $2, $3, $4)', [orderId, request.user.id, status, note ?? (approvingBulkOrder ? 'Bulk order approved.' : null)])
     await client.query('COMMIT')
   } catch (error) {
     await client.query('ROLLBACK')

@@ -44,10 +44,15 @@ export function OrderPlacedPage() {
           <div className="mt-2 flex items-center justify-between border-t border-green-200 pt-2 text-green-800"><span className="font-bold">Total</span><span className="text-lg font-extrabold">{formatPeso(order.totalAmount)}</span></div>
         </div>
 
-        <p className="mt-5 text-xs text-stone-500">Pay at pickup or on delivery, or pay online now from Payment &amp; Billing.</p>
+        {/* PHASE10 D3 — a bulk order is reviewed before it can be paid. */}
+        {order.awaitingApproval ? (
+          <p className="mt-5 rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-800">This is a large order, so the bakery reviews it before confirming. You can pay once it is approved — check My Orders.</p>
+        ) : (
+          <p className="mt-5 text-xs text-stone-500">Pay at pickup or on delivery, or pay online now from Payment &amp; Billing.</p>
+        )}
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-center">
           <Link to="/account" className="rounded-full bg-green-700 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-green-800">View My Orders</Link>
-          <Link to="/account" className="rounded-full border border-green-700 px-5 py-2.5 text-xs font-bold text-green-800 transition hover:bg-green-50">Pay now</Link>
+          {!order.awaitingApproval && <Link to="/account" className="rounded-full border border-green-700 px-5 py-2.5 text-xs font-bold text-green-800 transition hover:bg-green-50">Pay now</Link>}
         </div>
       </div>
     </section>
