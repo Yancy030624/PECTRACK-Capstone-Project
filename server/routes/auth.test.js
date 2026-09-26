@@ -927,7 +927,7 @@ describe('customer email verification', () => {
     assert.equal(response.status, 201)
     const orderId = (await response.json()).order.id
     // Cancel it so the stock this test borrowed goes straight back.
-    await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
   })
 
   test('changing the email requires the current password — a session alone is not enough', async () => {

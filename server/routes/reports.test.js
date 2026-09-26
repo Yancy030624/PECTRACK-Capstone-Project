@@ -75,7 +75,7 @@ describe('reporting & analytics', () => {
   }
 
   const cancelOrder = (orderId) =>
-    fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
 
   // Records a full ₱100.00 cash payment against an order, then moves its
   // payment_date to the given instant. Returns the payment id.

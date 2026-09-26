@@ -490,7 +490,7 @@ describe('delivery management', () => {
     const { orderId, deliveryId } = await placeDeliveryOrder()
     await assign(deliveryId, firstDriverId)
 
-    const cancel = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    const cancel = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(cancel.status, 200)
     assert.equal((await pool.query('SELECT status FROM deliveries WHERE delivery_id = $1', [deliveryId])).rows[0].status, 'FAILED')
 

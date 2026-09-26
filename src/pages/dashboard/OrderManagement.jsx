@@ -35,6 +35,8 @@ import { NewOrderForm } from './NewOrderForm.jsx'
 const statusRank = { PLACED: 0, CONFIRMED: 1, IN_PRODUCTION: 2, READY_FOR_PICKUP: 3, OUT_FOR_DELIVERY: 3, COMPLETED: 4 }
 const allStatuses = ['PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP', 'OUT_FOR_DELIVERY', 'COMPLETED', 'CANCELLED']
 const openStatuses = new Set(['PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP', 'OUT_FOR_DELIVERY'])
+const customerCancelReasons = ['Ordered by mistake', 'Changed my mind', 'Need to change the items', 'Pickup or delivery time no longer works', 'Other reason']
+
 function nextStatusOptions(order) {
   const forward = Object.keys(statusRank).filter((status) => statusRank[status] > statusRank[order.status])
   return forward
@@ -272,8 +274,10 @@ function StaffOrderManagement({ user }) {
                   ))}
                 </Select>
               </Field>
-              <Input value={statusNote} onChange={(event) => setStatusNote(event.target.value)} placeholder="Optional note" aria-label="Status note" />
-              <Button type="submit" size="sm" disabled={statusSubmitting || !statusChoice}>
+              {/* A cancellation needs a reason (PHASE10 B7); it is kept in
+                  the status history below. */}
+              <Input value={statusNote} onChange={(event) => setStatusNote(event.target.value)} placeholder={statusChoice === 'CANCELLED' ? 'Reason for cancelling (required)' : 'Optional note'} aria-label={statusChoice === 'CANCELLED' ? 'Reason for cancelling' : 'Status note'} required={statusChoice === 'CANCELLED'} minLength={statusChoice === 'CANCELLED' ? 5 : undefined} />
+              <Button type="submit" size="sm" disabled={statusSubmitting || !statusChoice || (statusChoice === 'CANCELLED' && statusNote.trim().length < 5)}>
                 {statusSubmitting ? 'Saving…' : 'Save status'}
               </Button>
             </form>
@@ -412,6 +416,7 @@ function CustomerOrders({ user, onNavigate }) {
   const [orderDetail, setOrderDetail] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [cancelling, setCancelling] = useState(false)
+  const [cancelReason, setCancelReason] = useState('')
 
   const loadOrders = async () => {
     try {
@@ -446,11 +451,13 @@ function CustomerOrders({ user, onNavigate }) {
   }
 
   const cancelOrder = async () => {
+    if (!cancelReason) return
     if (!window.confirm(`Cancel order #${selectedOrderId}? This cannot be undone.`)) return
     setCancelling(true)
     setMessage('')
     try {
-      await apiPatch(`/api/orders/${selectedOrderId}`, { status: 'CANCELLED' })
+      await apiPatch(`/api/orders/${selectedOrderId}`, { status: 'CANCELLED', note: `Cancelled by customer: ${cancelReason}` })
+      setCancelReason('')
       await openOrder(selectedOrderId)
       await loadOrders()
       setNotice(`Order #${selectedOrderId} was cancelled.`)
@@ -509,9 +516,19 @@ function CustomerOrders({ user, onNavigate }) {
 
           {orderDetail.status === 'PLACED' && (
             <div className="border-t border-line-100 pt-3">
-              <Button type="button" variant="destructive" size="sm" onClick={cancelOrder} disabled={cancelling}>
-                {cancelling ? 'Cancelling…' : 'Cancel this order'}
-              </Button>
+              {/* PHASE10 B7 — a cancellation carries a reason; a customer
+                  picks one rather than typing it. */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="w-56">
+                  <Select value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} aria-label="Reason for cancelling">
+                    <option value="">Why are you cancelling?</option>
+                    {customerCancelReasons.map((reason) => <option key={reason} value={reason}>{reason}</option>)}
+                  </Select>
+                </div>
+                <Button type="button" variant="destructive" size="sm" onClick={cancelOrder} disabled={cancelling || !cancelReason}>
+                  {cancelling ? 'Cancelling…' : 'Cancel this order'}
+                </Button>
+              </div>
               <p className="mt-1.5 text-xs text-ink-500">You can cancel while your order is still PLACED — once we start on it, ask staff directly.</p>
             </div>
           )}

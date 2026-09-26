@@ -34,7 +34,9 @@ export function CheckoutPage({ user }) {
     apiGet('/api/products').then((data) => setProducts(data.products)).catch(() => setProducts([]))
     apiGet('/api/addresses').then((data) => {
       setAddresses(data.addresses)
-      const defaultAddress = data.addresses.find((address) => address.isDefault) ?? data.addresses[0]
+      // Only a Lucban address can be delivered to (PHASE10 B7).
+      const deliverable = data.addresses.filter((address) => address.municipality?.trim().toLowerCase() === 'lucban')
+      const defaultAddress = deliverable.find((address) => address.isDefault) ?? deliverable[0]
       if (defaultAddress) setAddressId(defaultAddress.id)
     }).catch(() => setAddresses([]))
   }, [])
@@ -149,16 +151,22 @@ export function CheckoutPage({ user }) {
               {addresses.length > 0 && !addingAddress && (
                 <>
                   <div className="mt-3 space-y-2">
-                    {addresses.map((address) => (
-                      <label key={address.id} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-xs transition ${addressId === address.id ? 'border-green-700 bg-green-50' : 'border-stone-200'}`}>
-                        <input type="radio" name="addressId" checked={addressId === address.id} onChange={() => setAddressId(address.id)} className="mt-0.5 h-5 w-5 accent-green-700" />
+                    {addresses.map((address) => {
+                      // Delivery is within Lucban only (PHASE10 B7); the
+                      // server refuses the rest, so they are not offered.
+                      const outside = address.municipality?.trim().toLowerCase() !== 'lucban'
+                      return (
+                      <label key={address.id} className={`flex items-start gap-3 rounded-xl border p-3 text-xs transition ${outside ? 'cursor-not-allowed border-stone-200 opacity-60' : 'cursor-pointer'} ${addressId === address.id ? 'border-green-700 bg-green-50' : 'border-stone-200'}`}>
+                        <input type="radio" name="addressId" checked={addressId === address.id} disabled={outside} onChange={() => setAddressId(address.id)} className="mt-0.5 h-5 w-5 accent-green-700" />
                         <span>
                           <span className="block font-bold text-stone-800">{address.label}{address.isDefault && <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-[9px] font-bold text-green-800">DEFAULT</span>}</span>
                           <span className="block text-stone-600">{address.recipientName} · {address.contactNumber}</span>
                           <span className="block text-stone-500">{address.addressLine1}{address.addressLine2 && `, ${address.addressLine2}`}{address.barangay && `, ${address.barangay}`}, {address.municipality}, {address.province}</span>
+                          {outside && <span className="mt-1 block font-semibold text-amber-800">Outside Lucban — we deliver within Lucban only. Choose pickup for this one.</span>}
                         </span>
                       </label>
-                    ))}
+                      )
+                    })}
                   </div>
                   <button type="button" onClick={() => setAddingAddress(true)} className="mt-3 py-2 text-xs font-bold text-green-700 hover:underline">+ Add another address</button>
                 </>

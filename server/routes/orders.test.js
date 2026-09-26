@@ -256,6 +256,30 @@ describe('order management', () => {
     assert.equal(response.status, 422)
   })
 
+  // PHASE10 B7 — delivery is within Lucban only; pickup is open to anyone.
+  test('POST /api/orders refuses DELIVERY to an address outside Lucban, and nothing is placed', async () => {
+    const outside = await pool.query(
+      `INSERT INTO customer_addresses (customer_id, recipient_name, contact_num, address_line_1, municipality, province)
+       VALUES ($1, 'Far Away', '09170000000', '1 Other St', 'Tayabas', 'Quezon') RETURNING address_id`,
+      [customerId],
+    )
+    const outsideId = outside.rows[0].address_id
+    try {
+      const before = await pool.query('SELECT COUNT(*)::int AS n FROM orders WHERE customer_id = $1', [customerId])
+      const response = await fetch(`${baseUrl}/api/orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: customerCookie },
+        body: JSON.stringify({ orderType: 'DELIVERY', addressId: outsideId, items: [{ productId: availableProductId, quantity: 1 }] }),
+      })
+      assert.equal(response.status, 422)
+      assert.match((await response.json()).errors.addressId, /within Lucban only/)
+      const after = await pool.query('SELECT COUNT(*)::int AS n FROM orders WHERE customer_id = $1', [customerId])
+      assert.equal(after.rows[0].n, before.rows[0].n)
+    } finally {
+      await pool.query('DELETE FROM customer_addresses WHERE address_id = $1', [outsideId])
+    }
+  })
+
   let deliveryOrderId
 
   // Decision 3 — the deliveries row is created WITH the order, in the same
@@ -319,7 +343,7 @@ describe('order management', () => {
   })
 
   const patchStatus = (orderId, status, cookie = cashierCookie) =>
-    fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ status }) })
+    fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ status, note: status === 'CANCELLED' ? 'Test cancellation' : undefined }) })
 
   const placePickupOrder = async () => {
     const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 1 }] }) })
@@ -446,7 +470,7 @@ describe('order management', () => {
     // deliveries.test.js, this only needs the resulting state.
     await pool.query(`UPDATE deliveries SET status = 'ASSIGNED', assigned_at = CURRENT_TIMESTAMP WHERE order_id = $1`, [deliveryOrderId])
 
-    const response = await fetch(`${baseUrl}/api/orders/${deliveryOrderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    const response = await fetch(`${baseUrl}/api/orders/${deliveryOrderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(response.status, 200)
 
     const { rows } = await pool.query('SELECT status FROM deliveries WHERE order_id = $1', [deliveryOrderId])
@@ -464,7 +488,7 @@ describe('order management', () => {
     createdOrderIds.push(secondDelivery.order.id)
     await pool.query(`UPDATE deliveries SET status = 'DELIVERED', delivered_at = CURRENT_TIMESTAMP WHERE order_id = $1`, [secondDelivery.order.id])
 
-    const cancelDelivered = await fetch(`${baseUrl}/api/orders/${secondDelivery.order.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    const cancelDelivered = await fetch(`${baseUrl}/api/orders/${secondDelivery.order.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(cancelDelivered.status, 200)
     const stillDelivered = await pool.query('SELECT status FROM deliveries WHERE order_id = $1', [secondDelivery.order.id])
     assert.equal(stillDelivered.rows[0].status, 'DELIVERED', 'an already-DELIVERED delivery must not be overwritten to FAILED by a later cancellation')
@@ -597,10 +621,20 @@ describe('order management', () => {
     assert.equal(body.order.customerId, secondCustomerId)
   })
 
-  test('PATCH /api/orders/:id lets a customer cancel their own PLACED order', async () => {
-    const response = await fetch(`${baseUrl}/api/orders/${customerOrderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+  test('PATCH /api/orders/:id lets a customer cancel their own PLACED order — with a reason, which is logged', async () => {
+    const cancel = (note) => fetch(`${baseUrl}/api/orders/${customerOrderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED', note }) })
+    // PHASE10 B7 — no reason, or a token one, is refused before anything moves.
+    for (const note of [undefined, '', '  ok  ']) {
+      const refused = await cancel(note)
+      assert.equal(refused.status, 422)
+      assert.ok((await refused.json()).errors.note)
+    }
+    const response = await cancel('Cancelled by customer: Ordered by mistake')
     assert.equal(response.status, 200)
-    assert.equal((await response.json()).order.status, 'CANCELLED')
+    const body = await response.json()
+    assert.equal(body.order.status, 'CANCELLED')
+    const history = await pool.query(`SELECT note FROM order_status_history WHERE order_id = $1 AND status = 'CANCELLED'`, [customerOrderId])
+    assert.equal(history.rows[0].note, 'Cancelled by customer: Ordered by mistake')
   })
 
   test('PATCH /api/orders/:id blocks a customer from cancelling once it is no longer PLACED', async () => {
@@ -611,7 +645,7 @@ describe('order management', () => {
     const confirmResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CONFIRMED' }) })
     assert.equal(confirmResponse.status, 200)
 
-    const cancelAttempt = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    const cancelAttempt = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(cancelAttempt.status, 409)
   })
 
@@ -620,7 +654,7 @@ describe('order management', () => {
     const orderId = (await createResponse.json()).order.id
     createdOrderIds.push(orderId)
 
-    const response = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: secondCustomerCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    const response = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: secondCustomerCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(response.status, 404)
   })
 
@@ -683,7 +717,7 @@ describe('order management', () => {
 
   test('PATCH /api/orders/:id cancelling a PLACED order restores exactly what was deducted', async () => {
     // Stock is 12 after the previous test (20 - 8).
-    const response = await fetch(`${baseUrl}/api/orders/${stockTestOrderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    const response = await fetch(`${baseUrl}/api/orders/${stockTestOrderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(response.status, 200)
 
     const { rows: stockRows } = await pool.query('SELECT inventory_id, stock_quantity FROM inventory WHERE product_id = $1', [stockTestProductId])
@@ -707,7 +741,7 @@ describe('order management', () => {
     // Attempting to cancel it a SECOND time is the scenario the terminal
     // check exists for — without it, this would credit the same 8 units
     // back again, inventing stock that was never actually returned.
-    const secondCancel = await fetch(`${baseUrl}/api/orders/${stockTestOrderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    const secondCancel = await fetch(`${baseUrl}/api/orders/${stockTestOrderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(secondCancel.status, 409)
     const stillAfter = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [stockTestProductId])
     assert.equal(stillAfter.rows[0].stock_quantity, before.rows[0].stock_quantity, 'stock must not be credited twice')
@@ -733,7 +767,7 @@ describe('order management', () => {
     const afterCompletion = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [stockTestProductId])
     assert.equal(afterCompletion.rows[0].stock_quantity, 8, 'COMPLETED must not restore stock — the order was fulfilled, not cancelled')
 
-    const blockedResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    const blockedResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(blockedResponse.status, 409)
 
     const stillAfter = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [stockTestProductId])
@@ -786,7 +820,7 @@ describe('order management', () => {
     const payResponse = await fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ orderId, method: 'CASH', amount: 40 }) })
     assert.equal(payResponse.status, 201)
 
-    const cashierAttempt = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    const cashierAttempt = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(cashierAttempt.status, 409)
     assert.match((await cashierAttempt.json()).message, /admin/)
 
@@ -795,7 +829,7 @@ describe('order management', () => {
     // PLACED") does not block this attempt before it even reaches the new
     // Decision 8 rule — this genuinely exercises the paid-order check, not
     // just the pre-existing status restriction.
-    const customerAttempt = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    const customerAttempt = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(customerAttempt.status, 409)
     assert.match((await customerAttempt.json()).message, /admin/)
 
@@ -858,7 +892,7 @@ describe('order management', () => {
     assert.equal(deducted.rows[0].stock_quantity, 46)
 
     const statuses = await Promise.all(Array.from({ length: 6 }, () =>
-      fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED' }) }).then((response) => response.status),
+      fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) }).then((response) => response.status),
     ))
     assert.equal(statuses.filter((code) => code === 200).length, 1, 'exactly one cancel should win')
     assert.equal(statuses.filter((code) => code === 409).length, 5, 'the other five should be refused, not silently applied')
@@ -896,7 +930,7 @@ describe('order management', () => {
     assert.equal(opened.rows.length, 1)
     assert.equal(opened.rows[0].is_resolved, false)
 
-    const cancelResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    const cancelResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(cancelResponse.status, 200)
 
     const resolved = await pool.query('SELECT is_resolved FROM stock_alerts WHERE inventory_id = $1', [inventoryId])

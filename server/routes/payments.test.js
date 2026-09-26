@@ -251,7 +251,7 @@ describe('payment & billing', () => {
 
   test('POST /api/payments/intent refuses a CANCELLED order', async () => {
     const { orderId } = await createOrder(1, customerCookie)
-    const cancelResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    const cancelResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(cancelResponse.status, 200)
 
     const response = await createIntent(orderId)
@@ -425,7 +425,7 @@ describe('payment & billing', () => {
     const { paymentId } = await intentResponse.json()
     const checkoutSessionId = await gatewayReferenceFor(paymentId)
 
-    const cancelResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    const cancelResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(cancelResponse.status, 200)
     const closed = await pool.query('SELECT status FROM payments WHERE payment_id = $1', [paymentId])
     assert.equal(closed.rows[0].status, 'CANCELLED', 'the cancel closes the open intent')
@@ -478,7 +478,7 @@ describe('payment & billing', () => {
 
     refundsFail = true
     try {
-      const cancelResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+      const cancelResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
       assert.equal(cancelResponse.status, 200, 'the cancel itself succeeds — the ledger is right even when the gateway is not')
       assert.match((await cancelResponse.json()).message, /could not be sent to PayMongo/)
     } finally {
@@ -848,7 +848,7 @@ describe('payment & billing', () => {
 
   test('recording a payment against a CANCELLED order is refused', async () => {
     const { orderId } = await createOrder(1, customerCookie)
-    const cancelResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED' }) })
+    const cancelResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(cancelResponse.status, 200)
 
     const response = await recordPayment({ orderId, method: 'CASH', amount: 100 })

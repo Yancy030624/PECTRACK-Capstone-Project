@@ -26,6 +26,8 @@ const validStatuses = new Set(['PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FO
 // Pattern C — this is what makes the stock restore on cancellation safe to
 // run without checking whether a restore already happened.
 const terminalStatuses = new Set(['COMPLETED', 'CANCELLED'])
+const cancelReasonMinLength = 5
+const deliveryMunicipality = 'Lucban'
 // The states a transition may be claimed FROM. Staff may move an order out
 // of any non-terminal state; a customer may only cancel one the kitchen
 // hasn't started on. Derived from validStatuses rather than written out
@@ -298,8 +300,14 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     if (!customerId) return response.status(422).json({ message: 'A delivery order needs a customer account — walk-in orders can only be picked up.', errors: { orderType: 'Delivery requires a customer account.' } })
     addressId = parseId(request.body.addressId)
     if (!addressId) return response.status(422).json({ message: 'Select a delivery address.', errors: { addressId: 'Select a delivery address.' } })
-    const addressCheck = await pool.query('SELECT address_id FROM customer_addresses WHERE address_id = $1 AND customer_id = $2 AND is_active = TRUE', [addressId, customerId])
+    const addressCheck = await pool.query('SELECT address_id, municipality FROM customer_addresses WHERE address_id = $1 AND customer_id = $2 AND is_active = TRUE', [addressId, customerId])
     if (!addressCheck.rows[0]) return response.status(422).json({ message: 'Selected address is not available.', errors: { addressId: 'Selected address is not available.' } })
+    // PHASE10 B7 — the thesis limits delivery to Lucban (p.44). Pickup is
+    // open to anyone; only the delivery run is local.
+    if (addressCheck.rows[0].municipality.trim().toLowerCase() !== deliveryMunicipality.toLowerCase()) {
+      const message = `Delivery is available within ${deliveryMunicipality} only. Choose a ${deliveryMunicipality} address, or pick the order up at the bakery.`
+      return response.status(422).json({ message, errors: { addressId: message } })
+    }
   }
 
   const client = await pool.connect()
@@ -466,6 +474,12 @@ router.patch('/:id', async (request, response) => {
   }
 
   const note = request.body.note == null ? null : String(request.body.note).trim().slice(0, instructionsMaxLength) || null
+  // PHASE10 B7 — the thesis (p.30): a cancellation carries a logged
+  // reason. It lands in order_status_history.note with who and when.
+  if (status === 'CANCELLED' && (note ?? '').length < cancelReasonMinLength) {
+    const message = `Give a reason for cancelling (at least ${cancelReasonMinLength} characters).`
+    return response.status(422).json({ message, errors: { note: message } })
+  }
 
   const client = await pool.connect()
   try {

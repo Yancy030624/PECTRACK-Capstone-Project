@@ -86,7 +86,7 @@ export function AddressForm({ onSaved, onCancel, submitLabel = 'Save address', c
       <div>
         <label htmlFor="addr-municipality" className={cls.label}>Municipality / City</label>
         <input id="addr-municipality" value={form.municipality} onChange={(event) => updateField('municipality', event.target.value)} placeholder="Lucban" className={cls.input} />
-        {errors.municipality && <p className={cls.error}>{errors.municipality}</p>}
+        {errors.municipality ? <p className={cls.error}>{errors.municipality}</p> : <p className="mt-1 text-[11px] text-stone-500">We deliver within Lucban only. Blank means Lucban.</p>}
       </div>
       <div>
         <label htmlFor="addr-province" className={cls.label}>Province</label>
