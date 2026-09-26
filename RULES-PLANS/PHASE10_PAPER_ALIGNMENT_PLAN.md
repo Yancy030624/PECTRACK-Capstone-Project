@@ -1,6 +1,10 @@
 # PHASE10_PAPER_ALIGNMENT_PLAN.md — closing the gaps between the paper and the system
 
-Status: **plan, awaiting the four decisions in Part 4.** Nothing built yet.
+Status: **in progress.** Decisions (2026-09-26): **D1** staff 30 minutes
+idle, customers 7 days; **D2** peak periods include the demo orders,
+labelled assumed; **D3** build bulk-order approval, threshold an admin
+setting defaulting to 100 items; **D4** deferred — the team is settling
+the title with the adviser, and no code depends on it.
 
 Source: `PAPER_OBJECTIVES_REVIEW.md`. The four specific objectives are met;
 this phase closes the **feature promises** the paper makes that the system

@@ -70,6 +70,9 @@ export function DashboardHome({ user, onNavigate }) {
     // buy what is running out, and review what a cashier recorded.
     { label: 'Low ingredients', value: summary ? summary.lowIngredientsTotal : '—', caption: 'Raw materials at or under minimum', module: 'Ingredients' },
     { label: 'Batches to approve', value: summary ? summary.pendingBatches : '—', caption: 'Recorded, waiting for review', module: 'Production' },
+    // PHASE10 B1 — from the latest forecast; the Forecast tab lists them
+    // with how many to bake. Marked when the forecast used assumed data.
+    { label: 'Likely to sell out', value: summary ? (summary.likelySellOut ? summary.likelySellOut.count : '—') : '—', caption: summary?.likelySellOut ? (summary.likelySellOut.assumed ? 'By tomorrow · assumed demand' : 'By tomorrow, per the forecast') : 'No forecast run yet', module: 'Reporting & Analytics' },
   ]
 
   return (

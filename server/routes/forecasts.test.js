@@ -191,6 +191,26 @@ describe('demand forecasting API', () => {
     assert.ok(latest.ingredients.mappedProducts >= 1)
   })
 
+  test('restock recommendations: the out-of-stock test product runs out today and gets a bake quantity in batches', async () => {
+    await json(adminCookie, 'POST', '/api/forecasts/run', { source: 'ASSUMED' })
+    const latest = await (await json(cashierCookie, 'GET', '/api/forecasts/latest')).json()
+    const bun = latest.products.find((product) => product.productId === productId)
+    const item = latest.restock.find((entry) => entry.productId === productId)
+    assert.ok(item)
+    // The test product has no stock, so it runs out on the first day.
+    assert.equal(item.stock, 0)
+    assert.equal(item.sellsOutOn, latest.dates[0])
+    const margin = Math.max(0, bun.days[0].high - bun.days[0].predicted)
+    assert.equal(item.recommended, Math.ceil(bun.days[0].predicted + bun.days[1].predicted + margin))
+    // Linked to a 100-piece recipe at 1 piece per bun.
+    assert.equal(item.batches, Math.ceil((item.recommended / 100) * 100) / 100)
+
+    // And the Dashboard counts it among the products running out by tomorrow.
+    const summary = await (await json(adminCookie, 'GET', '/api/reports/summary')).json()
+    assert.ok(summary.likelySellOut.count >= 1)
+    assert.equal(summary.likelySellOut.assumed, true)
+  })
+
   test('the chart history comes from the same source as the run, with quiet days filled', async () => {
     await json(adminCookie, 'POST', '/api/forecasts/run', { source: 'ASSUMED' })
     const chart = await (await json(cashierCookie, 'GET', `/api/forecasts/history/${productId}?days=28`)).json()

@@ -18,6 +18,7 @@ import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { addDays, daysBetween, forecastProduct } from '../lib/forecasting.js'
+import { restockForRun } from '../lib/restock.js'
 import { normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
@@ -239,7 +240,10 @@ async function loadRun(runId) {
   ])
 
   const sources = run.sources.replace(/[{}]/g, '').split(',').filter(Boolean)
+  // B1 of PHASE10: which products run out, and how many to bake.
+  const restock = await restockForRun(runId)
   return {
+    restock,
     run: {
       id: run.run_id,
       createdAt: run.created_at,

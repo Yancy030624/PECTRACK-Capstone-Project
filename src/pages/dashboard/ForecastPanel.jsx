@@ -240,6 +240,8 @@ export function ForecastPanel({ user, active }) {
                 <Card className="p-5"><p className="text-sm font-medium text-ink-500">Method chosen</p><p className="mt-2 text-sm text-ink-700">{Object.entries(methodCounts).map(([method, count]) => <span key={method} className="block tabular-nums">{count} × {METHOD_LABELS[method] ?? method}</span>)}</p></Card>
               </div>
 
+              <RestockCard restock={data.restock ?? []} dates={days} isAssumed={isAssumed} onSelect={setSelectedId} />
+
               <Card className="mt-6 p-6">
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div className="min-w-0">
@@ -363,5 +365,69 @@ export function ForecastPanel({ user, active }) {
         </>
       )}
     </div>
+  )
+}
+
+// PHASE10 B1 — the paper's "Automated Inventory": which products will run
+// out, and how many to bake. The forecast says how many will SELL; this
+// sets that against what is on the shelf now. Only products that need
+// baking are listed — the covered ones are counted in one line, so the
+// list stays the size of tonight's job.
+function RestockCard({ restock, dates, isAssumed, onSelect }) {
+  const needed = restock.filter((item) => item.recommended > 0 || item.sellsOutOn)
+  const covered = restock.length - needed.length
+  const whenLabel = (date) => {
+    if (!date) return 'Covered all week'
+    if (date === dates[0]) return 'Today'
+    if (date === dates[1]) return 'Tomorrow'
+    return dayLabel(date)
+  }
+  return (
+    <Card className="mt-6 p-6">
+      <h3 className="text-base font-semibold text-ink-900">Restock recommendations</h3>
+      <p className="mt-1 max-w-3xl text-xs text-ink-500">
+        What to bake to cover today and tomorrow, with a safety margin, minus what is already on the shelf. Soonest to run out first.
+        {isAssumed && <span className="font-semibold text-status-wait-fg"> Demand here comes from assumed history, set against the real stock on hand — it shows how the recommendation works, not what the bakery will actually sell.</span>}
+      </p>
+      {needed.length === 0 ? (
+        <p className="mt-4 text-sm text-ink-500">Every forecast product has enough stock for the week.</p>
+      ) : (
+        <div className="mt-4">
+          <Table caption="Restock recommendations">
+            <Thead>
+              <Tr className="hover:bg-transparent">
+                <Th>Product</Th>
+                <Th align="right">On hand</Th>
+                <Th>Runs out</Th>
+                <Th align="right">Bake</Th>
+                <Th align="right" priority="md">Batches</Th>
+              </Tr>
+            </Thead>
+            <Tbody>
+              {needed.map((item) => {
+                const urgent = item.sellsOutOn && (item.sellsOutOn === dates[0] || item.sellsOutOn === dates[1])
+                return (
+                  <Tr key={item.productId} onClick={() => onSelect(item.productId)} className="cursor-pointer">
+                    <Td className="font-semibold text-ink-900">
+                      {item.name}
+                      {item.variant && <span className="block text-xs font-normal text-ink-500">{item.variant}</span>}
+                    </Td>
+                    <Td numeric>{whole(item.stock)}{item.stockExpired && <span className="block text-[10px] text-status-fail-fg">expired stock</span>}</Td>
+                    <Td>
+                      <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${urgent ? 'bg-status-fail-bg text-status-fail-fg' : item.sellsOutOn ? 'bg-status-wait-bg text-status-wait-fg' : 'bg-status-done-bg text-status-done-fg'}`}>
+                        {whenLabel(item.sellsOutOn)}
+                      </span>
+                    </Td>
+                    <Td numeric className="font-semibold text-ink-900">{whole(item.recommended)}</Td>
+                    <Td numeric priority="md">{item.batches == null ? <span className="text-xs text-ink-500">no recipe</span> : `${quantity(item.batches)}`}</Td>
+                  </Tr>
+                )
+              })}
+            </Tbody>
+          </Table>
+        </div>
+      )}
+      {covered > 0 && <p className="mt-3 text-xs text-ink-500">{covered} other product{covered === 1 ? ' has' : 's have'} enough stock for the week.</p>}
+    </Card>
   )
 }
