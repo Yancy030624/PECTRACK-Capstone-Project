@@ -5,6 +5,7 @@ import crypto from 'node:crypto'
 import { config } from '../config.js'
 import { pool } from '../db.js'
 import { profileColumnsSql, profileJoinsSql, toPublicUser } from './accounts.js'
+import { recordSecurityEvent } from './securityEvents.js'
 
 // Session cookie settings. The cookie holds only a random session id — never
 // user data — so a stolen cookie without database access reveals nothing.
@@ -34,7 +35,7 @@ export function parseCookies(header) {
 }
 
 // Deletes rows that can no longer be used for anything. Nothing depends on
-// this for correctness — findSessionUser already ignores expired sessions,
+// this for correctness — resolveSession already ignores expired sessions,
 // and verify-otp already ignores expired codes — but without it both tables
 // grow forever, since neither one ever removes a row on its own.
 //
@@ -64,25 +65,57 @@ export async function createSession(userId) {
   return sessionId
 }
 
-async function findSessionUser(sessionId) {
+// Inactivity timeout — PHASE10 B6, Decision D1; the thesis (p.92): "idle
+// accounts are automatically logged out." A staff session with no request
+// for 30 minutes ends: a cashier who walks away from a shared counter
+// leaves nothing open behind them. A customer keeps the 7-day session —
+// being signed out of a shopping cart protects nobody.
+//
+// last_seen_at is written at most once a minute per session, so an active
+// user costs one small UPDATE a minute, not one per request. A request the
+// page makes on its own — the Due today screen refreshing itself — sends
+// X-Pectrack-Background and does not count as activity; otherwise a screen
+// left open would keep its session alive forever.
+export const staffIdleLimitMinutes = 30
+const touchEverySeconds = 60
+export const backgroundRequestHeader = 'x-pectrack-background'
+
+// Returns { user } for a live session, { idle: true } for a staff session
+// that has just timed out (and is now deleted), or {} for anything else.
+async function resolveSession(sessionId, request) {
   const result = await pool.query(
     `SELECT u.user_id, u.username, u.user_type, u.is_active,
+            (u.user_type <> 'CUSTOMER' AND s.last_seen_at < CURRENT_TIMESTAMP - make_interval(mins => $2)) AS idle,
+            (s.last_seen_at < CURRENT_TIMESTAMP - make_interval(secs => $3)) AS stale,
             ${profileColumnsSql}
      FROM sessions s
      JOIN users u ON u.user_id = s.user_id
      ${profileJoinsSql}
      WHERE s.session_id = $1 AND s.expires_at > CURRENT_TIMESTAMP`,
-    [sessionId],
+    [sessionId, staffIdleLimitMinutes, touchEverySeconds],
   )
-  const user = result.rows[0]
-  if (!user || !user.is_active) return null
-  return toPublicUser(user)
+  const row = result.rows[0]
+  if (!row || !row.is_active) return {}
+  if (row.idle) {
+    await pool.query('DELETE FROM sessions WHERE session_id = $1', [sessionId])
+    recordSecurityEvent({ request, type: 'SESSION_EXPIRED', userId: row.user_id, username: row.username, detail: `no activity for ${staffIdleLimitMinutes} minutes` })
+    return { idle: true }
+  }
+  if (row.stale && !request?.headers?.[backgroundRequestHeader]) {
+    // Not awaited: the request should not wait on a timestamp. A lost
+    // write only means the next request tries again.
+    pool.query('UPDATE sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE session_id = $1', [sessionId]).catch(() => {})
+  }
+  return { user: toPublicUser(row) }
 }
 
 export async function requireAuth(request, response, next) {
   const sessionId = parseCookies(request.headers.cookie)[sessionCookieName]
-  const user = sessionId ? await findSessionUser(sessionId) : null
-  if (!user) return response.status(401).json({ message: 'Sign in to continue.' })
+  const { user, idle } = sessionId ? await resolveSession(sessionId, request) : {}
+  // The code tells the client this was a session ending under it, not a
+  // wrong password — it clears the account and opens the sign-in pop-up.
+  if (idle) return response.status(401).json({ code: 'SESSION_IDLE', message: `You were signed out after ${staffIdleLimitMinutes} minutes without activity. Sign in again to continue.` })
+  if (!user) return response.status(401).json({ code: 'SIGNED_OUT', message: 'Sign in to continue.' })
   request.user = user
   request.sessionId = sessionId
   next()
@@ -95,11 +128,12 @@ export async function requireAuth(request, response, next) {
 // products.js and categories.js treat "no user" the same as CUSTOMER —
 // the most restricted view that already exists, never a new one).
 //
-// Reuses findSessionUser rather than a second query, so "what counts as a
-// valid session" can never drift between the two middlewares.
+// Reuses resolveSession rather than a second query, so "what counts as a
+// valid session" can never drift between the two middlewares. A staff
+// session that timed out is simply anonymous here.
 export async function optionalAuth(request, response, next) {
   const sessionId = parseCookies(request.headers.cookie)[sessionCookieName]
-  const user = sessionId ? await findSessionUser(sessionId) : null
+  const { user } = sessionId ? await resolveSession(sessionId, request) : {}
   if (user) {
     request.user = user
     request.sessionId = sessionId

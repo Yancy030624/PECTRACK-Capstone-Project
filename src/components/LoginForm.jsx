@@ -22,7 +22,7 @@ import { Brand } from './Brand.jsx'
 // typed still in the fields.
 // `onNavigateAway` lets the shell close itself when a link inside the form
 // leaves for a real page — the pop-up must not float over /forgot-password.
-export function LoginForm({ onLogin, onRegister, onNavigateAway = () => {}, initialMode = 'customer' }) {
+export function LoginForm({ onLogin, onRegister, onNavigateAway = () => {}, initialMode = 'customer', notice }) {
   // Which door is open. Defaults to 'customer' — who lands on /login and
   // opens the header pop-up far more often — and /staff-login passes
   // 'staff' instead. Sent to the server as `audience`, which is what makes
@@ -140,6 +140,8 @@ export function LoginForm({ onLogin, onRegister, onNavigateAway = () => {}, init
             <span className={`rounded-full px-3 py-1.5 text-[10px] font-bold ${isStaffMode ? 'bg-brand-700 text-white' : 'bg-lime-200 text-green-800'}`}>{isStaffMode ? 'Staff Login' : 'Customer Login'}</span>
             <h2 id="login-heading" className="mt-3 text-3xl font-extrabold leading-[1.05] text-brand-700">{isStaffMode ? <>Staff sign in</> : <>Sign in to your<br />account</>}</h2>
             <p className="mt-2 text-xs font-medium text-stone-500">{isStaffMode ? 'For admin, cashier, and delivery personnel accounts.' : 'For customer accounts. Use your username or email to continue.'}</p>
+            {/* Why the pop-up opened on its own — PHASE10 B6. */}
+            {notice && <p role="status" className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{notice}</p>}
           </div>
           <form className="mt-6 space-y-3" onSubmit={handleSubmit} noValidate>
             <div><label htmlFor="username" className="mb-1.5 block text-xs font-bold">Username or Email</label><div className="relative"><svg viewBox="0 0 24 24" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="3" /><path d="M5.5 20c.8-3.3 2.9-5 6.5-5s5.7 1.7 6.5 5" /></svg><input id="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" placeholder="Email" className="w-full rounded-2xl border border-stone-200 bg-white py-2.5 pl-9 pr-3 text-sm shadow-sm outline-none transition focus:border-green-700 focus:ring-4 focus:ring-green-100" /></div></div>

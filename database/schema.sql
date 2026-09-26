@@ -43,7 +43,8 @@ CREATE TYPE security_event_type AS ENUM (
   'OTP_ISSUED', 'OTP_SUCCESS', 'OTP_FAILURE',
   'PASSWORD_RESET_REQUESTED', 'PASSWORD_RESET_COMPLETED', 'PASSWORD_CHANGED',
   'ACCOUNT_CREATED', 'ACCOUNT_DEACTIVATED', 'ACCOUNT_REACTIVATED', 'STAFF_PASSWORD_RESET',
-  'EMAIL_VERIFICATION_SENT', 'EMAIL_VERIFIED', 'EMAIL_CHANGED'
+  'EMAIL_VERIFICATION_SENT', 'EMAIL_VERIFIED', 'EMAIL_CHANGED',
+  'SESSION_EXPIRED'
 );
 
 -- Keeps every updated_at column honest. Without this, those columns take
@@ -78,7 +79,10 @@ CREATE TABLE sessions (
   session_id TEXT PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  expires_at TIMESTAMPTZ NOT NULL
+  expires_at TIMESTAMPTZ NOT NULL,
+  -- Migration 020. The last request made with this session; a staff
+  -- session idle for 30 minutes ends (server/lib/auth.js).
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX sessions_user_id_idx ON sessions (user_id);

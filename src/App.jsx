@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import { apiGet, apiPost } from './api/client.js'
+import { apiGet, apiPost, sessionEndedEvent } from './api/client.js'
 import { AuthModal } from './components/AuthModal.jsx'
 import { CartFab } from './components/CartFab.jsx'
 import { CartProvider } from './cart/CartContext.jsx'
@@ -118,6 +118,29 @@ function AppRoutes() {
   // Switching between the sign-in and register views keeps returnTo, so a
   // guest who registers mid-checkout still resumes at checkout.
   const setAuthView = useCallback((next) => setAuthRequest((current) => ({ ...current, mode: 'customer', ...next })), [])
+
+  // PHASE10 B6 — the session ended under an open page (timed out after
+  // inactivity, or signed out elsewhere). Clear the account and reopen the
+  // sign-in pop-up on the right door, over the page they were on, so
+  // signing back in returns them there. Ignored while nobody is signed
+  // in: the first-load /me check expects a 401 for a guest.
+  const userRef = useRef(user)
+  userRef.current = user
+  useEffect(() => {
+    const onSessionEnded = (event) => {
+      const current = userRef.current
+      if (!current) return
+      setUser(null)
+      setAuthRequest({
+        view: 'login',
+        mode: current.role === 'CUSTOMER' ? 'customer' : 'staff',
+        returnTo: window.location.pathname,
+        notice: event.detail?.message,
+      })
+    }
+    window.addEventListener(sessionEndedEvent, onSessionEnded)
+    return () => window.removeEventListener(sessionEndedEvent, onSessionEnded)
+  }, [])
 
   // On first load, ask the server whether the session cookie (if any) is still
   // valid, so a page refresh doesn't force the user to log in again.

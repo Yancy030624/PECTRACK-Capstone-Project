@@ -39,6 +39,7 @@ export function AuthModal({ request, onClose, onLogin, onView }) {
         ) : (
           <LoginForm
             initialMode={request?.mode ?? 'customer'}
+            notice={request?.notice}
             onLogin={onLogin}
             onRegister={() => onView({ view: 'register' })}
             onNavigateAway={onClose}

@@ -49,9 +49,9 @@ export function ProductionSchedule({ user }) {
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ background = false } = {}) => {
     try {
-      setData(await apiGet(`/api/production/schedule?date=${date}`))
+      setData(await apiGet(`/api/production/schedule?date=${date}`, { background }))
       setMessage('')
     } catch (error) {
       setMessage(error.message)
@@ -64,7 +64,7 @@ export function ProductionSchedule({ user }) {
     setLoading(true)
     load()
     if (date !== today) return undefined
-    const timer = setInterval(load, 60000)
+    const timer = setInterval(() => load({ background: true }), 60000)
     return () => clearInterval(timer)
   }, [date, today, load])
 

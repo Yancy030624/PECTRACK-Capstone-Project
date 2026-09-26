@@ -14,6 +14,7 @@ import bcrypt from 'bcrypt'
 import app from '../app.js'
 import { resetRateLimits } from '../lib/security.js'
 import { pool } from '../db.js'
+import { createSession, sessionCookieName } from '../lib/auth.js'
 
 const runId = crypto.randomUUID().slice(0, 8)
 const randomContactNumber = () => `09${Math.floor(100000000 + Math.random() * 899999999)}`
@@ -1082,6 +1083,92 @@ describe('customer email verification', () => {
     const response = await post('/api/auth/verify-email', { token: 'not-a-real-token-at-all' })
     assert.equal(response.status, 400)
     assert.match((await response.json()).message, /invalid or has expired/)
+  })
+})
+
+// PHASE10 B6 — staff are signed out after 30 minutes without a request;
+// customers keep their 7-day session.
+describe('inactivity timeout', () => {
+  beforeEach(resetRateLimits)
+
+  let server
+  let baseUrl
+  const userIds = []
+  let cashierUserId
+  let customerUserId
+
+  before(async () => {
+    server = app.listen(0)
+    await new Promise((resolve) => server.once('listening', resolve))
+    baseUrl = `http://localhost:${server.address().port}`
+    const hash = await bcrypt.hash(crypto.randomUUID(), 4)
+    const tag = crypto.randomUUID().slice(0, 8)
+    cashierUserId = (await pool.query(`INSERT INTO users (username, password_hash, user_type) VALUES ($1, $2, 'CASHIER') RETURNING user_id`, [`idlecash_${tag}`, hash])).rows[0].user_id
+    await pool.query('INSERT INTO cashiers (user_id, name, contact_num, email) VALUES ($1, $2, $3, $4)', [cashierUserId, 'Idle Cashier', `0917${Math.floor(1000000 + Math.random() * 8999999)}`, `idlecash_${tag}@example.com`])
+    customerUserId = (await pool.query(`INSERT INTO users (username, password_hash, user_type) VALUES ($1, $2, 'CUSTOMER') RETURNING user_id`, [`idlecust_${tag}`, hash])).rows[0].user_id
+    await pool.query('INSERT INTO customers (user_id, name, contact_num, email) VALUES ($1, $2, $3, $4)', [customerUserId, 'Idle Customer', `0918${Math.floor(1000000 + Math.random() * 8999999)}`, `idlecust_${tag}@example.com`])
+    userIds.push(cashierUserId, customerUserId)
+  })
+
+  after(async () => {
+    await pool.query('DELETE FROM security_events WHERE user_id = ANY($1)', [userIds])
+    await pool.query('DELETE FROM sessions WHERE user_id = ANY($1)', [userIds])
+    await pool.query('DELETE FROM cashiers WHERE user_id = ANY($1)', [userIds])
+    await pool.query('DELETE FROM customers WHERE user_id = ANY($1)', [userIds])
+    await pool.query('DELETE FROM users WHERE user_id = ANY($1)', [userIds])
+    await new Promise((resolve) => server.close(resolve))
+  })
+
+  const sessionIdle = async (userId, minutes) => {
+    const sessionId = await createSession(userId)
+    await pool.query(`UPDATE sessions SET last_seen_at = CURRENT_TIMESTAMP - make_interval(mins => $2) WHERE session_id = $1`, [sessionId, minutes])
+    return sessionId
+  }
+  const me = (sessionId, headers = {}) => fetch(`${baseUrl}/api/auth/me`, { headers: { Cookie: `${sessionCookieName}=${sessionId}`, ...headers } })
+  const lastSeen = async (sessionId) => (await pool.query('SELECT last_seen_at FROM sessions WHERE session_id = $1', [sessionId])).rows[0]?.last_seen_at
+  // The touch is not awaited by the server; give it a moment to land.
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 150))
+
+  test('a staff session idle for more than 30 minutes is ended, deleted, and logged', async () => {
+    const sessionId = await sessionIdle(cashierUserId, 31)
+    const response = await me(sessionId)
+    assert.equal(response.status, 401)
+    const body = await response.json()
+    assert.equal(body.code, 'SESSION_IDLE')
+    assert.match(body.message, /30 minutes/)
+    assert.equal(await lastSeen(sessionId), undefined, 'the session row is gone')
+    await settle()
+    const events = await pool.query(`SELECT 1 FROM security_events WHERE user_id = $1 AND event_type = 'SESSION_EXPIRED'`, [cashierUserId])
+    assert.equal(events.rowCount, 1)
+    // And it stays ended: the same cookie is now simply signed out.
+    assert.equal((await (await me(sessionId)).json()).code, 'SIGNED_OUT')
+  })
+
+  test('a staff session used within the limit stays signed in, and its last activity moves forward', async () => {
+    const sessionId = await sessionIdle(cashierUserId, 29)
+    const before = await lastSeen(sessionId)
+    assert.equal((await me(sessionId)).status, 200)
+    await settle()
+    assert.ok((await lastSeen(sessionId)) > before, 'the request counted as activity')
+  })
+
+  test('a background refresh does not count as activity', async () => {
+    const sessionId = await sessionIdle(cashierUserId, 10)
+    const before = await lastSeen(sessionId)
+    assert.equal((await me(sessionId, { 'X-Pectrack-Background': '1' })).status, 200)
+    await settle()
+    assert.equal((await lastSeen(sessionId)).getTime(), before.getTime())
+  })
+
+  test('a customer is not timed out by inactivity — the 7-day session stands', async () => {
+    const sessionId = await sessionIdle(customerUserId, 3 * 24 * 60)
+    assert.equal((await me(sessionId)).status, 200)
+  })
+
+  test('no session at all is a 401 marked SIGNED_OUT', async () => {
+    const response = await fetch(`${baseUrl}/api/auth/me`)
+    assert.equal(response.status, 401)
+    assert.equal((await response.json()).code, 'SIGNED_OUT')
   })
 })
 
