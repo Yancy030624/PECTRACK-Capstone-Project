@@ -659,6 +659,37 @@ describe('reporting & analytics', () => {
   })
 
   // --- GET /api/reports/products ---------------------------------------
+  describe('GET /api/reports/peak', () => {
+    test('counts orders by Manila hour and weekday, and names the busiest of each', async () => {
+      // Three orders at 07:xx Manila on a Saturday, one at 15:xx on a Tuesday,
+      // in a range no other test uses.
+      const saturday7 = '2021-03-06T07:15:00+08:00'
+      for (let index = 0; index < 3; index += 1) await placeOrderAt(saturday7)
+      await placeOrderAt('2021-03-09T15:40:00+08:00')
+
+      const response = await fetch(`${baseUrl}/api/reports/peak?from=2021-03-01&to=2021-03-14`, { headers: { Cookie: adminCookie } })
+      assert.equal(response.status, 200)
+      const body = await response.json()
+      assert.ok(body.totalOrders >= 4)
+      assert.ok(body.byHour[7].orders >= 3)
+      assert.ok(body.byHour[15].orders >= 1)
+      assert.ok(body.byWeekday[6].orders >= 3)
+      assert.equal(body.busiestHour, 7)
+      assert.equal(body.busiestWeekday, 6)
+      assert.equal(body.grid[6][7] >= 3, true)
+    })
+
+    test('assumed orders are counted by default and can be excluded', async () => {
+      const orderId = await placeOrderAt('2021-04-10T09:05:00+08:00')
+      await pool.query(`UPDATE orders SET data_source = 'ASSUMED' WHERE order_id = $1`, [orderId])
+      const withAssumed = await (await fetch(`${baseUrl}/api/reports/peak?from=2021-04-01&to=2021-04-30`, { headers: { Cookie: adminCookie } })).json()
+      const without = await (await fetch(`${baseUrl}/api/reports/peak?from=2021-04-01&to=2021-04-30&includeAssumed=false`, { headers: { Cookie: adminCookie } })).json()
+      assert.ok(withAssumed.assumedOrders >= 1)
+      assert.equal(without.assumedOrders, 0)
+      assert.equal(without.totalOrders, withAssumed.totalOrders - withAssumed.assumedOrders)
+    })
+  })
+
   describe('GET /api/reports/products', () => {
     const getProducts = (query, cookie = adminCookie) => fetch(`${baseUrl}/api/reports/products?${new URLSearchParams(query)}`, { headers: { Cookie: cookie } })
 

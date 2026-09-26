@@ -11,6 +11,7 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
 import { ForecastPanel } from './ForecastPanel.jsx'
+import { PeakPeriods } from './PeakPeriods.jsx'
 
 const paymentMethodOptions = ['CASH', 'GCASH']
 const paymentStatusOptions = ['PENDING', 'PAID', 'FAILED', 'CANCELLED', 'REFUNDED']
@@ -358,6 +359,8 @@ export function ReportingAnalytics({ user }) {
             </div>
           </>
         ) : <p className="mt-6 text-sm text-ink-500">Loading the sales report…</p>}
+        {/* PHASE10 B2 — driven by the same applied date range. */}
+        <PeakPeriods range={appliedRange} />
       </div>
 
       <div hidden={activeTab !== 'Products'}>

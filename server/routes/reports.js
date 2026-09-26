@@ -533,6 +533,61 @@ router.get('/inventory', async (request, response) => {
 
 // GET /api/reports/production?from=&to= — yield and cost per recipe and
 // per product over the range, from APPROVED batches dated by produced_at.
+// GET /api/reports/peak?from=&to=&includeAssumed=true|false —
+// PHASE10 B2, the paper's "peak ordering periods" (p.16). Orders counted
+// by hour of day and by day of week on the Manila clock, cancelled ones
+// excluded.
+//
+// includeAssumed (default true, Decision D2): the system holds two days of
+// real orders, so a chart of real orders alone is empty. The demo seed's
+// orders are ASSUMED; they are counted by default, and the response says
+// so, so the screen can label the chart the way the forecast is labelled.
+router.get('/peak', async (request, response) => {
+  const { from, to, errors } = parseDateRange(request.query)
+  if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
+  const includeAssumed = String(request.query.includeAssumed ?? 'true') !== 'false'
+
+  const result = await pool.query(
+    `SELECT EXTRACT(HOUR FROM o.order_date AT TIME ZONE 'Asia/Manila')::int AS hour,
+            EXTRACT(DOW FROM o.order_date AT TIME ZONE 'Asia/Manila')::int AS weekday,
+            o.data_source,
+            COUNT(*)::int AS orders
+       FROM orders o
+      WHERE o.status <> 'CANCELLED' AND ${dateRangeSql('o.order_date')}
+        ${includeAssumed ? '' : "AND o.data_source <> 'ASSUMED'"}
+      GROUP BY 1, 2, 3`,
+    [from, to],
+  )
+
+  const byHour = Array.from({ length: 24 }, (_, hour) => ({ hour, orders: 0 }))
+  const byWeekday = Array.from({ length: 7 }, (_, weekday) => ({ weekday, orders: 0 }))
+  const grid = Array.from({ length: 7 }, () => new Array(24).fill(0))
+  let assumedOrders = 0
+  let total = 0
+  for (const row of result.rows) {
+    byHour[row.hour].orders += row.orders
+    byWeekday[row.weekday].orders += row.orders
+    grid[row.weekday][row.hour] += row.orders
+    total += row.orders
+    if (row.data_source === 'ASSUMED') assumedOrders += row.orders
+  }
+  const busiest = (rows, key) => (total === 0 ? null : rows.reduce((best, row) => (row.orders > best.orders ? row : best))[key])
+
+  return response.json({
+    from,
+    to,
+    includeAssumed,
+    totalOrders: total,
+    assumedOrders,
+    byHour,
+    byWeekday,
+    // [weekday 0 = Sunday][hour]: for a day-by-hour view.
+    grid,
+    busiestHour: busiest(byHour, 'hour'),
+    busiestWeekday: busiest(byWeekday, 'weekday'),
+  })
+})
+
 router.get('/production', async (request, response) => {
   const { from, to, errors } = parseDateRange(request.query)
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
