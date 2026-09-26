@@ -12,6 +12,7 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { Textarea } from '../../components/ui/Textarea.jsx'
 import { formatDateTime, formatPeso } from '../../lib/format.js'
+import { ProductionSchedule } from './ProductionSchedule.jsx'
 
 // Phase 9A (RULES-PLANS/PHASE9A_DATA_FOUNDATION_PLAN.md, Decisions 5–7).
 // A production batch is the one event that ties the two ledgers
@@ -45,7 +46,7 @@ const emptyForm = () => ({ recipeId: '', plannedQuantity: '', producedQuantity: 
 
 export function ProductionManagement({ user }) {
   const isAdmin = user.role === 'ADMIN'
-  const [activeTab, setActiveTab] = useState('batches')
+  const [activeTab, setActiveTab] = useState('schedule')
   const [message, setMessage] = useState('')
   const [notice, setNotice] = useState('')
 
@@ -211,15 +212,16 @@ export function ProductionManagement({ user }) {
   }
 
   const tabs = [
+    { key: 'schedule', label: 'Due today' },
     { key: 'batches', label: 'Batches' },
     { key: 'record', label: 'Record a batch' },
   ]
 
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
-      <h1 className="mt-1 text-2xl font-semibold text-ink-900">Production</h1>
-      <p className="mt-2 text-sm text-ink-500">{isAdmin ? 'Record what was baked. Approving a batch deducts its ingredients, adds the finished stock, and fixes its cost.' : 'Record what was baked. An admin approves each batch before stock moves.'}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600 print:hidden">{user.role} PORTAL</p>
+      <h1 className="mt-1 text-2xl font-semibold text-ink-900 print:hidden">Production</h1>
+      <p className="mt-2 text-sm text-ink-500 print:hidden">{isAdmin ? 'Record what was baked. Approving a batch deducts its ingredients, adds the finished stock, and fixes its cost.' : 'Record what was baked. An admin approves each batch before stock moves.'}</p>
 
       {message && (
         <div className="mt-4">
@@ -232,13 +234,15 @@ export function ProductionManagement({ user }) {
         </div>
       )}
 
-      <div className="mt-6 flex gap-2">
+      <div className="mt-6 flex flex-wrap gap-2 print:hidden">
         {tabs.map((tab) => (
           <Button type="button" key={tab.key} size="sm" variant={activeTab === tab.key ? 'primary' : 'secondary'} onClick={() => { setActiveTab(tab.key); setMessage('') }}>
             {tab.label}
           </Button>
         ))}
       </div>
+
+      {activeTab === 'schedule' && <ProductionSchedule user={user} />}
 
       {activeTab === 'batches' && (
         <Card className="mt-6 p-6">
