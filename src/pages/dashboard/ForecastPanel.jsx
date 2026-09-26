@@ -183,7 +183,7 @@ export function ForecastPanel({ user, active }) {
             <p className="mt-1 max-w-2xl text-sm text-ink-500">How many of each product are likely to sell each day, to plan the bake. Each product is forecast by whichever of three methods predicted its own past most accurately.</p>
           </div>
           {isAdmin && (
-            <div className="flex flex-wrap items-end gap-2">
+            <div className="flex flex-wrap items-end gap-2 print:hidden">
               <Field label="Train on">
                 <Select value={source} onChange={(event) => setSource(event.target.value)} className="w-auto">
                   <option value="ASSUMED">Assumed history</option>
@@ -212,7 +212,7 @@ export function ForecastPanel({ user, active }) {
                 {data.run.historyFrom && <> · history {longDay(data.run.historyFrom)} – {longDay(data.run.historyTo)}</>}
                 {' · '}{Object.entries(data.run.daysBySource ?? {}).map(([name, count]) => `${count} days ${name.toLowerCase()}`).join(', ') || 'no history'}
               </span>
-              <a href="/api/forecasts/latest?format=csv" download className="ml-auto inline-flex h-8 items-center rounded-control border border-line-200 bg-surface px-3 text-xs font-medium text-ink-700 transition hover:bg-surface-sunk">Export CSV</a>
+              <a href="/api/forecasts/latest?format=csv" download className="ml-auto inline-flex h-8 items-center rounded-control border border-line-200 bg-surface px-3 text-xs font-medium text-ink-700 transition hover:bg-surface-sunk print:hidden">Export CSV</a>
             </div>
             {isAssumed && (
               <p className="rounded-control border border-status-wait-fg/20 bg-status-wait-bg/60 px-3 py-2 text-xs text-status-wait-fg">
@@ -242,7 +242,7 @@ export function ForecastPanel({ user, active }) {
 
               <RestockCard restock={data.restock ?? []} dates={days} isAssumed={isAssumed} onSelect={setSelectedId} />
 
-              <Card className="mt-6 p-6">
+              <Card className="mt-6 break-inside-avoid p-6">
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="text-base font-semibold text-ink-900">{selected ? `${selected.name}${selected.variant ? ` (${selected.variant})` : ''}` : 'Product'}</h3>
@@ -374,8 +374,12 @@ export function ForecastPanel({ user, active }) {
 // baking are listed — the covered ones are counted in one line, so the
 // list stays the size of tonight's job.
 function RestockCard({ restock, dates, isAssumed, onSelect }) {
-  const needed = restock.filter((item) => item.recommended > 0 || item.sellsOutOn)
-  const covered = restock.length - needed.length
+  // Only what needs baking now. A product that runs out on Thursday but is
+  // covered for today and tomorrow is not a task yet — listing it as
+  // "Bake 0" beside a sell-out date read as a contradiction.
+  const needed = restock.filter((item) => item.recommended > 0)
+  const later = restock.filter((item) => item.recommended === 0 && item.sellsOutOn)
+  const covered = restock.length - needed.length - later.length
   const whenLabel = (date) => {
     if (!date) return 'Covered all week'
     if (date === dates[0]) return 'Today'
@@ -390,7 +394,7 @@ function RestockCard({ restock, dates, isAssumed, onSelect }) {
         {isAssumed && <span className="font-semibold text-status-wait-fg"> Demand here comes from assumed history, set against the real stock on hand — it shows how the recommendation works, not what the bakery will actually sell.</span>}
       </p>
       {needed.length === 0 ? (
-        <p className="mt-4 text-sm text-ink-500">Every forecast product has enough stock for the week.</p>
+        <p className="mt-4 text-sm text-ink-500">Nothing needs baking to cover today and tomorrow.</p>
       ) : (
         <div className="mt-4">
           <Table caption="Restock recommendations">
@@ -427,7 +431,12 @@ function RestockCard({ restock, dates, isAssumed, onSelect }) {
           </Table>
         </div>
       )}
-      {covered > 0 && <p className="mt-3 text-xs text-ink-500">{covered} other product{covered === 1 ? ' has' : 's have'} enough stock for the week.</p>}
+      {later.length > 0 && (
+        <p className="mt-3 text-xs text-ink-500">
+          {later.length} more run{later.length === 1 ? 's' : ''} out later this week but {later.length === 1 ? 'is' : 'are'} covered for today and tomorrow: {later.map((item) => `${item.name}${item.variant ? ` (${item.variant})` : ''} ${dayLabel(item.sellsOutOn)}`).join(', ')}.
+        </p>
+      )}
+      {covered > 0 && <p className="mt-1 text-xs text-ink-500">{covered} other product{covered === 1 ? ' has' : 's have'} enough stock for the week.</p>}
     </Card>
   )
 }

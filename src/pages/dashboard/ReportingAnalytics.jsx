@@ -12,6 +12,7 @@ import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
 import { ForecastPanel } from './ForecastPanel.jsx'
 import { PeakPeriods } from './PeakPeriods.jsx'
+import { PrintButton, PrintHeader } from '../../components/PrintReport.jsx'
 
 const paymentMethodOptions = ['CASH', 'GCASH']
 const paymentStatusOptions = ['PENDING', 'PAID', 'FAILED', 'CANCELLED', 'REFUNDED']
@@ -253,20 +254,30 @@ export function ReportingAnalytics({ user }) {
 
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
-      <h1 className="mt-1 text-2xl font-semibold text-ink-900">Reporting &amp; Analytics</h1>
-      <p className="mt-2 text-sm text-ink-500">Pick a date range and generate sales, product, and inventory reports — or browse the transaction history below.</p>
+      {/* PHASE10 B3 — what the printed page opens with. The on-screen
+          heading, tabs and range form are hidden when printing. */}
+      <PrintHeader
+        title={`${activeTab} report`}
+        subtitle={appliedRange && activeTab !== 'Forecast' && activeTab !== 'Transactions' && activeTab !== 'Report History' ? `${formatDate(`${appliedRange.from}T00:00:00`)} – ${formatDate(`${appliedRange.to}T00:00:00`)}` : activeTab === 'Forecast' ? 'Next seven days' : undefined}
+        user={user}
+      />
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600 print:hidden">{user.role} PORTAL</p>
+      <h1 className="mt-1 text-2xl font-semibold text-ink-900 print:hidden">Reporting &amp; Analytics</h1>
+      <p className="mt-2 text-sm text-ink-500 print:hidden">Pick a date range and generate sales, product, and inventory reports — or browse the transaction history below.</p>
 
-      <div className="mt-6 flex flex-wrap gap-2">
+      <div className="mt-6 flex flex-wrap items-center gap-2 print:hidden">
         {tabs.map((tab) => (
           <Button type="button" key={tab} size="sm" variant={activeTab === tab ? 'primary' : 'secondary'} onClick={() => setActiveTab(tab)}>
             {tab}
           </Button>
         ))}
+        {/* Prints whichever tab is open: the others are `hidden`, so the
+            printout is exactly the report on screen. */}
+        <span className="ml-auto"><PrintButton /></span>
       </div>
       {/* The date-range form drives the historical reports only; a forecast
           looks forward from today and has no range to pick. */}
-      <div hidden={activeTab === 'Transactions' || activeTab === 'Report History' || activeTab === 'Forecast'}>
+      <div hidden={activeTab === 'Transactions' || activeTab === 'Report History' || activeTab === 'Forecast'} className="print:hidden">
         <Card className="mt-6 p-6">
           <form onSubmit={generate} className="flex flex-wrap items-end gap-3">
             <Field label="From" error={errors.from}>

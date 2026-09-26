@@ -90,8 +90,8 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
   // content, top to bottom, the way a phone page is supposed to behave.
   // ---------------------------------------------------------------------
   return (
-    <div className="flex min-h-screen flex-col bg-surface-sunk text-ink-700 lg:h-screen lg:overflow-hidden">
-      <header className="flex shrink-0 items-center justify-between border-b border-line-200 bg-surface px-4 py-3 shadow-raised sm:px-7">
+    <div className="flex min-h-screen flex-col bg-surface-sunk text-ink-700 lg:h-screen lg:overflow-hidden print:block print:h-auto print:min-h-0 print:overflow-visible print:bg-white">
+      <header className="flex shrink-0 items-center justify-between border-b border-line-200 bg-surface px-4 py-3 shadow-raised sm:px-7 print:hidden">
         <Link to="/" aria-label="Go to home">
           <Brand compact />
         </Link>
@@ -113,12 +113,12 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
       {/* The sidebar appears from `lg`, not `md`: at 768–1023px its 256px
           took a third of the screen and squeezed every table into a
           horizontal scroller. Tablets get the same pill row as phones. */}
-      <div className="mx-auto flex w-full max-w-7xl min-h-0 flex-1 flex-col lg:flex-row 2xl:max-w-[1440px]">
+      <div className="mx-auto flex w-full max-w-7xl min-h-0 flex-1 flex-col lg:flex-row 2xl:max-w-[1440px] print:block print:max-w-none">
         {/* Desktop sidebar. No explicit height anywhere — it stretches to
             fill the row (see the layout note above) and scrolls its own
             content with `overflow-y-auto` if a role ever has enough
             modules to exceed the viewport. */}
-        <aside className="hidden w-64 shrink-0 overflow-y-auto border-r border-line-200 bg-surface p-5 lg:block">
+        <aside className="hidden w-64 shrink-0 overflow-y-auto border-r border-line-200 bg-surface p-5 lg:block print:hidden">
           {/* Micro-label per DESIGN SYSTEM's typography table: 10px/600,
               uppercase, tracking-wide — not the old font-bold/tracking-widest
               pairing (H2: weight should carry meaning, not be maxed out
@@ -153,7 +153,7 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
             child that sits between the header and the content in normal
             flow, so it can never overlap anything regardless of header
             height. */}
-        <div className="flex gap-2 overflow-x-auto border-b border-line-200 bg-surface p-3 lg:hidden">
+        <div className="flex gap-2 overflow-x-auto border-b border-line-200 bg-surface p-3 lg:hidden print:hidden">
           {allowedModules.map((module) => (
             <button
               type="button"
@@ -173,7 +173,7 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
             landmark. The shell owns the top spacing that used to live in
             every module page as `pt-24`/`md:pt-9`; each module's own
             <section> keeps only its ordinary side/bottom padding. */}
-        <main className="min-w-0 flex-1 pt-6 sm:pt-8 lg:overflow-y-auto">
+        <main className="min-w-0 flex-1 pt-6 sm:pt-8 lg:overflow-y-auto print:overflow-visible print:pt-0">
           {/* onNavigate === setActiveModule, so a module page (currently
               only DashboardHome — see its M2 fix, UI_AUDIT.md) can switch
               to another permitted module the same way the sidebar/mobile

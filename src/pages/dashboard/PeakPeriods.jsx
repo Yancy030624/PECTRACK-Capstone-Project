@@ -102,13 +102,13 @@ export function PeakPeriods({ range }) {
             </p>
           )}
           <div className="mt-4 grid gap-6 lg:grid-cols-2">
-            <div>
+            <div className="break-inside-avoid">
               <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">By hour of day</p>
               <div className="relative mt-2 h-56">
                 <BarChart labels={hours.map((row) => hourLabel(row.hour))} values={hours.map((row) => row.orders)} label="Orders by hour of day" color={brand} highlight={hours.findIndex((row) => row.hour === data.busiestHour)} />
               </div>
             </div>
-            <div>
+            <div className="break-inside-avoid">
               <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">By day of week</p>
               <div className="relative mt-2 h-56">
                 <BarChart labels={WEEKDAYS.map((day) => day.slice(0, 3))} values={data.byWeekday.map((row) => row.orders)} label="Orders by day of week" color={brand} highlight={data.busiestWeekday} />

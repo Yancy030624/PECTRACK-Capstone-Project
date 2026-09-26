@@ -98,3 +98,31 @@
     outline-offset: 2px;
   }
 }
+
+/* Printing and Save as PDF — PHASE10 B3. A4 with room for a binding edge;
+   white paper instead of the app's tinted background; colours kept, so
+   status pills and chart bars still mean what they mean on screen; and a
+   chart or table row never split across two pages. */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  canvas,
+  tr {
+    break-inside: avoid;
+  }
+  /* A guard for a browser that snapshots before the charts resize: the
+     chart scales down to the page instead of running off its edge. */
+  canvas {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+}
+
