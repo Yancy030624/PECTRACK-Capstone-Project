@@ -343,7 +343,10 @@ CREATE TABLE deliveries (
   status delivery_status NOT NULL DEFAULT 'PENDING_ASSIGNMENT',
   assigned_at TIMESTAMPTZ,
   delivered_at TIMESTAMPTZ,
-  note TEXT
+  note TEXT,
+  -- Migration 019. When the delivery became FAILED; cleared when an admin
+  -- retries it. Places a failed delivery in the driver's history range.
+  failed_at TIMESTAMPTZ
 );
 
 -- Added for the required proof-of-delivery upload. Files belong in object storage;

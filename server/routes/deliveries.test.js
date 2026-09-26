@@ -764,6 +764,63 @@ describe('delivery management', () => {
     const fs = await import('node:fs/promises')
     await fs.unlink(filePath(storageKey)).catch(() => {})
   })
+
+  // PHASE10 B4 — the driver's own delivery history and its counts.
+  test("GET /api/deliveries/mine/history lists only the driver's own finished deliveries, with counts that match", async () => {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())
+    const history = async (cookie, query = `from=${today}&to=${today}`) => {
+      const response = await fetch(`${baseUrl}/api/deliveries/mine/history?${query}`, { headers: { Cookie: cookie } })
+      return { status: response.status, body: await response.json() }
+    }
+    // Earlier tests in this suite finish deliveries too, so compare
+    // before and after rather than against absolute numbers.
+    const before = (await history(firstDriverCookie)).body
+
+    const delivered = await placeDeliveryOrder()
+    assert.equal((await assign(delivered.deliveryId, firstDriverId)).status, 200)
+    assert.equal((await setStatus(delivered.deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)).status, 200)
+    const cash = await fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: firstDriverCookie }, body: JSON.stringify({ orderId: delivered.orderId, method: 'CASH', amount: 45.5 }) })
+    assert.equal(cash.status, 201)
+    assert.equal((await setStatus(delivered.deliveryId, 'DELIVERED', firstDriverCookie)).status, 200)
+
+    const failed = await placeDeliveryOrder()
+    assert.equal((await assign(failed.deliveryId, firstDriverId)).status, 200)
+    assert.equal((await setStatus(failed.deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)).status, 200)
+    assert.equal((await setStatus(failed.deliveryId, 'FAILED', firstDriverCookie, 'Nobody home')).status, 200)
+
+    const open = await placeDeliveryOrder()
+    assert.equal((await assign(open.deliveryId, firstDriverId)).status, 200)
+
+    const afterFinishing = await history(firstDriverCookie)
+    assert.equal(afterFinishing.status, 200)
+    const { counts, deliveries } = afterFinishing.body
+    assert.equal(counts.delivered, before.counts.delivered + 1)
+    assert.equal(counts.failed, before.counts.failed + 1)
+    assert.equal(Number(counts.cashCollected), Number(before.counts.cashCollected) + 45.5)
+    assert.ok(counts.assignedNow >= 1, 'the still-assigned delivery counts as work in hand')
+    const ids = deliveries.map((delivery) => delivery.id)
+    assert.ok(ids.includes(delivered.deliveryId) && ids.includes(failed.deliveryId))
+    assert.ok(!ids.includes(open.deliveryId), 'an unfinished delivery is not history yet')
+    assert.equal(deliveries.length, counts.delivered + counts.failed, 'the list and the counts agree')
+    assert.ok(deliveries.find((delivery) => delivery.id === failed.deliveryId).failedAt, 'a failed delivery carries when it failed')
+
+    const other = await history(secondDriverCookie)
+    const otherIds = other.body.deliveries.map((delivery) => delivery.id)
+    assert.ok(!otherIds.includes(delivered.deliveryId) && !otherIds.includes(failed.deliveryId), "another driver's history is invisible")
+
+    const longAgo = await history(firstDriverCookie, 'from=2020-01-01&to=2020-01-31')
+    assert.equal(longAgo.body.deliveries.length, 0)
+    assert.equal(longAgo.body.counts.delivered, 0)
+
+    assert.equal((await history(firstDriverCookie, '')).status, 422, 'a range is required')
+    assert.equal((await history(cashierCookie)).status, 403, 'drivers only')
+
+    // A retry clears failed_at along with the driver.
+    const retry = await setStatus(failed.deliveryId, 'PENDING_ASSIGNMENT', adminCookie, 'Customer asked for another try')
+    assert.equal(retry.status, 200)
+    const retried = await pool.query('SELECT failed_at FROM deliveries WHERE delivery_id = $1', [failed.deliveryId])
+    assert.equal(retried.rows[0].failed_at, null)
+  })
 })
 
 after(async () => {

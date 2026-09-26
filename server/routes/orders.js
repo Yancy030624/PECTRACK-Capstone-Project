@@ -683,7 +683,7 @@ router.patch('/:id', async (request, response) => {
       // failure) is left alone — this only touches a delivery that was
       // still genuinely in progress when the order was cancelled.
       await client.query(
-        `UPDATE deliveries SET status = 'FAILED'
+        `UPDATE deliveries SET status = 'FAILED', failed_at = CURRENT_TIMESTAMP
           WHERE order_id = $1 AND status NOT IN ('DELIVERED', 'FAILED')`,
         [orderId],
       )

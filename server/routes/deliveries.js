@@ -12,6 +12,7 @@ import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { billingListSql, mapBillingColumns } from '../lib/billing.js'
 import { deleteFile, filePath, saveFile } from '../lib/storage.js'
+import { dateRangeSql, parseDateRange } from '../lib/reporting.js'
 import { normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
@@ -75,6 +76,7 @@ const mapDeliveryRow = (row) => ({
   status: row.status,
   assignedAt: row.assigned_at,
   deliveredAt: row.delivered_at,
+  failedAt: row.failed_at,
   note: row.note,
   proofCount: Number(row.proof_count),
   // What the customer asked for, and what they still owe — the driver at
@@ -108,7 +110,7 @@ const mapProofRow = (row) => ({
 })
 
 const deliverySelectQuery = `SELECT d.delivery_id, d.order_id, d.delivery_personnel_id, dp.name AS delivery_personnel_name,
-            d.status, d.assigned_at, d.delivered_at, d.note,
+            d.status, d.assigned_at, d.delivered_at, d.failed_at, d.note,
             o.status AS order_status, o.total_amount, o.instructions, o.requested_fulfillment_time, c.name AS customer_name,
             a.label, a.recipient_name, a.contact_num, a.address_line_1, a.address_line_2,
             a.barangay, a.municipality, a.province, a.postal_code, a.delivery_notes,
@@ -167,6 +169,71 @@ router.get('/mine', requireRole('DELIVERY_PERSONNEL'), async (request, response)
     [personnelId],
   )
   return response.json({ deliveries: result.rows.map(mapDeliveryRow) })
+})
+
+// GET /api/deliveries/mine/history?from&to — PHASE10 B4, the paper's
+// "review their delivery history and completed transactions" (p.15). The
+// driver's own DELIVERED and FAILED deliveries finished in the range,
+// newest first, plus the counts a delivery report needs. Scoped by the
+// same session-resolved id as /mine — never a query param.
+//
+// A delivery an admin retried (FAILED -> PENDING_ASSIGNMENT) loses its
+// driver, so the failed attempt leaves that driver's history; there is no
+// delivery status history table to keep it in.
+const historyLimit = 200
+router.get('/mine/history', requireRole('DELIVERY_PERSONNEL'), async (request, response) => {
+  const { from, to, errors } = parseDateRange(request.query)
+  if (Object.keys(errors).length) return response.status(422).json({ message: 'Enter a valid date range.', errors })
+
+  const personnel = await pool.query('SELECT delivery_personnel_id FROM delivery_personnel WHERE user_id = $1', [request.user.id])
+  const personnelId = personnel.rows[0]?.delivery_personnel_id
+  const finishedAt = 'COALESCE(d.delivered_at, d.failed_at)'
+
+  const [rows, counts, open, cash] = await Promise.all([
+    pool.query(
+      `${deliverySelectQuery}
+        WHERE d.delivery_personnel_id = $3 AND d.status IN ('DELIVERED', 'FAILED')
+          AND ${dateRangeSql(finishedAt)}
+        ORDER BY ${finishedAt} DESC, d.delivery_id DESC
+        LIMIT ${historyLimit}`,
+      [from, to, personnelId],
+    ),
+    pool.query(
+      `SELECT COUNT(*) FILTER (WHERE d.status = 'DELIVERED') AS delivered,
+              COUNT(*) FILTER (WHERE d.status = 'FAILED') AS failed
+         FROM deliveries d
+        WHERE d.delivery_personnel_id = $3 AND d.status IN ('DELIVERED', 'FAILED')
+          AND ${dateRangeSql(finishedAt)}`,
+      [from, to, personnelId],
+    ),
+    // Assigned right now — not range-bound: work still in hand.
+    pool.query(`SELECT COUNT(*) AS open FROM deliveries WHERE delivery_personnel_id = $1 AND status IN ('ASSIGNED', 'OUT_FOR_DELIVERY')`, [personnelId]),
+    // Cash the driver recorded at the door. A refunded payment is not
+    // money they are still holding for the bakery, so only PAID counts.
+    pool.query(
+      `SELECT COALESCE(SUM(p.amount), 0) AS collected, COUNT(*) AS payments
+         FROM payments p
+        WHERE p.recorded_by = $3 AND p.status = 'PAID' AND p.payment_method = 'CASH'
+          AND ${dateRangeSql('p.payment_date')}`,
+      [from, to, request.user.id],
+    ),
+  ])
+
+  const delivered = Number(counts.rows[0].delivered)
+  const failed = Number(counts.rows[0].failed)
+  return response.json({
+    from,
+    to,
+    counts: {
+      delivered,
+      failed,
+      assignedNow: Number(open.rows[0].open),
+      cashCollected: cash.rows[0].collected,
+      cashPayments: Number(cash.rows[0].payments),
+    },
+    deliveries: rows.rows.map(mapDeliveryRow),
+    truncated: delivered + failed > historyLimit,
+  })
 })
 
 // PATCH /api/deliveries/:id/assign — staff only. Claims a delivery still
@@ -312,7 +379,9 @@ router.patch('/:id/status', async (request, response) => {
                                ELSE note || chr(10) || $2::text END, $3),
               delivery_personnel_id = CASE WHEN $1::delivery_status = 'PENDING_ASSIGNMENT' THEN NULL ELSE delivery_personnel_id END,
               assigned_at = CASE WHEN $1::delivery_status = 'PENDING_ASSIGNMENT' THEN NULL ELSE assigned_at END,
-              delivered_at = CASE WHEN $1::delivery_status = 'DELIVERED' THEN CURRENT_TIMESTAMP ELSE delivered_at END
+              delivered_at = CASE WHEN $1::delivery_status = 'DELIVERED' THEN CURRENT_TIMESTAMP ELSE delivered_at END,
+              failed_at = CASE WHEN $1::delivery_status = 'FAILED' THEN CURRENT_TIMESTAMP
+                               WHEN $1::delivery_status = 'PENDING_ASSIGNMENT' THEN NULL ELSE failed_at END
         WHERE delivery_id = $4
           AND status = ANY($5::delivery_status[])
           AND ($6::bigint IS NULL OR delivery_personnel_id = $6)

@@ -8,6 +8,7 @@ import { Input } from '../../components/ui/Input.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDateTime, formatPeso } from '../../lib/format.js'
+import { DeliveryHistory } from './DeliveryHistory.jsx'
 
 // Stage 5 (RULES-PLANS/UI_AUDIT.md) — the delivery role's only screen, and
 // the only one in the app worked standing up, on a phone, one-handed. H7's
@@ -41,6 +42,7 @@ export function MyDeliveries({ user }) {
   const [failNotes, setFailNotes] = useState({})
   const [proofFiles, setProofFiles] = useState({})
   const [cashAmounts, setCashAmounts] = useState({})
+  const [tab, setTab] = useState('Assigned')
 
   const loadDeliveries = async () => {
     setLoading(true)
@@ -129,10 +131,21 @@ export function MyDeliveries({ user }) {
 
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
-      <h1 className="mt-1 text-2xl font-semibold text-ink-900">My Deliveries</h1>
-      <p className="mt-2 text-sm text-ink-500">Deliveries currently assigned to you. No GPS tracking — this is a workflow checklist, not a map.</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600 print:hidden">{user.role} PORTAL</p>
+      <h1 className="mt-1 text-2xl font-semibold text-ink-900 print:hidden">My Deliveries</h1>
+      <p className="mt-2 text-sm text-ink-500 print:hidden">Deliveries assigned to you, and the ones you have finished. No GPS tracking — this is a workflow checklist, not a map.</p>
 
+      {/* PHASE10 B4 — finished deliveries used to vanish from this screen. */}
+      <div className="mt-4 flex gap-2 print:hidden" role="tablist">
+        {['Assigned', 'History'].map((name) => (
+          <Button key={name} type="button" size="sm" role="tab" aria-selected={tab === name} variant={tab === name ? 'primary' : 'secondary'} onClick={() => setTab(name)}>
+            {name}
+          </Button>
+        ))}
+      </div>
+
+      {tab === 'History' ? <DeliveryHistory user={user} /> : (
+      <>
       {message && (
         <div className="mt-4">
           <Alert variant={messageFailed ? 'error' : 'success'}>{message}</Alert>
@@ -256,6 +269,8 @@ export function MyDeliveries({ user }) {
             </li>
           ))}
         </ul>
+      )}
+      </>
       )}
     </section>
   )
