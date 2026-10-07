@@ -1,5 +1,9 @@
 import { Link, useNavigate, useOutletContext } from 'react-router-dom'
-import { Eyebrow, LineIcon, ScallopEdge, WheatSprig } from '../../components/storefront/Decor.jsx'
+import broasBasket from '../../assets/home/broas-basket.jpg'
+import custardPie from '../../assets/home/custard-pie.jpg'
+import giantChef from '../../assets/home/giant-chef.jpg'
+import heroBasket from '../../assets/home/hero-broas-basket.jpg'
+import { Eyebrow, LineIcon, ScallopEdge } from '../../components/storefront/Decor.jsx'
 import { ProductCard } from './ProductCard.jsx'
 import { sectionAnchor, useMenuData } from './useMenuData.js'
 
@@ -8,9 +12,11 @@ import { sectionAnchor, useMenuData } from './useMenuData.js'
 // counter by category, the most-loved items, how to get them, the story,
 // and a nudge toward big orders for fiestas and pasalubong.
 //
-// Everything shown is the live catalogue: the photos, prices and counts
-// come from /api/products, so nothing here goes stale when the menu
-// changes.
+// The big photographs are the bakery's own product photography (by
+// Lorenz Panganiban, Louie Ongkeko and Kel Gundran, credited on the
+// page). Everything else — category tiles, most-loved picks, prices,
+// counts — is the live catalogue from /api/products, so nothing goes
+// stale when the menu changes.
 
 // The bakery's signature items, in the order the hero and "Most loved"
 // should show them when they are on the menu. Matched by name, so a
@@ -36,7 +42,6 @@ export function HomePage() {
     .sort((a, b) => rank(a) - rank(b))
     .filter((product, index, list) => list.findIndex((other) => family(other) === family(product)) === index)
     .slice(0, 8)
-  const heroPhotos = favourites.slice(0, 3)
 
   const orderCta = isCustomer
     ? <Link to="/menu" className="inline-flex min-h-12 items-center rounded-full bg-crust-600 px-7 text-base font-bold text-white shadow-lg shadow-crust-700/25 transition hover:-translate-y-0.5 hover:bg-crust-700">Order now</Link>
@@ -44,39 +49,43 @@ export function HomePage() {
 
   return (
     <>
-      {/* ---- Hero ---- */}
-      <section className="relative overflow-hidden bg-cream-50">
-        <div aria-hidden="true" className="pointer-events-none absolute -right-32 -top-32 h-112 w-md rounded-full bg-butter-100" />
-        <div aria-hidden="true" className="pointer-events-none absolute -bottom-40 -left-24 h-80 w-80 rounded-full bg-cream-200/70" />
-        <div className="relative mx-auto grid max-w-7xl items-center gap-12 px-4 py-14 sm:px-7 sm:py-20 lg:grid-cols-[1.05fr_1fr]">
-          <div>
-            <Eyebrow>Pecto&apos;s Bakery · Lucban, Quezon</Eyebrow>
-            <h1 className="mt-5 font-display text-5xl font-bold leading-[1.02] text-cocoa-900 sm:text-6xl lg:text-7xl">
+      {/* ---- Hero ----
+          The photograph is mostly black on the left, so the words sit on
+          it directly; a gradient keeps them readable where the basket
+          reaches across on narrow screens. */}
+      <section className="relative isolate overflow-hidden bg-[#0d0a08] text-cream-50">
+        {/* On wide screens the photograph takes the right part only, so the
+            basket sits beside the words, not behind them; on a phone it
+            fills the hero, dimmed. */}
+        <img src={heroBasket} alt="A hand holding out a basket of Pecto's Broas" className="absolute inset-y-0 right-0 -z-10 h-full w-full object-cover object-[70%_center] lg:w-[68%] lg:object-center" />
+        <div aria-hidden="true" className="absolute inset-0 -z-10 bg-linear-to-r from-[#0d0a08] via-[#0d0a08]/85 to-transparent lg:from-[#0d0a08] lg:from-35% lg:via-[#0d0a08]/40 lg:via-50%" />
+        <div className="mx-auto flex min-h-[34rem] max-w-7xl flex-col justify-center px-4 py-20 sm:min-h-[38rem] sm:px-7 lg:min-h-[42rem]">
+          <div className="max-w-xl">
+            <Eyebrow className="text-butter-300">Lucban&apos;s Best Delicacies · Since 1947</Eyebrow>
+            <h1 className="mt-5 font-display text-5xl font-bold leading-[1.02] sm:text-6xl lg:text-7xl">
               Warm bread,<br />
-              <span className="italic text-crust-600">baked every morning.</span>
+              <span className="italic text-butter-300">baked every morning.</span>
             </h1>
-            <p className="mt-6 max-w-xl text-lg leading-8 text-cocoa-700">
+            <p className="mt-6 text-lg leading-8 text-cream-200">
               Our own Broas, soft ensaymada, and pandesal straight from the oven. Order ahead and pick it up at the bakery, or have it delivered anywhere in Lucban.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
               {orderCta}
               {!user && (
-                <button type="button" onClick={openLogin} className="inline-flex min-h-12 items-center rounded-full bg-white px-7 text-base font-bold text-cocoa-900 ring-1 ring-cream-300 transition hover:bg-cream-100">Sign in to order</button>
+                <button type="button" onClick={openLogin} className="inline-flex min-h-12 items-center rounded-full px-7 text-base font-bold text-cream-50 ring-1 ring-cream-50/50 transition hover:bg-cream-50/10">Sign in to order</button>
               )}
               {user && !isCustomer && (
-                <Link to="/dashboard" className="inline-flex min-h-12 items-center rounded-full bg-white px-7 text-base font-bold text-cocoa-900 ring-1 ring-cream-300 transition hover:bg-cream-100">Go to dashboard</Link>
+                <Link to="/dashboard" className="inline-flex min-h-12 items-center rounded-full px-7 text-base font-bold text-cream-50 ring-1 ring-cream-50/50 transition hover:bg-cream-50/10">Go to dashboard</Link>
               )}
             </div>
-            <ul className="mt-9 flex flex-wrap gap-x-7 gap-y-3 text-sm font-bold text-cocoa-700">
-              <li className="flex items-center gap-2"><LineIcon name="oven" className="h-5 w-5 text-crust-500" />Baked in-house</li>
-              <li className="flex items-center gap-2"><LineIcon name="pickup" className="h-5 w-5 text-crust-500" />Pickup ready on time</li>
-              <li className="flex items-center gap-2"><LineIcon name="delivery" className="h-5 w-5 text-crust-500" />Delivery within Lucban</li>
+            <ul className="mt-10 flex flex-wrap gap-x-7 gap-y-3 text-sm font-bold text-cream-100">
+              <li className="flex items-center gap-2"><LineIcon name="oven" className="h-5 w-5 text-butter-400" />Baked in-house</li>
+              <li className="flex items-center gap-2"><LineIcon name="pickup" className="h-5 w-5 text-butter-400" />Pickup ready on time</li>
+              <li className="flex items-center gap-2"><LineIcon name="delivery" className="h-5 w-5 text-butter-400" />Delivery within Lucban</li>
             </ul>
           </div>
-
-          <HeroCollage photos={heroPhotos} loading={loading} />
         </div>
-        <ScallopEdge className="text-cream-100" />
+        <ScallopEdge className="absolute inset-x-0 bottom-0 text-cream-100" />
       </section>
 
       {/* ---- Shop by category ---- */}
@@ -127,8 +136,8 @@ export function HomePage() {
       {/* ---- Story ---- */}
       <section className="mx-auto max-w-7xl px-4 pt-20 sm:px-7">
         <div className="grid overflow-hidden rounded-4xl bg-cocoa-900 text-cream-100 lg:grid-cols-2">
-          <div className="relative min-h-72 bg-cocoa-700">
-            {heroPhotos[0] && <img src={heroPhotos[0].imageUrl} alt={heroPhotos[0].name} loading="lazy" className="absolute inset-0 h-full w-full object-cover" />}
+          <div className="relative min-h-96 bg-[#2a2826] lg:min-h-[34rem]">
+            <img src={broasBasket} alt="A basket of Pecto's Broas, Lucban's ladyfinger biscuit" loading="lazy" className="absolute inset-0 h-full w-full object-cover object-top" />
           </div>
           <div className="p-8 sm:p-12">
             <Eyebrow className="text-butter-300">Our signature</Eyebrow>
@@ -144,44 +153,59 @@ export function HomePage() {
         </div>
       </section>
 
-      {/* ---- Fiesta / bulk CTA ---- */}
+      {/* ---- Fiesta / bulk CTA, over the custard pie ---- */}
       <section className="mx-auto max-w-7xl px-4 pt-16 sm:px-7">
-        <div className="relative overflow-hidden rounded-4xl bg-butter-100 px-6 py-10 text-center ring-1 ring-butter-300 sm:px-12">
-          <WheatSprig className="mx-auto h-10 w-10 text-crust-500" />
-          <h2 className="mt-3 font-display text-3xl font-bold text-cocoa-900 sm:text-4xl">Planning a fiesta or a big merienda?</h2>
-          <p className="mx-auto mt-3 max-w-2xl text-base leading-7 text-cocoa-700">Order by the tray or the gallon tin. Large orders are checked by the bakery first, so we can promise they will be ready on time.</p>
-          <div className="mt-6 flex flex-wrap justify-center gap-3">
-            {isCustomer
-              ? <Link to="/menu" className="inline-flex min-h-12 items-center rounded-full bg-crust-600 px-7 text-base font-bold text-white transition hover:bg-crust-700">Start an order</Link>
-              : <button type="button" onClick={user ? () => navigate('/menu') : openLogin} className="inline-flex min-h-12 items-center rounded-full bg-crust-600 px-7 text-base font-bold text-white transition hover:bg-crust-700">{user ? 'See the menu' : 'Sign in to order'}</button>}
-            <a href="tel:0425404366" className="inline-flex min-h-12 items-center gap-2 rounded-full bg-white px-7 text-base font-bold text-cocoa-900 ring-1 ring-cream-300 transition hover:bg-cream-50">
-              <LineIcon name="phone" className="h-5 w-5 text-crust-600" />(042) 540-4366
-            </a>
+        <div className="relative isolate overflow-hidden rounded-4xl bg-[#0b0806] text-cream-50">
+          <img src={custardPie} alt="A golden custard pie fresh from the oven" loading="lazy" className="absolute inset-0 -z-10 h-full w-full object-cover object-right" />
+          <div aria-hidden="true" className="absolute inset-0 -z-10 bg-linear-to-r from-[#0b0806] via-[#0b0806]/80 to-transparent" />
+          <div className="max-w-xl px-6 py-14 sm:px-12 sm:py-20">
+            <Eyebrow className="text-butter-300">Fiestas &amp; pasalubong</Eyebrow>
+            <h2 className="mt-4 font-display text-4xl font-bold leading-tight sm:text-5xl">Planning a fiesta or a big merienda?</h2>
+            <p className="mt-4 text-lg leading-8 text-cream-200">Order by the tray or the gallon tin. Large orders are checked by the bakery first, so we can promise they will be ready on time.</p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              {isCustomer
+                ? <Link to="/menu" className="inline-flex min-h-12 items-center rounded-full bg-butter-400 px-7 text-base font-bold text-cocoa-900 transition hover:bg-butter-300">Start an order</Link>
+                : <button type="button" onClick={user ? () => navigate('/menu') : openLogin} className="inline-flex min-h-12 items-center rounded-full bg-butter-400 px-7 text-base font-bold text-cocoa-900 transition hover:bg-butter-300">{user ? 'See the menu' : 'Sign in to order'}</button>}
+              <a href="tel:0425404366" className="inline-flex min-h-12 items-center gap-2 rounded-full px-7 text-base font-bold text-cream-50 ring-1 ring-cream-50/50 transition hover:bg-cream-50/10">
+                <LineIcon name="phone" className="h-5 w-5 text-butter-300" />(042) 540-4366
+              </a>
+            </div>
           </div>
         </div>
       </section>
-    </>
-  )
-}
 
-// Three photos in arched frames, like loaves on a shelf. Falls back to
-// warm blank frames while loading or when there are no photos.
-function HeroCollage({ photos, loading }) {
-  const frame = 'overflow-hidden bg-cream-200 shadow-[0_20px_50px_-20px_rgb(58_35_20/0.45)] ring-4 ring-white'
-  const img = (photo) => (photo && !loading ? <img src={photo.imageUrl} alt={photo.name} className="h-full w-full object-cover" /> : null)
-  return (
-    <div className="relative mx-auto grid w-full max-w-xl grid-cols-2 gap-4 sm:gap-5">
-      <div className={`${frame} row-span-2 aspect-3/5 rounded-t-full rounded-b-4xl`}>{img(photos[0])}</div>
-      <div className={`${frame} aspect-square rounded-4xl`}>{img(photos[1])}</div>
-      <div className={`${frame} aspect-square rounded-b-full rounded-t-4xl`}>{img(photos[2])}</div>
-      <div className="absolute -left-3 bottom-8 -rotate-6 rounded-2xl bg-white px-4 py-3 shadow-lg ring-1 ring-cream-200 sm:-left-8">
-        <p className="font-display text-lg font-bold leading-none text-crust-600">Fresh today</p>
-        <p className="mt-1 text-xs font-bold text-cocoa-500">Open from 6 AM, Mon–Sat</p>
-      </div>
-      <div className="absolute -right-2 -top-4 grid h-24 w-24 rotate-12 place-items-center rounded-full bg-butter-400 text-center shadow-lg ring-4 ring-white sm:-right-6">
-        <span className="font-display text-sm font-bold leading-tight text-cocoa-900">Lucban&apos;s<br />best</span>
-      </div>
-    </div>
+      {/* ---- Find us: the giant chef out front ---- */}
+      <section className="mx-auto max-w-7xl px-4 pt-20 sm:px-7">
+        <div className="grid items-center gap-10 lg:grid-cols-[0.8fr_1.2fr]">
+          <figure className="relative mx-auto w-full max-w-sm">
+            <div className="overflow-hidden rounded-t-full rounded-b-4xl bg-cream-200 shadow-[0_20px_50px_-20px_rgb(58_35_20/0.45)] ring-4 ring-white">
+              <img src={giantChef} alt="The giant Pecto's chef standing outside the bakery" loading="lazy" className="aspect-3/5 w-full object-cover object-top" />
+            </div>
+            <span className="absolute -right-4 top-10 rotate-6 rounded-2xl bg-butter-400 px-4 py-2 font-display text-base font-bold text-cocoa-900 shadow-lg sm:-right-8">Say hi to our chef!</span>
+          </figure>
+          <div>
+            <Eyebrow>Visit the bakery</Eyebrow>
+            <h2 className="mt-3 font-display text-4xl font-bold leading-tight text-cocoa-900 sm:text-5xl">Look for the giant chef on Quezon Avenue</h2>
+            <p className="mt-4 max-w-xl text-lg leading-8 text-cocoa-700">You can&apos;t miss us — our chef stands guard right outside the door. Come in for the full counter, warm from the oven, and pasalubong to take home.</p>
+            <dl className="mt-8 grid gap-4 sm:grid-cols-2">
+              <div className="rounded-[1.75rem] bg-white p-5 ring-1 ring-cream-200">
+                <dt className="flex items-center gap-2 font-display text-lg font-semibold text-cocoa-900"><LineIcon name="pin" className="h-5 w-5 text-crust-600" />Address</dt>
+                <dd className="mt-1 text-cocoa-700">93 Quezon Avenue, Lucban, Quezon</dd>
+              </div>
+              <div className="rounded-[1.75rem] bg-white p-5 ring-1 ring-cream-200">
+                <dt className="flex items-center gap-2 font-display text-lg font-semibold text-cocoa-900"><LineIcon name="clock" className="h-5 w-5 text-crust-600" />Open</dt>
+                <dd className="mt-1 text-cocoa-700">Monday – Saturday, 6:00 AM – 8:00 PM</dd>
+              </div>
+            </dl>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent("Pecto's Bakery, 93 Quezon Avenue, Lucban, Quezon")}`} target="_blank" rel="noreferrer" className="inline-flex min-h-12 items-center rounded-full bg-crust-600 px-7 text-base font-bold text-white transition hover:bg-crust-700">Get directions</a>
+              <Link to="/about" className="inline-flex min-h-12 items-center rounded-full bg-white px-7 text-base font-bold text-cocoa-900 ring-1 ring-cream-300 transition hover:bg-cream-50">Our story</Link>
+            </div>
+          </div>
+        </div>
+        <p className="mt-14 text-center text-xs text-cocoa-500">Product photography by Lorenz Panganiban, Louie Ongkeko and Kel Gundran.</p>
+      </section>
+    </>
   )
 }
 
