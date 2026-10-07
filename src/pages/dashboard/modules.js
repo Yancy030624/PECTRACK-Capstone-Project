@@ -16,6 +16,22 @@
 // done, freeing the name for the real inventory (stock level) screen below.
 // A customer's dashboard nav intentionally looks different from staff's —
 // see the comment above the CUSTOMER-only entries below for why.
+//
+// ORDER = IMPORTANCE. The sidebar lists modules in this order, so the
+// list runs from what the bakery needs every few minutes to what it
+// needs now and then:
+//   1. Dashboard            — what needs attention right now
+//   2. Order Management     — taking and moving orders, all day
+//   3. Production           — what has to be ready, by when
+//   4. Inventory Management — is there stock to sell
+//   5. Payment & Billing    — getting paid
+//   6. Delivery Management  — getting orders out the door
+//   7. Product Management   — the catalogue; changes now and then
+//   8. Customer Management  — looking a customer up
+//   9. Reporting & Analytics — looking back, planning ahead
+//  10. Staff Management     — accounts; rarely touched
+//  11. My Profile           — your own account
+// Each role sees only its own entries, in this same relative order.
 export const modules = [
   // ADMIN/CASHIER only. A customer's own landing screen is 'My Orders'
   // (Dashboard.jsx defaults them there directly) — the generic admin-style
@@ -34,7 +50,6 @@ export const modules = [
   // "send them to real content, not a placeholder" call already made for
   // customers.
   { name: 'Dashboard', icon: 'dashboard', roles: ['ADMIN', 'CASHIER'] },
-  { name: 'Staff Management', icon: 'staff', roles: ['ADMIN'] },
   // Staff manage every order; a customer only ever needs their own — two
   // different screens with two different names, not one screen wearing
   // two labels. Both map to the SAME component (OrderManagement.jsx,
@@ -42,25 +57,12 @@ export const modules = [
   // internally — the exact shape Delivery Management already established
   // for ADMIN/CASHIER vs DELIVERY PERSONNEL below.
   { name: 'Order Management', icon: 'orders', roles: ['ADMIN', 'CASHIER'] },
-  // Read-only for CASHIER (CustomerManagement.jsx hides Edit/Deactivate
-  // for anyone but ADMIN, and customers.js:53's PATCH route backs that up
-  // server-side) — a cashier still needs to look a customer up to attach
-  // one to a delivery order, but only ADMIN may change a customer's
-  // record. See UI_REVISIONS_PLAN.md Decision 12.
-  { name: 'Customer Management', icon: 'customers', roles: ['ADMIN', 'CASHIER'] },
-  // ADMIN only — every write in products.js is already admin-gated, so a
-  // cashier opening this screen previously saw a catalogue where every
-  // button failed. They already see products (with prices) inside the
-  // order screen and stock levels in Inventory Management, so the screen
-  // was redundant for them, not merely restricted. See
-  // UI_REVISIONS_PLAN.md Decision 13.
-  { name: 'Product Management', icon: 'products', roles: ['ADMIN'] },
-  { name: 'Inventory Management', icon: 'inventory', roles: ['ADMIN', 'CASHIER'] },
   // Production is the Due today schedule: open orders by the hour they
   // are due. Ingredients, recipes and production batches were removed as
   // out of the paper's scope (migration 022) — the system inventories
   // finished products only.
   { name: 'Production', icon: 'production', roles: ['ADMIN', 'CASHIER'] },
+  { name: 'Inventory Management', icon: 'inventory', roles: ['ADMIN', 'CASHIER'] },
   { name: 'Payment & Billing', icon: 'payments', roles: ['ADMIN', 'CASHIER'] },
   // Phase 7 (see PHASE7_PLAN.md) — one nav entry shared by three roles.
   // ADMIN/CASHIER get the assignment queue; DELIVERY PERSONNEL get their
@@ -70,6 +72,20 @@ export const modules = [
   // The driver's screen has always titled itself "My Deliveries"; the nav
   // said "Delivery Management". One name, the driver's own.
   { name: 'My Deliveries', icon: 'deliveries', roles: ['DELIVERY PERSONNEL'] },
+  // ADMIN only — every write in products.js is already admin-gated, so a
+  // cashier opening this screen previously saw a catalogue where every
+  // button failed. They already see products (with prices) inside the
+  // order screen and stock levels in Inventory Management, so the screen
+  // was redundant for them, not merely restricted. See
+  // UI_REVISIONS_PLAN.md Decision 13.
+  { name: 'Product Management', icon: 'products', roles: ['ADMIN'] },
+  // Read-only for CASHIER (CustomerManagement.jsx hides Edit/Deactivate
+  // for anyone but ADMIN, and customers.js:53's PATCH route backs that up
+  // server-side) — a cashier still needs to look a customer up to attach
+  // one to a delivery order, but only ADMIN may change a customer's
+  // record. See UI_REVISIONS_PLAN.md Decision 12.
+  { name: 'Customer Management', icon: 'customers', roles: ['ADMIN', 'CASHIER'] },
   { name: 'Reporting & Analytics', icon: 'reports', roles: ['ADMIN', 'CASHIER'] },
+  { name: 'Staff Management', icon: 'staff', roles: ['ADMIN'] },
   { name: 'My Profile', icon: 'profile', roles: ['ADMIN', 'CASHIER', 'DELIVERY PERSONNEL'] },
 ]
