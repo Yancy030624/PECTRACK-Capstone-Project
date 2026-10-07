@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { apiGet } from '../../api/client.js'
-import { Brand } from '../../components/Brand.jsx'
+import { MarketingHeader } from '../../components/MarketingHeader.jsx'
+import { Eyebrow, ScallopEdge } from '../../components/storefront/Decor.jsx'
 import { VerifyEmailBanner } from '../../components/VerifyEmailBanner.jsx'
+import { SiteFooter } from '../customer-storefront/StorefrontLayout.jsx'
 import { MyProfile } from '../dashboard/MyProfile.jsx'
 import { OrderManagement } from '../dashboard/OrderManagement.jsx'
 import { PaymentBilling } from '../dashboard/PaymentBilling.jsx'
@@ -14,9 +15,11 @@ import { formatPeso } from '../../lib/format.js'
 // of "modules", a "CUSTOMER PORTAL" eyebrow, the same ink-and-slate
 // palette as Inventory Management. It worked, but it told a person buying
 // pandesal that they were operating an internal tool. This is the same
-// three screens in the storefront's own clothes — bakery green, cream,
-// rounded cards — so signing in feels like staying on the shop's site
-// rather than being handed the staff console.
+// three screens in the storefront's own clothes — the storefront header
+// and footer, cream and crust, Fraunces headings — so signing in feels
+// like staying on the shop's site rather than being handed the staff
+// console. The panels take the bakery colours from the `storefront-skin`
+// wrapper (index.css), which re-points the dashboard tokens they use.
 //
 // The three panels themselves are the EXISTING components, unchanged:
 // MyProfile, OrderManagement and PaymentBilling each already dispatch on
@@ -89,48 +92,38 @@ export function CustomerAccount({ user, onLogout, onUserUpdated }) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#f5f7f2] text-stone-900">
-      {/* A slim bar, not the staff header: the brand goes home, because a
-          customer's way back to shopping should never be more than one
-          click from anywhere in their account. */}
-      <header className="border-t-[7px] border-[#26752a] bg-[#fffedc]">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-7">
-          <Link to="/" aria-label="Go to home"><Brand compact /></Link>
-          <div className="flex items-center gap-2">
-            <Link to="/menu" className="inline-flex min-h-9 items-center rounded-full bg-green-700 px-4 text-xs font-bold text-white shadow-sm transition hover:bg-green-800">Order now</Link>
-            <button type="button" onClick={onLogout} className="inline-flex min-h-9 items-center rounded-full border border-green-200 bg-white px-4 text-xs font-bold text-green-800 shadow-sm transition hover:bg-green-50">Sign out</button>
-          </div>
-        </div>
-      </header>
+    <div className="storefront-skin flex min-h-screen flex-col bg-cream-100 text-cocoa-700">
+      <MarketingHeader user={user} onLogout={onLogout} />
       <VerifyEmailBanner user={user} />
 
-      {/* The hero carries identity and the three figures worth knowing at a
-          glance. It is the one saturated block on the page; everything
-          below it is quiet cards, so the eye starts here and moves down. */}
-      <div className="bg-linear-to-br from-[#449947] via-[#17564e] to-[#112c78] text-white">
-        <div className="mx-auto max-w-5xl px-4 py-9 sm:px-7 sm:py-11">
+      {/* Identity and the three figures worth knowing at a glance, on the
+          same cream banner the storefront pages open with. */}
+      <section className="relative overflow-hidden bg-cream-50">
+        <div aria-hidden="true" className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-butter-100" />
+        <div className="relative mx-auto max-w-5xl px-4 pb-9 pt-10 sm:px-7 sm:pt-12">
           <div className="flex flex-wrap items-center gap-4">
-            <div className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-white/15 text-xl font-extrabold ring-2 ring-white/30">{user.name[0]}</div>
+            <div className="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-crust-600 font-display text-2xl font-bold text-white ring-4 ring-butter-300">{user.name[0]}</div>
             <div className="min-w-0">
-              <p className="text-xs font-semibold tracking-wide text-lime-200 uppercase">My account</p>
-              <h1 className="mt-0.5 text-2xl font-extrabold sm:text-3xl">Hi, {firstName}</h1>
+              <Eyebrow>My account</Eyebrow>
+              <h1 className="mt-1 font-display text-4xl font-bold text-cocoa-900 sm:text-5xl">Hi, {firstName}!</h1>
             </div>
           </div>
 
-          <div className="mt-6 grid gap-2 sm:mt-7 sm:grid-cols-3 sm:gap-4">
+          <div className="mt-7 grid gap-3 sm:grid-cols-3 sm:gap-4">
             <Stat label="Orders placed" value={stats ? stats.total : '—'} />
             <Stat label="In progress" value={stats ? stats.active : '—'} />
             <Stat label="Total ordered" value={stats ? formatPeso(stats.spent) : '—'} />
           </div>
         </div>
-      </div>
+        <ScallopEdge className="text-cream-100" />
+      </section>
 
       {/* The tab rail sticks to the top of the viewport, so switching
           section never means scrolling back up through a long order list.
           Three tabs with a caption each, not a sidebar: a customer has
           three places to be, and naming what each one holds is cheaper
           than making them guess from a one-word label. */}
-      <nav aria-label="Account sections" className="sticky top-0 z-30 border-b border-green-100 bg-[#f5f7f2]/95 backdrop-blur">
+      <nav aria-label="Account sections" className="sticky top-0 z-30 border-b border-cream-200 bg-cream-100/95 backdrop-blur">
         <div className="mx-auto grid max-w-5xl grid-cols-3 gap-2 px-4 py-3 sm:flex sm:px-7">
           {tabs.map((tab) => {
             const active = tab.key === activeTab
@@ -140,16 +133,16 @@ export function CustomerAccount({ user, onLogout, onUserUpdated }) {
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
                 aria-current={active ? 'page' : undefined}
-                className={`flex min-w-0 flex-col items-center gap-1 rounded-2xl px-2 py-2.5 text-center transition sm:flex-row sm:items-center sm:gap-2.5 sm:px-4 sm:text-left ${active ? 'bg-green-700 text-white shadow-md shadow-green-900/20' : 'bg-white text-green-900 ring-1 ring-green-100 hover:bg-green-50'}`}
+                className={`flex min-w-0 flex-col items-center gap-1 rounded-2xl px-2 py-2.5 text-center transition sm:flex-row sm:items-center sm:gap-2.5 sm:px-4 sm:text-left ${active ? 'bg-crust-600 text-white shadow-md shadow-crust-700/25' : 'bg-white text-cocoa-900 ring-1 ring-cream-300 hover:bg-cream-50'}`}
               >
-                <svg viewBox="0 0 24 24" className={`h-5 w-5 shrink-0 ${active ? 'text-lime-200' : 'text-green-700'}`} fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{tab.icon}</svg>
+                <svg viewBox="0 0 24 24" className={`h-5 w-5 shrink-0 ${active ? 'text-butter-300' : 'text-crust-600'}`} fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{tab.icon}</svg>
                 <span className="min-w-0">
                   {/* The label drops "My " on a phone: three tabs share
                       the width there, and the word is already implied by
                       the page it sits on. */}
-                  <span className="block text-xs font-bold sm:hidden">{tab.label.replace('My ', '')}</span>
-                  <span className="hidden text-sm font-bold whitespace-nowrap sm:block">{tab.label}</span>
-                  <span className={`hidden text-[11px] whitespace-nowrap sm:block ${active ? 'text-green-50/80' : 'text-stone-500'}`}>{tab.caption}</span>
+                  <span className="block text-sm font-bold sm:hidden">{tab.label.replace('My ', '')}</span>
+                  <span className="hidden font-display text-base font-semibold whitespace-nowrap sm:block">{tab.label}</span>
+                  <span className={`hidden text-xs whitespace-nowrap sm:block ${active ? 'text-cream-100/90' : 'text-cocoa-500'}`}>{tab.caption}</span>
                 </span>
               </button>
             )
@@ -164,20 +157,16 @@ export function CustomerAccount({ user, onLogout, onUserUpdated }) {
         <ActivePanel user={user} onUserUpdated={onUserUpdated} onNavigate={navigateToModule} />
       </main>
 
-      <footer className="border-t border-green-100 bg-[#fffedc] px-4 py-6 sm:px-7">
-        <p className="mx-auto max-w-5xl text-xs text-stone-500">
-          Need help with an order? Call <a href="tel:0425404366" className="font-bold text-green-800 hover:underline">(042) 540-4366</a> or visit us at 93 Quezon Avenue, Lucban, Quezon.
-        </p>
-      </footer>
+      <SiteFooter />
     </div>
   )
 }
 
 function Stat({ label, value }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 rounded-2xl bg-white/10 px-4 py-2.5 ring-1 ring-white/15 sm:block sm:px-4 sm:py-4">
-      <p className="text-[11px] font-semibold tracking-wide text-green-50/70 uppercase">{label}</p>
-      <p className="text-lg font-extrabold tabular-nums sm:mt-1 sm:text-2xl">{value}</p>
+    <div className="flex items-baseline justify-between gap-3 rounded-2xl bg-white px-5 py-3 ring-1 ring-cream-300 sm:block sm:py-4">
+      <p className="text-xs font-bold tracking-wide text-cocoa-500 uppercase">{label}</p>
+      <p className="font-display text-2xl font-bold text-crust-600 tabular-nums sm:mt-1 sm:text-3xl">{value}</p>
     </div>
   )
 }

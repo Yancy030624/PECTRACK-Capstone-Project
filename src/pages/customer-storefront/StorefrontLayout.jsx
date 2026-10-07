@@ -30,7 +30,8 @@ export function StorefrontLayout({ user, onOpenAuth, onLogout }) {
   )
 }
 
-function SiteFooter() {
+// Also used by the customer account page (CustomerAccount.jsx).
+export function SiteFooter() {
   return (
     <footer className="mt-16 bg-cocoa-900 text-cream-200">
       <ScallopEdge className="-mt-4 text-cocoa-900 sm:-mt-6" flip />

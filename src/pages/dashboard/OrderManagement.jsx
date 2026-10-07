@@ -372,7 +372,8 @@ function StaffOrderManagement({ user }) {
 
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
+      {/* The account page already says whose it is; the portal label is for staff. */}
+      {user.role !== 'CUSTOMER' && <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>}
       <h1 className="mt-1 text-2xl font-semibold text-ink-900">Order Management</h1>
       <p className="mt-2 text-sm text-ink-500">{isCashier ? 'Take an order at the counter, or manage every order already placed.' : 'Every order placed, pickup and delivery.'}</p>
 
@@ -632,7 +633,8 @@ function CustomerOrders({ user, onNavigate }) {
 
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
+      {/* The account page already says whose it is; the portal label is for staff. */}
+      {user.role !== 'CUSTOMER' && <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>}
       <h1 className="mt-1 text-2xl font-semibold text-ink-900">My Orders</h1>
       <p className="mt-2 text-sm text-ink-500">Everything you've ordered, and where it stands right now.</p>
 

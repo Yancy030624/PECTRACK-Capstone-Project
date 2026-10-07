@@ -152,3 +152,39 @@
   }
 }
 
+
+/* The customer account page wears the storefront's look — PHASE "bakery
+   UI". Its panels (MyProfile, OrderManagement, PaymentBilling) are the
+   same components the staff dashboard renders, so instead of a second
+   copy of each, the dashboard tokens they use are re-pointed at the
+   bakery palette inside this one wrapper. Status colours are left alone:
+   they mean the same thing everywhere. */
+.storefront-skin {
+  --color-brand-50: var(--color-cream-100);
+  --color-brand-100: var(--color-cream-200);
+  --color-brand-500: var(--color-crust-500);
+  --color-brand-600: var(--color-crust-600);
+  --color-brand-700: var(--color-crust-700);
+  --color-brand-900: var(--color-cocoa-900);
+  --color-accent-50: var(--color-butter-100);
+  --color-accent-100: var(--color-butter-100);
+  --color-accent-500: var(--color-crust-500);
+  --color-accent-600: var(--color-crust-600);
+  --color-surface: #ffffff;
+  --color-surface-sunk: var(--color-cream-100);
+  --color-surface-warm: var(--color-butter-100);
+  --color-ink-900: var(--color-cocoa-900);
+  --color-ink-700: var(--color-cocoa-700);
+  --color-ink-500: var(--color-cocoa-500);
+  /* Input and card edges need 3:1 against white (WCAG 1.4.11), which
+     cream-300 does not reach; this toasted tan is 3.5:1. */
+  --color-line-200: #a8845e;
+  --color-line-100: var(--color-cream-200);
+  --radius-control: 0.75rem;
+  --radius-panel: 1.5rem;
+  font-family: var(--font-body);
+}
+.storefront-skin h1,
+.storefront-skin h2 {
+  font-family: var(--font-display);
+}

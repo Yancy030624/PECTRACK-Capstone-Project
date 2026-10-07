@@ -321,7 +321,8 @@ export function PaymentBilling({ user }) {
 
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
+      {/* The account page already says whose it is; the portal label is for staff. */}
+      {user.role !== 'CUSTOMER' && <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>}
       <h1 className="mt-1 text-2xl font-semibold text-ink-900">{isStaff ? 'Payment & Billing' : 'My Payments'}</h1>
       <p className="mt-2 text-sm text-ink-500">{isStaff ? 'Record payments and review what each order still owes.' : "Your orders, what you've paid, and what you still owe."}</p>
 
