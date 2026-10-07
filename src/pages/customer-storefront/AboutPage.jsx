@@ -2,12 +2,14 @@ import { Link } from 'react-router-dom'
 import heritagePhoto from '../../assets/about/heritage-storefront.jpg'
 import missionPhoto from '../../assets/about/mission-oven.jpg'
 import visionPhoto from '../../assets/about/vision-baker.jpg'
+import guestsPhoto from '../../assets/about/visit-guests.jpg'
+import tvPhoto from '../../assets/about/visit-tv-feature.jpg'
 import { Eyebrow, ScallopEdge, WheatSprig } from '../../components/storefront/Decor.jsx'
 
 // Our Story. Layout and words from the bakery's own About page: the old
 // storefront and the founding line, the heritage story, then mission and
 // vision beside photos of the oven. Colours are the storefront's own
-// (cream, crust, cocoa). The three photos are the bakery's.
+// (cream, crust, cocoa). All photos are the bakery's own.
 export function AboutPage() {
   return (
     <>
@@ -58,8 +60,23 @@ export function AboutPage() {
         </div>
       </section>
 
+      {/* ---- Visitors ---- */}
+      <section className="relative overflow-hidden bg-butter-100 py-16 sm:py-20">
+        <div className="mx-auto max-w-7xl px-4 sm:px-7">
+          <div className="mx-auto max-w-2xl text-center">
+            <div className="flex justify-center"><Eyebrow>Visitors &amp; features</Eyebrow></div>
+            <h2 className="mt-4 font-display text-4xl font-bold leading-tight text-cocoa-900 sm:text-5xl">Familiar faces, same warm bread</h2>
+            <p className="mt-4 text-lg leading-8 text-cocoa-700">Over the years, Filipino celebrities and TV crews have stopped by our Lucban store — and like everyone else, they leave with Broas and pasalubong for the road.</p>
+          </div>
+          <div className="mt-12 grid items-start gap-10 md:grid-cols-2 md:gap-8 lg:gap-14">
+            <Snapshot photo={tvPhoto} alt="A TV crew filming a feature inside the Pecto's Bakery store" caption="On camera at the counter — a TV feature filmed in our store." tilt="-rotate-2" />
+            <Snapshot photo={guestsPhoto} alt="Celebrity guests holding Pecto's Broas and gift boxes in the store" caption="Leaving with Broas by the bag and the box." tilt="rotate-2 md:mt-10" />
+          </div>
+        </div>
+      </section>
+
       {/* ---- Mission and vision ---- */}
-      <section className="mx-auto max-w-7xl px-4 sm:px-7">
+      <section className="mx-auto max-w-7xl px-4 pt-16 sm:px-7 sm:pt-20">
         <div className="overflow-hidden rounded-4xl bg-cocoa-900 text-cream-100">
           <StoryRow
             eyebrow="Heart & soul"
@@ -96,6 +113,18 @@ function StoryRow({ eyebrow, title, text, photo, alt, photoFirst = false }) {
         <img src={photo} alt={alt} loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
       </div>
     </div>
+  )
+}
+
+// A photo pinned to the page like a snapshot: white border, a strip of
+// tape, a slight tilt that straightens on hover, and a caption beneath.
+function Snapshot({ photo, alt, caption, tilt }) {
+  return (
+    <figure className={`relative mx-auto w-full max-w-xl bg-white p-3 pb-5 shadow-[0_20px_45px_-18px_rgb(58_35_20/0.45)] transition duration-300 hover:rotate-0 sm:p-4 sm:pb-6 ${tilt}`}>
+      <span aria-hidden="true" className="absolute -top-3 left-1/2 h-7 w-28 -translate-x-1/2 rotate-[-3deg] bg-butter-300/80 shadow-sm" />
+      <img src={photo} alt={alt} loading="lazy" className="aspect-4/3 w-full object-cover" />
+      <figcaption className="mt-4 text-center font-display text-lg italic text-cocoa-700">{caption}</figcaption>
+    </figure>
   )
 }
 
