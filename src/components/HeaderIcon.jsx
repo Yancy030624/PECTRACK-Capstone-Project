@@ -10,12 +10,12 @@ export function HeaderIcon({ type, disabled = false, onClick, badge, label }) {
       disabled={disabled}
       onClick={disabled ? undefined : onClick}
       title={disabled ? 'Coming soon' : undefined}
-      className={`relative grid h-9 w-9 place-items-center rounded-full bg-white shadow-md transition ${disabled ? 'cursor-not-allowed text-stone-300' : 'text-stone-900 hover:-translate-y-0.5 hover:text-green-800'}`}
+      className={`relative grid h-10 w-10 place-items-center rounded-full bg-white ring-1 ring-cream-300 transition ${disabled ? 'cursor-not-allowed text-cocoa-500/40' : 'text-cocoa-900 hover:-translate-y-0.5 hover:bg-cream-100 hover:text-crust-600'}`}
       aria-label={label ?? type}
     >
-      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.4">{paths[type]}</svg>
+      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">{paths[type]}</svg>
       {!disabled && !!badge && (
-        <span className="absolute -right-1 -top-1 grid h-4.5 min-w-4.5 place-items-center rounded-full bg-green-700 px-1 text-[9px] font-bold text-white">{badge}</span>
+        <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-crust-600 px-1 text-[10px] font-extrabold text-white ring-2 ring-cream-50">{badge}</span>
       )}
     </button>
   )

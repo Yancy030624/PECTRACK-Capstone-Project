@@ -102,7 +102,7 @@ export function CheckoutPage({ user }) {
   if (loading) {
     return (
       <section className="mx-auto max-w-4xl px-4 py-14 sm:px-7">
-        <div className="h-64 animate-pulse rounded-2xl bg-white/70" />
+        <div className="h-64 animate-pulse rounded-2xl bg-cream-200" />
       </section>
     )
   }
@@ -110,41 +110,41 @@ export function CheckoutPage({ user }) {
   if (validLines.length === 0) {
     return (
       <section className="mx-auto max-w-4xl px-4 py-14 sm:px-7">
-        <p className="text-sm font-semibold text-green-700">CHECKOUT</p>
-        <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-stone-900 sm:text-4xl">Your cart is empty</h1>
-        <Link to="/menu" className="mt-6 inline-block rounded-full bg-green-700 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-green-800">Browse the menu</Link>
+        <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-crust-600">CHECKOUT</p>
+        <h1 className="mt-1 font-display text-4xl font-bold text-cocoa-900 sm:text-5xl">Your cart is empty</h1>
+        <Link to="/menu" className="mt-6 inline-block rounded-full bg-crust-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-crust-700">Browse the menu</Link>
       </section>
     )
   }
 
   return (
     <section className="mx-auto max-w-4xl px-4 py-14 sm:px-7">
-      <p className="text-sm font-semibold text-green-700">CHECKOUT</p>
-      <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-stone-900 sm:text-4xl">Place your order</h1>
+      <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-crust-600">CHECKOUT</p>
+      <h1 className="mt-1 font-display text-4xl font-bold text-cocoa-900 sm:text-5xl">Place your order</h1>
 
-      {message && <p role={messageFailed ? 'alert' : 'status'} className={`mt-6 rounded-lg px-3 py-2 text-xs font-semibold ${messageFailed ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-800'}`}>{message}</p>}
+      {message && <p role={messageFailed ? 'alert' : 'status'} className={`mt-6 rounded-lg px-3 py-2 text-xs font-semibold ${messageFailed ? 'bg-red-50 text-red-700' : 'bg-cream-100 text-crust-700'}`}>{message}</p>}
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_320px]">
         <div className="space-y-6">
-          <div className="rounded-2xl border border-green-100 bg-white p-5">
-            <h2 className="text-sm font-bold text-stone-900">How would you like your order?</h2>
+          <div className="rounded-2xl border border-cream-200 bg-white p-5">
+            <h2 className="text-sm font-bold text-cocoa-900">How would you like your order?</h2>
             <div className="mt-3 flex gap-3">
-              <button type="button" onClick={() => setOrderType('PICKUP')} className={`flex-1 rounded-xl border px-4 py-3 text-xs font-bold transition ${orderType === 'PICKUP' ? 'border-green-700 bg-green-50 text-green-800' : 'border-stone-200 text-stone-500'}`}>Pickup at the bakery</button>
-              <button type="button" onClick={() => setOrderType('DELIVERY')} className={`flex-1 rounded-xl border px-4 py-3 text-xs font-bold transition ${orderType === 'DELIVERY' ? 'border-green-700 bg-green-50 text-green-800' : 'border-stone-200 text-stone-500'}`}>Delivery</button>
+              <button type="button" onClick={() => setOrderType('PICKUP')} className={`flex-1 rounded-xl border px-4 py-3 text-xs font-bold transition ${orderType === 'PICKUP' ? 'border-crust-600 bg-cream-100 text-crust-700' : 'border-cream-300 text-cocoa-500'}`}>Pickup at the bakery</button>
+              <button type="button" onClick={() => setOrderType('DELIVERY')} className={`flex-1 rounded-xl border px-4 py-3 text-xs font-bold transition ${orderType === 'DELIVERY' ? 'border-crust-600 bg-cream-100 text-crust-700' : 'border-cream-300 text-cocoa-500'}`}>Delivery</button>
             </div>
           </div>
 
           {orderType === 'DELIVERY' && (
-            <div className="rounded-2xl border border-green-100 bg-white p-5">
-              <h2 className="text-sm font-bold text-stone-900">Delivery address</h2>
+            <div className="rounded-2xl border border-cream-200 bg-white p-5">
+              <h2 className="text-sm font-bold text-cocoa-900">Delivery address</h2>
               {addresses.length === 0 && !addingAddress && (
                 <div className="mt-3">
-                  <p className="text-xs text-stone-500">You don't have a saved address yet.</p>
-                  <button type="button" onClick={() => setAddingAddress(true)} className="mt-3 rounded-xl bg-green-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-green-800">Add a delivery address</button>
+                  <p className="text-xs text-cocoa-500">You don't have a saved address yet.</p>
+                  <button type="button" onClick={() => setAddingAddress(true)} className="mt-3 rounded-xl bg-crust-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-crust-700">Add a delivery address</button>
                 </div>
               )}
               {addingAddress && (
-                <div className="mt-4 border-t border-slate-100 pt-4">
+                <div className="mt-4 border-t border-cream-200 pt-4">
                   <AddressForm onSaved={handleAddressSaved} onCancel={() => setAddingAddress(false)} />
                 </div>
               )}
@@ -156,35 +156,35 @@ export function CheckoutPage({ user }) {
                       // server refuses the rest, so they are not offered.
                       const outside = address.municipality?.trim().toLowerCase() !== 'lucban'
                       return (
-                      <label key={address.id} className={`flex items-start gap-3 rounded-xl border p-3 text-xs transition ${outside ? 'cursor-not-allowed border-stone-200 opacity-60' : 'cursor-pointer'} ${addressId === address.id ? 'border-green-700 bg-green-50' : 'border-stone-200'}`}>
-                        <input type="radio" name="addressId" checked={addressId === address.id} disabled={outside} onChange={() => setAddressId(address.id)} className="mt-0.5 h-5 w-5 accent-green-700" />
+                      <label key={address.id} className={`flex items-start gap-3 rounded-xl border p-3 text-xs transition ${outside ? 'cursor-not-allowed border-cream-300 opacity-60' : 'cursor-pointer'} ${addressId === address.id ? 'border-crust-600 bg-cream-100' : 'border-cream-300'}`}>
+                        <input type="radio" name="addressId" checked={addressId === address.id} disabled={outside} onChange={() => setAddressId(address.id)} className="mt-0.5 h-5 w-5 accent-crust-600" />
                         <span>
-                          <span className="block font-bold text-stone-800">{address.label}{address.isDefault && <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-[9px] font-bold text-green-800">DEFAULT</span>}</span>
-                          <span className="block text-stone-600">{address.recipientName} · {address.contactNumber}</span>
-                          <span className="block text-stone-500">{address.addressLine1}{address.addressLine2 && `, ${address.addressLine2}`}{address.barangay && `, ${address.barangay}`}, {address.municipality}, {address.province}</span>
+                          <span className="block font-bold text-cocoa-900">{address.label}{address.isDefault && <span className="ml-2 rounded-full bg-butter-100 px-2 py-0.5 text-[9px] font-bold text-crust-700">DEFAULT</span>}</span>
+                          <span className="block text-cocoa-700">{address.recipientName} · {address.contactNumber}</span>
+                          <span className="block text-cocoa-500">{address.addressLine1}{address.addressLine2 && `, ${address.addressLine2}`}{address.barangay && `, ${address.barangay}`}, {address.municipality}, {address.province}</span>
                           {outside && <span className="mt-1 block font-semibold text-amber-800">Outside Lucban — we deliver within Lucban only. Choose pickup for this one.</span>}
                         </span>
                       </label>
                       )
                     })}
                   </div>
-                  <button type="button" onClick={() => setAddingAddress(true)} className="mt-3 py-2 text-xs font-bold text-green-700 hover:underline">+ Add another address</button>
+                  <button type="button" onClick={() => setAddingAddress(true)} className="mt-3 py-2 text-xs font-bold text-crust-600 hover:underline">+ Add another address</button>
                 </>
               )}
               {errors.addressId && <p className="mt-2 text-xs font-medium text-red-700">{errors.addressId}</p>}
             </div>
           )}
 
-          <div className="rounded-2xl border border-green-100 bg-white p-5">
-            <label htmlFor="checkout-instructions" className="text-sm font-bold text-stone-900">Special instructions (optional)</label>
-            <textarea id="checkout-instructions" value={instructions} onChange={(event) => setInstructions(event.target.value.slice(0, instructionsMaxLength))} rows={3} placeholder="e.g. Less sugar, birthday message on the cake" className="mt-3 w-full rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700" />
-            <p className="mt-1 text-right text-xs text-stone-500">{instructions.length}/{instructionsMaxLength}</p>
+          <div className="rounded-2xl border border-cream-200 bg-white p-5">
+            <label htmlFor="checkout-instructions" className="text-sm font-bold text-cocoa-900">Special instructions (optional)</label>
+            <textarea id="checkout-instructions" value={instructions} onChange={(event) => setInstructions(event.target.value.slice(0, instructionsMaxLength))} rows={3} placeholder="e.g. Less sugar, birthday message on the cake" className="mt-3 w-full rounded-xl border border-cream-300 px-3 py-2 text-xs outline-none focus:border-crust-500" />
+            <p className="mt-1 text-right text-xs text-cocoa-500">{instructions.length}/{instructionsMaxLength}</p>
           </div>
 
-          <div className="rounded-2xl border border-green-100 bg-white p-5">
-            <label htmlFor="checkout-needed-by" className="text-sm font-bold text-stone-900">When do you need it? (optional)</label>
-            <input id="checkout-needed-by" type="datetime-local" value={requestedFulfillmentTime} onChange={(event) => setRequestedFulfillmentTime(event.target.value)} className="mt-3 w-full rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:border-green-700" />
-            <p className="mt-1 text-xs text-stone-500">Leave blank for as soon as it's ready. Orders can be placed up to 30 days ahead.</p>
+          <div className="rounded-2xl border border-cream-200 bg-white p-5">
+            <label htmlFor="checkout-needed-by" className="text-sm font-bold text-cocoa-900">When do you need it? (optional)</label>
+            <input id="checkout-needed-by" type="datetime-local" value={requestedFulfillmentTime} onChange={(event) => setRequestedFulfillmentTime(event.target.value)} className="mt-3 w-full rounded-xl border border-cream-300 px-3 py-2 text-xs outline-none focus:border-crust-500" />
+            <p className="mt-1 text-xs text-cocoa-500">Leave blank for as soon as it's ready. Orders can be placed up to 30 days ahead.</p>
             {errors.requestedFulfillmentTime && <p className="mt-2 text-xs font-medium text-red-700">{errors.requestedFulfillmentTime}</p>}
           </div>
 
@@ -193,27 +193,27 @@ export function CheckoutPage({ user }) {
               <span className="font-bold">Confirm your email to place this order.</span> Open the link we sent to {user.email} — your cart is kept, and this page updates when you come back.
             </p>
           )}
-          <button type="button" onClick={handleSubmit} disabled={submitting || needsVerification} className="w-full rounded-2xl bg-green-700 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Placing your order…' : needsVerification ? 'Confirm your email first' : 'Place order'}</button>
+          <button type="button" onClick={handleSubmit} disabled={submitting || needsVerification} className="w-full rounded-2xl bg-crust-600 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-crust-700 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Placing your order…' : needsVerification ? 'Confirm your email first' : 'Place order'}</button>
         </div>
 
         {/* order-first below lg: on a phone the summary used to render
             AFTER the "Place order" button, so the customer committed
             before seeing the items and total. */}
-        <div className="order-first h-fit rounded-2xl border border-green-100 bg-[#fbfbdc] p-5 lg:order-none">
-          <h2 className="text-sm font-bold text-stone-900">Order summary</h2>
-          <div className="mt-3 space-y-2 divide-y divide-green-100/60">
+        <div className="order-first h-fit rounded-2xl border border-cream-200 bg-butter-100 p-5 lg:order-none">
+          <h2 className="text-sm font-bold text-cocoa-900">Order summary</h2>
+          <div className="mt-3 space-y-2 divide-y divide-cream-200">
             {validLines.map(({ line, product }) => (
               <div key={line.productId} className="flex items-center justify-between gap-2 pt-2 text-xs first:pt-0">
-                <span className="text-stone-700">{product.name}{product.variant ? ` (${product.variant})` : ''} × {line.quantity}</span>
-                <span className="font-bold text-stone-900">{formatPeso(Number(product.price) * line.quantity)}</span>
+                <span className="text-cocoa-700">{product.name}{product.variant ? ` (${product.variant})` : ''} × {line.quantity}</span>
+                <span className="font-bold text-cocoa-900">{formatPeso(Number(product.price) * line.quantity)}</span>
               </div>
             ))}
           </div>
-          <div className="mt-3 flex items-center justify-between border-t border-green-200 pt-3 text-sm font-extrabold text-green-800">
+          <div className="mt-3 flex items-center justify-between border-t border-cream-300 pt-3 text-sm font-extrabold text-crust-700">
             <span>Estimated total</span>
             <span>{formatPeso(subtotal)}</span>
           </div>
-          <Link to="/cart" className="mt-3 block py-2 text-center text-xs font-bold text-green-700 hover:underline">Edit cart</Link>
+          <Link to="/cart" className="mt-3 block py-2 text-center text-xs font-bold text-crust-600 hover:underline">Edit cart</Link>
         </div>
       </div>
     </section>

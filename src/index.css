@@ -74,6 +74,32 @@
   --radius-panel:   0.625rem;  /* 10px — cards, tables, modals */
   /* rounded-full stays, for pills and avatars ONLY */
 
+  /* ---- Storefront: the bakery look (customer pages only) ----
+     Flour cream, caramel crust, cocoa, butter, and the Pecto's logo
+     green as an accent. The staff dashboard keeps the brand tokens
+     above. Contrast checked for text use: crust-600 on white 5.1:1,
+     cocoa-700 on cream-100 9.6:1, cocoa-500 on cream-100 5.0:1. */
+  --color-cream-50:  #fffcf6;
+  --color-cream-100: #fbf4e6;
+  --color-cream-200: #f3e4c8;
+  --color-cream-300: #e8d2aa;
+  --color-crust-400: #d98c45;
+  --color-crust-500: #c4702a;
+  --color-crust-600: #a85b1e;   /* primary storefront action */
+  --color-crust-700: #8a4716;   /* hover */
+  --color-cocoa-900: #3a2314;   /* headings, footer */
+  --color-cocoa-700: #5c3b26;   /* body text */
+  --color-cocoa-500: #7a5a45;   /* secondary text */
+  --color-butter-100: #fdf1cc;
+  --color-butter-300: #f6d77a;
+  --color-butter-400: #f2c94c;
+  --color-leaf-50:  #ecf5e9;
+  --color-leaf-600: #2f7a35;
+  --color-leaf-700: #245f29;
+
+  --font-display: 'Fraunces', ui-serif, Georgia, serif;
+  --font-body: 'Nunito', ui-sans-serif, system-ui, sans-serif;
+
   /* ---- Shadow: two tiers (M5) ---- */
   --shadow-raised:  0 1px 2px rgb(28 27 23 / 0.06), 0 1px 3px rgb(28 27 23 / 0.04);
   --shadow-overlay: 0 8px 24px rgb(28 27 23 / 0.14);

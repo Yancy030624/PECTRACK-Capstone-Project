@@ -50,15 +50,15 @@ export function RegisterForm({ onSwitchToLogin }) {
     }
   }
 
-  const fieldClass = 'w-full rounded-2xl border border-stone-200 bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition focus:border-green-700 focus:ring-4 focus:ring-green-100'
+  const fieldClass = 'w-full rounded-2xl border border-stone-200 bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition focus:border-crust-500 focus:ring-4 focus:ring-cream-200'
 
   return (
     <div className="bg-[#fffedc] p-5 sm:p-8 md:p-11">
       <div className="md:hidden"><Brand compact /></div>
       <div className="mt-6 flex items-start justify-between gap-4 md:mt-2">
         <div>
-          <span className="rounded-full bg-lime-200 px-3 py-1.5 text-[10px] font-bold text-green-800">Customer Registration</span>
-          <h2 id="auth-heading" className="mt-3 text-3xl font-extrabold leading-[1.05] text-brand-700">Create your<br />account.</h2>
+          <span className="rounded-full bg-butter-300 px-3 py-1.5 text-[10px] font-bold text-crust-700">Customer Registration</span>
+          <h2 id="auth-heading" className="mt-3 text-3xl font-extrabold leading-[1.05] text-crust-700">Create your<br />account.</h2>
         </div>
       </div>
       <p className="mt-2 text-[11px] font-medium leading-5 text-stone-500">Create your Pectrack profile to place orders and keep your details in one place. Staff accounts are created by an admin.</p>
@@ -67,8 +67,8 @@ export function RegisterForm({ onSwitchToLogin }) {
         // One clear next step, rather than a blank form sitting under a
         // success message with nothing to do.
         <div className="mt-6">
-          <p role="status" className="rounded-lg bg-green-50 px-3 py-2 text-xs font-semibold text-green-800">{message}</p>
-          <button type="button" onClick={onSwitchToLogin} className="mt-5 w-full rounded-2xl bg-brand-600 py-2.5 text-xs font-bold text-white shadow-md transition hover:bg-brand-700">Sign in now</button>
+          <p role="status" className="rounded-lg bg-cream-100 px-3 py-2 text-xs font-semibold text-crust-700">{message}</p>
+          <button type="button" onClick={onSwitchToLogin} className="mt-5 w-full rounded-2xl bg-crust-600 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-crust-700">Sign in now</button>
         </div>
       ) : (
         <>
@@ -107,16 +107,16 @@ export function RegisterForm({ onSwitchToLogin }) {
                 {errors.confirmPassword && <p className="mt-1 text-xs font-medium text-red-700">{errors.confirmPassword}</p>}
               </div>
             </div>
-            <p className={`text-xs ${form.password && passwordHint === strongPasswordHint ? 'text-green-700' : 'text-stone-500'}`}>{passwordHint}</p>
+            <p className={`text-xs ${form.password && passwordHint === strongPasswordHint ? 'text-crust-600' : 'text-stone-500'}`}>{passwordHint}</p>
             <label className="flex cursor-pointer items-start gap-2 rounded-xl bg-white/70 p-2.5 text-xs leading-5 shadow-sm">
-              <input type="checkbox" checked={form.agree} onChange={(event) => updateField('agree', event.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-green-700" />
-              I agree to the <a href="#terms" className="font-bold text-green-700 underline">Terms of Service</a> and <a href="#privacy" className="font-bold text-green-700 underline">Privacy Policy</a>.
+              <input type="checkbox" checked={form.agree} onChange={(event) => updateField('agree', event.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-crust-600" />
+              I agree to the <a href="#terms" className="font-bold text-crust-600 underline">Terms of Service</a> and <a href="#privacy" className="font-bold text-crust-600 underline">Privacy Policy</a>.
             </label>
             {message && <p role="status" className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{message}</p>}
-            <button type="submit" disabled={submitting} className="w-full rounded-2xl bg-lime-500 py-2.5 text-xs font-bold text-green-950 shadow-lg shadow-lime-500/30 transition hover:bg-lime-400 focus:ring-4 focus:ring-lime-200 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Creating account…' : 'Create account'}</button>
+            <button type="submit" disabled={submitting} className="w-full rounded-2xl bg-crust-600 py-2.5 text-sm font-bold text-white shadow-lg shadow-crust-600/25 transition hover:bg-crust-700 focus:ring-4 focus:ring-cream-200 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Creating account…' : 'Create account'}</button>
           </form>
           <p className="mt-5 border-t border-stone-200 pt-4 text-center text-xs text-stone-500">
-            Already have an account? <button type="button" onClick={onSwitchToLogin} className="font-bold text-green-700 hover:underline">Back to sign in</button>
+            Already have an account? <button type="button" onClick={onSwitchToLogin} className="font-bold text-crust-600 hover:underline">Back to sign in</button>
           </p>
         </>
       )}

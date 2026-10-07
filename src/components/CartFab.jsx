@@ -31,7 +31,7 @@ export function CartFab({ user }) {
       // `fixed` and bottom-right, clear of the iOS home indicator via
       // env(safe-area-inset-bottom). z-40 keeps it under the auth dialog's
       // z-50 overlay rather than floating on top of it.
-      className="group fixed right-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-40 flex items-center gap-0 rounded-full bg-green-700 p-3.5 text-white shadow-xl shadow-green-900/25 transition hover:bg-green-800 hover:shadow-2xl focus-visible:ring-4 focus-visible:ring-green-300 sm:right-7 sm:gap-3 sm:py-3 sm:pr-5 sm:pl-4"
+      className="group fixed right-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-40 flex items-center gap-0 rounded-full bg-crust-600 p-3.5 text-white shadow-xl shadow-cocoa-900/25 transition hover:bg-crust-700 hover:shadow-2xl focus-visible:ring-4 focus-visible:ring-butter-300 sm:right-7 sm:gap-3 sm:py-3 sm:pr-5 sm:pl-4"
       aria-label={`View cart, ${itemCount} item${itemCount === 1 ? '' : 's'}`}
     >
       <span className="relative grid h-7 w-7 place-items-center">
@@ -42,7 +42,7 @@ export function CartFab({ user }) {
         </svg>
         {/* The count rides the icon, the way it does in the header, so the
             two read as the same object in two places. */}
-        <span className="absolute -top-1.5 -right-2 grid h-5 min-w-5 place-items-center rounded-full bg-lime-400 px-1 text-[11px] font-extrabold text-green-950 tabular-nums">
+        <span className="absolute -top-1.5 -right-2 grid h-5 min-w-5 place-items-center rounded-full bg-butter-400 px-1 text-[11px] font-extrabold text-cocoa-900 tabular-nums">
           {itemCount > 99 ? '99+' : itemCount}
         </span>
       </span>
