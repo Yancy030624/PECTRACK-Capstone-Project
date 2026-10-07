@@ -1,12 +1,10 @@
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useCart } from '../cart/CartContext.jsx'
 import logoMark from '../assets/logo-mark.png'
-import { WheatSprig } from './storefront/Decor.jsx'
 import { HeaderIcon } from './HeaderIcon.jsx'
 
-// The storefront header. A thin cocoa announcement strip, then a cream bar
-// with the logo, the four pages in the display serif, and the visitor's
-// own controls. Below `md` the four links become a scrolling pill row, so
+// The storefront header: a cream bar with the logo, the four pages in the
+// display serif, and the visitor's own controls. Below `md` the four links become a scrolling pill row, so
 // a phone visitor can still reach every page.
 const links = [['/', 'Home', true], ['/menu', 'Menu'], ['/about', 'Our Story'], ['/contact', 'Visit Us']]
 const navLinkClass = ({ isActive }) => `relative inline-flex min-h-10 items-center font-display text-[1.05rem] font-semibold transition hover:text-crust-600 ${isActive ? 'text-crust-600 after:absolute after:inset-x-0 after:bottom-0.5 after:h-0.5 after:rounded-full after:bg-crust-500' : 'text-cocoa-900'}`
@@ -28,12 +26,6 @@ export function MarketingHeader({ user, onOpenLogin = () => {}, onOpenRegister =
 
   return (
     <header className="font-body">
-      <div className="bg-cocoa-900 px-4 py-2 text-center text-xs font-semibold text-cream-100 sm:text-[13px]">
-        <span className="inline-flex items-center gap-2">
-          <WheatSprig className="h-4 w-4 text-butter-400" />
-          Baked fresh every morning in Lucban · Pickup at the bakery or delivery within Lucban
-        </span>
-      </div>
       <div className="border-b border-cream-200 bg-cream-50/95 backdrop-blur">
         <div className="mx-auto grid min-h-20 max-w-7xl grid-cols-[1fr_auto] items-center gap-4 px-4 py-3 sm:px-7 md:grid-cols-[1fr_auto_1fr]">
           <Link to="/" aria-label="Pecto's Bakery — home" className="flex items-center gap-3">
