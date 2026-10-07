@@ -3,7 +3,7 @@ import { useCart } from '../cart/CartContext.jsx'
 import logoMark from '../assets/logo-mark.png'
 import { HeaderIcon } from './HeaderIcon.jsx'
 
-// The storefront header: a cream bar with the logo, the four pages in the
+// The storefront header: a plain brown band, then a cream bar with the logo, the four pages in the
 // display serif, and the visitor's own controls. Below `md` the four links become a scrolling pill row, so
 // a phone visitor can still reach every page.
 const links = [['/', 'Home', true], ['/menu', 'Menu'], ['/about', 'Our Story'], ['/contact', 'Visit Us']]
@@ -26,6 +26,9 @@ export function MarketingHeader({ user, onOpenLogin = () => {}, onOpenRegister =
 
   return (
     <header className="font-body">
+      {/* A plain brown band above the cream bar — kept for the colour,
+          without the old announcement text. */}
+      <div aria-hidden="true" className="h-9 bg-cocoa-900" />
       <div className="border-b border-cream-200 bg-cream-50/95 backdrop-blur">
         <div className="mx-auto grid min-h-20 max-w-7xl grid-cols-[1fr_auto] items-center gap-4 px-4 py-3 sm:px-7 md:grid-cols-[1fr_auto_1fr]">
           <Link to="/" aria-label="Pecto's Bakery — home" className="flex items-center gap-3">
