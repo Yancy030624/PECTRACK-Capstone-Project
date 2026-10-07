@@ -12,6 +12,7 @@
 // an omitted optional field fails validation even though the field itself
 // is fine to leave out).
 import { useEffect, useMemo, useState } from 'react'
+import { FocusHeader } from '../../components/ui/FocusHeader.jsx'
 import { apiGet, apiPatch, apiPost } from '../../api/client.js'
 import { Modal } from '../../components/Modal.jsx'
 import { Alert } from '../../components/ui/Alert.jsx'
@@ -49,8 +50,12 @@ function OwedCell({ order }) {
   return <span className="font-semibold text-status-fail-fg tabular-nums">{formatPeso(order.balanceDue)}</span>
 }
 
-export function PaymentBilling({ user }) {
+export function PaymentBilling({ user, params, onNavigate }) {
   const isStaff = user.role === 'ADMIN' || user.role === 'CASHIER'
+  // Opened from the Dashboard's "Unpaid balances" tile: only the orders
+  // that still owe money — the same rule as the tile's total — without
+  // the payment log or the All toggle around them.
+  const unpaidOnly = isStaff && params?.focus === 'unpaid'
 
   const [activeTab, setActiveTab] = useState('billing')
 
@@ -322,9 +327,23 @@ export function PaymentBilling({ user }) {
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
       {/* The account page already says whose it is; the portal label is for staff. */}
-      {user.role !== 'CUSTOMER' && <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>}
-      <h1 className="mt-1 text-2xl font-semibold text-ink-900">{isStaff ? 'Payment & Billing' : 'My Payments'}</h1>
-      <p className="mt-2 text-sm text-ink-500">{isStaff ? 'Record payments and review what each order still owes.' : "Your orders, what you've paid, and what you still owe."}</p>
+      {unpaidOnly ? (
+        <FocusHeader
+          title="Unpaid balances"
+          count={loading ? null : visibleOrders.length}
+          tone={visibleOrders.length > 0 ? 'okay' : 'good'}
+          description={loading ? 'Open orders that still owe money.' : `${formatPeso(visibleOrders.reduce((sum, order) => sum + Number(order.balanceDue ?? 0), 0))} still owed across open orders. Select an order to record a payment.`}
+          onBack={() => onNavigate?.('Dashboard')}
+          onShowAll={() => onNavigate?.('Payment & Billing')}
+          showAllLabel="Show all of Payment & Billing"
+        />
+      ) : (
+        <>
+          {user.role !== 'CUSTOMER' && <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>}
+          <h1 className="mt-1 text-2xl font-semibold text-ink-900">{isStaff ? 'Payment & Billing' : 'My Payments'}</h1>
+          <p className="mt-2 text-sm text-ink-500">{isStaff ? 'Record payments and review what each order still owes.' : "Your orders, what you've paid, and what you still owe."}</p>
+        </>
+      )}
 
       {message && (
         <div className="mt-4">
@@ -332,7 +351,7 @@ export function PaymentBilling({ user }) {
         </div>
       )}
 
-      <div className="mt-6 flex gap-2">
+      <div className={`mt-6 gap-2 ${unpaidOnly ? 'hidden' : 'flex'}`}>
         {tabs.map((tab) => (
           <Button type="button" key={tab.key} size="sm" variant={activeTab === tab.key ? 'primary' : 'secondary'} onClick={() => setActiveTab(tab.key)}>
             {tab.label}
@@ -346,8 +365,8 @@ export function PaymentBilling({ user }) {
         <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
           <Card className="min-w-0 p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold text-ink-900">{isStaff ? 'Orders' : 'Your orders'}</h2>
-              <div className="flex gap-2">
+              <h2 className="text-lg font-semibold text-ink-900">{unpaidOnly ? 'Orders still owing' : isStaff ? 'Orders' : 'Your orders'}</h2>
+              <div className={`gap-2 ${unpaidOnly ? 'hidden' : 'flex'}`}>
                 <Button type="button" size="sm" variant={owedOnly ? 'primary' : 'secondary'} onClick={() => setOwedOnly(true)}>Still owed</Button>
                 <Button type="button" size="sm" variant={owedOnly ? 'secondary' : 'primary'} onClick={() => setOwedOnly(false)}>All</Button>
               </div>

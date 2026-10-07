@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiGet, apiPatch } from '../../api/client.js'
+import { FocusHeader } from '../../components/ui/FocusHeader.jsx'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Button } from '../../components/ui/Button.jsx'
 import { Card } from '../../components/ui/Card.jsx'
@@ -13,10 +14,15 @@ import { MyDeliveries } from './MyDeliveries.jsx'
 
 const statusOptions = ['PENDING_ASSIGNMENT', 'ASSIGNED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED']
 
-export function DeliveryManagement({ user }) {
+export function DeliveryManagement({ user, params, onNavigate }) {
   if (user.role === 'DELIVERY PERSONNEL') return <MyDeliveries user={user} />
-  return <StaffDeliveryView user={user} />
+  return <StaffDeliveryView user={user} params={params} onNavigate={onNavigate} />
 }
+
+// The Dashboard's "Deliveries to assign" tile — the same rule as its
+// count in /api/reports/summary: waiting for a driver, on an order that
+// is not already finished.
+const waitingForDriver = (delivery) => delivery.status === 'PENDING_ASSIGNMENT' && delivery.orderStatus !== 'COMPLETED' && delivery.orderStatus !== 'CANCELLED'
 
 // Stage 5 (RULES-PLANS/UI_AUDIT.md) — this is the staff half of the
 // delivery role (ADMIN/CASHIER's assignment queue); MyDeliveries.jsx is the
@@ -31,13 +37,16 @@ export function DeliveryManagement({ user }) {
 // Untouched: the status transition rules/order and the one-directional
 // deliveries.status -> orders.status sync (PHASE7_PLAN.md). This is
 // presentation only.
-function StaffDeliveryView({ user }) {
+function StaffDeliveryView({ user, params, onNavigate }) {
   const isAdmin = user.role === 'ADMIN'
+  // Opened from the Dashboard tile: only the deliveries waiting for a
+  // driver, without the rest of the module around them.
+  const toAssignOnly = params?.focus === 'toAssign'
 
   const [deliveries, setDeliveries] = useState([])
   const [personnel, setPersonnel] = useState([])
   const [loading, setLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState(toAssignOnly ? 'PENDING_ASSIGNMENT' : '')
   const [message, setMessage] = useState('')
   const [messageFailed, setMessageFailed] = useState(false)
 
@@ -47,6 +56,8 @@ function StaffDeliveryView({ user }) {
 
   const [expandedProofsId, setExpandedProofsId] = useState(null)
   const [proofsById, setProofsById] = useState({})
+
+  const visibleDeliveries = toAssignOnly ? deliveries.filter(waitingForDriver) : deliveries
 
   const loadDeliveries = async () => {
     setLoading(true)
@@ -129,9 +140,23 @@ function StaffDeliveryView({ user }) {
 
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
-      <h1 className="mt-1 text-2xl font-semibold text-ink-900">Delivery Management</h1>
-      <p className="mt-2 text-sm text-ink-500">Assign drivers to delivery orders and track each one through to delivered. No GPS tracking — this is a status workflow, not a live map.</p>
+      {toAssignOnly ? (
+        <FocusHeader
+          title="Deliveries to assign"
+          count={loading ? null : visibleDeliveries.length}
+          tone={visibleDeliveries.length > 0 ? 'attention' : 'good'}
+          description="Delivery orders waiting for a driver. Pick a driver for each one; an order still PLACED needs confirming in Order Management first."
+          onBack={() => onNavigate?.('Dashboard')}
+          onShowAll={() => onNavigate?.('Delivery Management')}
+          showAllLabel="Show all deliveries"
+        />
+      ) : (
+        <>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
+          <h1 className="mt-1 text-2xl font-semibold text-ink-900">Delivery Management</h1>
+          <p className="mt-2 text-sm text-ink-500">Assign drivers to delivery orders and track each one through to delivered. No GPS tracking — this is a status workflow, not a live map.</p>
+        </>
+      )}
 
       {message && (
         <div className="mt-4">
@@ -140,7 +165,7 @@ function StaffDeliveryView({ user }) {
       )}
 
       <Card className="mt-6 p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className={`flex-wrap items-center justify-between gap-3 ${toAssignOnly ? 'hidden' : 'flex'}`}>
           <h2 className="text-lg font-semibold text-ink-900">Deliveries</h2>
           <div className="w-full sm:w-56">
             <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter by status">
@@ -152,11 +177,11 @@ function StaffDeliveryView({ user }) {
 
         {loading ? (
           <LoadingRows className="mt-4" />
-        ) : deliveries.length === 0 ? (
-          <EmptyState title="No deliveries match this filter." />
+        ) : visibleDeliveries.length === 0 ? (
+          <EmptyState title={toAssignOnly ? 'Every delivery has a driver.' : 'No deliveries match this filter.'} />
         ) : (
-          <ul className="mt-4 space-y-4">
-            {deliveries.map((delivery) => (
+          <ul className={`space-y-4 ${toAssignOnly ? '' : 'mt-4'}`}>
+            {visibleDeliveries.map((delivery) => (
               <li key={delivery.id} className="rounded-panel border border-line-200 p-4 text-sm">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>

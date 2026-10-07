@@ -366,7 +366,10 @@ router.get('/summary', async (_request, response) => {
     // Only deliveries someone can still act on: a row whose order is
     // already COMPLETED or CANCELLED cannot be assigned (routes/deliveries.js
     // refuses it), so counting it here sent staff to a queue of dead work.
-    pool.query(`SELECT COUNT(*)::int AS n FROM deliveries d JOIN orders o ON o.order_id = d.order_id WHERE d.status IN ('PENDING_ASSIGNMENT', 'ASSIGNED') AND o.status NOT IN ('COMPLETED', 'CANCELLED')`),
+    // Waiting for a driver only — the Dashboard tile is "Deliveries to
+    // assign" and opens exactly this list. An ASSIGNED delivery already
+    // has one; it is the driver's to move, not the counter's.
+    pool.query(`SELECT COUNT(*)::int AS n FROM deliveries d JOIN orders o ON o.order_id = d.order_id WHERE d.status = 'PENDING_ASSIGNMENT' AND o.status NOT IN ('COMPLETED', 'CANCELLED')`),
     getExpiredStock(),
     // PHASE10 B1 — products the latest forecast says run out by tomorrow.
     likelySellOutSummary(),

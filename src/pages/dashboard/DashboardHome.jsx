@@ -79,7 +79,7 @@ export function DashboardHome({ user, onNavigate }) {
       value: summary.deliveriesNeedingAttention,
       tone: summary.deliveriesNeedingAttention > 0 ? 'attention' : 'good',
       note: summary.deliveriesNeedingAttention > 0 ? 'Waiting for a driver' : 'Every delivery has a driver',
-      to: ['Delivery Management'],
+      to: ['Delivery Management', { focus: 'toAssign' }],
     },
     isAdmin && {
       label: 'Bulk orders to approve',
@@ -93,7 +93,7 @@ export function DashboardHome({ user, onNavigate }) {
       value: formatPeso(summary.outstanding),
       tone: Number(summary.outstanding) > 0 ? 'okay' : 'good',
       note: Number(summary.outstanding) > 0 ? 'Still owed on open orders' : 'Everything is paid',
-      to: ['Payment & Billing'],
+      to: ['Payment & Billing', { focus: 'unpaid' }],
     },
     summary.likelySellOut && {
       label: 'Likely to sell out',
