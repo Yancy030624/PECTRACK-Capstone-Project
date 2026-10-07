@@ -1,58 +1,105 @@
 import { Link } from 'react-router-dom'
-import { Eyebrow, LineIcon, ScallopEdge } from '../../components/storefront/Decor.jsx'
-import { useMenuData } from './useMenuData.js'
+import heritagePhoto from '../../assets/about/heritage-storefront.jpg'
+import missionPhoto from '../../assets/about/mission-oven.jpg'
+import visionPhoto from '../../assets/about/vision-baker.jpg'
+import { Eyebrow, ScallopEdge, WheatSprig } from '../../components/storefront/Decor.jsx'
 
+// Our Story. Layout and words from the bakery's own About page: the old
+// storefront and the founding line, the heritage story, then mission and
+// vision beside photos of the oven. Colours are the storefront's own
+// (cream, crust, cocoa). The three photos are the bakery's.
 export function AboutPage() {
-  const { sections } = useMenuData()
-  const photos = sections.flatMap((section) => section.items).filter((product) => product.imageUrl)
-  const broas = photos.find((product) => product.name.toLowerCase().includes('broas')) ?? photos[0]
-  const second = photos.find((product) => product !== broas && product.name.toLowerCase().includes('ensaymada')) ?? photos[1]
-
   return (
     <>
-      <PageBanner eyebrow="Our story" title="A small bakery, baking for Lucban every day" lead={'Known locally simply as "Lucban\'s Best Delicacies" — the name on the wrapper of everything we bake.'} />
-
-      <section className="mx-auto grid max-w-7xl items-center gap-12 px-4 pt-14 sm:px-7 lg:grid-cols-2">
-        <div className="space-y-5 text-base leading-8 text-cocoa-700">
-          <p>Pecto&apos;s Bakery has been part of Lucban, Quezon&apos;s daily routine — fresh bread every morning, and the kind of pastries people plan their day around.</p>
-          <p>Our <span className="font-bold text-crust-600">Broas</span> — Lucban&apos;s own ladyfinger biscuit — is what we are best known for, sold by the pack all the way up to the gallon tin for fiestas and pasalubong. Alongside it: ensaymada, pandesal, and a full counter of everyday pastries.</p>
-          <p>We are still a small, family-run bakery at heart. Every batch is baked in-house, and every order is prepared to be picked up or delivered fresh.</p>
-          <Link to="/menu" className="inline-flex min-h-12 items-center rounded-full bg-crust-600 px-7 text-base font-bold text-white transition hover:bg-crust-700">See what&apos;s fresh today</Link>
+      {/* ---- Hero ---- */}
+      <section className="relative overflow-hidden bg-cream-50">
+        <div aria-hidden="true" className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-butter-100" />
+        <div className="relative mx-auto grid max-w-7xl items-center gap-10 px-4 py-14 sm:px-7 sm:py-20 lg:grid-cols-2">
+          <div>
+            <Eyebrow>Est. 1947 · Lucban, Quezon</Eyebrow>
+            <h1 className="mt-5 font-display text-5xl font-bold leading-tight text-cocoa-900 sm:text-6xl">Pecto&apos;s Bakery</h1>
+            <p className="mt-5 max-w-xl text-lg leading-8 text-cocoa-700">
+              Pecto&apos;s Bakery is a proudly homegrown bakery in Lucban, Quezon, bringing traditional Filipino baked goods to every household, every fiesta, every day.
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link to="/menu" className="inline-flex min-h-12 items-center rounded-full bg-crust-600 px-7 text-base font-bold text-white shadow-lg shadow-crust-700/25 transition hover:-translate-y-0.5 hover:bg-crust-700">Explore our menu</Link>
+              <Link to="/contact" className="inline-flex min-h-12 items-center rounded-full bg-white px-7 text-base font-bold text-cocoa-900 ring-1 ring-cream-300 transition hover:bg-cream-100">Visit us</Link>
+            </div>
+          </div>
+          <figure className="mx-auto w-full max-w-md lg:max-w-lg">
+            <div className="overflow-hidden rounded-4xl bg-cream-200 shadow-[0_20px_50px_-20px_rgb(58_35_20/0.45)] ring-4 ring-white">
+              <img src={heritagePhoto} alt="The old Pecto's Bakery storefront in Lucban" className="aspect-6/5 h-full w-full object-cover" />
+            </div>
+            <figcaption className="mt-3 text-center text-sm text-cocoa-500">Where it all began — the first Pecto&apos;s Bakery in Lucban.</figcaption>
+          </figure>
         </div>
-        <div className="relative grid grid-cols-2 gap-4">
-          <div className="aspect-3/4 overflow-hidden rounded-t-full rounded-b-4xl bg-cream-200 ring-4 ring-white shadow-lg">
-            {broas && <img src={broas.imageUrl} alt={broas.name} className="h-full w-full object-cover" />}
-          </div>
-          <div className="mt-12 aspect-3/4 overflow-hidden rounded-4xl bg-cream-200 ring-4 ring-white shadow-lg">
-            {second && <img src={second.imageUrl} alt={second.name} className="h-full w-full object-cover" />}
-          </div>
+        <ScallopEdge className="text-cream-100" />
+      </section>
+
+      {/* ---- Heritage ---- */}
+      <section className="mx-auto max-w-3xl px-4 py-16 text-center sm:px-7 sm:py-20">
+        <div className="flex justify-center"><Eyebrow>Our heritage</Eyebrow></div>
+        <h2 className="mt-4 font-display text-4xl font-bold leading-tight text-cocoa-900 sm:text-5xl">Baking traditions, one loaf at a time</h2>
+        <div className="mt-8 space-y-6 text-base leading-8 text-cocoa-700 sm:text-lg">
+          <p>
+            Pecto&apos;s Bakery was built on a simple belief: that the warmth of freshly baked bread can bring people together — family, neighbors, and friends. We believe that great baked goods aren&apos;t just food — they&apos;re a moment of comfort, right when you need it. But that kind of warmth shouldn&apos;t be hard to find or come at a high price. That&apos;s why we built a bakery that&apos;s always fresh, always welcoming, and always affordable — without compromising on quality and taste.
+          </p>
+          <p>
+            With our bakery right in the heart of Lucban and a menu crafted from generations-old recipes using locally sourced ingredients, Pecto&apos;s Bakery is made to be part of your every day, not just the special fiestas.
+          </p>
+          <p>
+            No pretension. No shortcuts. Just great bread made for everyone. Because everybody deserves great baked goods. And that&apos;s why no matter how we grow, our purpose will always stay the same: to bring warmth to everyone, everywhere — one loaf at a time.
+          </p>
+        </div>
+        <div className="mt-10 flex items-center justify-center gap-3 text-crust-500" aria-hidden="true">
+          <span className="h-px w-16 bg-cream-300" />
+          <WheatSprig className="h-6 w-6" />
+          <span className="h-px w-16 bg-cream-300" />
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-4 pt-16 sm:px-7">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Fact icon="oven" value="Every morning" label="Baked fresh, Monday to Saturday" />
-          <Fact icon="bulk" value="40+ items" label="On the counter — breads, broas, pastries" />
-          <Fact icon="delivery" value="All of Lucban" label="Pickup at the bakery or delivered" />
+      {/* ---- Mission and vision ---- */}
+      <section className="mx-auto max-w-7xl px-4 sm:px-7">
+        <div className="overflow-hidden rounded-4xl bg-cocoa-900 text-cream-100">
+          <StoryRow
+            eyebrow="Heart & soul"
+            title="Our mission"
+            text="Bring warmth to every Filipino home with fresh, delicious, and surprisingly affordable baked goods, everywhere — one loaf at a time."
+            photo={missionPhoto}
+            alt="Loaves going into the Pecto's Bakery brick oven"
+          />
+          <StoryRow
+            eyebrow="The horizon"
+            title="Our vision"
+            text="To be the most loved neighborhood bakery brand in the Philippines, creating heartwarming experiences through quality, tradition, and exceptional value."
+            photo={visionPhoto}
+            alt="A Pecto's baker taking a fresh tray out of the oven"
+            photoFirst
+          />
         </div>
       </section>
     </>
   )
 }
 
-function Fact({ icon, value, label }) {
+// One half text, one half photo; `photoFirst` puts the photo on the left
+// on wide screens, so the two rows alternate the way the bakery's page does.
+function StoryRow({ eyebrow, title, text, photo, alt, photoFirst = false }) {
   return (
-    <div className="flex items-center gap-4 rounded-[1.75rem] bg-white p-6 ring-1 ring-cream-200">
-      <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-cream-100 text-crust-600 ring-1 ring-cream-300"><LineIcon name={icon} className="h-7 w-7" /></span>
-      <span>
-        <span className="block font-display text-2xl font-bold text-cocoa-900">{value}</span>
-        <span className="block text-sm text-cocoa-500">{label}</span>
-      </span>
+    <div className="grid lg:grid-cols-2">
+      <div className={`flex flex-col justify-center p-8 sm:p-12 lg:p-16 ${photoFirst ? 'lg:order-2' : ''}`}>
+        <Eyebrow className="text-butter-300">{eyebrow}</Eyebrow>
+        <h2 className="mt-4 font-display text-4xl font-bold text-cream-50 sm:text-5xl">{title}</h2>
+        <p className="mt-5 max-w-lg text-lg leading-8 text-cream-200">{text}</p>
+      </div>
+      <div className={`relative min-h-72 bg-cocoa-700 sm:min-h-96 ${photoFirst ? 'lg:order-1' : ''}`}>
+        <img src={photo} alt={alt} loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
+      </div>
     </div>
   )
 }
 
-// The cream banner the Menu, About and Visit Us pages open with.
+// The cream banner the Visit Us page opens with.
 export function PageBanner({ eyebrow, title, lead, children }) {
   return (
     <section className="relative overflow-hidden bg-cream-50">
