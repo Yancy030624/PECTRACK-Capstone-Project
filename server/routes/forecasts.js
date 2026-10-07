@@ -158,8 +158,7 @@ router.post('/run', requireRole('ADMIN'), async (request, response) => {
 })
 
 // The latest run, whole: products with their seven days, the skipped ones
-// and why, and — for products mapped to a recipe — what the forecast means
-// in ingredients.
+// and why.
 async function loadRun(runId) {
   const runResult = await pool.query(
     `SELECT r.*, COALESCE(a.name, c.name) AS run_by_name
@@ -218,27 +217,6 @@ async function loadRun(runId) {
     })
   }
 
-  // Ingredient needs: forecast items × base units per item ÷ recipe yield
-  // × the recipe line. Only products mapped to a recipe contribute — and
-  // the plan deliberately does NOT invent recipes (Decision 5), so until
-  // the owner's real ones are entered this is empty and says why.
-  const [mapped, needs] = await Promise.all([
-    pool.query('SELECT COUNT(*)::int AS n FROM products WHERE availability_status = TRUE AND recipe_id IS NOT NULL'),
-    pool.query(
-      `SELECT i.ingredient_id, i.name, i.unit, i.stock_quantity,
-              SUM(f.predicted * p.units_per_item / r.yield_quantity * ri.quantity)::numeric(12, 3) AS needed
-         FROM forecasts f
-         JOIN products p ON p.product_id = f.product_id
-         JOIN recipes r ON r.recipe_id = p.recipe_id
-         JOIN recipe_ingredients ri ON ri.recipe_id = r.recipe_id
-         JOIN ingredients i ON i.ingredient_id = ri.ingredient_id
-        WHERE f.run_id = $1
-        GROUP BY i.ingredient_id, i.name, i.unit, i.stock_quantity
-        ORDER BY i.name`,
-      [runId],
-    ),
-  ])
-
   const sources = run.sources.replace(/[{}]/g, '').split(',').filter(Boolean)
   // B1 of PHASE10: which products run out, and how many to bake.
   const restock = await restockForRun(runId)
@@ -260,17 +238,6 @@ async function loadRun(runId) {
     dates,
     products,
     skipped,
-    ingredients: {
-      mappedProducts: mapped.rows[0].n,
-      needs: needs.rows.map((row) => ({
-        ingredientId: row.ingredient_id,
-        name: row.name,
-        unit: row.unit,
-        needed: row.needed,
-        onHand: row.stock_quantity,
-        short: Number(row.needed) > Number(row.stock_quantity),
-      })),
-    },
   }
 }
 

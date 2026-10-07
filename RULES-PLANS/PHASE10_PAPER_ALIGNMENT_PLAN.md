@@ -159,9 +159,28 @@ accounts are automatically logged out."*
 | Admin can **create** customer records (p.13) | "Customers create their own accounts; the administrator can view, update and deactivate them. Walk-in customers need no account." |
 | Cashier proposes **pricing, descriptions, availability** (p.14) | "The cashier can propose stock corrections and report losses; the administrator approves them before stock changes. Product details are managed by the administrator." |
 | **Delivery fee** in checkout (p.40) | Remove, or state that delivery is free within Lucban. |
-| Cashier sees **only their own sales that day** (p.41) | "Administrators and cashiers can view the sales, product, inventory and production reports; report history is administrator-only." |
+| Cashier sees **only their own sales that day** (p.41) | "Administrators and cashiers can view the sales, product, inventory and forecast reports; report history is administrator-only." |
 | **SMS** order updates, promo notifications; profile birthday, membership date, preferred payment (p.28–30) | Remove from the figure descriptions, or mark the figures as early design mockups. |
 | Security section (p.92–94) | See `SECURITY_REVIEW.md` Part 0: four roles, bcrypt (not "ecrypt"; a hash, not encryption), HTTPS wording, PCI-DSS wording. |
+
+### Limitations — ingredients are out of scope (adviser, 2026-10-07)
+
+The adviser ruled raw-material tracking out of the paper's scope. The
+system no longer has ingredients, recipes, production batches or product
+costing (removed in migration 022). Suggested text for the Limitations
+section:
+
+> The system manages the inventory of finished bakery products only. It
+> does not track raw materials or ingredients (such as flour, sugar and
+> eggs), recipes, ingredient usage per production batch, or the
+> production cost and profit margin of each product. Stock of finished
+> products is recorded through restocking, sales, cancellations and
+> reported losses. Ingredient purchasing and recipe management remain
+> manual processes of the bakery and may be addressed in future work.
+
+What stays: the **Due today** production schedule (B5), which works from
+orders, and the restock recommendation (B1), which now gives a bake
+quantity in items, without a batch count.
 
 ---
 

@@ -14,7 +14,7 @@ import { pool } from '../db.js'
 import { optionalAuth, requireAuth, requireRole } from '../lib/auth.js'
 import { expiredSql } from '../lib/inventory.js'
 import { deleteFile, filePath, saveFile } from '../lib/storage.js'
-import { normalize, parseId, parseQuantity } from '../lib/validation.js'
+import { normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
 
@@ -23,8 +23,7 @@ const router = express.Router()
 // at it. null means "no photo yet" (show the Menu's placeholder tile),
 // never an empty string or a key it would have to know how to turn into
 // a URL itself — that translation happens exactly once, here.
-// `staff` adds the production-side fields (recipe, packaging ratio, shelf
-// life). They are internal: the public catalogue keeps exactly the shape
+// `staff` adds the internal fields (shelf life). They are internal: the public catalogue keeps exactly the shape
 // it has always had — products.test.js guards that list by name.
 const mapProductRow = (row, { staff = false } = {}) => ({
   id: row.product_id,
@@ -40,7 +39,7 @@ const mapProductRow = (row, { staff = false } = {}) => ({
   // image route) while a replaced photo still shows at once: new photo,
   // new key, new URL. The route ignores the parameter.
   imageUrl: row.image_key ? `/api/products/${row.product_id}/image?v=${row.image_key.slice(0, 8)}` : null,
-  ...(staff ? { recipeId: row.recipe_id, recipeName: row.recipe_name ?? null, unitsPerItem: row.units_per_item, shelfLifeDays: row.shelf_life_days } : {}),
+  ...(staff ? { shelfLifeDays: row.shelf_life_days } : {}),
   // A boolean, never the count. availability_status is what the bakery
   // CHOOSES to sell; this is whether there is any to sell right now.
   // Without it the Menu offered a product at stock 0 as if it were on the
@@ -52,12 +51,11 @@ const mapProductRow = (row, { staff = false } = {}) => ({
 })
 
 const productSelectQuery = `SELECT p.product_id, p.category_id, c.category_name, p.product_name, p.description, p.price, p.variant, p.availability_status, p.image_key,
-            p.recipe_id, r.name AS recipe_name, p.units_per_item, p.shelf_life_days,
+            p.shelf_life_days,
             COALESCE(i.stock_quantity, 0) > 0 AS in_stock
      FROM products p
      JOIN categories c ON c.category_id = p.category_id
-     LEFT JOIN inventory i ON i.product_id = p.product_id
-     LEFT JOIN recipes r ON r.recipe_id = p.recipe_id`
+     LEFT JOIN inventory i ON i.product_id = p.product_id`
 // Requires the inventory join above (alias i). The rule itself lives in
 // lib/inventory.js so this router, order placement, and the dashboard can
 // never disagree on what "expired" is.
@@ -113,28 +111,8 @@ function validateProductFields(body, { partial }) {
     if (typeof availabilityStatus !== 'boolean') errors.availabilityStatus = 'availabilityStatus must be true or false.'
     else values.availabilityStatus = availabilityStatus
   }
-  // Phase 9A packaging. Checked with `in body`, never has(): all three
-  // are nullable columns with no default an absence should trigger.
-  // recipeId and unitsPerItem travel together — the products_packaging_check
-  // constraint says so, and this mirrors it with a friendlier message.
-  if ('recipeId' in body || 'unitsPerItem' in body) {
-    const rawRecipeId = body.recipeId
-    const rawUnits = body.unitsPerItem
-    const clearing = (rawRecipeId == null || rawRecipeId === '') && (rawUnits == null || rawUnits === '')
-    if (clearing) {
-      values.recipeId = null
-      values.unitsPerItem = null
-    } else {
-      const recipeId = parseId(rawRecipeId)
-      const unitsPerItem = parseQuantity(rawUnits)
-      if (!recipeId) errors.recipeId = 'Select a recipe, or clear both recipe and units per item.'
-      if (unitsPerItem === null) errors.unitsPerItem = 'Enter how many base units one item holds, greater than zero.'
-      if (recipeId && unitsPerItem !== null) {
-        values.recipeId = recipeId
-        values.unitsPerItem = unitsPerItem
-      }
-    }
-  }
+  // Checked with `in body`, never has(): a nullable column with no
+  // default an absence should trigger.
   if ('shelfLifeDays' in body) {
     if (body.shelfLifeDays == null || body.shelfLifeDays === '') values.shelfLifeDays = null
     else {
@@ -283,9 +261,7 @@ router.patch('/:id', requireRole('ADMIN'), async (request, response) => {
            variant = CASE WHEN $5 THEN $6 ELSE variant END,
            price = COALESCE($7, price),
            availability_status = COALESCE($8, availability_status),
-           recipe_id = CASE WHEN $10 THEN $11::bigint ELSE recipe_id END,
-           units_per_item = CASE WHEN $10 THEN $12::numeric ELSE units_per_item END,
-           shelf_life_days = CASE WHEN $13 THEN $14::int ELSE shelf_life_days END
+           shelf_life_days = CASE WHEN $10 THEN $11::int ELSE shelf_life_days END
        WHERE product_id = $9`,
       [
         values.categoryId ?? null,
@@ -297,16 +273,12 @@ router.patch('/:id', requireRole('ADMIN'), async (request, response) => {
         values.price ?? null,
         values.availabilityStatus ?? null,
         productId,
-        'recipeId' in values,
-        values.recipeId ?? null,
-        values.unitsPerItem ?? null,
         'shelfLifeDays' in values,
         values.shelfLifeDays ?? null,
       ],
     )
   } catch (error) {
     if (error.code === '23505') return response.status(409).json({ message: 'A product with that name and variant already exists in this category.' })
-    if (error.code === '23503' && error.constraint === 'products_recipe_id_fkey') return response.status(422).json({ message: 'Selected recipe does not exist.', errors: { recipeId: 'Selected recipe does not exist.' } })
     if (error.code === '23503') return response.status(422).json({ message: 'Selected category does not exist.', errors: { categoryId: 'Selected category does not exist.' } })
     throw error
   }
@@ -398,9 +370,9 @@ router.delete('/:id', requireRole('ADMIN'), async (request, response) => {
     if (existing.rows[0]?.image_key) await deleteFile(existing.rows[0].image_key)
     return response.status(204).end()
   } catch (error) {
-    // 23503 = foreign_key_violation — order_details, inventory_change_requests,
-    // or production_batch_outputs still reference this product.
-    if (error.code === '23503') return response.status(409).json({ message: 'This product has order, change-request, or production history and cannot be deleted. Set it to unavailable instead.' })
+    // 23503 = foreign_key_violation — order_details or
+    // inventory_change_requests still reference this product.
+    if (error.code === '23503') return response.status(409).json({ message: 'This product has order or change-request history and cannot be deleted. Set it to unavailable instead.' })
     throw error
   }
 })

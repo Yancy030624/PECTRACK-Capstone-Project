@@ -24,9 +24,7 @@ export const COVER_DAYS = 2
 //                never below zero. The margin is how far the top of
 //                today's range sits above today's forecast: the forecast's
 //                own measure of how wrong it tends to be.
-//   batches      that quantity in recipe batches, for a product linked to
-//                a recipe — the unit the baker actually decides in
-export function recommendRestock({ days, stock, unitsPerItem = null, yieldQuantity = null }) {
+export function recommendRestock({ days, stock }) {
   const onHand = Math.max(0, Number(stock) || 0)
   let running = 0
   let sellsOutOn = null
@@ -37,10 +35,7 @@ export function recommendRestock({ days, stock, unitsPerItem = null, yieldQuanti
   const covered = days.slice(0, COVER_DAYS).reduce((sum, day) => sum + Number(day.predicted), 0)
   const margin = days.length ? Math.max(0, Number(days[0].high) - Number(days[0].predicted)) : 0
   const recommended = Math.max(0, Math.ceil(covered + margin) - onHand)
-  const batches = unitsPerItem != null && yieldQuantity != null && Number(yieldQuantity) > 0 && recommended > 0
-    ? Math.ceil((recommended * Number(unitsPerItem) / Number(yieldQuantity)) * 100) / 100
-    : null
-  return { sellsOutOn, recommended, batches, coverDemand: Math.round(covered * 100) / 100 }
+  return { sellsOutOn, recommended, coverDemand: Math.round(covered * 100) / 100 }
 }
 
 // Every forecast product in a run, with its recommendation, most urgent
@@ -53,12 +48,11 @@ export async function restockForRun(runId) {
       [runId],
     ),
     pool.query(
-      `SELECT p.product_id, p.product_name, p.variant, p.units_per_item, r.yield_quantity, r.name AS recipe_name, r.base_unit,
+      `SELECT p.product_id, p.product_name, p.variant,
               CASE WHEN ${expiredSql('i')} THEN 0 ELSE i.stock_quantity END AS sellable,
               ${expiredSql('i')} AS expired
          FROM products p
          JOIN inventory i ON i.product_id = p.product_id
-         LEFT JOIN recipes r ON r.recipe_id = p.recipe_id AND r.is_active = TRUE
         WHERE p.product_id IN (SELECT DISTINCT product_id FROM forecasts WHERE run_id = $1)`,
       [runId],
     ),
@@ -75,8 +69,6 @@ export async function restockForRun(runId) {
     const result = recommendRestock({
       days: byProduct.get(row.product_id) ?? [],
       stock: row.sellable,
-      unitsPerItem: row.recipe_name ? row.units_per_item : null,
-      yieldQuantity: row.recipe_name ? row.yield_quantity : null,
     })
     return {
       productId: row.product_id,
@@ -84,8 +76,6 @@ export async function restockForRun(runId) {
       variant: row.variant,
       stock: Number(row.sellable),
       stockExpired: row.expired,
-      recipeName: row.recipe_name,
-      baseUnit: row.base_unit,
       ...result,
     }
   })

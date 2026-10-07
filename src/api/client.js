@@ -58,8 +58,6 @@ async function request(path, { method = 'GET', body, background = false } = {}) 
 export const apiGet = (path, { background = false } = {}) => request(path, { background })
 export const apiPost = (path, body) => request(path, { method: 'POST', body })
 export const apiPatch = (path, body) => request(path, { method: 'PATCH', body })
-// routes/recipes.js's PUT — a whole-recipe replace, not a partial edit.
-export const apiPut = (path, body) => request(path, { method: 'PUT', body })
 export const apiDelete = (path) => request(path, { method: 'DELETE' })
 
 // For routes/deliveries.js's proof-of-delivery upload (PHASE7_PLAN.md,

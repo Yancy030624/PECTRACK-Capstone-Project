@@ -329,7 +329,7 @@ router.get('/sales', async (request, response) => {
 // database that already has to know the right answer (Decision 1) compute
 // it start to finish.
 router.get('/summary', async (_request, response) => {
-  const [todayResult, outstandingResult, lowStockAlerts, deliveriesResult, expiredStock, lowIngredients, pendingBatches, likelySellOut, awaitingApproval] = await Promise.all([
+  const [todayResult, outstandingResult, lowStockAlerts, deliveriesResult, expiredStock, likelySellOut, awaitingApproval] = await Promise.all([
     pool.query(`
       WITH today_range AS (
         SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date AS local_date,
@@ -368,19 +368,6 @@ router.get('/summary', async (_request, response) => {
     // refuses it), so counting it here sent staff to a queue of dead work.
     pool.query(`SELECT COUNT(*)::int AS n FROM deliveries d JOIN orders o ON o.order_id = d.order_id WHERE d.status IN ('PENDING_ASSIGNMENT', 'ASSIGNED') AND o.status NOT IN ('COMPLETED', 'CANCELLED')`),
     getExpiredStock(),
-    // Phase 9A — ingredient low-stock is computed on read, never a
-    // stock_alerts row (that table's FK is to inventory). Same capped list
-    // plus true count shape as the alerts above.
-    pool.query(
-      `SELECT ingredient_id, name, unit, stock_quantity, min_stock_level,
-              COUNT(*) OVER()::int AS full_count
-         FROM ingredients
-        WHERE is_active = TRUE AND stock_quantity <= min_stock_level
-        ORDER BY stock_quantity - min_stock_level, name
-        LIMIT $1`,
-      [maxLowStockAlerts],
-    ),
-    pool.query(`SELECT COUNT(*)::int AS n FROM production_batches WHERE status = 'PENDING'`),
     // PHASE10 B1 — products the latest forecast says run out by tomorrow.
     likelySellOutSummary(),
     // PHASE10 D3 — bulk orders waiting for an admin.
@@ -404,9 +391,6 @@ router.get('/summary', async (_request, response) => {
     deliveriesNeedingAttention: deliveriesResult.rows[0].n,
     expiredStock: expiredStock.items,
     expiredStockTotal: expiredStock.total,
-    lowIngredients: lowIngredients.rows.map((row) => ({ id: row.ingredient_id, name: row.name, unit: row.unit, stockQuantity: row.stock_quantity, minStockLevel: row.min_stock_level })),
-    lowIngredientsTotal: lowIngredients.rows[0]?.full_count ?? 0,
-    pendingBatches: pendingBatches.rows[0].n,
     likelySellOut,
     ordersAwaitingApproval: awaitingApproval.rows[0].n,
   })
@@ -530,12 +514,10 @@ router.get('/inventory', async (request, response) => {
 // running for years is exactly the "the offset the caller asked for is
 // past the end" case that shape exists for.
 // ===========================================================================
-// Phase 9A — production, costing, and the analytics export. All three read
-// the ledgers and the views migration 014 defines; none of them writes.
+// Peak periods and the analytics export. Both read the ledgers and the
+// views migration 014 defines; neither writes.
 // ===========================================================================
 
-// GET /api/reports/production?from=&to= — yield and cost per recipe and
-// per product over the range, from APPROVED batches dated by produced_at.
 // GET /api/reports/peak?from=&to=&includeAssumed=true|false —
 // PHASE10 B2, the paper's "peak ordering periods" (p.16). Orders counted
 // by hour of day and by day of week on the Manila clock, cancelled ones
@@ -591,77 +573,9 @@ router.get('/peak', async (request, response) => {
   })
 })
 
-router.get('/production', async (request, response) => {
-  const { from, to, errors } = parseDateRange(request.query)
-  if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
-
-  const [byRecipe, byProduct] = await Promise.all([
-    pool.query(
-      `SELECT b.recipe_id, b.recipe_name, b.base_unit,
-              COUNT(*)::int AS batches,
-              SUM(b.planned_quantity)::numeric(12, 3) AS planned,
-              SUM(b.produced_quantity)::numeric(12, 3) AS produced,
-              SUM(b.loss_quantity)::numeric(12, 3) AS loss,
-              SUM(b.total_cost)::numeric(12, 2) AS total_cost,
-              CASE WHEN SUM(b.produced_quantity) + SUM(b.loss_quantity) > 0
-                   THEN (SUM(b.produced_quantity) / (SUM(b.produced_quantity) + SUM(b.loss_quantity)) * 100)::numeric(6, 2) END AS yield_percent,
-              CASE WHEN SUM(b.produced_quantity) > 0 THEN (SUM(b.total_cost) / SUM(b.produced_quantity))::numeric(12, 4) END AS cost_per_base_unit
-         FROM production_batches b
-        WHERE b.status = 'APPROVED' AND ${dateRangeSql('b.produced_at')}
-        GROUP BY b.recipe_id, b.recipe_name, b.base_unit
-        ORDER BY b.recipe_name`,
-      [from, to],
-    ),
-    pool.query(
-      `SELECT o.product_id, p.product_name, p.variant,
-              COUNT(DISTINCT b.batch_id)::int AS batches,
-              SUM(o.quantity)::int AS items_produced,
-              SUM(CASE WHEN b.produced_quantity > 0 THEN b.total_cost * (o.quantity * o.units_per_item / b.produced_quantity) ELSE 0 END)::numeric(12, 2) AS allocated_cost
-         FROM production_batch_outputs o
-         JOIN production_batches b ON b.batch_id = o.batch_id
-         JOIN products p ON p.product_id = o.product_id
-        WHERE b.status = 'APPROVED' AND ${dateRangeSql('b.produced_at')}
-        GROUP BY o.product_id, p.product_name, p.variant
-        ORDER BY p.product_name, p.variant`,
-      [from, to],
-    ),
-  ])
-  return response.json({
-    from,
-    to,
-    recipes: byRecipe.rows.map((row) => ({ recipeId: row.recipe_id, recipeName: row.recipe_name, baseUnit: row.base_unit, batches: row.batches, planned: row.planned, produced: row.produced, loss: row.loss, totalCost: row.total_cost, yieldPercent: row.yield_percent, costPerBaseUnit: row.cost_per_base_unit })),
-    products: byProduct.rows.map((row) => ({ productId: row.product_id, productName: row.product_name, variant: row.variant, batches: row.batches, itemsProduced: row.items_produced, allocatedCost: row.allocated_cost, costPerItem: row.items_produced > 0 ? (Number(row.allocated_cost) / row.items_produced).toFixed(2) : null })),
-  })
-})
-
-// GET /api/reports/costing — every product's current cost and margin from
-// the product_costing view (its most recent approved batch), with no date
-// range: "what does this cost to make now" is a present-tense question.
-router.get('/costing', async (_request, response) => {
-  const result = await pool.query(
-    `SELECT pc.*, r.name AS recipe_name FROM product_costing pc LEFT JOIN recipes r ON r.recipe_id = pc.recipe_id ORDER BY pc.product_name, pc.variant`,
-  )
-  return response.json({
-    products: result.rows.map((row) => ({
-      productId: row.product_id,
-      productName: row.product_name,
-      variant: row.variant,
-      price: row.price,
-      recipeId: row.recipe_id,
-      recipeName: row.recipe_name,
-      unitsPerItem: row.units_per_item,
-      costedFromBatchId: row.costed_from_batch_id,
-      costedAt: row.costed_at,
-      unitCost: row.unit_cost,
-      margin: row.margin,
-      marginPercent: row.margin_percent,
-    })),
-  })
-})
-
 // GET /api/reports/analytics?from=&to=&format=json|csv — the analytics
-// views joined by (date, product): sales (with the stockout flag), output,
-// and waste, one row per product per day, data_source carried through.
+// views joined by (date, product): sales (with the stockout flag) and
+// waste, one row per product per day, data_source carried through.
 // This is the file a notebook reads; nothing here predicts anything.
 router.get('/analytics', async (request, response) => {
   const { from, to, errors } = parseDateRange(request.query)
@@ -672,19 +586,16 @@ router.get('/analytics', async (request, response) => {
   const result = await pool.query(
     `WITH days AS (
        SELECT local_date, product_id, data_source FROM analytics_daily_sales
-       UNION SELECT local_date, product_id, data_source FROM analytics_daily_output
        UNION SELECT local_date, product_id, data_source FROM analytics_daily_waste
      )
      SELECT d.local_date, d.product_id, p.product_name, p.variant, d.data_source,
             COALESCE(s.units_sold, 0) AS units_sold, COALESCE(s.revenue, 0)::numeric(12, 2) AS revenue, COALESCE(s.orders, 0) AS orders,
             COALESCE(s.stocked_out, FALSE) AS stocked_out,
-            COALESCE(o.items_produced, 0) AS items_produced, COALESCE(o.allocated_cost, 0)::numeric(12, 2) AS production_cost,
             COALESCE(w.expired, 0) AS expired, COALESCE(w.spoiled, 0) AS spoiled, COALESCE(w.damaged, 0) AS damaged,
             COALESCE(w.production_loss, 0) AS production_loss, COALESCE(w.correction, 0) AS correction
        FROM days d
        JOIN products p ON p.product_id = d.product_id
        LEFT JOIN analytics_daily_sales s ON s.local_date = d.local_date AND s.product_id = d.product_id AND s.data_source = d.data_source
-       LEFT JOIN analytics_daily_output o ON o.local_date = d.local_date AND o.product_id = d.product_id AND o.data_source = d.data_source
        LEFT JOIN analytics_daily_waste w ON w.local_date = d.local_date AND w.product_id = d.product_id AND w.data_source = d.data_source
       WHERE d.local_date >= $1::date AND d.local_date <= $2::date
       ORDER BY d.local_date, p.product_name, p.variant, d.data_source`,
@@ -700,8 +611,6 @@ router.get('/analytics', async (request, response) => {
     revenue: row.revenue,
     orders: row.orders,
     stockedOut: row.stocked_out,
-    itemsProduced: row.items_produced,
-    productionCost: row.production_cost,
     expired: row.expired,
     spoiled: row.spoiled,
     damaged: row.damaged,
@@ -718,8 +627,8 @@ router.get('/analytics', async (request, response) => {
   }
 
   if (format === 'csv') {
-    const header = ['Date', 'Product ID', 'Product', 'Variant', 'Data source', 'Units sold', 'Revenue', 'Orders', 'Stocked out', 'Items produced', 'Production cost', 'Expired', 'Spoiled', 'Damaged', 'Production loss', 'Correction']
-    const lines = [csvRow(header), ...rows.map((row) => csvRow([row.date, row.productId, row.productName, row.variant, row.dataSource, row.unitsSold, row.revenue, row.orders, row.stockedOut, row.itemsProduced, row.productionCost, row.expired, row.spoiled, row.damaged, row.productionLoss, row.correction]))]
+    const header = ['Date', 'Product ID', 'Product', 'Variant', 'Data source', 'Units sold', 'Revenue', 'Orders', 'Stocked out', 'Expired', 'Spoiled', 'Damaged', 'Production loss', 'Correction']
+    const lines = [csvRow(header), ...rows.map((row) => csvRow([row.date, row.productId, row.productName, row.variant, row.dataSource, row.unitsSold, row.revenue, row.orders, row.stockedOut, row.expired, row.spoiled, row.damaged, row.productionLoss, row.correction]))]
     response.type('text/csv')
     response.set('Content-Disposition', `attachment; filename="analytics-${from}-to-${to}.csv"`)
     return response.send(lines.join('\r\n'))

@@ -13,6 +13,10 @@
 //     DELETE refuses a product with stock-movement history. categoryId goes
 //     through parseId.
 //
+//   - Migration 022: recipe_id and units_per_item are gone (ingredients,
+//     recipes and production batches were removed as out of scope); the
+//     staff-only fields are now just shelfLifeDays.
+//
 // Read the live file for the current behaviour — every change above is
 // commented in place there, in the same voice as this file.
 // ============================================================================

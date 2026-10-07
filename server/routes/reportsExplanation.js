@@ -15,6 +15,10 @@
 //     and labelled, B2); /summary adds likelySellOut (B1) and
 //     ordersAwaitingApproval (D3).
 //
+//   - Migration 022: /production and /costing are gone, /summary no longer
+//     reports low ingredients or batches to approve, and the analytics
+//     export no longer carries items produced or production cost.
+//
 // Read the live file for the current behaviour — every change above is
 // commented in place there, in the same voice as this file.
 // ============================================================================

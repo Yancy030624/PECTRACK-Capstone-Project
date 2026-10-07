@@ -39,13 +39,6 @@ describe('recommendRestock', () => {
     assert.equal(recommendRestock({ days: WEEK, stock: 60 }).recommended, 0)
   })
 
-  test('converts to recipe batches only for a product linked to a recipe', () => {
-    // 54 items, 12 base units each, 240 per batch → 2.7 batches.
-    const linked = recommendRestock({ days: WEEK, stock: 0, unitsPerItem: 12, yieldQuantity: 240 })
-    assert.equal(linked.batches, 2.7)
-    assert.equal(recommendRestock({ days: WEEK, stock: 0 }).batches, null)
-  })
-
   test('negative or missing stock is treated as none', () => {
     assert.equal(recommendRestock({ days: WEEK, stock: -5 }).recommended, 54)
     assert.equal(recommendRestock({ days: WEEK, stock: null }).recommended, 54)

@@ -66,10 +66,6 @@ export function DashboardHome({ user, onNavigate }) {
     // the four-tile row exists to satisfy.
     { label: 'Deliveries to assign', value: summary ? summary.deliveriesNeedingAttention : '—', caption: 'Assign deliveries', module: 'Delivery Management' },
     { label: 'Expired stock', value: summary ? summary.expiredStockTotal : '—', caption: 'Past their date, still in stock', module: 'Inventory Management' },
-    // Phase 9A — the two things the production side needs someone to do:
-    // buy what is running out, and review what a cashier recorded.
-    { label: 'Low ingredients', value: summary ? summary.lowIngredientsTotal : '—', caption: 'Raw materials at or under minimum', module: 'Ingredients' },
-    { label: 'Batches to approve', value: summary ? summary.pendingBatches : '—', caption: 'Recorded, waiting for review', module: 'Production' },
     // PHASE10 D3 — bulk orders an admin has to approve.
     { label: 'Bulk orders to approve', value: summary ? summary.ordersAwaitingApproval : '—', caption: 'Large orders waiting for an admin', module: 'Order Management' },
     // PHASE10 B1 — from the latest forecast; the Forecast tab lists them
@@ -165,26 +161,6 @@ export function DashboardHome({ user, onNavigate }) {
           <p className="mt-5 text-sm text-ink-500">{error ? 'Unable to load alerts.' : summary ? 'Nothing needs attention right now.' : 'Loading…'}</p>
         )}
       </Card>
-
-      {/* Optional chaining: an API server started before Phase 9A does not
-          send this field, and one missing list must not blank the screen. */}
-      {summary?.lowIngredients?.length > 0 && (
-        <Card className="mt-6 p-6">
-          <h2 className="text-lg font-semibold text-ink-900">Low ingredients</h2>
-          <p className="mt-1 text-sm text-ink-500">At or under their minimum. Record the purchase in Ingredients when it arrives.</p>
-          <div className="mt-5 divide-y divide-line-100">
-            {summary.lowIngredients.map((item) => (
-              <div key={item.id} className="flex items-center justify-between gap-4 py-3 text-sm text-ink-700">
-                <span>{item.name}</span>
-                <span className="text-xs text-ink-500">{Number(item.stockQuantity).toLocaleString(undefined, { maximumFractionDigits: 3 })} {item.unit} left · minimum {Number(item.minStockLevel).toLocaleString(undefined, { maximumFractionDigits: 3 })}</span>
-              </div>
-            ))}
-          </div>
-          {summary.lowIngredientsTotal > summary.lowIngredients.length && (
-            <p className="mt-4 text-xs font-medium text-status-wait-fg">Showing {summary.lowIngredients.length} of {summary.lowIngredientsTotal}.</p>
-          )}
-        </Card>
-      )}
 
       {summary && summary.expiredStock.length > 0 && (
         <Card className="mt-6 p-6">

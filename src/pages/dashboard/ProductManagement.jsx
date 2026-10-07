@@ -36,9 +36,6 @@ export function ProductManagement({ user }) {
 
   const [categories, setCategories] = useState([])
   const [products, setProducts] = useState([])
-  // Phase 9A — active recipes for the packaging fields in the edit form.
-  // Loaded once for admins only; the list is small and rarely changes.
-  const [recipes, setRecipes] = useState([])
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
 
@@ -61,9 +58,8 @@ export function ProductManagement({ user }) {
 
   const loadAll = async () => {
     try {
-      const [categoriesData, productsData, recipesData] = await Promise.all([apiGet('/api/categories'), apiGet('/api/products'), isAdmin ? apiGet('/api/recipes') : Promise.resolve({ recipes: [] })])
+      const [categoriesData, productsData] = await Promise.all([apiGet('/api/categories'), apiGet('/api/products')])
       setCategories(categoriesData.categories)
-      setRecipes(recipesData.recipes)
       setProducts(productsData.products)
     } catch (error) {
       setMessage(error.message)
@@ -147,8 +143,6 @@ export function ProductManagement({ user }) {
       categoryId: product.categoryId, name: product.name, description: product.description ?? '', price: product.price, variant: product.variant ?? '', availabilityStatus: product.availabilityStatus,
       // Phase 9A packaging — strings for the inputs; saveProduct sends
       // them as-is and the server clears both when both are blank.
-      recipeId: product.recipeId == null ? '' : String(product.recipeId),
-      unitsPerItem: product.unitsPerItem == null ? '' : String(product.unitsPerItem),
       shelfLifeDays: product.shelfLifeDays == null ? '' : String(product.shelfLifeDays),
     })
     setEditingProductErrors({})
@@ -375,20 +369,7 @@ export function ProductManagement({ user }) {
                             <Input type="number" min="0" step="0.01" value={editingProduct.price} onChange={(event) => updateEditingProductField('price', event.target.value)} />
                           </Field>
                         </div>
-                        {/* Phase 9A — which dough this product is packed
-                            from, and how much of it one item holds. Both
-                            or neither: a product with no recipe is
-                            bought-in and can only be restocked. */}
                         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                          <Field label="Recipe (optional)" error={editingProductErrors.recipeId} help="Leave blank for bought-in items.">
-                            <Select value={editingProduct.recipeId ?? ''} onChange={(event) => setEditingProduct({ ...editingProduct, recipeId: event.target.value, unitsPerItem: event.target.value ? editingProduct.unitsPerItem : '' })}>
-                              <option value="">Not produced in-house</option>
-                              {recipes.map((recipe) => <option key={recipe.id} value={recipe.id}>{recipe.name} ({recipe.baseUnit})</option>)}
-                            </Select>
-                          </Field>
-                          <Field label="Base units per item" error={editingProductErrors.unitsPerItem} help={editingProduct.recipeId ? `How many ${recipes.find((recipe) => String(recipe.id) === editingProduct.recipeId)?.baseUnit ?? 'base units'} one item holds.` : undefined}>
-                            <Input value={editingProduct.unitsPerItem ?? ''} onChange={(event) => updateEditingProductField('unitsPerItem', event.target.value)} inputMode="decimal" disabled={!editingProduct.recipeId} />
-                          </Field>
                           <Field label="Shelf life (days, optional)" error={editingProductErrors.shelfLifeDays}>
                             <Input value={editingProduct.shelfLifeDays ?? ''} onChange={(event) => updateEditingProductField('shelfLifeDays', event.target.value)} inputMode="numeric" />
                           </Field>
@@ -416,7 +397,6 @@ export function ProductManagement({ user }) {
                         {product.name}
                         {product.variant && <span className="block text-xs font-normal text-ink-500 lg:hidden">{product.variant}</span>}
                         <span className="block text-xs font-normal text-ink-500 xl:hidden">{product.categoryName}</span>
-                        {isAdmin && product.recipeName && <span className="block text-xs font-normal text-ink-500">{product.recipeName} · {Number(product.unitsPerItem).toLocaleString(undefined, { maximumFractionDigits: 3 })} per item</span>}
                       </Td>
                       <Td priority="xl">{product.categoryName}</Td>
                       <Td priority="lg">{product.variant ?? '—'}</Td>

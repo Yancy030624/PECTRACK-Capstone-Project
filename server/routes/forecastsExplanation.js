@@ -8,6 +8,9 @@
 //     when it runs out and how many to bake to cover today and tomorrow
 //     (server/lib/restock.js).
 //
+//   - Migration 022: the ingredient projection and restock batch counts
+//     are gone with recipes; restock gives a bake quantity in items.
+//
 // Read the live file for the current behaviour — every change above is
 // commented in place there, in the same voice as this file.
 // ============================================================================

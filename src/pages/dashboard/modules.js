@@ -56,14 +56,10 @@ export const modules = [
   // UI_REVISIONS_PLAN.md Decision 13.
   { name: 'Product Management', icon: 'products', roles: ['ADMIN'] },
   { name: 'Inventory Management', icon: 'inventory', roles: ['ADMIN', 'CASHIER'] },
-  // Phase 9A (RULES-PLANS/PHASE9A_DATA_FOUNDATION_PLAN.md) — the raw
-  // materials ledger, the doughs, and the batches that turn one into the
-  // other. Ingredients is readable by CASHIER (a low flour level is the
-  // counter's problem too) with writes ADMIN-gated server-side; Recipes
-  // is ADMIN only, the same call Product Management made; Production is
-  // both roles because a cashier records a batch and an admin approves it.
-  { name: 'Ingredients', icon: 'ingredients', roles: ['ADMIN', 'CASHIER'] },
-  { name: 'Recipes', icon: 'recipes', roles: ['ADMIN'] },
+  // Production is the Due today schedule: open orders by the hour they
+  // are due. Ingredients, recipes and production batches were removed as
+  // out of the paper's scope (migration 022) — the system inventories
+  // finished products only.
   { name: 'Production', icon: 'production', roles: ['ADMIN', 'CASHIER'] },
   { name: 'Payment & Billing', icon: 'payments', roles: ['ADMIN', 'CASHIER'] },
   // Phase 7 (see PHASE7_PLAN.md) — one nav entry shared by three roles.

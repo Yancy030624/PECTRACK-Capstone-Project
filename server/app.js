@@ -10,13 +10,11 @@ import customersRouter from './routes/customers.js'
 import deliveriesRouter from './routes/deliveries.js'
 import forecastsRouter from './routes/forecasts.js'
 import settingsRouter from './routes/settings.js'
-import ingredientsRouter from './routes/ingredients.js'
 import inventoryRouter from './routes/inventory.js'
 import ordersRouter from './routes/orders.js'
 import paymentsRouter from './routes/payments.js'
 import productionRouter from './routes/production.js'
 import productsRouter from './routes/products.js'
-import recipesRouter from './routes/recipes.js'
 import reportsRouter from './routes/reports.js'
 import staffRouter from './routes/staff.js'
 
@@ -75,8 +73,6 @@ app.use('/api/categories', categoriesRouter)
 app.use('/api/products', productsRouter)
 app.use('/api/customers', customersRouter)
 app.use('/api/inventory', inventoryRouter)
-app.use('/api/ingredients', ingredientsRouter)
-app.use('/api/recipes', recipesRouter)
 app.use('/api/production', productionRouter)
 app.use('/api/orders', ordersRouter)
 app.use('/api/payments', paymentsRouter)

@@ -320,48 +320,6 @@ export function ForecastPanel({ user, active }) {
               </details>
             </Card>
           )}
-
-          <Card className="mt-6 p-6">
-            <h3 className="text-base font-semibold text-ink-900">Ingredients for the week</h3>
-            {data.ingredients.mappedProducts === 0 ? (
-              <EmptyState
-                title="No product is linked to a recipe yet"
-                description="Link each product to its recipe in Product Management (Edit → Recipe and base units per item). The forecast then becomes how much flour, sugar and everything else the next seven days need — from the bakery's real recipes, not assumed ones."
-              />
-            ) : data.ingredients.needs.length === 0 ? (
-              <p className="mt-3 text-sm text-ink-500">The linked products have no forecast in this run.</p>
-            ) : (
-              <>
-                <p className="mt-1 text-xs text-ink-500">From the {data.ingredients.mappedProducts} product{data.ingredients.mappedProducts === 1 ? '' : 's'} linked to a recipe. Products without a recipe are not counted.</p>
-                <div className="mt-4">
-                  <Table caption="Ingredients needed for the forecast week">
-                    <Thead>
-                      <Tr className="hover:bg-transparent">
-                        <Th>Ingredient</Th>
-                        <Th align="right">Needed (7 days)</Th>
-                        <Th align="right">On hand</Th>
-                        <Th>Status</Th>
-                      </Tr>
-                    </Thead>
-                    <Tbody>
-                      {data.ingredients.needs.map((need) => (
-                        <Tr key={need.ingredientId}>
-                          <Td className="font-semibold text-ink-900">{need.name}</Td>
-                          <Td numeric>{quantity(need.needed)} {need.unit}</Td>
-                          <Td numeric>{quantity(need.onHand)} {need.unit}</Td>
-                          <Td>
-                            <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${need.short ? 'bg-status-fail-bg text-status-fail-fg' : 'bg-status-done-bg text-status-done-fg'}`}>
-                              {need.short ? `Short ${quantity(Number(need.needed) - Number(need.onHand))} ${need.unit}` : 'Enough'}
-                            </span>
-                          </Td>
-                        </Tr>
-                      ))}
-                    </Tbody>
-                  </Table>
-                </div>
-              </>
-            )}
-          </Card>
         </>
       )}
     </div>
@@ -404,7 +362,6 @@ function RestockCard({ restock, dates, isAssumed, onSelect }) {
                 <Th align="right">On hand</Th>
                 <Th>Runs out</Th>
                 <Th align="right">Bake</Th>
-                <Th align="right" priority="md">Batches</Th>
               </Tr>
             </Thead>
             <Tbody>
@@ -423,7 +380,6 @@ function RestockCard({ restock, dates, isAssumed, onSelect }) {
                       </span>
                     </Td>
                     <Td numeric className="font-semibold text-ink-900">{whole(item.recommended)}</Td>
-                    <Td numeric priority="md">{item.batches == null ? <span className="text-xs text-ink-500">no recipe</span> : `${quantity(item.batches)}`}</Td>
                   </Tr>
                 )
               })}

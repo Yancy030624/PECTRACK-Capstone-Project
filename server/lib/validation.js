@@ -93,23 +93,3 @@ export function validateAccountFields(body) {
 
   return { errors, values: { name, username, email, contactNumber, password } }
 }
-
-// Validates a NUMERIC quantity that arrived as text or a number — a
-// kilogram of flour, a purchase price, a recipe line. Returns the value as
-// a STRING with at most `decimals` places (pg passes strings to NUMERIC
-// columns unchanged, so no binary-float rounding ever reaches the
-// database), or null when it is not a finite number, has too many
-// decimals, or falls outside [min, max]. Phase 9A's ingredient side is
-// measured in fractions, so this is the counterpart of the integer checks
-// routes/inventory.js does for finished goods.
-export function parseQuantity(raw, { min = 0, max = 999999999, decimals = 3, allowZero = false } = {}) {
-  const text = normalize(raw)
-  if (!/^-?\d+(\.\d+)?$/.test(text)) return null
-  const value = Number(text)
-  if (!Number.isFinite(value)) return null
-  const fraction = text.split('.')[1] ?? ''
-  if (fraction.length > decimals) return null
-  if (value < min || value > max) return null
-  if (!allowZero && value === 0) return null
-  return text.replace(/^(-?)0+(?=\d)/, '$1')
-}

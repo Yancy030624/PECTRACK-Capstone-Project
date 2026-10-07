@@ -3,7 +3,7 @@
 // The unit tests prove the methods; these prove the rules around them:
 // who may run and read a forecast, that a run records what it was trained
 // on, that assumed history never leaks into a sales figure, and that the
-// ingredient projection is the arithmetic the plan says it is.
+// restock recommendation follows from the forecast.
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import { after, before, beforeEach, describe, test } from 'node:test'
@@ -25,8 +25,6 @@ describe('demand forecasting API', () => {
   const userIds = []
   let categoryId
   let productId
-  let recipeId
-  let ingredientId
   let yesterday
 
   const admin = { username: `fcadmin_${runId}`, password: 'Forecast-Admin-Pass-9!' }
@@ -81,22 +79,12 @@ describe('demand forecasting API', () => {
       [productId, dates],
     )
 
-    // A recipe for the ingredient projection: one batch yields 100 buns'
-    // worth of dough and uses 2 kg of flour, and a bun is 1 unit of dough —
-    // so every forecast bun needs 0.02 kg.
-    ingredientId = (await pool.query(`INSERT INTO ingredients (name, unit) VALUES ($1, 'kg') RETURNING ingredient_id`, [`Forecast Flour ${runId}`])).rows[0].ingredient_id
-    recipeId = (await pool.query(`INSERT INTO recipes (name, base_unit, yield_quantity) VALUES ($1, 'piece', 100) RETURNING recipe_id`, [`Forecast Dough ${runId}`])).rows[0].recipe_id
-    await pool.query('INSERT INTO recipe_ingredients (recipe_id, ingredient_id, quantity) VALUES ($1, $2, 2)', [recipeId, ingredientId])
-    await pool.query('UPDATE products SET recipe_id = $2, units_per_item = 1 WHERE product_id = $1', [productId, recipeId])
   })
 
   after(async () => {
     try {
       await pool.query('DELETE FROM forecast_runs WHERE run_by = ANY($1)', [userIds])
       await pool.query('DELETE FROM assumed_daily_demand WHERE product_id = $1', [productId])
-      await pool.query('UPDATE products SET recipe_id = NULL, units_per_item = NULL WHERE product_id = $1', [productId])
-      await pool.query('DELETE FROM recipes WHERE recipe_id = $1', [recipeId])
-      await pool.query('DELETE FROM ingredients WHERE ingredient_id = $1', [ingredientId])
       await pool.query('DELETE FROM inventory WHERE product_id = $1', [productId])
       await pool.query('DELETE FROM products WHERE product_id = $1', [productId])
       await pool.query('DELETE FROM categories WHERE category_id = $1', [categoryId])
@@ -178,20 +166,7 @@ describe('demand forecasting API', () => {
     assert.equal(csv.includes(`Forecast Bun`), false)
   })
 
-  test('ingredient needs are forecast units × units per item ÷ recipe yield × the recipe line', async () => {
-    await json(adminCookie, 'POST', '/api/forecasts/run', { source: 'ASSUMED' })
-    const latest = await (await json(adminCookie, 'GET', '/api/forecasts/latest')).json()
-    const bun = latest.products.find((product) => product.productId === productId)
-    const flour = latest.ingredients.needs.find((need) => need.ingredientId === ingredientId)
-    assert.ok(flour)
-    const expected = bun.days.reduce((sum, day) => sum + day.predicted, 0) * 1 / 100 * 2
-    assert.ok(Math.abs(Number(flour.needed) - expected) < 0.01, `${flour.needed} vs ${expected}`)
-    // No flour in stock, so the week is short.
-    assert.equal(flour.short, true)
-    assert.ok(latest.ingredients.mappedProducts >= 1)
-  })
-
-  test('restock recommendations: the out-of-stock test product runs out today and gets a bake quantity in batches', async () => {
+  test('restock recommendations: the out-of-stock test product runs out today and gets a bake quantity', async () => {
     await json(adminCookie, 'POST', '/api/forecasts/run', { source: 'ASSUMED' })
     const latest = await (await json(cashierCookie, 'GET', '/api/forecasts/latest')).json()
     const bun = latest.products.find((product) => product.productId === productId)
@@ -202,8 +177,6 @@ describe('demand forecasting API', () => {
     assert.equal(item.sellsOutOn, latest.dates[0])
     const margin = Math.max(0, bun.days[0].high - bun.days[0].predicted)
     assert.equal(item.recommended, Math.ceil(bun.days[0].predicted + bun.days[1].predicted + margin))
-    // Linked to a 100-piece recipe at 1 piece per bun.
-    assert.equal(item.batches, Math.ceil((item.recommended / 100) * 100) / 100)
 
     // And the Dashboard counts it among the products running out by tomorrow.
     const summary = await (await json(adminCookie, 'GET', '/api/reports/summary')).json()

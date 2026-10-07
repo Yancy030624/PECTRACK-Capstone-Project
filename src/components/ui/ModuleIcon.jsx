@@ -10,10 +10,7 @@ const PATHS = {
   customers: <><circle cx="12" cy="8" r="3.2" /><path d="M5 20c.8-3.4 3.1-5.1 7-5.1s6.2 1.7 7 5.1" /></>,
   products: <><path d="M4 8l8-4 8 4-8 4-8-4Z" /><path d="M4 8v8l8 4 8-4V8" /><path d="M12 12v8" /></>,
   inventory: <><rect x="3" y="4" width="18" height="6" rx="1.5" /><rect x="3" y="14" width="18" height="6" rx="1.5" /><path d="M7 7h.01M7 17h.01" /></>,
-  // Phase 9A: a sack (ingredients), an open book (recipes), an oven with
-  // a tray (production).
-  ingredients: <><path d="M8 4h8l-1 3H9L8 4Z" /><path d="M9 7c-3 2-4 5-4 8a5 5 0 0 0 5 5h4a5 5 0 0 0 5-5c0-3-1-6-4-8" /><path d="M10 13h4" /></>,
-  recipes: <><path d="M4 5a2 2 0 0 1 2-2h5v17H6a2 2 0 0 0-2 2V5Z" /><path d="M20 5a2 2 0 0 0-2-2h-5v17h5a2 2 0 0 1 2 2V5Z" /><path d="M7 8h2M15 8h2M7 12h2M15 12h2" /></>,
+  // An oven with a tray (production).
   production: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18" /><rect x="7" y="12" width="10" height="4" rx="1" /><path d="M7 6.5h.01M10 6.5h.01" /></>,
   payments: <><rect x="3" y="6" width="18" height="12" rx="2" /><path d="M3 10h18" /><path d="M7 14h4" /></>,
   deliveries: <><path d="M3 7h11v9H3z" /><path d="M14 10h4l3 3v3h-7" /><circle cx="7" cy="18" r="1.8" /><circle cx="17" cy="18" r="1.8" /></>,
