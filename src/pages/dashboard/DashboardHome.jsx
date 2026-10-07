@@ -3,182 +3,221 @@ import { apiGet } from '../../api/client.js'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Card } from '../../components/ui/Card.jsx'
 import { formatPeso } from '../../lib/format.js'
+import { STOCK_STATUSES, TONES, stockStatus } from '../../lib/stockHealth.js'
 import { modules } from './modules.js'
 
-// Stage 3 (RULES-PLANS/UI_AUDIT.md — M1, M2, M3, M4). This is the first
-// screen every ADMIN/CASHIER login lands on — the demo's opening shot —
-// and the KPI row had four separate defects stacked on top of each other:
-//   M1 — the first tile was `bg-linear-to-br from-green-700 to-blue-900`.
-//        The brief says avoid gradients, and green→navy isn't a brand
-//        relationship — navy appears nowhere else in the identity. It
-//        also made that one tile visually unlike its three siblings.
-//   M2 — "View details →" was a plain <p>, styled to look like a link,
-//        that did nothing on click. A false affordance.
-//   M3 — the fourth tile was filler prose ("Use the navigation to move
-//        through your permitted Pectrack modules securely") occupying a
-//        metrics slot instead of a metric.
-//   M4 — a failed /api/reports/summary fetch was swallowed with
-//        `.catch(() => {})`, so every figure showed '—' forever and the
-//        "Needs attention" panel read "Loading…" permanently — a broken
-//        page that looks merely empty, the exact failure mode M4 names.
+// The Dashboard — the first screen an ADMIN or CASHIER sees.
 //
-// Fixed together, per the audit's own instruction to restructure the row
-// into "four honest tiles" that "read as one visual object": two are
-// plain figures (collected, outstanding), two are real navigation (low
-// stock, deliveries) using Dashboard.jsx's setActiveModule passed down as
-// `onNavigate` — replacing M2's fake link with one that actually goes
-// somewhere. There is no fifth slot left to pad with M3's prose.
+// It answers one question: "is anything wrong right now?" Every tile is a
+// status, coloured by what it means — green good, yellow okay, red needs
+// attention — and opens the module that fixes it, already filtered to the
+// problem (the Low stock tile opens Inventory showing only low stock).
+// Anything that is not a status a person acts on was taken off: the
+// detail lives in its own module, one click away.
+//
+// Counts come from two calls: /api/reports/summary (orders, deliveries,
+// money, the forecast) and /api/inventory, read through the same
+// stockStatus() rule the Inventory screen filters by, so the two always
+// agree.
 export function DashboardHome({ user, onNavigate }) {
   const [summary, setSummary] = useState(null)
+  const [inventory, setInventory] = useState(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    // M4 fix: a failed load now sets a real error instead of vanishing
-    // into an empty catch. See the <Alert> below.
-    apiGet('/api/reports/summary')
-      .then(setSummary)
+    Promise.all([apiGet('/api/reports/summary'), apiGet('/api/inventory')])
+      .then(([summaryData, inventoryData]) => {
+        setSummary(summaryData)
+        setInventory(inventoryData.inventory)
+      })
       .catch((fetchError) => setError(fetchError.message))
   }, [])
 
-  // Guard for the two linked tiles below: only navigate somewhere the
-  // signed-in role can actually open. DashboardHome only renders for the
-  // 'Dashboard' module, which modules.js restricts to ADMIN/CASHIER, and
-  // both of those roles already hold 'Inventory Management' and
-  // 'Delivery Management' today — so this rarely changes what renders.
-  // It exists so a future edit to modules.js's role lists can't silently
-  // point a tile at a module the viewer isn't allowed to open, rather
-  // than trusting today's coincidence to hold forever.
-  const allowedModuleNames = new Set(modules.filter((module) => module.roles.includes(user.role)).map((module) => module.name))
+  // Only link to a module the signed-in role can open.
+  const allowed = new Set(modules.filter((module) => module.roles.includes(user.role)).map((module) => module.name))
+  const isAdmin = user.role === 'ADMIN'
+  const loaded = summary && inventory
 
-  // One list drives the whole row instead of four hand-written <article>
-  // blocks with different markup — that repetition was part of why the
-  // gradient tile read as "special" (M1) rather than as a sibling of the
-  // other three. `module` is only set on the two tiles that should be
-  // real navigation.
-  const tiles = [
-    { label: "Today's collected", value: summary ? formatPeso(summary.today.collected) : '—', caption: 'Today, so far' },
-    { label: 'Outstanding', value: summary ? formatPeso(summary.outstanding) : '—', caption: 'Unpaid across all open orders', module: 'Payment & Billing' },
-    { label: 'Low stock', value: summary ? summary.lowStockAlertsTotal : '—', caption: 'Open stock alerts', module: 'Inventory Management' },
-    // Caption kept short deliberately: the longer wording this replaced
-    // ("Pending assignment or already assigned") wrapped to two lines and
-    // left this tile's content sitting unevenly against its three
-    // siblings, which breaks the "repeated things are one object" rule
-    // the four-tile row exists to satisfy.
-    { label: 'Deliveries to assign', value: summary ? summary.deliveriesNeedingAttention : '—', caption: 'Assign deliveries', module: 'Delivery Management' },
-    { label: 'Expired stock', value: summary ? summary.expiredStockTotal : '—', caption: 'Past their date, still in stock', module: 'Inventory Management' },
-    // PHASE10 D3 — bulk orders an admin has to approve.
-    { label: 'Bulk orders to approve', value: summary ? summary.ordersAwaitingApproval : '—', caption: 'Large orders waiting for an admin', module: 'Order Management' },
-    // PHASE10 B1 — from the latest forecast; the Forecast tab lists them
-    // with how many to bake. Marked when the forecast used assumed data.
-    { label: 'Likely to sell out', value: summary ? (summary.likelySellOut ? summary.likelySellOut.count : '—') : '—', caption: summary?.likelySellOut ? (summary.likelySellOut.assumed ? 'By tomorrow · assumed demand' : 'By tomorrow, per the forecast') : 'No forecast run yet', module: 'Reporting & Analytics' },
-  ]
+  const stockCounts = { GOOD: 0, OKAY: 0, LOW: 0, EXPIRED: 0 }
+  for (const item of inventory ?? []) stockCounts[stockStatus(item)] += 1
+  const lowItems = (inventory ?? [])
+    .filter((item) => ['LOW', 'EXPIRED'].includes(stockStatus(item)))
+    .sort((a, b) => a.stockQuantity - a.minStockLevel - (b.stockQuantity - b.minStockLevel))
+
+  // Each tile: a count, the rule that colours it, and where it leads.
+  const tiles = loaded ? [
+    {
+      label: 'Low stock',
+      value: stockCounts.LOW,
+      tone: stockCounts.LOW > 0 ? 'attention' : stockCounts.OKAY > 0 ? 'okay' : 'good',
+      note: stockCounts.LOW > 0 ? 'At or under the minimum — restock' : stockCounts.OKAY > 0 ? `${stockCounts.OKAY} running low` : 'Every product well stocked',
+      to: ['Inventory Management', { stockFilter: 'LOW' }],
+    },
+    {
+      label: 'Running low',
+      value: stockCounts.OKAY,
+      tone: stockCounts.OKAY > 0 ? 'okay' : 'good',
+      note: stockCounts.OKAY > 0 ? 'Close to the minimum — plan the bake' : 'Nothing close to the minimum',
+      to: ['Inventory Management', { stockFilter: 'OKAY' }],
+    },
+    {
+      label: 'Expired stock',
+      value: stockCounts.EXPIRED,
+      tone: stockCounts.EXPIRED > 0 ? 'attention' : 'good',
+      note: stockCounts.EXPIRED > 0 ? 'Hidden from the menu — write it off' : 'Nothing past its date',
+      to: ['Inventory Management', { stockFilter: 'EXPIRED' }],
+    },
+    {
+      label: 'Orders to prepare',
+      value: summary.ordersToPrepare,
+      tone: summary.ordersOverdue > 0 ? 'attention' : summary.ordersToPrepare > 0 ? 'okay' : 'good',
+      note: summary.ordersOverdue > 0 ? `${summary.ordersOverdue} past the time asked for` : summary.ordersToPrepare > 0 ? 'None overdue' : 'All caught up',
+      to: ['Production'],
+    },
+    {
+      label: 'Deliveries to assign',
+      value: summary.deliveriesNeedingAttention,
+      tone: summary.deliveriesNeedingAttention > 0 ? 'attention' : 'good',
+      note: summary.deliveriesNeedingAttention > 0 ? 'Waiting for a driver' : 'Every delivery has a driver',
+      to: ['Delivery Management'],
+    },
+    isAdmin && {
+      label: 'Bulk orders to approve',
+      value: summary.ordersAwaitingApproval,
+      tone: summary.ordersAwaitingApproval > 0 ? 'attention' : 'good',
+      note: summary.ordersAwaitingApproval > 0 ? 'Large orders waiting for you' : 'Nothing waiting',
+      to: ['Order Management'],
+    },
+    {
+      label: 'Unpaid balances',
+      value: formatPeso(summary.outstanding),
+      tone: Number(summary.outstanding) > 0 ? 'okay' : 'good',
+      note: Number(summary.outstanding) > 0 ? 'Still owed on open orders' : 'Everything is paid',
+      to: ['Payment & Billing'],
+    },
+    summary.likelySellOut && {
+      label: 'Likely to sell out',
+      value: summary.likelySellOut.count,
+      tone: summary.likelySellOut.count > 0 ? 'okay' : 'good',
+      note: summary.likelySellOut.assumed ? 'By tomorrow · assumed demand' : 'By tomorrow, per the forecast',
+      to: ['Reporting & Analytics'],
+    },
+  ].filter(Boolean) : []
+
+  const attentionCount = tiles.filter((tile) => tile.tone === 'attention').length
 
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
-      {/* H1: page titles drop from text-3xl font-extrabold to 24px/600. */}
-      <h1 className="mt-1 text-2xl font-semibold text-ink-900">Dashboard</h1>
-      <p className="mt-2 text-sm text-ink-500">Welcome back, {user.name}. Here is what needs your attention today.</p>
-
-      {error && (
-        <div className="mt-4">
-          <Alert variant="error">{error}</Alert>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-ink-900">Dashboard</h1>
+          <p className="mt-1 text-sm text-ink-500">
+            {loaded
+              ? attentionCount > 0
+                ? `Hi ${user.name.split(' ')[0]} — ${attentionCount} thing${attentionCount === 1 ? ' needs' : 's need'} your attention.`
+                : `Hi ${user.name.split(' ')[0]} — everything looks good.`
+              : `Welcome back, ${user.name}.`}
+          </p>
         </div>
-      )}
-
-      <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {tiles.map((tile) => {
-          const linkable = tile.module && allowedModuleNames.has(tile.module)
-          // A fixed inner layout: label at the top, value directly under it,
-          // caption pinned to the bottom — so a two-line caption or a long
-          // peso figure never shifts the value's baseline across tiles.
-          const body = (
-            <div className="flex h-full min-h-40 flex-col">
-              <p className="text-sm font-medium text-ink-500">{tile.label}</p>
-              <p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{tile.value}</p>
-              <p className={`mt-auto pt-4 text-xs ${linkable ? 'font-medium text-brand-700' : 'text-ink-500'}`}>{linkable ? `${tile.caption} →` : tile.caption}</p>
-            </div>
-          )
-          // M2 fix: a tile that navigates is a real <button>, not a <p>
-          // styled to look clickable — same reasoning as C2's row fix
-          // elsewhere, a false affordance is worse than none, and a real
-          // button gets focus, Enter/Space, and screen-reader semantics
-          // for free.
-          return linkable ? (
-            <button
-              type="button"
-              key={tile.label}
-              onClick={() => onNavigate(tile.module)}
-              className="rounded-panel border border-line-200 bg-surface p-6 text-left shadow-raised transition hover:bg-surface-sunk"
-            >
-              {body}
-            </button>
-          ) : (
-            // M1 fix: every tile — including this one, which used to be
-            // the gradient — is the same plain <Card>, so the row reads
-            // as one repeated object instead of one special card among
-            // three plain ones.
-            <Card key={tile.label} className="p-6">
-              {body}
-            </Card>
-          )
-        })}
+        <Legend />
       </div>
 
-      <Card className="mt-6 p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-ink-900">Needs attention</h2>
-            <p className="mt-1 text-sm text-ink-500">Low-stock alerts currently open.</p>
-          </div>
-        </div>
-        {summary && summary.lowStockAlerts.length > 0 ? (
-          <>
-            <div className="mt-5 divide-y divide-line-100">
-              {summary.lowStockAlerts.map((alert) => (
-                <div key={alert.id} className="flex items-center justify-between gap-4 py-4 text-sm text-ink-700">
-                  <span className="flex items-center gap-3">
-                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-status-wait-bg text-status-wait-fg">!</span>
-                    <span>
-                      <span className="font-semibold text-ink-900">{alert.productName}{alert.variant ? ` (${alert.variant})` : ''}</span>
-                      <span className="block text-xs text-ink-500">{alert.stockQuantity} left · minimum {alert.minStockLevel}</span>
-                    </span>
-                  </span>
-                </div>
-              ))}
-            </div>
-            {summary.lowStockAlertsTotal > summary.lowStockAlerts.length && (
-              <p className="mt-4 text-xs font-medium text-status-wait-fg">
-                Showing the {summary.lowStockAlerts.length} oldest of {summary.lowStockAlertsTotal} open alerts.
-              </p>
-            )}
-          </>
-        ) : (
-          // M4 fix, second site: this used to read "Loading…" forever on
-          // a failed fetch too, because it only distinguished "summary
-          // loaded" from "still loading" and had no third state for
-          // "failed". Now it does.
-          <p className="mt-5 text-sm text-ink-500">{error ? 'Unable to load alerts.' : summary ? 'Nothing needs attention right now.' : 'Loading…'}</p>
-        )}
-      </Card>
+      {error && <div className="mt-4"><Alert variant="error">{error}</Alert></div>}
 
-      {summary && summary.expiredStock.length > 0 && (
+      {/* Today at a glance: plain figures, no colour — they are facts,
+          not problems. */}
+      <div className="mt-6 grid grid-cols-3 gap-3 rounded-panel border border-line-200 bg-surface p-4 shadow-raised sm:p-5">
+        <TodayFigure label="Orders today" value={summary ? summary.today.ordersPlaced : '—'} />
+        <TodayFigure label="Ordered today" value={summary ? formatPeso(summary.today.ordered) : '—'} />
+        <TodayFigure label="Collected today" value={summary ? formatPeso(summary.today.collected) : '—'} />
+      </div>
+
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {loaded
+          ? tiles.map((tile) => <StatusTile key={tile.label} tile={tile} linkable={allowed.has(tile.to[0])} onOpen={() => onNavigate(...tile.to)} />)
+          : Array.from({ length: 8 }).map((_, index) => <div key={index} className="h-36 animate-pulse rounded-panel bg-surface-sunk" />)}
+      </div>
+
+      {/* The products behind the red stock tiles, worst first — enough to
+          act on without leaving the page; the full list is a click away. */}
+      {loaded && lowItems.length > 0 && (
         <Card className="mt-6 p-6">
-          <h2 className="text-lg font-semibold text-ink-900">Expired stock</h2>
-          <p className="mt-1 text-sm text-ink-500">Hidden from the menu and refused at checkout until written off — file a loss report with reason Expired, or clear the date if it was entered wrongly.</p>
-          <div className="mt-5 divide-y divide-line-100">
-            {summary.expiredStock.map((item) => (
-              <div key={item.productId} className="flex items-center justify-between gap-4 py-3 text-sm text-ink-700">
-                <span>{item.productName}{item.variant ? ` (${item.variant})` : ''}</span>
-                <span className="text-xs text-ink-500">{item.stockQuantity} on hand · expired {item.expirationDate}</span>
-              </div>
-            ))}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="flex items-center gap-2 text-lg font-semibold text-ink-900">
+                <span className={`h-2.5 w-2.5 rounded-full ${TONES.attention.dot}`} aria-hidden="true" />
+                Restock first
+              </h2>
+              <p className="mt-1 text-sm text-ink-500">Low or expired, the furthest under its minimum at the top.</p>
+            </div>
+            {allowed.has('Inventory Management') && (
+              <button type="button" onClick={() => onNavigate('Inventory Management', { stockFilter: 'ATTENTION' })} className="text-sm font-semibold text-brand-700 hover:underline">
+                View all {lowItems.length} →
+              </button>
+            )}
           </div>
-          {summary.expiredStockTotal > summary.expiredStock.length && (
-            <p className="mt-4 text-xs font-medium text-status-wait-fg">Showing {summary.expiredStock.length} of {summary.expiredStockTotal}.</p>
-          )}
+          <ul className="mt-4 divide-y divide-line-100">
+            {lowItems.slice(0, 6).map((item) => {
+              const status = stockStatus(item)
+              return (
+                <li key={item.productId} className="flex items-center justify-between gap-4 py-3 text-sm">
+                  <span className="min-w-0">
+                    <span className="font-semibold text-ink-900">{item.productName}</span>
+                    {item.variant && <span className="text-ink-500"> · {item.variant}</span>}
+                  </span>
+                  <span className="flex shrink-0 items-center gap-3">
+                    <span className="text-xs text-ink-500 tabular-nums">{item.stockQuantity} left · min {item.minStockLevel}</span>
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${TONES[STOCK_STATUSES[status].tone].pill}`}>{STOCK_STATUSES[status].label}</span>
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
         </Card>
       )}
     </section>
+  )
+}
+
+function StatusTile({ tile, linkable, onOpen }) {
+  const tone = TONES[tile.tone]
+  const body = (
+    <div className="flex h-full min-h-32 flex-col">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-medium text-ink-700">{tile.label}</p>
+        <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${tone.pill}`}>
+          <span className={`h-2 w-2 rounded-full ${tone.dot}`} aria-hidden="true" />
+          {tone.short}
+        </span>
+      </div>
+      <p className={`mt-3 text-3xl font-semibold tabular-nums ${tile.tone === 'attention' ? tone.text : 'text-ink-900'}`}>{tile.value}</p>
+      <p className="mt-auto pt-3 text-xs text-ink-500">{tile.note}{linkable ? <span className="font-semibold text-brand-700"> · View →</span> : null}</p>
+    </div>
+  )
+  const shell = `rounded-panel border border-line-200 border-l-4 ${tone.edge} bg-surface p-5 text-left shadow-raised`
+  return linkable
+    ? <button type="button" onClick={onOpen} className={`${shell} transition hover:bg-surface-sunk`} aria-label={`${tile.label}: ${tile.value}, ${tone.label}. Open.`}>{body}</button>
+    : <div className={shell}>{body}</div>
+}
+
+function TodayFigure({ label, value }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-xs font-medium text-ink-500">{label}</p>
+      <p className="mt-1 truncate text-lg font-semibold text-ink-900 tabular-nums sm:text-2xl">{value}</p>
+    </div>
+  )
+}
+
+function Legend() {
+  return (
+    <ul className="flex flex-wrap items-center gap-3 text-xs text-ink-700" aria-label="Colour key">
+      {['good', 'okay', 'attention'].map((tone) => (
+        <li key={tone} className="flex items-center gap-1.5">
+          <span className={`h-2.5 w-2.5 rounded-full ${TONES[tone].dot}`} aria-hidden="true" />
+          {TONES[tone].label}
+        </li>
+      ))}
+    </ul>
   )
 }

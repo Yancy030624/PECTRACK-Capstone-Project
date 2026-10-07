@@ -329,7 +329,7 @@ router.get('/sales', async (request, response) => {
 // database that already has to know the right answer (Decision 1) compute
 // it start to finish.
 router.get('/summary', async (_request, response) => {
-  const [todayResult, outstandingResult, lowStockAlerts, deliveriesResult, expiredStock, likelySellOut, awaitingApproval] = await Promise.all([
+  const [todayResult, outstandingResult, lowStockAlerts, deliveriesResult, expiredStock, likelySellOut, awaitingApproval, kitchen] = await Promise.all([
     pool.query(`
       WITH today_range AS (
         SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date AS local_date,
@@ -372,6 +372,11 @@ router.get('/summary', async (_request, response) => {
     likelySellOutSummary(),
     // PHASE10 D3 — bulk orders waiting for an admin.
     pool.query(`SELECT COUNT(*)::int AS n FROM orders WHERE requires_admin_approval AND status = 'PLACED'`),
+    // The kitchen's queue: orders not ready yet, and those already past
+    // the time the customer asked for (the Due today schedule's "overdue").
+    pool.query(`SELECT COUNT(*)::int AS to_prepare,
+                       COUNT(*) FILTER (WHERE requested_fulfillment_time < CURRENT_TIMESTAMP)::int AS overdue
+                  FROM orders WHERE status IN ('PLACED', 'CONFIRMED', 'IN_PRODUCTION')`),
   ])
   const todayRow = todayResult.rows[0]
 
@@ -393,6 +398,8 @@ router.get('/summary', async (_request, response) => {
     expiredStockTotal: expiredStock.total,
     likelySellOut,
     ordersAwaitingApproval: awaitingApproval.rows[0].n,
+    ordersToPrepare: kitchen.rows[0].to_prepare,
+    ordersOverdue: kitchen.rows[0].overdue,
   })
 })
 

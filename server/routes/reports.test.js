@@ -447,6 +447,13 @@ describe('reporting & analytics', () => {
       assert.equal(asDriver.status, 403)
     })
 
+    test('reports the kitchen queue: orders still to prepare, and how many of them are already overdue', async () => {
+      const body = await (await fetch(`${baseUrl}/api/reports/summary`, { headers: { Cookie: cashierCookie } })).json()
+      assert.equal(typeof body.ordersToPrepare, 'number')
+      assert.equal(typeof body.ordersOverdue, 'number')
+      assert.ok(body.ordersOverdue <= body.ordersToPrepare, 'an overdue order is one still being prepared')
+    })
+
     test('returns today\'s Manila calendar date, computed the same way an independent query would', async () => {
       const expected = await pool.query(`SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date AS today`)
       const response = await fetch(`${baseUrl}/api/reports/summary`, { headers: { Cookie: adminCookie } })

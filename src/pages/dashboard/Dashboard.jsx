@@ -39,6 +39,14 @@ const defaultModuleFor = (role) => {
 export function Dashboard({ user, onLogout, onUserUpdated }) {
   // Track which permitted module is currently active.
   const [activeModule, setActiveModule] = useState(() => defaultModuleFor(user.role))
+  // Optional hints for the module being opened — the Dashboard's Low stock
+  // tile opens Inventory with { stockFilter: 'LOW' }. The sidebar opens a
+  // module plain, so a hint never lingers into the next visit.
+  const [moduleParams, setModuleParams] = useState(null)
+  const openModule = (name, params = null) => {
+    setActiveModule(name)
+    setModuleParams(params)
+  }
   // Calculate the navigation items for the signed-in role.
   const allowedModules = modules.filter((module) => module.roles.includes(user.role))
   const ActiveModuleComponent = moduleComponents[activeModule]
@@ -125,7 +133,7 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
               <button
                 type="button"
                 key={module.name}
-                onClick={() => setActiveModule(module.name)}
+                onClick={() => openModule(module.name)}
                 // Nav items are navigation, not generic buttons (see the
                 // audit's Stage 2 note), so they're styled directly
                 // instead of forced through <Button>. Weight now
@@ -154,7 +162,7 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
             <button
               type="button"
               key={module.name}
-              onClick={() => setActiveModule(module.name)}
+              onClick={() => openModule(module.name)}
               className={`inline-flex min-h-9 shrink-0 items-center rounded-full px-3 text-xs whitespace-nowrap ${
                 activeModule === module.name ? 'bg-brand-600 font-semibold text-white' : 'bg-brand-50 font-medium text-brand-700'
               }`}
@@ -174,7 +182,7 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
               only DashboardHome — see its M2 fix, UI_AUDIT.md) can switch
               to another permitted module the same way the sidebar/mobile
               nav above does, instead of faking a link that goes nowhere. */}
-          <ActiveModuleComponent user={user} activeModule={activeModule} onUserUpdated={onUserUpdated} onNavigate={setActiveModule} />
+          <ActiveModuleComponent key={`${activeModule}:${JSON.stringify(moduleParams)}`} user={user} activeModule={activeModule} params={moduleParams} onUserUpdated={onUserUpdated} onNavigate={openModule} />
         </main>
       </div>
     </div>

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiGet, apiPatch } from '../../api/client.js'
+import { StockStatusPill } from '../../components/ui/StockStatusPill.jsx'
+import { STOCK_STATUSES, TONES, stockStatus } from '../../lib/stockHealth.js'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Button } from '../../components/ui/Button.jsx'
 import { Card } from '../../components/ui/Card.jsx'
@@ -7,7 +9,6 @@ import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Field } from '../../components/ui/Field.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
-import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { InventoryRequests } from './InventoryRequests.jsx'
@@ -36,11 +37,10 @@ const reasonOptions = [
 // rounded-full tab pills are Button, matching OrderManagement/
 // PaymentBilling's tab pattern; the five inputs are Input/Select/Field
 // (H3); Stock and Min level are <Td numeric> per the audit's "numeric and
-// currency columns right-aligned with tabular-nums" rule. The low-stock
-// pill reuses StatusBadge's existing ACTIVE/INACTIVE tokens (the same
-// trick CustomerManagement's isActive flag already uses) rather than
-// inventing a seventh status — INACTIVE is already the red/"fail" token,
-// ACTIVE already green/"done".
+// currency columns right-aligned with tabular-nums" rule. Each row's
+// status (Good / Running low / Low stock / Expired) comes from
+// lib/stockHealth.jsx — the same rule the Dashboard counts with — and the
+// Status filter above the table narrows the list to one of them.
 //
 // saveEdit's request-body construction is untouched: it still only adds
 // stockQuantity/reason/note/minStockLevel/expirationDate keys when that
@@ -48,9 +48,28 @@ const reasonOptions = [
 // change request per product and observed-stock-quantity approval
 // semantics live in InventoryRequests.jsx and are not touched by this
 // pass either.
-export function InventoryManagement({ user }) {
+// The status filter's choices. ATTENTION is "everything red" — low and
+// expired together — which is what the Dashboard's "View all" opens.
+const stockFilters = [
+  { key: 'ALL', label: 'All' },
+  { key: 'GOOD', label: STOCK_STATUSES.GOOD.label, tone: 'good' },
+  { key: 'OKAY', label: STOCK_STATUSES.OKAY.label, tone: 'okay' },
+  { key: 'LOW', label: STOCK_STATUSES.LOW.label, tone: 'attention' },
+  { key: 'EXPIRED', label: STOCK_STATUSES.EXPIRED.label, tone: 'attention' },
+  { key: 'ATTENTION', label: 'Needs attention', tone: 'attention' },
+]
+const matchesFilter = (item, filter) => {
+  if (filter === 'ALL') return true
+  const status = stockStatus(item)
+  return filter === 'ATTENTION' ? status === 'LOW' || status === 'EXPIRED' : status === filter
+}
+
+// `params.stockFilter` opens the page already filtered — the Dashboard's
+// Low stock tile sends 'LOW', so it shows only what is low.
+export function InventoryManagement({ user, params }) {
   const isAdmin = user.role === 'ADMIN'
   const [activeTab, setActiveTab] = useState('levels')
+  const [stockFilter, setStockFilter] = useState(() => (stockFilters.some((filter) => filter.key === params?.stockFilter) ? params.stockFilter : 'ALL'))
 
   const [inventory, setInventory] = useState([])
   const [loading, setLoading] = useState(true)
@@ -124,6 +143,13 @@ export function InventoryManagement({ user }) {
     }
   }
 
+  // Worst first under a filter that mixes statuses, so what needs
+  // attention is never below the fold of what is fine.
+  const statusRank = { EXPIRED: 0, LOW: 1, OKAY: 2, GOOD: 3 }
+  const visibleInventory = inventory
+    .filter((item) => matchesFilter(item, stockFilter))
+    .sort((a, b) => (stockFilter === 'ALL' ? 0 : statusRank[stockStatus(a)] - statusRank[stockStatus(b)]))
+
   const tabs = [
     { key: 'levels', label: 'Stock levels' },
     { key: 'requests', label: isAdmin ? 'Change requests' : 'Propose a change' },
@@ -153,10 +179,36 @@ export function InventoryManagement({ user }) {
 
       {activeTab === 'levels' && (
         <Card className="mt-6 p-6">
+          {!loading && inventory.length > 0 && (
+            <div className="mb-5">
+              <p id="stock-filter-label" className="text-xs font-semibold uppercase tracking-wide text-ink-500">Status</p>
+              <div role="group" aria-labelledby="stock-filter-label" className="mt-2 flex flex-wrap gap-2">
+                {stockFilters.map((filter) => {
+                  const count = inventory.filter((item) => matchesFilter(item, filter.key)).length
+                  const active = stockFilter === filter.key
+                  return (
+                    <button
+                      type="button"
+                      key={filter.key}
+                      onClick={() => setStockFilter(filter.key)}
+                      aria-pressed={active}
+                      className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition ${active ? 'border-ink-900 bg-ink-900 text-white' : 'border-line-200 bg-surface text-ink-700 hover:bg-surface-sunk'}`}
+                    >
+                      {filter.tone && <span className={`h-2.5 w-2.5 rounded-full ${TONES[filter.tone].dot}`} aria-hidden="true" />}
+                      {filter.label}
+                      <span className={`rounded-full px-1.5 text-xs tabular-nums ${active ? 'bg-white/20' : 'bg-surface-sunk text-ink-500'}`}>{count}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
           {loading ? (
             <LoadingRows className="mt-4" />
           ) : inventory.length === 0 ? (
             <EmptyState title="No products yet" />
+          ) : visibleInventory.length === 0 ? (
+            <EmptyState title={`No products are ${stockFilters.find((filter) => filter.key === stockFilter).label.toLowerCase()} right now`} description="Pick another status, or All." />
           ) : (
             <div>
               <Table caption="Inventory stock levels">
@@ -172,7 +224,7 @@ export function InventoryManagement({ user }) {
                   </Tr>
                 </Thead>
                 <Tbody>
-                  {inventory.map((item) =>
+                  {visibleInventory.map((item) =>
                     editingProductId === item.productId ? (
                       // The edit form spans the whole row as one cell. It
                       // used to put one input per column, which broke the
@@ -231,7 +283,7 @@ export function InventoryManagement({ user }) {
                         <Td numeric priority="md">{item.minStockLevel}</Td>
                         <Td priority="lg">{item.expirationDate ?? '—'}{item.expired && <span className="ml-2 rounded-full bg-status-fail-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-fail-fg">Expired</span>}</Td>
                         <Td>
-                          <StatusBadge status={item.lowStock ? 'INACTIVE' : 'ACTIVE'} label={item.lowStock ? 'Low stock' : 'OK'} />
+                          <StockStatusPill status={stockStatus(item)} />
                         </Td>
                         {isAdmin && (
                           <Td>
