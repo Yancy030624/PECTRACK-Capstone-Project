@@ -599,7 +599,13 @@ describe('delivery management', () => {
     const before = new Set(await fs.readdir(filePath('')).catch(() => []))
     assert.equal((await upload(deliveryId)).status, 409, 'the 6th upload must be refused')
     const after = await fs.readdir(filePath('')).catch(() => [])
-    const leaked = after.filter((file) => !before.has(file))
+    // Other test FILES run in parallel and write to the same folder
+    // (product photos, other proofs), so a new file is only a leak if no
+    // row points at it — an orphan is exactly a file nothing references.
+    const referenced = new Set((await pool.query(
+      `SELECT storage_key AS key FROM delivery_proofs UNION SELECT image_key FROM products WHERE image_key IS NOT NULL`,
+    )).rows.map((row) => row.key))
+    const leaked = after.filter((file) => !before.has(file) && !referenced.has(file))
     assert.deepEqual(leaked, [], 'a rejected upload must clean up the bytes it already wrote')
 
     const keys = (await pool.query('SELECT storage_key FROM delivery_proofs WHERE delivery_id = $1', [deliveryId])).rows.map((r) => r.storage_key)
