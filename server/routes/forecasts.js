@@ -107,7 +107,7 @@ router.post('/run', requireRole('ADMIN'), async (request, response) => {
   // with the missing days in between filled as zero. Starting from the
   // product's OWN first day stops a product added last month looking like
   // it sold nothing all year.
-  const results = []
+  let results = []
   for (const product of products) {
     const rows = byProduct.get(product.product_id) ?? []
     if (rows.length === 0) {
@@ -130,11 +130,22 @@ router.post('/run', requireRole('ADMIN'), async (request, response) => {
     results.push({ product, outcome })
   }
 
-  const forecast = results.filter((result) => !result.outcome.skipped)
+  let forecast = results.filter((result) => !result.outcome.skipped)
   const client = await pool.connect()
   let runId
   try {
     await client.query('BEGIN')
+    // Training takes seconds, and a product can be deleted meanwhile.
+    // Lock the ones still here against deletion until this commits (KEY
+    // SHARE blocks a DELETE, not ordinary edits), and leave out any that
+    // are gone — otherwise one missing product fails the whole run on its
+    // foreign key.
+    const stillThere = new Set((await client.query(
+      'SELECT product_id FROM products WHERE product_id = ANY($1::bigint[]) FOR KEY SHARE',
+      [results.map((result) => result.product.product_id)],
+    )).rows.map((row) => row.product_id))
+    results = results.filter((result) => stillThere.has(result.product.product_id))
+    forecast = results.filter((result) => !result.outcome.skipped)
     const run = await client.query(
       `INSERT INTO forecast_runs (run_by, horizon_days, sources, history_from, history_to, days_by_source, products_forecast, products_skipped)
        VALUES ($1, $2, $3::data_source[], $4, $5, $6, $7, $8) RETURNING run_id`,

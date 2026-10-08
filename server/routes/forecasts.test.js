@@ -197,7 +197,7 @@ describe('demand forecasting API', () => {
   })
 
   test('restock recommendations: the out-of-stock test product runs out today and gets a bake quantity', async () => {
-    await json(adminCookie, 'POST', '/api/forecasts/run', { source: 'ASSUMED' })
+    assert.equal((await json(adminCookie, 'POST', '/api/forecasts/run', { source: 'ASSUMED' })).status, 201, 'the run itself must succeed')
     const latest = await (await json(cashierCookie, 'GET', '/api/forecasts/latest')).json()
     const bun = latest.products.find((product) => product.productId === productId)
     const item = latest.restock.find((entry) => entry.productId === productId)
