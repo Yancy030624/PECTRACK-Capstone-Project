@@ -458,6 +458,47 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
   }
 })
 
+// POST /api/orders/:id/approve — admin only. Approves a bulk order WITHOUT
+// confirming it. Approving a bulk PICKUP order is still just confirming it
+// (PATCH below, admin only). A bulk DELIVERY order cannot work that way
+// any more: it may not be paid before approval (PHASE10 D3) and may not be
+// confirmed before it is paid (NO_COD_PLAN D1). So approval here only
+// clears requires_admin_approval: the order stays PLACED, payment opens,
+// and staff confirm it once it is paid. The approval itself is kept in
+// the status history, with who and when.
+router.post('/:id/approve', requireRole('ADMIN'), async (request, response) => {
+  const orderId = parseId(request.params.id)
+  if (!orderId) return response.status(404).json({ message: 'Order not found.' })
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const claimed = await client.query(
+      `UPDATE orders SET requires_admin_approval = FALSE
+        WHERE order_id = $1 AND requires_admin_approval AND status = 'PLACED'
+      RETURNING order_id`,
+      [orderId],
+    )
+    if (claimed.rowCount === 0) {
+      await client.query('ROLLBACK')
+      const exists = await pool.query('SELECT 1 FROM orders WHERE order_id = $1', [orderId])
+      if (!exists.rows[0]) return response.status(404).json({ message: 'Order not found.' })
+      return response.status(409).json({ message: 'This order is not waiting for approval.' })
+    }
+    await client.query(
+      'INSERT INTO order_status_history (order_id, updated_by, status, note) VALUES ($1, $2, $3, $4)',
+      [orderId, request.user.id, 'PLACED', 'Bulk order approved — payment is now open.'],
+    )
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+  return response.json({ message: `Bulk order #${orderId} approved. It is confirmed once it is paid.` })
+})
+
 router.patch('/:id', async (request, response) => {
   const orderId = parseId(request.params.id)
   if (!orderId) return response.status(404).json({ message: 'Order not found.' })
@@ -590,6 +631,20 @@ router.patch('/:id', async (request, response) => {
     if (claimed.rowCount === 0) {
       await client.query('ROLLBACK')
       return response.status(409).json({ message: 'This order was updated by someone else — reload it and try again.' })
+    }
+
+    // NO_COD_PLAN D1 — no cash on delivery. The client will not bake and
+    // send out food that can be refused at the door unpaid, so a DELIVERY
+    // order moves forward only once it is fully paid. Checked after the
+    // claim, under the order's row lock, for the same reason as the
+    // COMPLETED check below: a payment and a confirm racing on one order
+    // queue on that lock, so neither can slip past the other.
+    if (lockedOrder.order_type === 'DELIVERY' && status !== 'CANCELLED') {
+      const billing = await getBillingSummary(client, orderId)
+      if (!billing.isFullyPaid) {
+        await client.query('ROLLBACK')
+        return response.status(409).json({ message: `Delivery orders must be paid in full before they move on. Balance: ₱${billing.balanceDue}.` })
+      }
     }
 
     // PHASE 6, DECISION 7 — an order cannot be marked COMPLETED while

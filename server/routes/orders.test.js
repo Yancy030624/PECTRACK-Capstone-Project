@@ -972,6 +972,32 @@ describe('order management', () => {
     assert.equal((await pay()).status, 201, 'payment opens once approved')
   })
 
+  // NO_COD_PLAN — a bulk DELIVERY order is approved without being
+  // confirmed: approval opens payment, payment opens confirming.
+  test('a bulk delivery order: approve (admin only), then pay, then confirm', async () => {
+    const threshold = (await (await fetch(`${baseUrl}/api/settings`, { headers: { Cookie: cashierCookie } })).json()).settings.bulkOrderThreshold
+    const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ orderType: 'DELIVERY', addressId: customerAddressId, items: [{ productId: availableProductId, quantity: threshold + 1 }] }) })
+    assert.equal(response.status, 201)
+    const { order } = await response.json()
+    createdOrderIds.push(order.id)
+    const approve = (cookie) => fetch(`${baseUrl}/api/orders/${order.id}/approve`, { method: 'POST', headers: { Cookie: cookie } })
+    const confirm = () => fetch(`${baseUrl}/api/orders/${order.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'CONFIRMED' }) })
+    const pay = (amount) => fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ orderId: order.id, method: 'CASH', amount }) })
+
+    assert.equal((await confirm()).status, 409, 'unpaid, so not even an admin can confirm it')
+    assert.equal((await approve(cashierCookie)).status, 403, 'a cashier cannot approve')
+    assert.equal((await approve(adminCookie)).status, 200)
+    assert.equal((await approve(adminCookie)).status, 409, 'approving twice is refused')
+
+    const detail = (await (await fetch(`${baseUrl}/api/orders/${order.id}`, { headers: { Cookie: adminCookie } })).json()).order
+    assert.equal(detail.status, 'PLACED', 'approval alone does not confirm it')
+    assert.equal(detail.awaitingApproval, false)
+    assert.ok(detail.statusHistory.some((entry) => /Bulk order approved/.test(entry.note ?? '')))
+
+    assert.equal((await pay(order.totalAmount)).status, 201, 'payment opens once approved')
+    assert.equal((await confirm()).status, 200, 'and once paid, it can be confirmed')
+  })
+
   test('rejecting a bulk order is cancelling it — allowed to a cashier, with a reason, and its stock returns', async () => {
     const threshold = (await (await fetch(`${baseUrl}/api/settings`, { headers: { Cookie: adminCookie } })).json()).settings.bulkOrderThreshold
     const stockBefore = (await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [availableProductId])).rows[0].stock_quantity

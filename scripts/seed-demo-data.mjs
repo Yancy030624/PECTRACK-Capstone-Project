@@ -277,6 +277,12 @@ async function main() {
       addressId: isDelivery ? address.id : undefined,
       items: randomItems(commonProducts),
     })
+    // No cash on delivery (NO_COD_PLAN): a delivery order is paid in full
+    // before it is confirmed, so it is paid up front — mostly GCash, the
+    // way a customer pays online. A pickup order is paid at the counter
+    // when collected.
+    const useGcash = Math.random() < (isDelivery ? 0.8 : 0.2)
+    const paymentId = isDelivery ? await recordPayment(order.id, order.totalAmount, useGcash ? 'GCASH' : 'CASH') : null
     await advanceStatus(order.id, 'CONFIRMED')
     await advanceStatus(order.id, 'IN_PRODUCTION')
     // A DELIVERY order's status is driven by deliveries.js, not this
@@ -284,13 +290,12 @@ async function main() {
     // OUT_FOR_DELIVERY and DELIVERED, and COMPLETED requires DELIVERED.
     if (isDelivery) await deliverOrder(order.id)
     else await advanceStatus(order.id, 'READY_FOR_PICKUP')
-    const useGcash = Math.random() < 0.2
-    const paymentId = await recordPayment(order.id, order.totalAmount, useGcash ? 'GCASH' : 'CASH')
+    const counterPaymentId = isDelivery ? paymentId : await recordPayment(order.id, order.totalAmount, useGcash ? 'GCASH' : 'CASH')
     await advanceStatus(order.id, 'COMPLETED')
 
     const instant = randomPastInstant(90)
     await backdateOrder(order.id, instant)
-    await backdatePayment(paymentId, instant)
+    await backdatePayment(counterPaymentId, instant)
   }
   log(`  ${completedCount} completed orders seeded.\n`)
 
@@ -374,13 +379,28 @@ async function main() {
     addressId: address.id,
     items: randomItems(commonProducts),
   })
-  // Assignment requires the kitchen to have accepted the order first.
+  // Paid up front (no cash on delivery), then accepted by the kitchen —
+  // assignment requires both.
+  await recordPayment(deliveryOrder.id, deliveryOrder.totalAmount, 'GCASH')
   await advanceStatus(deliveryOrder.id, 'CONFIRMED')
   const queue = await call('GET', '/api/deliveries?status=PENDING_ASSIGNMENT', cashierCookie)
   const queueRow = queue.body.deliveries.find((d) => String(d.orderId) === String(deliveryOrder.id))
   const assignResult = await call('PATCH', `/api/deliveries/${queueRow.id}/assign`, cashierCookie, { deliveryPersonnelId: driver.id })
   if (assignResult.status !== 200) throw new Error(`Delivery assignment failed: ${JSON.stringify(assignResult.body)}`)
   log(`  Delivery for order #${deliveryOrder.id} assigned to ${driver.name}.\n`)
+
+  // ============ 7b. One delivery order waiting for payment ============
+  // Shows the no-cash-on-delivery rule in the demo: Order Management says
+  // "Not paid yet — don't bake it", Due today tags it, and the customer's
+  // My Orders says it is waiting for payment.
+  log('Seeding one unpaid delivery order...')
+  const unpaidDelivery = await placeOrder(customerCookie, {
+    orderType: 'DELIVERY',
+    addressId: address.id,
+    items: randomItems(commonProducts),
+    requestedFulfillmentTime: dueIn(4),
+  })
+  log(`  Order #${unpaidDelivery.id} placed for delivery, not yet paid.\n`)
 
   // ============ 8. Push three products under their minimum through real volume ============
   // One large order per product, sized against its OWN current stock

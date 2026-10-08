@@ -74,7 +74,7 @@ export function DeliveryHistory({ user }) {
       {message && <div className="mt-4"><Alert variant="error">{message}</Alert></div>}
 
       {counts && (
-        <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="mt-4 grid grid-cols-3 gap-3">
           <Card className="p-4">
             <p className="text-xs font-medium text-ink-500">Delivered</p>
             <p className="mt-1 text-2xl font-semibold text-ink-900 tabular-nums">{counts.delivered}</p>
@@ -82,11 +82,6 @@ export function DeliveryHistory({ user }) {
           </Card>
           <Card className="p-4"><p className="text-xs font-medium text-ink-500">Failed</p><p className="mt-1 text-2xl font-semibold text-ink-900 tabular-nums">{counts.failed}</p></Card>
           <Card className="p-4"><p className="text-xs font-medium text-ink-500">Assigned now</p><p className="mt-1 text-2xl font-semibold text-ink-900 tabular-nums">{counts.assignedNow}</p><p className="mt-0.5 text-[11px] text-ink-500">Not yet finished</p></Card>
-          <Card className="p-4">
-            <p className="text-xs font-medium text-ink-500">Cash collected</p>
-            <p className="mt-1 text-2xl font-semibold text-ink-900 tabular-nums">{formatPeso(counts.cashCollected)}</p>
-            <p className="mt-0.5 text-[11px] text-ink-500">{counts.cashPayments} payment{counts.cashPayments === 1 ? '' : 's'} at the door</p>
-          </Card>
         </div>
       )}
 

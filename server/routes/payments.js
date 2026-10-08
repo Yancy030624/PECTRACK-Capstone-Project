@@ -69,8 +69,9 @@ const mapPaymentListRow = (row) => ({
 })
 
 // Same join reasoning as lib/billing.js's per-order query: recorded_by is
-// a cashier, an admin, or — for cash collected at the door — the driver
-// (POST / below), and refunded_by only ever an admin.
+// a cashier or an admin — or a driver, on cash-on-delivery rows recorded
+// before NO_COD_PLAN removed that path; those rows are real money and
+// stay — and refunded_by only ever an admin.
 //
 // COUNT(*) OVER() — no PARTITION BY — is evaluated over every row the
 // WHERE clause matched, BEFORE LIMIT/OFFSET trims the page down (that is
@@ -242,13 +243,12 @@ router.post('/webhook', async (request, response) => {
 
 // Admin and cashier see every payment; a customer sees only the ones tied
 // to their own orders — same role-scoping shape as GET /api/orders.
-// Delivery personnel reach exactly ONE route here — POST /, to record the
-// cash they collected at the door (cash on delivery) — so the router-wide
-// gate admits them, and every other route below narrows itself back down.
+// Delivery personnel reach nothing here: there is no cash on delivery
+// (NO_COD_PLAN — a delivery order is paid before it is confirmed).
 //
 // Everything from here down DOES require a signed-in session — only
 // POST /webhook above, registered before this line, is exempt.
-router.use(requireAuth, requireRole('ADMIN', 'CASHIER', 'CUSTOMER', 'DELIVERY_PERSONNEL'))
+router.use(requireAuth, requireRole('ADMIN', 'CASHIER', 'CUSTOMER'))
 const billingRoles = requireRole('ADMIN', 'CASHIER', 'CUSTOMER')
 
 // PHASE 8, DECISION 5 — transaction history EXTENDS this existing
@@ -352,24 +352,20 @@ router.get('/', billingRoles, async (request, response) => {
   })
 })
 
-// POST /api/payments — cashier/admin, and the driver for cash on delivery.
+// POST /api/payments — cashier/admin only: money taken at the counter.
 // A customer can VIEW their own bills (GET above) but never records money
-// changing hands themselves. A DELIVERY_PERSONNEL caller is scoped hard:
-// CASH only, and only against an order whose delivery is theirs and
-// currently OUT_FOR_DELIVERY or DELIVERED — the two states in which they
-// can be standing at the door holding the money. Without this route the
-// order stayed "owed" until a cashier typed in, later and from memory,
-// what the driver said they collected.
-router.post('/', requireRole('CASHIER', 'ADMIN', 'DELIVERY_PERSONNEL'), async (request, response) => {
+// changing hands themselves; they pay online through POST /intent. The
+// driver used to record cash collected at the door here; the client ruled
+// cash on delivery out (NO_COD_PLAN), so delivery orders are settled
+// before they leave the bakery and the driver never handles money.
+router.post('/', requireRole('CASHIER', 'ADMIN'), async (request, response) => {
   const orderId = parseId(request.body.orderId)
   if (!orderId) return response.status(422).json({ message: 'Select a valid order.', errors: { orderId: 'Select a valid order.' } })
 
   const errors = {}
 
-  const isDriver = request.user.role === 'DELIVERY PERSONNEL'
   const method = normalize(request.body.method).toUpperCase()
   if (!paymentMethods.has(method)) errors.method = 'Select cash or GCash.'
-  else if (isDriver && method !== 'CASH') errors.method = 'A delivery person can only record cash collected on delivery.'
 
   // Decision 3: 0 and negative amounts are refused here — the column's
   // CHECK (amount >= 0) alone would let a zero-amount row through, and a
@@ -444,22 +440,6 @@ router.post('/', requireRole('CASHIER', 'ADMIN', 'DELIVERY_PERSONNEL'), async (r
     if (order.status === 'CANCELLED') {
       await client.query('ROLLBACK')
       return response.status(409).json({ message: 'This order was cancelled — a payment cannot be recorded against it.' })
-    }
-
-    // PATTERN H (routes/deliveries.js) — the driver's own id, resolved
-    // from the session and checked against the delivery row under the
-    // order lock already held above. A delivery that is not theirs, or
-    // not yet on the road, 404s the same way their other routes do.
-    if (isDriver) {
-      const owns = await client.query(
-        `SELECT 1 FROM deliveries d JOIN delivery_personnel dp ON dp.delivery_personnel_id = d.delivery_personnel_id
-          WHERE d.order_id = $1 AND dp.user_id = $2 AND d.status IN ('OUT_FOR_DELIVERY', 'DELIVERED')`,
-        [orderId, request.user.id],
-      )
-      if (owns.rowCount === 0) {
-        await client.query('ROLLBACK')
-        return response.status(404).json({ message: 'Order not found.' })
-      }
     }
 
     let recorded

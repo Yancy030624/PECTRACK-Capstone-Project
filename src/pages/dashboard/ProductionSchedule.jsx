@@ -123,6 +123,7 @@ export function ProductionSchedule({ user }) {
                         <span className="text-xs text-ink-500">{order.orderType === 'DELIVERY' ? 'Delivery' : 'Pickup'}{order.requestedFulfillmentTime ? ` · ${formatDateTime(order.requestedFulfillmentTime)}` : ` · placed ${formatDateTime(order.orderDate)}`}</span>
                         <span className="text-xs text-ink-500">{order.items.map((item) => `${item.quantity}× ${itemName(item)}`).join(', ')}</span>
                         <span className="ml-auto flex items-center gap-2">
+                          {order.awaitingPayment && <span className="rounded-full bg-status-fail-bg px-2 py-0.5 text-[11px] font-semibold text-status-fail-fg">Not paid — don&apos;t bake yet</span>}
                           {order.overdue && <span className="text-[11px] font-semibold text-status-fail-fg">Late</span>}
                           {!order.overdue && order.dueSoon && notReady.has(order.status) && <span className="text-[11px] font-semibold text-status-wait-fg">Soon</span>}
                           <StatusBadge status={order.status} />

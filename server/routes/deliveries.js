@@ -10,7 +10,7 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
-import { billingListSql, mapBillingColumns } from '../lib/billing.js'
+import { billingListSql, getBillingSummary, mapBillingColumns } from '../lib/billing.js'
 import { deleteFile, filePath, saveFile } from '../lib/storage.js'
 import { dateRangeSql, parseDateRange } from '../lib/reporting.js'
 import { normalize, parseId } from '../lib/validation.js'
@@ -79,11 +79,11 @@ const mapDeliveryRow = (row) => ({
   failedAt: row.failed_at,
   note: row.note,
   proofCount: Number(row.proof_count),
-  // What the customer asked for, and what they still owe — the driver at
-  // the door needs both: the first to know it is a timed order, the
-  // second to know how much cash to collect (POST /api/payments, the
-  // cash-on-delivery path). Same lib/billing.js columns the order list
-  // uses, never a second SUM written out here.
+  // What the customer asked for, and whether it is paid. Delivery orders
+  // are paid before they are confirmed (NO_COD_PLAN D1), so the driver
+  // only needs to see that it is settled; staff screens use the balance
+  // to explain why an order cannot be assigned yet. Same lib/billing.js
+  // columns the order list uses, never a second SUM written out here.
   instructions: row.instructions,
   requestedFulfillmentTime: row.requested_fulfillment_time,
   ...mapBillingColumns(row),
@@ -189,7 +189,7 @@ router.get('/mine/history', requireRole('DELIVERY_PERSONNEL'), async (request, r
   const personnelId = personnel.rows[0]?.delivery_personnel_id
   const finishedAt = 'COALESCE(d.delivered_at, d.failed_at)'
 
-  const [rows, counts, open, cash] = await Promise.all([
+  const [rows, counts, open] = await Promise.all([
     pool.query(
       `${deliverySelectQuery}
         WHERE d.delivery_personnel_id = $3 AND d.status IN ('DELIVERED', 'FAILED')
@@ -208,15 +208,6 @@ router.get('/mine/history', requireRole('DELIVERY_PERSONNEL'), async (request, r
     ),
     // Assigned right now — not range-bound: work still in hand.
     pool.query(`SELECT COUNT(*) AS open FROM deliveries WHERE delivery_personnel_id = $1 AND status IN ('ASSIGNED', 'OUT_FOR_DELIVERY')`, [personnelId]),
-    // Cash the driver recorded at the door. A refunded payment is not
-    // money they are still holding for the bakery, so only PAID counts.
-    pool.query(
-      `SELECT COALESCE(SUM(p.amount), 0) AS collected, COUNT(*) AS payments
-         FROM payments p
-        WHERE p.recorded_by = $3 AND p.status = 'PAID' AND p.payment_method = 'CASH'
-          AND ${dateRangeSql('p.payment_date')}`,
-      [from, to, request.user.id],
-    ),
   ])
 
   const delivered = Number(counts.rows[0].delivered)
@@ -228,8 +219,6 @@ router.get('/mine/history', requireRole('DELIVERY_PERSONNEL'), async (request, r
       delivered,
       failed,
       assignedNow: Number(open.rows[0].open),
-      cashCollected: cash.rows[0].collected,
-      cashPayments: Number(cash.rows[0].payments),
     },
     deliveries: rows.rows.map(mapDeliveryRow),
     truncated: delivered + failed > historyLimit,
@@ -264,20 +253,52 @@ router.patch('/:id/assign', requireRole('ADMIN', 'CASHIER'), async (request, res
   // road for an order that might never be made. And one already COMPLETED
   // or CANCELLED must not be handed to anyone: cancel fails the delivery
   // itself (Decision 6), but COMPLETED used to leave the row in the queue.
-  const claimed = await pool.query(
-    `UPDATE deliveries d SET delivery_personnel_id = $1, status = 'ASSIGNED', assigned_at = CURRENT_TIMESTAMP
-       FROM orders o
-      WHERE d.order_id = o.order_id AND d.delivery_id = $2 AND d.status = 'PENDING_ASSIGNMENT'
-        AND o.status NOT IN ('PLACED', 'COMPLETED', 'CANCELLED')
-    RETURNING d.delivery_id`,
-    [deliveryPersonnelId, deliveryId],
-  )
-  if (claimed.rowCount === 0) {
-    const exists = await pool.query('SELECT d.status, o.status AS order_status FROM deliveries d JOIN orders o ON o.order_id = d.order_id WHERE d.delivery_id = $1', [deliveryId])
-    if (!exists.rows[0]) return response.status(404).json({ message: 'Delivery not found.' })
-    if (terminalOrderStatuses.has(exists.rows[0].order_status)) return response.status(409).json({ message: `This order is already ${exists.rows[0].order_status.toLowerCase()} — its delivery cannot be assigned.` })
-    if (exists.rows[0].order_status === 'PLACED') return response.status(409).json({ message: 'Confirm the order first — a delivery is assigned once the kitchen has accepted it.' })
-    return response.status(409).json({ message: 'This delivery is no longer pending assignment — reload it and try again.' })
+  //
+  // NO_COD_PLAN D2 — and it must be fully paid. Confirming already
+  // requires that (routes/orders.js), so this catches what slipped in
+  // before the rule existed, or a refund that reopened a balance. The
+  // balance is read under the ORDER row's lock, taken before the delivery
+  // row is touched — the orders-then-deliveries order every cross-table
+  // path here follows — so a refund cannot land between check and claim.
+  const existing = await pool.query('SELECT order_id FROM deliveries WHERE delivery_id = $1', [deliveryId])
+  if (!existing.rows[0]) return response.status(404).json({ message: 'Delivery not found.' })
+  const orderId = existing.rows[0].order_id
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const orderLock = await client.query('SELECT status FROM orders WHERE order_id = $1 FOR UPDATE', [orderId])
+    const orderStatus = orderLock.rows[0].status
+    if (terminalOrderStatuses.has(orderStatus)) {
+      await client.query('ROLLBACK')
+      return response.status(409).json({ message: `This order is already ${orderStatus.toLowerCase()} — its delivery cannot be assigned.` })
+    }
+    if (orderStatus === 'PLACED') {
+      await client.query('ROLLBACK')
+      return response.status(409).json({ message: 'Confirm the order first — a delivery is assigned once the kitchen has accepted it.' })
+    }
+    const billing = await getBillingSummary(client, orderId)
+    if (!billing.isFullyPaid) {
+      await client.query('ROLLBACK')
+      return response.status(409).json({ message: `This order is not fully paid (balance ₱${billing.balanceDue}) — delivery orders go out only once paid.` })
+    }
+
+    const claimed = await client.query(
+      `UPDATE deliveries SET delivery_personnel_id = $1, status = 'ASSIGNED', assigned_at = CURRENT_TIMESTAMP
+        WHERE delivery_id = $2 AND status = 'PENDING_ASSIGNMENT'
+      RETURNING delivery_id`,
+      [deliveryPersonnelId, deliveryId],
+    )
+    if (claimed.rowCount === 0) {
+      await client.query('ROLLBACK')
+      return response.status(409).json({ message: 'This delivery is no longer pending assignment — reload it and try again.' })
+    }
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
   }
 
   const updated = await pool.query(`${deliverySelectQuery} WHERE d.delivery_id = $1`, [deliveryId])

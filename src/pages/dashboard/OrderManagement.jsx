@@ -10,7 +10,7 @@
 // hidden behind a horizontal scroller.
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { apiGet, apiPatch } from '../../api/client.js'
+import { apiGet, apiPatch, apiPost } from '../../api/client.js'
 import { Modal } from '../../components/Modal.jsx'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Button } from '../../components/ui/Button.jsx'
@@ -39,8 +39,12 @@ const customerCancelReasons = ['Ordered by mistake', 'Changed my mind', 'Need to
 
 // PHASE10 D3 — a bulk order moves past PLACED only by an admin's
 // approval; anyone else can only cancel (reject) it.
+// NO_COD_PLAN — a delivery order moves forward only once fully paid; the
+// server refuses it anyway, this just doesn't offer what would fail.
+const awaitingDeliveryPayment = (order) => order.orderType === 'DELIVERY' && order.payment && !order.payment.isFullyPaid
 function nextStatusOptions(order, role) {
   if (order.awaitingApproval && role !== 'ADMIN') return ['CANCELLED']
+  if (awaitingDeliveryPayment(order)) return ['CANCELLED']
   const forward = Object.keys(statusRank).filter((status) => statusRank[status] > statusRank[order.status])
   return forward
     .filter((status) => status !== 'OUT_FOR_DELIVERY')
@@ -262,15 +266,25 @@ function StaffOrderManagement({ user }) {
     }
   }
   // PHASE10 D3 — approving a bulk order is confirming it, by an admin.
+  // An unpaid DELIVERY order cannot be confirmed (NO_COD_PLAN), so for one
+  // the admin approves only: payment opens, and it is confirmed once paid.
   const approveBulkOrder = async () => {
-    if (!window.confirm(`Approve bulk order #${selectedOrderId}? It is confirmed and payment opens.`)) return
+    const approveOnly = awaitingDeliveryPayment(orderDetail)
+    if (!window.confirm(approveOnly
+      ? `Approve bulk order #${selectedOrderId}? Payment opens; it is confirmed once fully paid.`
+      : `Approve bulk order #${selectedOrderId}? It is confirmed and payment opens.`)) return
     setStatusSubmitting(true)
     setMessage('')
     try {
-      await apiPatch(`/api/orders/${selectedOrderId}`, { status: 'CONFIRMED', note: 'Bulk order approved.' })
+      if (approveOnly) {
+        const data = await apiPost(`/api/orders/${selectedOrderId}/approve`, {})
+        setNotice(data.message)
+      } else {
+        await apiPatch(`/api/orders/${selectedOrderId}`, { status: 'CONFIRMED', note: 'Bulk order approved.' })
+        setNotice(`Bulk order #${selectedOrderId} approved and confirmed.`)
+      }
       await openOrder(selectedOrderId)
       await loadOrders()
-      setNotice(`Bulk order #${selectedOrderId} approved and confirmed.`)
     } catch (error) {
       setMessage(error.message)
     } finally {
@@ -317,9 +331,16 @@ function StaffOrderManagement({ user }) {
               <p className="mt-1 text-xs text-ink-700">{itemCount(orderDetail)} items. It cannot be confirmed or paid until an admin approves it. To turn it down, cancel it with a reason; its stock goes back on the shelf.</p>
               {isAdmin && (
                 <Button type="button" size="sm" className="mt-2" onClick={approveBulkOrder} disabled={statusSubmitting}>
-                  {statusSubmitting ? 'Approving…' : 'Approve and confirm'}
+                  {statusSubmitting ? 'Approving…' : awaitingDeliveryPayment(orderDetail) ? 'Approve' : 'Approve and confirm'}
                 </Button>
               )}
+            </div>
+          )}
+
+          {!orderDetail.awaitingApproval && orderDetail.status === 'PLACED' && awaitingDeliveryPayment(orderDetail) && (
+            <div className="rounded-panel border border-line-200 bg-status-wait-bg p-3 text-sm">
+              <p className="font-semibold text-status-wait-fg">Not paid yet — don&apos;t bake it</p>
+              <p className="mt-1 text-xs text-ink-700">Delivery orders are confirmed only once fully paid: the customer pays with GCash online, or pays at the counter in Payment &amp; Billing. There is no cash on delivery.</p>
             </div>
           )}
 
@@ -570,6 +591,11 @@ function CustomerOrders({ user, onNavigate }) {
           {orderDetail.awaitingApproval && (
             <p className="rounded-panel bg-status-wait-bg p-3 text-xs text-status-wait-fg">
               This is a large order ({itemCount(orderDetail)} items), so the bakery reviews it before confirming. You can pay once it is approved.
+            </p>
+          )}
+          {!orderDetail.awaitingApproval && orderDetail.status === 'PLACED' && awaitingDeliveryPayment(orderDetail) && (
+            <p className="rounded-panel bg-status-wait-bg p-3 text-xs text-status-wait-fg">
+              Waiting for payment — we start baking your order once it is paid in full. Delivery orders are paid ahead; there is no cash on delivery.
             </p>
           )}
           {orderDetail.instructions && <p className="text-xs text-ink-500">Instructions: {orderDetail.instructions}</p>}

@@ -137,6 +137,9 @@ export function CheckoutPage({ user }) {
 
           {orderType === 'DELIVERY' && (
             <div className="rounded-2xl border border-cream-200 bg-white p-5">
+              {/* NO_COD_PLAN — the bakery bakes a delivery order only once it
+                  is paid; say so before the customer commits to it. */}
+              <p className="mb-4 rounded-xl bg-butter-100 p-3 text-xs font-semibold text-cocoa-700">Delivery orders are paid in full with GCash before we start baking — there is no cash on delivery. You can pay right after you place the order.</p>
               <h2 className="text-sm font-bold text-cocoa-900">Delivery address</h2>
               {addresses.length === 0 && !addingAddress && (
                 <div className="mt-3">

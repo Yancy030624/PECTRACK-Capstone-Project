@@ -58,7 +58,12 @@ const tabs = [
 const openStatuses = new Set(['PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP', 'OUT_FOR_DELIVERY'])
 
 export function CustomerAccount({ user, onLogout, onUserUpdated }) {
-  const [activeTab, setActiveTab] = useState('profile')
+  // ?tab=orders / ?tab=payments — the order-placed page links straight to
+  // the tab it means (its "Pay now" lands on My Payments, not My Profile).
+  const [activeTab, setActiveTab] = useState(() => {
+    const requested = new URLSearchParams(window.location.search).get('tab')
+    return tabs.some((tab) => tab.key === requested) ? requested : 'profile'
+  })
   // Three real numbers, read from the customer's own orders — the same
   // endpoint the Orders panel below already calls. Deliberately not
   // invented or estimated: if the request fails the strip simply shows

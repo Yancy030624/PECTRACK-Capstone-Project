@@ -91,9 +91,9 @@ router.use(requireAuth, requireRole('ADMIN', 'CASHIER'))
 // defensible numbers, never conflated into one: ORDERED (what customers
 // asked for, SUM(orders.total_amount), dated by order_date) and COLLECTED
 // (what actually arrived, SUM(payments.amount) WHERE status = 'PAID',
-// dated by payment_date). They diverge by design — Phase 7 allows a
-// DELIVERED order to still be unpaid (cash on delivery), and an order
-// placed in one month can be paid in the next.
+// dated by payment_date). They diverge by design — a pickup order can be
+// paid at the counter days after it was placed, and an order placed in
+// one month can be paid in the next.
 //
 // Computed as three INDEPENDENT aggregates (orders, PAID payments,
 // REFUNDED payments), each bucketed by its OWN date column, then combined

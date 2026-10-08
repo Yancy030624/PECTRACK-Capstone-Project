@@ -47,6 +47,11 @@ describe('delivery management', () => {
   // Places a fresh DELIVERY order as the test customer and returns its id
   // — every workflow test below needs its own order at PENDING_ASSIGNMENT
   // to start from.
+  const recordPayment = (orderId, amount, cookie = cashierCookie) =>
+    fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ orderId, method: 'CASH', amount }) })
+  const confirmOrder = (orderId) =>
+    fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CONFIRMED' }) })
+
   const placeDeliveryOrder = async ({ confirm = true } = {}) => {
     const response = await fetch(`${baseUrl}/api/orders`, {
       method: 'POST',
@@ -56,11 +61,13 @@ describe('delivery management', () => {
     const body = await response.json()
     createdOrderIds.push(body.order.id)
     // Assignment needs the order CONFIRMED first (the kitchen has accepted
-    // it) — so every delivery this helper hands back is assignable, and
-    // the one test about an unconfirmed order places its own.
+    // it), and a delivery order is confirmed only once fully paid (no cash
+    // on delivery — NO_COD_PLAN) — so every delivery this helper hands
+    // back is paid and assignable, and the tests about an unconfirmed or
+    // unpaid order place their own.
     if (confirm) {
-      const confirmed = await fetch(`${baseUrl}/api/orders/${body.order.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CONFIRMED' }) })
-      assert.equal(confirmed.status, 200)
+      assert.equal((await recordPayment(body.order.id, body.order.totalAmount)).status, 201)
+      assert.equal((await confirmOrder(body.order.id)).status, 200)
     }
     const delivery = await pool.query('SELECT delivery_id FROM deliveries WHERE order_id = $1', [body.order.id])
     return { orderId: body.order.id, deliveryId: delivery.rows[0].delivery_id }
@@ -273,34 +280,80 @@ describe('delivery management', () => {
 
   // Cash on delivery: the driver standing at the door records what they
   // collected, scoped to their own in-progress delivery and CASH only.
-  test('a driver can record cash collected on their own OUT_FOR_DELIVERY delivery, and nothing else', async () => {
+  // NO_COD_PLAN — the client does not allow cash on delivery: a delivery
+  // order is paid in full before it is confirmed, and assigned only when
+  // paid; the driver never records money.
+  test('an unpaid delivery order cannot be confirmed; a part-paid one is told its balance; a paid one can', async () => {
+    const { orderId } = await placeDeliveryOrder({ confirm: false })
+    const unpaid = await confirmOrder(orderId)
+    assert.equal(unpaid.status, 409)
+    assert.match((await unpaid.json()).message, /paid in full/)
+    const straightToBaking = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'IN_PRODUCTION' }) })
+    assert.equal(straightToBaking.status, 409, 'skipping CONFIRMED does not skip the rule')
+    assert.equal((await pool.query('SELECT status FROM orders WHERE order_id = $1', [orderId])).rows[0].status, 'PLACED')
+
+    assert.equal((await recordPayment(orderId, 20)).status, 201)
+    const partPaid = await confirmOrder(orderId)
+    assert.equal(partPaid.status, 409)
+    assert.match((await partPaid.json()).message, /Balance: ₱25\.50/)
+
+    assert.equal((await recordPayment(orderId, 25.5)).status, 201)
+    assert.equal((await confirmOrder(orderId)).status, 200)
+
+    const cancelled = await placeDeliveryOrder({ confirm: false })
+    const cancel = await fetch(`${baseUrl}/api/orders/${cancelled.orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Changed my mind' }) })
+    assert.equal(cancel.status, 200, 'an unpaid delivery order can still be cancelled')
+  })
+
+  test('an unpaid PICKUP order can still be confirmed — it is paid at the counter', async () => {
+    const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ orderType: 'PICKUP', items: [{ productId: availableProductId, quantity: 1 }] }) })
+    const { order } = await response.json()
+    createdOrderIds.push(order.id)
+    assert.equal((await confirmOrder(order.id)).status, 200)
+  })
+
+  test('PATCH /api/deliveries/:id/assign refuses an order that is not fully paid', async () => {
+    // Old data: an order confirmed unpaid before the rule existed, forced
+    // here in SQL because the route itself no longer allows it.
+    const { orderId, deliveryId } = await placeDeliveryOrder({ confirm: false })
+    await pool.query(`UPDATE orders SET status = 'CONFIRMED' WHERE order_id = $1`, [orderId])
+    const refused = await assign(deliveryId, firstDriverId)
+    assert.equal(refused.status, 409)
+    assert.match((await refused.json()).message, /not fully paid/)
+    assert.equal((await pool.query('SELECT status FROM deliveries WHERE delivery_id = $1', [deliveryId])).rows[0].status, 'PENDING_ASSIGNMENT')
+
+    assert.equal((await recordPayment(orderId, 45.5)).status, 201)
+    assert.equal((await assign(deliveryId, firstDriverId)).status, 200)
+  })
+
+  test('a driver cannot record payments any more, and sees the order as paid', async () => {
     const { orderId, deliveryId } = await placeDeliveryOrder()
     assert.equal((await assign(deliveryId, firstDriverId)).status, 200)
-
-    const record = (cookie, body) => fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ orderId, method: 'CASH', amount: 45.5, ...body }) })
-
-    const tooEarly = await record(firstDriverCookie)
-    assert.equal(tooEarly.status, 404, 'not yet on the road — the driver cannot record against it')
-
     assert.equal((await setStatus(deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)).status, 200)
-    const mine = await (await fetch(`${baseUrl}/api/deliveries/mine`, { headers: { Cookie: firstDriverCookie } })).json()
-    const card = mine.deliveries.find((delivery) => delivery.id === deliveryId)
-    assert.equal(card.balanceDue, '45.50', 'the driver sees what to collect')
-    assert.equal(card.isFullyPaid, false)
 
-    const otherDriver = await record(secondDriverCookie)
-    assert.equal(otherDriver.status, 404, "someone else's delivery")
-    const gcash = await record(firstDriverCookie, { method: 'GCASH', gatewayReference: `drv_${runId}` })
-    assert.equal(gcash.status, 422, 'CASH only')
-
-    const collected = await record(firstDriverCookie)
-    assert.equal(collected.status, 201)
-    const body = await collected.json()
-    assert.equal(body.isFullyPaid, true)
-    assert.equal(body.payment.recordedByName, 'First Driver')
-
+    const recorded = await recordPayment(orderId, 1, firstDriverCookie)
+    assert.equal(recorded.status, 403)
     const listing = await fetch(`${baseUrl}/api/payments`, { headers: { Cookie: firstDriverCookie } })
-    assert.equal(listing.status, 403, 'recording is the only payments route a driver reaches')
+    assert.equal(listing.status, 403)
+
+    const mine = await (await fetch(`${baseUrl}/api/deliveries/mine`, { headers: { Cookie: firstDriverCookie } })).json()
+    assert.equal(mine.deliveries.find((delivery) => delivery.id === deliveryId).isFullyPaid, true)
+  })
+
+  test('a payment and a confirm racing on one delivery order never leave it confirmed unpaid', async () => {
+    for (let round = 0; round < 5; round++) {
+      const { orderId } = await placeDeliveryOrder({ confirm: false })
+      const [paid, confirmed] = await Promise.all([recordPayment(orderId, 45.5), confirmOrder(orderId)])
+      assert.equal(paid.status, 201)
+      assert.ok([200, 409].includes(confirmed.status), `confirm answered ${confirmed.status}`)
+      const state = await pool.query(
+        `SELECT o.status, o.total_amount - COALESCE((SELECT SUM(amount) FROM payments WHERE order_id = o.order_id AND status = 'PAID'), 0) AS balance
+           FROM orders o WHERE o.order_id = $1`,
+        [orderId],
+      )
+      if (state.rows[0].status === 'CONFIRMED') assert.equal(Number(state.rows[0].balance), 0)
+      else assert.equal(confirmed.status, 409)
+    }
   })
 
   test('PATCH /api/deliveries/:id/assign refuses a delivery whose order is already finished', async () => {
@@ -785,8 +838,6 @@ describe('delivery management', () => {
     const delivered = await placeDeliveryOrder()
     assert.equal((await assign(delivered.deliveryId, firstDriverId)).status, 200)
     assert.equal((await setStatus(delivered.deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)).status, 200)
-    const cash = await fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: firstDriverCookie }, body: JSON.stringify({ orderId: delivered.orderId, method: 'CASH', amount: 45.5 }) })
-    assert.equal(cash.status, 201)
     assert.equal((await setStatus(delivered.deliveryId, 'DELIVERED', firstDriverCookie)).status, 200)
 
     const failed = await placeDeliveryOrder()
@@ -802,7 +853,6 @@ describe('delivery management', () => {
     const { counts, deliveries } = afterFinishing.body
     assert.equal(counts.delivered, before.counts.delivered + 1)
     assert.equal(counts.failed, before.counts.failed + 1)
-    assert.equal(Number(counts.cashCollected), Number(before.counts.cashCollected) + 45.5)
     assert.ok(counts.assignedNow >= 1, 'the still-assigned delivery counts as work in hand')
     const ids = deliveries.map((delivery) => delivery.id)
     assert.ok(ids.includes(delivered.deliveryId) && ids.includes(failed.deliveryId))

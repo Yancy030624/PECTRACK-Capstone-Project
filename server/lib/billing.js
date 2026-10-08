@@ -105,9 +105,10 @@ export async function getBillingSummary(client, orderId) {
   }
 }
 
-// recorded_by is only ever written by POST /api/payments — CASHIER, ADMIN,
-// or (cash on delivery) the DELIVERY_PERSONNEL who collected it — never a
-// customer, so those three role tables name whoever took the payment.
+// recorded_by is only ever written by POST /api/payments — CASHIER or
+// ADMIN, plus DELIVERY_PERSONNEL on cash-on-delivery rows recorded before
+// NO_COD_PLAN removed that path — never a customer, so those three role
+// tables name whoever took the payment.
 // refunded_by is narrower still: only the admin-only branch of PATCH
 // /api/orders/:id ever sets it, so it only ever needs the admins table.
 const paymentsForOrderSelectQuery = `SELECT p.payment_id, p.payment_method, p.amount, p.status, p.gateway_reference, p.payment_date, p.created_at,

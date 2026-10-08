@@ -209,7 +209,13 @@ function StaffDeliveryView({ user, params, onNavigate }) {
                 {delivery.status === 'PENDING_ASSIGNMENT' && (delivery.orderStatus === 'COMPLETED' || delivery.orderStatus === 'CANCELLED') && (
                   <p className="mt-3 border-t border-line-100 pt-3 text-xs text-ink-500">This order is already {delivery.orderStatus.toLowerCase()} — nothing left to deliver.</p>
                 )}
-                {delivery.status === 'PENDING_ASSIGNMENT' && !['PLACED', 'COMPLETED', 'CANCELLED'].includes(delivery.orderStatus) && (
+                {/* NO_COD_PLAN D2 — and refuses it while the order still owes
+                    money (only possible for orders confirmed before the rule,
+                    or reopened by a refund). */}
+                {delivery.status === 'PENDING_ASSIGNMENT' && !['PLACED', 'COMPLETED', 'CANCELLED'].includes(delivery.orderStatus) && !delivery.isFullyPaid && (
+                  <p className="mt-3 border-t border-line-100 pt-3 text-xs font-semibold text-status-fail-fg">Not fully paid (balance {formatPeso(delivery.balanceDue)}) — record the payment in Payment &amp; Billing before assigning a driver.</p>
+                )}
+                {delivery.status === 'PENDING_ASSIGNMENT' && !['PLACED', 'COMPLETED', 'CANCELLED'].includes(delivery.orderStatus) && delivery.isFullyPaid && (
                   <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line-100 pt-3">
                     <div className="min-w-40 flex-1">
                       <Select value={assignChoice[delivery.id] ?? ''} onChange={(event) => setAssignChoice({ ...assignChoice, [delivery.id]: event.target.value })} aria-label={`Assign a driver for order #${delivery.orderId}`}>

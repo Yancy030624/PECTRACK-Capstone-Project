@@ -31,6 +31,8 @@ export function OrderPlacedPage() {
     )
   }
 
+  const isDelivery = order.orderType === 'DELIVERY'
+
   return (
     <section className="mx-auto max-w-2xl px-4 py-14 sm:px-7">
       <div className="rounded-2xl border border-cream-200 bg-white p-8 text-center">
@@ -44,15 +46,28 @@ export function OrderPlacedPage() {
           <div className="mt-2 flex items-center justify-between border-t border-cream-300 pt-2 text-crust-700"><span className="font-bold">Total</span><span className="text-lg font-extrabold">{formatPeso(order.totalAmount)}</span></div>
         </div>
 
-        {/* PHASE10 D3 — a bulk order is reviewed before it can be paid. */}
+        {/* PHASE10 D3 — a bulk order is reviewed before it can be paid.
+            NO_COD_PLAN — a delivery order is baked only once paid, so for
+            one, paying is the main next step. */}
         {order.awaitingApproval ? (
-          <p className="mt-5 rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-800">This is a large order, so the bakery reviews it before confirming. You can pay once it is approved — check My Orders.</p>
+          <p className="mt-5 rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-800">This is a large order, so the bakery reviews it before confirming. You can pay once it is approved — check My Orders.{isDelivery && ' Delivery orders are paid in full before we start baking.'}</p>
+        ) : isDelivery ? (
+          <p className="mt-5 rounded-xl bg-butter-100 p-3 text-xs font-semibold text-cocoa-700">Pay now with GCash so we can start on your order — delivery orders are baked only once paid in full.</p>
         ) : (
-          <p className="mt-5 text-xs text-cocoa-500">Pay at pickup or on delivery, or pay online now from Payment &amp; Billing.</p>
+          <p className="mt-5 text-xs text-cocoa-500">Pay at pickup, or pay online now from My Payments.</p>
         )}
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-center">
-          <Link to="/account" className="rounded-full bg-crust-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-crust-700">View My Orders</Link>
-          {!order.awaitingApproval && <Link to="/account" className="rounded-full border border-crust-600 px-5 py-2.5 text-xs font-bold text-crust-700 transition hover:bg-cream-100">Pay now</Link>}
+          {isDelivery && !order.awaitingApproval ? (
+            <>
+              <Link to="/account?tab=payments" className="rounded-full bg-crust-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-crust-700">Pay now</Link>
+              <Link to="/account?tab=orders" className="rounded-full border border-crust-600 px-5 py-2.5 text-xs font-bold text-crust-700 transition hover:bg-cream-100">View My Orders</Link>
+            </>
+          ) : (
+            <>
+              <Link to="/account?tab=orders" className="rounded-full bg-crust-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-crust-700">View My Orders</Link>
+              {!order.awaitingApproval && <Link to="/account?tab=payments" className="rounded-full border border-crust-600 px-5 py-2.5 text-xs font-bold text-crust-700 transition hover:bg-cream-100">Pay now</Link>}
+            </>
+          )}
         </div>
       </div>
     </section>

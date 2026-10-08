@@ -8,6 +8,7 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
+import { billingListSql } from '../lib/billing.js'
 import { dateRangeSql, localDateSql, parseDateRange, reportingTimeZone } from '../lib/reporting.js'
 import { normalize } from '../lib/validation.js'
 
@@ -26,6 +27,11 @@ router.use(requireAuth, requireRole('ADMIN', 'CASHIER'))
 // due on an earlier day that are still not ready. An order is "not ready"
 // until READY_FOR_PICKUP / OUT_FOR_DELIVERY; ready ones stay listed so the
 // hour reads complete, but never count as overdue.
+//
+// An unpaid DELIVERY order (NO_COD_PLAN) is listed, flagged
+// awaitingPayment, but left out of what to make: the bakery does not bake
+// a delivery order until it is paid, and confirming it is refused until
+// then (routes/orders.js).
 const openOrderStatuses = ['PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP', 'OUT_FOR_DELIVERY']
 const notReadyStatuses = ['PLACED', 'CONFIRMED', 'IN_PRODUCTION']
 const scheduleOrderLimit = 500
@@ -40,6 +46,7 @@ router.get('/schedule', async (request, response) => {
   const orders = await pool.query(
     `SELECT o.order_id, o.status, o.order_type, o.requested_fulfillment_time, o.order_date, o.instructions,
             COALESCE(c.name, 'Walk-in') AS customer_name,
+            (o.order_type = 'DELIVERY' AND o.total_amount - COALESCE(paid.amount, 0) > 0) AS awaiting_payment,
             CASE
               WHEN o.requested_fulfillment_time IS NULL THEN 'ASAP'
               WHEN o.requested_fulfillment_time < ($1::date)::timestamp AT TIME ZONE '${reportingTimeZone}' THEN 'EARLIER'
@@ -49,6 +56,7 @@ router.get('/schedule', async (request, response) => {
             (o.status = ANY($3::order_status[]) AND o.requested_fulfillment_time >= CURRENT_TIMESTAMP
               AND o.requested_fulfillment_time < CURRENT_TIMESTAMP + INTERVAL '1 hour') AS due_soon
        FROM orders o
+       ${billingListSql.join}
        LEFT JOIN customers c ON c.customer_id = o.customer_id
       WHERE o.status = ANY($2::order_status[])
         AND (${dateRangeSql('o.requested_fulfillment_time', { fromParam: '$1', toParam: '$1' })}
@@ -79,7 +87,7 @@ router.get('/schedule', async (request, response) => {
   const sumItems = (slotOrders) => {
     const totals = new Map()
     for (const order of slotOrders) {
-      if (!notReadyStatuses.includes(order.status)) continue
+      if (!notReadyStatuses.includes(order.status) || order.awaitingPayment) continue
       for (const item of order.items) {
         const entry = totals.get(item.productId) ?? { ...item, quantity: 0 }
         entry.quantity += item.quantity
@@ -102,6 +110,7 @@ router.get('/schedule', async (request, response) => {
       instructions: row.instructions,
       overdue: row.overdue === true,
       dueSoon: row.due_soon === true,
+      awaitingPayment: row.awaiting_payment === true,
       items: linesByOrder.get(row.order_id) ?? [],
     })
   }

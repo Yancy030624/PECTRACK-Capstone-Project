@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { apiGet, apiPatch, apiPost, apiUpload } from '../../api/client.js'
+import { apiGet, apiPatch, apiUpload } from '../../api/client.js'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Button } from '../../components/ui/Button.jsx'
 import { Card } from '../../components/ui/Card.jsx'
@@ -41,7 +41,6 @@ export function MyDeliveries({ user }) {
   const [busyId, setBusyId] = useState(null)
   const [failNotes, setFailNotes] = useState({})
   const [proofFiles, setProofFiles] = useState({})
-  const [cashAmounts, setCashAmounts] = useState({})
   const [tab, setTab] = useState('Assigned')
 
   const loadDeliveries = async () => {
@@ -74,36 +73,6 @@ export function MyDeliveries({ user }) {
       await loadDeliveries()
     } catch (error) {
       setMessage(error.message)
-      setMessageFailed(true)
-    } finally {
-      setBusyId(null)
-    }
-  }
-
-  // Cash on delivery — the driver records what they collected at the
-  // door (POST /api/payments, scoped server-side to their own in-progress
-  // delivery and CASH only). Defaults to the balance due; a partial
-  // amount is allowed, the same as at the counter.
-  const handleRecordCash = async (delivery) => {
-    const amount = Number(cashAmounts[delivery.id] ?? delivery.balanceDue)
-    if (!(amount > 0)) {
-      setMessage('Enter the cash amount collected.')
-      setMessageFailed(true)
-      return
-    }
-    if (!window.confirm(`Record ${formatPeso(amount)} cash collected for order #${delivery.orderId}?`)) return
-    setBusyId(delivery.id)
-    setMessage('')
-    try {
-      await apiPost('/api/payments', { orderId: delivery.orderId, method: 'CASH', amount })
-      // Drop the typed value rather than blanking it, so the input falls
-      // back to the (now smaller) balance the reload brings.
-      setCashAmounts(({ [delivery.id]: _typed, ...rest }) => rest)
-      setMessage('Cash payment recorded.')
-      setMessageFailed(false)
-      await loadDeliveries()
-    } catch (error) {
-      setMessage(error.errors?.amount ?? error.message)
       setMessageFailed(true)
     } finally {
       setBusyId(null)
@@ -188,7 +157,11 @@ export function MyDeliveries({ user }) {
                     {delivery.address.deliveryNotes && <p className="mt-0.5 text-xs text-ink-500">Note: "{delivery.address.deliveryNotes}"</p>}
                     {delivery.instructions && <p className="mt-0.5 text-xs text-ink-500">Instructions: "{delivery.instructions}"</p>}
                     {delivery.requestedFulfillmentTime && <p className="mt-0.5 text-xs font-semibold text-ink-900">Needed by {formatDateTime(delivery.requestedFulfillmentTime)}</p>}
-                    <p className="mt-1 text-xs text-ink-500">Order total: <span className="tabular-nums">{formatPeso(delivery.totalAmount)}</span>{delivery.isFullyPaid ? ' · paid' : <> · <span className="font-semibold text-status-fail-fg">collect {formatPeso(delivery.balanceDue)}</span></>}</p>
+                    {/* No cash on delivery (NO_COD_PLAN): orders are paid before they are
+                        confirmed, so the driver never collects money. An unpaid
+                        one can only be old data — the driver checks with the
+                        bakery instead of handing it over. */}
+                    <p className="mt-1 text-xs text-ink-500">Order total: <span className="tabular-nums">{formatPeso(delivery.totalAmount)}</span>{delivery.isFullyPaid ? ' · paid' : <> · <span className="font-semibold text-status-fail-fg">not paid — call the bakery before handing it over</span></>}</p>
                   </div>
                   <StatusBadge status={delivery.status} />
                 </div>
@@ -225,21 +198,6 @@ export function MyDeliveries({ user }) {
                         {proofFiles[delivery.id] ? `Upload "${proofFiles[delivery.id].name}"` : 'Upload photo'}
                       </Button>
                     </div>
-
-                    {!delivery.isFullyPaid && (
-                      <div>
-                        <label htmlFor={`cash-${delivery.id}`} className="mb-1.5 block text-xs font-semibold text-ink-700">Cash collected ({formatPeso(delivery.balanceDue)} due)</label>
-                        <Input
-                          id={`cash-${delivery.id}`}
-                          value={cashAmounts[delivery.id] ?? delivery.balanceDue}
-                          onChange={(event) => setCashAmounts({ ...cashAmounts, [delivery.id]: event.target.value })}
-                          inputMode="decimal"
-                        />
-                        <Button type="button" size="touch" variant="secondary" className="mt-2 w-full" onClick={() => handleRecordCash(delivery)} disabled={busyId === delivery.id}>
-                          Record cash collected
-                        </Button>
-                      </div>
-                    )}
 
                     <Button type="button" size="touch" className="w-full" onClick={() => setStatus(delivery.id, 'DELIVERED')} disabled={busyId === delivery.id}>
                       {busyId === delivery.id ? 'Marking delivered…' : 'Mark delivered'}
