@@ -158,8 +158,14 @@
    same components the staff dashboard renders, so instead of a second
    copy of each, the dashboard tokens they use are re-pointed at the
    bakery palette inside this one wrapper. Status colours are left alone:
-   they mean the same thing everywhere. */
-.storefront-skin {
+   they mean the same thing everywhere.
+
+   The staff screens wear the same palette and type (.staff-skin, set on
+   <html> by Dashboard.jsx so charts reading the tokens and modals in
+   portals follow too), but stay plain: tighter corners than the
+   storefront and the serif only on page titles. */
+.storefront-skin,
+.staff-skin {
   --color-brand-50: var(--color-cream-100);
   --color-brand-100: var(--color-cream-200);
   --color-brand-500: var(--color-crust-500);
@@ -180,12 +186,21 @@
      cream-300 does not reach; this toasted tan is 3.5:1. */
   --color-line-200: #a8845e;
   --color-line-100: var(--color-cream-200);
+  font-family: var(--font-body);
+}
+.storefront-skin {
   --radius-control: 0.75rem;
   --radius-panel: 1.5rem;
-  font-family: var(--font-body);
 }
 .storefront-skin h1,
 .storefront-skin h2 {
+  font-family: var(--font-display);
+}
+.staff-skin {
+  --radius-control: 0.5rem;
+  --radius-panel: 0.875rem;
+}
+.staff-skin h1 {
   font-family: var(--font-display);
 }
 

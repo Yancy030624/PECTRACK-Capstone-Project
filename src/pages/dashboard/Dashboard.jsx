@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Brand } from '../../components/Brand.jsx'
 import { Button } from '../../components/ui/Button.jsx'
@@ -39,6 +39,19 @@ const defaultModuleFor = (role) => {
 export function Dashboard({ user, onLogout, onUserUpdated }) {
   // Track which permitted module is currently active.
   const [activeModule, setActiveModule] = useState(() => defaultModuleFor(user.role))
+  // The bakery palette and type for staff screens (index.css .staff-skin).
+  // Set on <html>, not this component's root, so modals rendered in
+  // portals and charts that read the colour tokens from the document
+  // (lib/theme.js) follow it too. Added during the first render rather
+  // than in an effect: child effects run before a parent's, so a chart
+  // drawn on mount would otherwise read the old colours. The effect adds
+  // it again because React's development double-mount runs the cleanup
+  // once in between.
+  useState(() => document.documentElement.classList.add('staff-skin'))
+  useEffect(() => {
+    document.documentElement.classList.add('staff-skin')
+    return () => document.documentElement.classList.remove('staff-skin')
+  }, [])
   // Optional hints for the module being opened — the Dashboard's Low stock
   // tile opens Inventory with { stockFilter: 'LOW' }. The sidebar opens a
   // module plain, so a hint never lingers into the next visit.

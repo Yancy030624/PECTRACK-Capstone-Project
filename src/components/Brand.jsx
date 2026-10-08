@@ -14,7 +14,7 @@ export function Brand({ compact = false }) {
             the frame. */}
         <img src={logoMark} alt="Pecto's Bakery logo" className="h-full w-full rounded-full object-contain" />
       </span>
-      <span className={`${compact ? 'text-xl' : 'text-2xl'} font-serif font-black tracking-tight text-[#b97600] [text-shadow:1px_1px_0_#f6d66b]`}>PECTRACK</span>
+      <span className={`${compact ? 'text-xl' : 'text-2xl'} font-display font-bold tracking-tight text-crust-700`}>PECTRACK</span>
     </div>
   )
 }
