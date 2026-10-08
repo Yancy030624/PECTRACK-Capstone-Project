@@ -13,6 +13,13 @@ that they agree:
    descriptions.
 3. **Flowchart descriptions**, pp. 71–77.
 
+**Figures:** the team is replacing the mockup images with screenshots of
+the system. From Figure 2.2 onward, take the figure captions and
+descriptions from `PAPER_FIGURES.md`, not from this file. It supersedes
+the figure parts of B3 (2.2), B4 (Figs 3–5.3), B6 (Fig 6), B7 (Figs
+14–15.1), B8 (Fig 8) and B9 (Fig 17). The module summary paragraphs and
+the flowchart fixes below still apply.
+
 **Not handled here:**
 - The word "AI" (p. 14 "intelligent restocking recommendations", p. 17
   "AI-Assisted Analytics") waits for decision D4 with the adviser.
