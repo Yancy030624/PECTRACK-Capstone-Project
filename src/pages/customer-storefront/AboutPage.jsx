@@ -5,6 +5,7 @@ import bakerPhoto from '../../assets/about/vision-baker.jpg'
 import guestsPhoto from '../../assets/about/visit-guests.jpg'
 import tvPhoto from '../../assets/about/visit-tv-feature.jpg'
 import { Eyebrow, LineIcon, ScallopEdge, WheatSprig } from '../../components/storefront/Decor.jsx'
+import { bakery } from '../../lib/bakery.js'
 
 // Our Story. Words from the bakery's own About page, laid out so no
 // section is a column of text with empty space either side: the founding
@@ -33,7 +34,7 @@ export function AboutPage() {
             <dl className="mt-10 grid max-w-xl grid-cols-3 divide-x divide-cream-300 rounded-[1.75rem] bg-white py-5 ring-1 ring-cream-200">
               <Fact value="1947" label="Baking since" />
               <Fact value="Lucban" label="Quezon, our home" />
-              <Fact value="6 AM" label="Fresh, Mon–Sat" />
+              <Fact value={bakery.hours.opens} label="Fresh every morning" />
             </dl>
           </div>
           <figure className="relative mx-auto w-full max-w-xl">

@@ -4,6 +4,7 @@ import logoMark from '../../assets/logo-mark.png'
 import { MarketingHeader } from '../../components/MarketingHeader.jsx'
 import { VerifyEmailBanner } from '../../components/VerifyEmailBanner.jsx'
 import { LineIcon, ScallopEdge, WheatSprig } from '../../components/storefront/Decor.jsx'
+import { bakery, telHref } from '../../lib/bakery.js'
 
 // The sign-in pop-up itself lives in App.jsx — a guest hitting /dashboard
 // or /checkout needs the same dialog, and those are outside this layout.
@@ -55,16 +56,15 @@ export function SiteFooter() {
           </nav>
         </div>
         <FooterBlock icon="pin" title="Visit">
-          <p>93 Quezon Avenue</p>
-          <p>Lucban, Quezon</p>
+          <p>{bakery.street}</p>
+          <p>{bakery.town}</p>
         </FooterBlock>
         <FooterBlock icon="clock" title="Open">
-          <p>Monday – Saturday</p>
-          <p>6:00 AM – 8:00 PM</p>
+          <p>{bakery.hours.days}</p>
+          <p>{bakery.hours.time}</p>
         </FooterBlock>
         <FooterBlock icon="phone" title="Call">
-          <a href="tel:0425404366" className="block py-1 hover:text-cream-50 hover:underline">(042) 540-4366</a>
-          <a href="tel:0425408838" className="block py-1 hover:text-cream-50 hover:underline">(042) 540-8838</a>
+          {bakery.phones.map((phone) => <a key={phone} href={telHref(phone)} className="block py-1 hover:text-cream-50 hover:underline">{phone}</a>)}
         </FooterBlock>
       </div>
       <div className="border-t border-cream-50/10">

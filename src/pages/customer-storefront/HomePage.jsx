@@ -4,6 +4,7 @@ import custardPie from '../../assets/home/custard-pie.jpg'
 import giantChef from '../../assets/home/giant-chef.jpg'
 import heroBasket from '../../assets/home/hero-broas-basket.jpg'
 import { Eyebrow, LineIcon, ScallopEdge } from '../../components/storefront/Decor.jsx'
+import { bakery, bakeryAddress, bakeryMapsUrl, telHref } from '../../lib/bakery.js'
 import { ProductCard } from './ProductCard.jsx'
 import { sectionAnchor, useMenuData } from './useMenuData.js'
 
@@ -126,7 +127,7 @@ export function HomePage() {
       <section className="mx-auto max-w-7xl px-4 pt-20 sm:px-7">
         <SectionHeading eyebrow="Your way" title="Fresh to you, however you like" center />
         <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <ServiceCard icon="pickup" title="Pickup" text="Order online and collect at 93 Quezon Avenue — ready when you said." />
+          <ServiceCard icon="pickup" title="Pickup" text={`Order online and collect at ${bakery.street} — ready when you said.`} />
           <ServiceCard icon="delivery" title="Delivery" text="We bring it to your door anywhere within Lucban." />
           <ServiceCard icon="clock" title="Order ahead" text="Pick a time up to 30 days ahead for breakfasts, meetings and merienda." />
           <ServiceCard icon="bulk" title="Big orders" text="Fiestas, pasalubong and parties — large orders are reviewed and confirmed by the bakery." />
@@ -166,8 +167,8 @@ export function HomePage() {
               {isCustomer
                 ? <Link to="/menu" className="inline-flex min-h-12 items-center rounded-full bg-butter-400 px-7 text-base font-bold text-cocoa-900 transition hover:bg-butter-300">Start an order</Link>
                 : <button type="button" onClick={user ? () => navigate('/menu') : openLogin} className="inline-flex min-h-12 items-center rounded-full bg-butter-400 px-7 text-base font-bold text-cocoa-900 transition hover:bg-butter-300">{user ? 'See the menu' : 'Sign in to order'}</button>}
-              <a href="tel:0425404366" className="inline-flex min-h-12 items-center gap-2 rounded-full px-7 text-base font-bold text-cream-50 ring-1 ring-cream-50/50 transition hover:bg-cream-50/10">
-                <LineIcon name="phone" className="h-5 w-5 text-butter-300" />(042) 540-4366
+              <a href={telHref(bakery.phones[0])} className="inline-flex min-h-12 items-center gap-2 rounded-full px-7 text-base font-bold text-cream-50 ring-1 ring-cream-50/50 transition hover:bg-cream-50/10">
+                <LineIcon name="phone" className="h-5 w-5 text-butter-300" />{bakery.phones[0]}
               </a>
             </div>
           </div>
@@ -190,15 +191,15 @@ export function HomePage() {
             <dl className="mt-8 grid gap-4 sm:grid-cols-2">
               <div className="rounded-[1.75rem] bg-white p-5 ring-1 ring-cream-200">
                 <dt className="flex items-center gap-2 font-display text-lg font-semibold text-cocoa-900"><LineIcon name="pin" className="h-5 w-5 text-crust-600" />Address</dt>
-                <dd className="mt-1 text-cocoa-700">93 Quezon Avenue, Lucban, Quezon</dd>
+                <dd className="mt-1 text-cocoa-700">{bakeryAddress}</dd>
               </div>
               <div className="rounded-[1.75rem] bg-white p-5 ring-1 ring-cream-200">
                 <dt className="flex items-center gap-2 font-display text-lg font-semibold text-cocoa-900"><LineIcon name="clock" className="h-5 w-5 text-crust-600" />Open</dt>
-                <dd className="mt-1 text-cocoa-700">Monday – Saturday, 6:00 AM – 8:00 PM</dd>
+                <dd className="mt-1 text-cocoa-700">{bakery.hours.days}, {bakery.hours.time}</dd>
               </div>
             </dl>
             <div className="mt-6 flex flex-wrap gap-3">
-              <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent("Pecto's Bakery, 93 Quezon Avenue, Lucban, Quezon")}`} target="_blank" rel="noreferrer" className="inline-flex min-h-12 items-center rounded-full bg-crust-600 px-7 text-base font-bold text-white transition hover:bg-crust-700">Get directions</a>
+              <a href={bakeryMapsUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-12 items-center rounded-full bg-crust-600 px-7 text-base font-bold text-white transition hover:bg-crust-700">Get directions</a>
               <Link to="/about" className="inline-flex min-h-12 items-center rounded-full bg-white px-7 text-base font-bold text-cocoa-900 ring-1 ring-cream-300 transition hover:bg-cream-50">Our story</Link>
             </div>
           </div>
