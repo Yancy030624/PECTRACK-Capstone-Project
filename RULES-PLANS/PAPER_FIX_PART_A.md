@@ -222,3 +222,45 @@ The system sends no order-update or promo emails. **Find:**
 ### R7 — p. 84, "REACT"
 
 Covered by A1 above.
+
+---
+
+## After the no-cash-on-delivery build (2026-10-08)
+
+Page numbers are those of `docs/PECTRACK_REVISED.pdf`.
+
+### p. 16 — payment for delivery orders
+
+**Find:**
+> …which enables customers to complete transactions using digital wallets such as GCash, in addition to the option of cash on delivery.
+
+**Replace with:**
+> …which enables customers to complete transactions using digital wallets such as GCash. Delivery orders must be paid in full before the bakery confirms and prepares them; cash on delivery is not offered, since food refused at the door cannot be resold.
+
+### p. 16 — heading printed twice
+
+"Payment and Billing Module Payment and Billing Module": delete one.
+
+### p. 92 — Delivery Personnel paragraph
+
+**Find:**
+> …upload a photo as proof of delivery, record cash collected on delivery, and mark the delivery as delivered or failed with a reason.
+
+**Replace with:**
+> …upload a photo as proof of delivery, and mark the delivery as delivered or failed with a reason. Delivery orders are paid before they leave the bakery, so delivery personnel do not collect payments.
+
+### p. 86 — typo
+
+"includedto" should be "included to".
+
+### p. 45 — Scope and Limitations (add)
+
+Add after the sentence about delivery within Lucban:
+
+> Delivery orders must be paid in full, through GCash online or at the bakery's counter, before they are prepared; the system does not offer cash on delivery. An unpaid order is not cancelled automatically.
+
+### Optional — p. 15, bulk orders
+
+To explain the bulk-order flow, add after "…bulk order requests requiring administrator approval…":
+
+> A bulk order must first be approved by the administrator before it can be paid, and a bulk delivery order is confirmed only once it is paid in full.

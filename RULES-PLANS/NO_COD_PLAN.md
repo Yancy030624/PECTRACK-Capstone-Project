@@ -18,6 +18,33 @@ pattern of the existing COMPLETED check in `server/routes/orders.js`
 
 ---
 
+## As built (2026-10-08, commit 12ac80c)
+
+Built as planned, with three changes found during the build:
+
+- **D1 covers every forward move, not only CONFIRMED.** The status route
+  lets staff skip a stage (PLACED → IN_PRODUCTION), so the rule is "a
+  DELIVERY order does not move forward unless fully paid". Cancelling
+  stays allowed.
+- **D4 was wrong as written.** A bulk delivery order could not be paid
+  before approval, and approval meant confirming, which now needs
+  payment, so the order could never move. Fixed with
+  `POST /api/orders/:id/approve` (admin only):
+  - It clears `requires_admin_approval`, keeps the order PLACED, and
+    logs "Bulk order approved — payment is now open." in the status
+    history.
+  - Staff confirm the order once it is paid.
+  - Bulk pickup orders are still approved by confirming them.
+  - The Order Management button reads "Approve" for an unpaid bulk
+    delivery order and "Approve and confirm" otherwise.
+- **Due today leaves unpaid delivery orders out of "Still to make".**
+  They are still listed, with the "Not paid — don't bake yet" tag.
+  Counting them as bread to bake would contradict the tag.
+
+Tests: 438 pass (5 new in `deliveries.test.js`, 1 new in
+`orders.test.js`). Demo data was re-seeded; order #21170 is the unpaid
+delivery order for the demo.
+
 ## Decisions
 
 **D1. The rule.** A **DELIVERY** order must be **fully paid** before it

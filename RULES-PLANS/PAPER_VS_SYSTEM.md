@@ -87,7 +87,8 @@ The pages from p. 88 onward moved one more page later in this upload
 
 Still open:
 - p. 16: "…in addition to the option of cash on delivery" — remove it
-  once the change in `NO_COD_PLAN.md` is built.
+  (the change is built; paste text in `PAPER_FIX_PART_A.md`, "After the
+  no-cash-on-delivery build").
 - p. 92: Delivery Personnel "record cash collected on delivery" — same.
 - p. 86: "includedto" should be "included to" (typo from the edit).
 - p. 16: "Payment and Billing Module" heading printed twice (older error).
@@ -201,7 +202,7 @@ Cashier; the driver has no dashboard — see B8):
 | Cash for walk-in/pickup; PayMongo for online | Cash and **GCash reference** at the counter; **GCash online through PayMongo** (customer pays from My Payments or the order). PayMongo confirms through a signed webhook. |
 | — | **Partial payments** allowed; every order shows amount paid and **balance due**. |
 | — | **Refunds** (admin only), including automatic PayMongo refunds when a paid order is cancelled. |
-| — | **Cash on delivery**: the driver records the cash collected at the door. |
+| — | **Delivery orders are prepaid** (built 2026-10-08, `NO_COD_PLAN.md`): paid in full — GCash online, or cash/GCash at the counter — before the order is confirmed and before a driver is assigned. No cash on delivery; the driver never handles money. |
 | "Delivery fee" in checkout (Fig. 15) | No delivery fee. Remove, or state delivery within Lucban is free. |
 | Driver "Payment Verification… Proceed to Delivery" screen (Fig. 14) | Not built as a gate. The driver sees whether the order is paid and how much to collect, and records cash. |
 | Digital receipt | Built (receipt per order in Payment & Billing / My Payments). |
@@ -252,7 +253,7 @@ recommendations.
 13. **Sales forecast** (next 7 days) and **restock recommendations** — see the methodology note in G3.
 14. **Peak ordering periods**.
 15. **Colour-coded Dashboard** with filtered drill-down; **Inventory status filter**.
-16. **Driver delivery history** and **cash on delivery**.
+16. **Driver delivery history**; **prepaid delivery orders** (no cash on delivery — the client's rule).
 17. **Refunds**, partial payments, balance due.
 18. **Print / Save as PDF** and **CSV export**.
 19. **Customer storefront**: Home, Menu with categories and search, Our Story, Visit Us, cart, checkout — bakery design.
@@ -268,7 +269,7 @@ recommendations.
 | D2 | 14, 25 | **Product Availability Calendar** | Reword: "The menu shows only products that are available and not expired; expired stock is hidden automatically." |
 | D3 | 28–30 | Birthday, membership date, preferred payment, SMS order updates, promo notifications | Remove from the figure descriptions, or label the figures "early design mockups". |
 | D4 | 15 | "**Modify** orders" | Remove; orders can be cancelled (with reason) and re-placed. |
-| D5 | 38–39 | Driver "Payment Verification" gate | Reword to: the driver sees the payment status and records cash on delivery. |
+| D5 | 38–39 | Driver "Payment Verification" gate | Reword to: delivery orders are paid before they leave the bakery, so the driver only sees that the order is paid. |
 | D6 | 40 | Delivery fee | Remove or say free within Lucban. |
 | D7 | 41, 76 | Customer downloads receipt as **PDF** | **Built (H9).** Keep it; describe it as "Print / Save as PDF" from the receipt screen. |
 | D8 | 13, 72 | Delivery personnel "access the Customer Management module" | Reword: the driver sees the delivery address and contact number on each assigned delivery only. |
@@ -295,6 +296,7 @@ Also add to Limitations:
   learns from assumed (sample) sales history, approved by the adviser; it
   is labelled "Practice mode" and kept out of sales reports.
 - **Online payment**: GCash only.
+- **Delivery orders are prepaid**: no cash on delivery (the client's decision). An unpaid delivery order is not cancelled automatically; the customer or staff cancel it.
 - **No notifications**: customers are not messaged when an order changes
   status.
 - **No live tracking**: delivery is a status workflow, not a GPS map.
