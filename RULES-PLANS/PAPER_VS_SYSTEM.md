@@ -76,6 +76,8 @@ Choose one:
 
 ## Part A — Factual errors in the paper (fix regardless)
 
+Ready-to-paste text for every item below: `PAPER_FIX_PART_A.md`.
+
 | # | Page | Paper says | Correct statement |
 |---|---|---|---|
 | A1 | 80, 83 | "PHP-based system"; VS Code used for "HTML, PHP, and Tailwind CSS" | The system is **React (JavaScript) + Node.js/Express + PostgreSQL**. No PHP anywhere. |
@@ -86,7 +88,7 @@ Choose one:
 | A6 | 69, 85, 93 | PayMongo accepts "GCash, **Maya, and debit or credit cards**" | **GCash only** (online through PayMongo; GCash reference or cash at the counter). |
 | A7 | 69, 84–85 | Proof of delivery captured with the **MediaDevices (Web Camera) API** | The driver **uploads a photo** (JPEG/PNG, up to 5 per delivery) through the phone's file picker, which opens the camera or the gallery. The MediaDevices API is not used. |
 | A8 | 69 | Built with **OOP** (objects for orders, products, users) | The code is organised as **modules** (one route file and one screen per module, shared libraries). Replace with "modular, component-based design" — React components on the client, Express route modules on the server. |
-| A9 | 93 | "Any attempt to access the system over HTTP is automatically redirected to HTTPS" | HTTPS is provided by the hosting platform (Vercel) when deployed; the app itself marks its session cookie `Secure` in production. Reword to that, or confirm the redirect on the live site first. |
+| A9 | 94 | "Any attempt to access the system over HTTP is automatically redirected to HTTPS" | **Correct — keep.** Rechecked 2026-10-08: in production the server redirects HTTP to HTTPS (308) and sends Strict-Transport-Security (`server/lib/security.js`). |
 | A10 | 93 | PayMongo is PCI-DSS compliant (the claim is about PayMongo, fine) — but also lists "GCash, **PayMaya, and debit card** transactions" | Same as A6: GCash only. |
 | A11 | 7 (Background) | Delivery "across different parts of Quezon Province" | True of the bakery today, but the **system** delivers within **Lucban only** (p.44 Limitations already says so). Add "the system's online delivery covers Lucban only" to avoid a contradiction. |
 | A12 | 65–68 | Versions: React 19, Tailwind CSS 4.1, Node.js 22, PostgreSQL 17 | Actual: **React 19.2, Tailwind CSS 4.3, Node.js 22 or later, PostgreSQL 17/18, Express 5, Chart.js 4.5, Vite 8**. |
