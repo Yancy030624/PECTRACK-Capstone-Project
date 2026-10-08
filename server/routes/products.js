@@ -13,7 +13,7 @@ import express from 'express'
 import { pool } from '../db.js'
 import { optionalAuth, requireAuth, requireRole } from '../lib/auth.js'
 import { expiredSql } from '../lib/inventory.js'
-import { deleteFile, filePath, saveFile } from '../lib/storage.js'
+import { deleteFile, filePath, saveNamedFile } from '../lib/storage.js'
 import { normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
@@ -34,11 +34,12 @@ const mapProductRow = (row, { staff = false } = {}) => ({
   price: row.price,
   variant: row.variant,
   availabilityStatus: row.availability_status,
-  // ?v= is the first characters of the storage key, which is a fresh UUID
-  // on every upload. It lets the browser cache a photo for a day (see the
-  // image route) while a replaced photo still shows at once: new photo,
-  // new key, new URL. The route ignores the parameter.
-  imageUrl: row.image_key ? `/api/products/${row.product_id}/image?v=${row.image_key.slice(0, 8)}` : null,
+  // ?v= is the photo's content hash from its key (products/<name>-<hash>
+  // .<ext>; an older random-UUID key gives its first 8 characters). It
+  // lets the browser cache a photo for a day (see the image route) while a
+  // replaced photo still shows at once: new photo, new key, new URL. The
+  // route ignores the parameter.
+  imageUrl: row.image_key ? `/api/products/${row.product_id}/image?v=${row.image_key.match(/-([0-9a-f]{8})\.\w+$/)?.[1] ?? row.image_key.slice(0, 8)}` : null,
   ...(staff ? { shelfLifeDays: row.shelf_life_days } : {}),
   // A boolean, never the count. availability_status is what the bakery
   // CHOOSES to sell; this is whether there is any to sell right now.
@@ -310,18 +311,22 @@ router.post(
       return response.status(422).json({ message: 'Upload a JPEG, PNG, or WEBP image.', errors: { file: 'Upload a JPEG, PNG, or WEBP image.' } })
     }
 
-    const existing = await pool.query('SELECT image_key FROM products WHERE product_id = $1', [productId])
+    const existing = await pool.query('SELECT image_key, product_name, variant FROM products WHERE product_id = $1', [productId])
     if (!existing.rows[0]) return response.status(404).json({ message: 'Product not found.' })
 
-    const storageKey = await saveFile(request.body, extension)
+    // Named after the product (lib/storage.js saveNamedFile), so the photo
+    // keeps a readable, stable name in uploads/products/ — tracked in git.
+    const { product_name: productName, variant } = existing.rows[0]
+    const storageKey = await saveNamedFile(request.body, 'products', [productName, variant].filter(Boolean).join(' '), extension)
     await pool.query('UPDATE products SET image_key = $1 WHERE product_id = $2', [storageKey, productId])
 
     // The OLD file is removed only after the new one is safely written and
-    // the row updated — so a crash between saveFile and here leaves an
+    // the row updated — so a crash between saving and here leaves an
     // orphaned file (harmless, just wasted disk) rather than a product
-    // pointing at a file that no longer exists.
+    // pointing at a file that no longer exists. The same photo uploaded
+    // again lands on the same name, which must not then be deleted.
     const oldKey = existing.rows[0].image_key
-    if (oldKey) await deleteFile(oldKey)
+    if (oldKey && oldKey !== storageKey) await deleteFile(oldKey)
 
     const updated = await pool.query(`${productSelectQuery} WHERE p.product_id = $1`, [productId])
     return response.status(201).json({ product: mapProductRow(updated.rows[0], { staff: true }) })

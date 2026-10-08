@@ -8,6 +8,7 @@ import bcrypt from 'bcrypt'
 import app from '../app.js'
 import { resetRateLimits } from '../lib/security.js'
 import { pool } from '../db.js'
+import { deleteFile } from '../lib/storage.js'
 
 const runId = crypto.randomUUID().slice(0, 8)
 const randomContactNumber = () => `09${Math.floor(100000000 + Math.random() * 899999999)}`
@@ -73,6 +74,10 @@ describe('product catalog management', () => {
   })
 
   after(async () => {
+    // Product photos live in the git-tracked uploads/products/, so a test
+    // photo left behind would show up as a change to commit.
+    const keys = await pool.query('SELECT image_key FROM products WHERE product_id = ANY($1) AND image_key IS NOT NULL', [createdProductIds])
+    for (const { image_key: key } of keys.rows) await deleteFile(key)
     for (const id of createdProductIds) {
       await pool.query('DELETE FROM order_details WHERE product_id = $1', [id]).catch(() => {})
       await pool.query('DELETE FROM inventory WHERE product_id = $1', [id]).catch(() => {})
@@ -372,6 +377,13 @@ describe('product catalog management', () => {
 
       const { product: refetched } = await (await fetch(`${baseUrl}/api/products/${imageProductId}`)).json()
       assert.match(refetched.imageUrl, new RegExp(`/api/products/${imageProductId}/image\\?v=[0-9a-f-]{8}$`))
+
+      // Stored under a readable name from the product, in the git-tracked
+      // uploads/products/ (lib/storage.js saveNamedFile) — the same photo
+      // gets the same name on every machine.
+      const { image_key: key } = (await pool.query('SELECT image_key FROM products WHERE product_id = $1', [imageProductId])).rows[0]
+      assert.match(key, new RegExp(`^products/image-test-loaf-${runId}-[0-9a-f]{8}\\.jpg$`))
+      assert.ok(refetched.imageUrl.endsWith(`?v=${key.slice(-12, -4)}`), 'the version is the content hash in the name')
 
       // Fetchable ANONYMOUSLY — a product photo is exactly as public as
       // the product itself (Decision 5), no cookie sent at all here.

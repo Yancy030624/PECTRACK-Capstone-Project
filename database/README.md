@@ -19,6 +19,27 @@ psql -U postgres -d pectrack -f database/schema.sql
 
 If your PostgreSQL server uses another user, replace `postgres` with that role. Do not commit a real connection string or password.
 
+## Product photos
+
+Product photos are part of the repository, in `uploads/products/`. Each
+file is named after its product, plus a short code taken from the photo
+itself (for example `cheese-monay-0d1f6a2b.jpg`); the code changes only
+when the photo does. The rest of `uploads/` (proof-of-delivery photos)
+stays on each machine and is never committed.
+
+Each machine has its own database, so after pulling, link each product to
+its photo:
+
+```powershell
+npm run sync:images            # shows what it would change
+npm run sync:images -- --apply # saves it
+```
+
+Products whose current photo file exists are left alone. A product
+uploaded or renamed on another machine is matched by its name and
+variant. After an admin uploads a new photo, commit the new file in
+`uploads/products/`, together with the removal of the old one.
+
 ## Migrations
 
 `schema.sql` describes a **fresh** database. Once a database exists and holds real data, it is changed by the numbered files in `migrations/` instead, so nothing has to be dropped and recreated.

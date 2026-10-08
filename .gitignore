@@ -14,8 +14,11 @@ dist-ssr
 .env
 
 # Phase 7 — proof-of-delivery files (server/lib/storage.js). Local disk
-# only; never committed.
-uploads
+# only; never committed. Product photos are the exception: they are part
+# of the shop, kept under readable names in uploads/products/ and tracked,
+# so every machine has them after a pull (scripts/sync-product-images.mjs).
+/uploads/*
+!/uploads/products/
 
 # Editor directories and files
 .vscode/*
