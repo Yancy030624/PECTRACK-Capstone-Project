@@ -28,6 +28,7 @@ import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
 import { useIsLargeScreen } from '../../lib/useMediaQuery.js'
 import { PaymentLog } from './PaymentLog.jsx'
+import { PrintHeader, PrintThisButton } from '../../components/PrintReport.jsx'
 
 const emptyPaymentForm = { method: 'CASH', amount: '', gatewayReference: '' }
 
@@ -188,10 +189,16 @@ export function PaymentBilling({ user, params, onNavigate }) {
   ]
 
   const receiptCard = (
-    <Card className="min-w-0 p-6">
+    <Card className="print-only-target min-w-0 p-6">
+      {orderDetail && <PrintHeader title={`Receipt — Order #${orderDetail.id}`} user={isStaff ? user : null} />}
       <div className="flex items-start justify-between gap-3">
-        <h2 id="receipt-heading" className="text-lg font-semibold text-ink-900">Receipt</h2>
-        <Button type="button" size="sm" variant="ghost" className="lg:hidden" onClick={closeDetail}>Close</Button>
+        <h2 id="receipt-heading" className="text-lg font-semibold text-ink-900 print:hidden">Receipt</h2>
+        <div className="flex items-center gap-2">
+          {/* PAPER_VS_SYSTEM.md H9 — the paper promises a receipt the
+              customer can keep as a PDF. */}
+          {orderDetail && <PrintThisButton />}
+          <Button type="button" size="sm" variant="ghost" className="lg:hidden print:hidden" onClick={closeDetail}>Close</Button>
+        </div>
       </div>
       {!selectedOrderId ? (
         <p className="mt-4 text-sm text-ink-500">Select an order to view its receipt.</p>
@@ -199,7 +206,7 @@ export function PaymentBilling({ user, params, onNavigate }) {
         <LoadingRows className="mt-4" />
       ) : orderDetail ? (
         <div className="mt-4 space-y-4">
-          {notice && <Alert variant="success">{notice}</Alert>}
+          {notice && <div className="print:hidden"><Alert variant="success">{notice}</Alert></div>}
           <div className="text-xs text-ink-500">
             <p>
               <strong className="text-ink-900">Order #{orderDetail.id}</strong> · {orderDetail.orderType} · <StatusBadge status={orderDetail.status} />
@@ -280,7 +287,7 @@ export function PaymentBilling({ user, params, onNavigate }) {
           )}
 
           {canPayOnline && (
-            <div className="border-t border-line-100 pt-3">
+            <div className="border-t border-line-100 pt-3 print:hidden">
               {/* GCash's own brand blue, not one of the four Button
                   variants — kept as a plain button on our tokens rather
                   than forcing a fifth colour into the primitive for one
@@ -298,7 +305,7 @@ export function PaymentBilling({ user, params, onNavigate }) {
           )}
 
           {canRecordPayment && (
-            <form className="space-y-3 border-t border-line-100 pt-3" onSubmit={handlePaymentSubmit}>
+            <form className="space-y-3 border-t border-line-100 pt-3 print:hidden" onSubmit={handlePaymentSubmit}>
               <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Record a payment</p>
               <Field label="Method" error={paymentErrors.method}>
                 <Select value={paymentForm.method} onChange={(event) => setPaymentForm({ ...paymentForm, method: event.target.value })}>

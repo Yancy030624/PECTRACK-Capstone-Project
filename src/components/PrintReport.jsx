@@ -39,3 +39,33 @@ export function PrintHeader({ title, subtitle, user }) {
     </div>
   )
 }
+
+// Print only one part of the page — the receipt, which on a phone sits in
+// a pop-up over the page. The button marks <body>; index.css then shows
+// only the element with class "print-only-target" (and what is inside it)
+// for that print, and the mark is removed afterwards.
+export function PrintThisButton({ label = 'Print / Save as PDF' }) {
+  const printThis = () => {
+    document.body.classList.add('printing-one')
+    const done = () => {
+      document.body.classList.remove('printing-one')
+      window.removeEventListener('afterprint', done)
+    }
+    window.addEventListener('afterprint', done)
+    window.print()
+  }
+  return (
+    <button
+      type="button"
+      onClick={printThis}
+      className="inline-flex h-8 items-center gap-1.5 rounded-control border border-line-200 bg-surface px-3 text-xs font-medium text-ink-700 transition hover:bg-surface-sunk print:hidden"
+    >
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M7 9V3h10v6" />
+        <rect x="3" y="9" width="18" height="8" rx="2" />
+        <path d="M7 14h10v7H7z" />
+      </svg>
+      {label}
+    </button>
+  )
+}

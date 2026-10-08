@@ -188,3 +188,31 @@
 .storefront-skin h2 {
   font-family: var(--font-display);
 }
+
+/* Printing one part of the page (PrintThisButton). Everything is removed
+   except the marked element and the elements that contain it; those
+   containers lose their own position, background and spacing, so the
+   receipt prints once, from the top of the page, even when it sits in a
+   sticky panel or in the phone's pop-up. */
+@media print {
+  body.printing-one *:not(:has(.print-only-target)):not(.print-only-target):not(.print-only-target *) {
+    display: none !important;
+  }
+  body.printing-one :has(> .print-only-target),
+  body.printing-one :has(.print-only-target) {
+    position: static !important;
+    inset: auto !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    width: auto !important;
+  }
+  body.printing-one .print-only-target {
+    border: 0;
+    box-shadow: none;
+  }
+}
