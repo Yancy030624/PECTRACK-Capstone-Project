@@ -525,7 +525,7 @@ describe('reporting & analytics', () => {
       throw lastError
     })
 
-    test('an open low-stock alert for this test\'s own product appears in lowStockAlerts', async () => {
+    test('a product at or under its minimum appears in the inventory report\'s low-stock list', async () => {
       // A dedicated product so the alert's productId is unique to this
       // test — the LIST is global, but checking for ONE specific id in it
       // is a scoped, non-flaky assertion.
@@ -539,9 +539,9 @@ describe('reporting & analytics', () => {
       const alertPatch = await fetch(`${baseUrl}/api/inventory/${alertProductId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ stockQuantity: 2, minStockLevel: 5, reason: 'CORRECTION' }) })
       assert.equal(alertPatch.status, 200, `inventory PATCH must succeed: ${JSON.stringify(await alertPatch.json())}`)
 
-      const response = await (await fetch(`${baseUrl}/api/reports/summary`, { headers: { Cookie: adminCookie } })).json()
+      const response = await (await fetch(`${baseUrl}/api/reports/inventory?from=2020-01-01&to=2020-01-02`, { headers: { Cookie: adminCookie } })).json()
       const found = response.lowStockAlerts.find((alert) => alert.productId === alertProductId)
-      assert.ok(found, 'the open alert for this test\'s own product must appear in lowStockAlerts')
+      assert.ok(found, 'this test\'s own low product must appear in lowStockAlerts')
       assert.equal(found.stockQuantity, 2)
       assert.equal(found.minStockLevel, 5)
 
@@ -588,17 +588,11 @@ describe('reporting & analytics', () => {
     // back. Expired stock on the shelf now: shows up here for staff to
     // write off, disappears from the customer catalogue, and is refused at
     // checkout — all from the same "before today" comparison.
-    test('expired stock is listed on the summary, hidden from customers, and refused at checkout', async () => {
+    test('expired stock is flagged in inventory, hidden from customers, and refused at checkout', async () => {
       // Stock is 1000 from the setup; only the date changes.
       const setExpiry = (expirationDate) => pool.query('UPDATE inventory SET expiration_date = $1 WHERE product_id = $2', [expirationDate, productId])
       await setExpiry('2020-01-01')
       try {
-        const summary = await (await fetch(`${baseUrl}/api/reports/summary`, { headers: { Cookie: adminCookie } })).json()
-        const listed = summary.expiredStock.find((item) => item.productId === productId)
-        assert.ok(listed, 'the expired product appears on the summary')
-        assert.equal(listed.expirationDate, '2020-01-01')
-        assert.ok(summary.expiredStockTotal >= 1)
-
         const catalogue = await (await fetch(`${baseUrl}/api/products`)).json()
         assert.ok(!catalogue.products.some((product) => product.id === productId), 'hidden from the public catalogue')
         assert.equal((await fetch(`${baseUrl}/api/products/${productId}`)).status, 404)
@@ -638,14 +632,15 @@ describe('reporting & analytics', () => {
       }
 
       try {
-        const summary = await (await fetch(`${baseUrl}/api/reports/summary`, { headers: { Cookie: adminCookie } })).json()
-        assert.equal(summary.lowStockAlerts.length, 50, 'the list handed to the dashboard is capped')
-        assert.ok(summary.lowStockAlertsTotal >= 55, `the COUNT must not be capped — got ${summary.lowStockAlertsTotal}`)
-        assert.ok(summary.lowStockAlertsTotal > summary.lowStockAlerts.length, 'and it must exceed the truncated list, or the cap is invisible to the UI')
-
         const inventoryReport = await (await fetch(`${baseUrl}/api/reports/inventory?from=2020-01-01&to=2020-01-02`, { headers: { Cookie: adminCookie } })).json()
-        assert.equal(inventoryReport.lowStockAlerts.length, 50, 'the inventory report caps the same way')
-        assert.ok(inventoryReport.lowStockAlertsTotal >= 55)
+        assert.equal(inventoryReport.lowStockAlerts.length, 50, 'the list is capped')
+        assert.ok(inventoryReport.lowStockAlertsTotal >= 55, `the COUNT must not be capped — got ${inventoryReport.lowStockAlertsTotal}`)
+        assert.ok(inventoryReport.lowStockAlertsTotal > inventoryReport.lowStockAlerts.length, 'and it must exceed the truncated list, or the cap is invisible to the UI')
+
+        // The Dashboard summary no longer carries stock lists (H4).
+        const summary = await (await fetch(`${baseUrl}/api/reports/summary`, { headers: { Cookie: adminCookie } })).json()
+        assert.equal(summary.lowStockAlerts, undefined)
+        assert.equal(summary.expiredStock, undefined)
       } finally {
         for (const capProductId of capProductIds) {
           await pool.query('DELETE FROM stock_alerts WHERE inventory_id = (SELECT inventory_id FROM inventory WHERE product_id = $1)', [capProductId]).catch(() => {})

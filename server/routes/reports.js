@@ -10,7 +10,6 @@ import express from 'express'
 import { pool } from '../db.js'
 import { billingListSql } from '../lib/billing.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
-import { expiredSql } from '../lib/inventory.js'
 import { bucketSql, csvRow, dateRangeSql, parseDateRange, parseGroupBy } from '../lib/reporting.js'
 import { likelySellOutSummary } from '../lib/restock.js'
 import { normalize } from '../lib/validation.js'
@@ -28,68 +27,42 @@ const router = express.Router()
 // narrow it. 50 is far more than anyone acts on in one sitting.
 const maxLowStockAlerts = 50
 
-// Shared by GET /summary and GET /inventory — same query, same mapping,
-// two callers. Not date-filtered: these are CURRENT open alerts, not
-// historical activity, so "as of when" does not apply to them.
+// The Inventory report's "Low stock now" list — PAPER_VS_SYSTEM.md H5.
 //
-// Returns { alerts, total }: the capped list to render, and the true
-// count. They are separate because the UI needs both and they answer
-// different questions — capping the list without reporting the real total
-// would make the dashboard quietly under-report how much is wrong, which
-// is the same class of mistake as a truncated report reading as complete.
+// Low stock is read LIVE from inventory (stock at or under its minimum),
+// the same rule the Dashboard and the Inventory screen use
+// (src/lib/stockHealth.js; routes/inventory.js's lowStock). It used to
+// count open rows in stock_alerts instead — a second source for the same
+// fact. stock_alerts is still written (lib/inventory.js) and stays as the
+// history of when each product went low and recovered.
+//
+// Returns { alerts, total }: the capped list to render, worst first, and
+// the true count, so a long list never quietly under-reports.
 async function getLowStockAlerts() {
+  const lowSql = 'inv.stock_quantity <= inv.min_stock_level'
   const [listResult, countResult] = await Promise.all([
     pool.query(
-      `SELECT sa.alert_id, p.product_id, p.product_name, p.variant,
-              inv.stock_quantity, inv.min_stock_level, sa.alert_message, sa.created_at
-         FROM stock_alerts sa
-         JOIN inventory inv ON inv.inventory_id = sa.inventory_id
+      `SELECT p.product_id, p.product_name, p.variant, inv.stock_quantity, inv.min_stock_level, inv.last_updated
+         FROM inventory inv
          JOIN products p ON p.product_id = inv.product_id
-        WHERE sa.is_resolved = FALSE
-        ORDER BY sa.created_at
+        WHERE ${lowSql}
+        ORDER BY inv.stock_quantity - inv.min_stock_level, p.product_name
         LIMIT $1`,
       [maxLowStockAlerts],
     ),
-    pool.query('SELECT COUNT(*)::int AS n FROM stock_alerts WHERE is_resolved = FALSE'),
+    pool.query(`SELECT COUNT(*)::int AS n FROM inventory inv WHERE ${lowSql}`),
   ])
   return {
     alerts: listResult.rows.map((row) => ({
-      id: row.alert_id,
+      id: row.product_id,
       productId: row.product_id,
       productName: row.product_name,
       variant: row.variant,
       stockQuantity: row.stock_quantity,
       minStockLevel: row.min_stock_level,
-      alertMessage: row.alert_message,
-      createdAt: row.created_at,
+      alertMessage: row.stock_quantity === 0 ? 'Out of stock' : `${row.stock_quantity} left, minimum ${row.min_stock_level}`,
+      createdAt: row.last_updated,
     })),
-    total: countResult.rows[0].n,
-  }
-}
-
-// Stock that is past its expiration_date and still on the shelf. The
-// column has been editable since Phase 5 and nothing ever read it back:
-// an expired batch sat in stock_quantity as if sellable. The catalogue
-// now hides it and checkout refuses it (routes/products.js,
-// routes/orders.js); this is the list that tells staff to write it off —
-// a loss report with reason EXPIRED, which is exactly what migration 008
-// added that reason for. Same capped-list-plus-true-count shape as
-// getLowStockAlerts, for the same reason.
-const maxExpiredStock = 50
-async function getExpiredStock() {
-  const [listResult, countResult] = await Promise.all([
-    pool.query(
-      `SELECT p.product_id, p.product_name, p.variant, inv.stock_quantity, inv.expiration_date
-         FROM inventory inv JOIN products p ON p.product_id = inv.product_id
-        WHERE ${expiredSql('inv')} AND inv.stock_quantity > 0
-        ORDER BY inv.expiration_date, p.product_name
-        LIMIT $1`,
-      [maxExpiredStock],
-    ),
-    pool.query(`SELECT COUNT(*)::int AS n FROM inventory inv WHERE ${expiredSql('inv')} AND inv.stock_quantity > 0`),
-  ])
-  return {
-    items: listResult.rows.map((row) => ({ productId: row.product_id, productName: row.product_name, variant: row.variant, stockQuantity: row.stock_quantity, expirationDate: row.expiration_date })),
     total: countResult.rows[0].n,
   }
 }
@@ -329,7 +302,7 @@ router.get('/sales', async (request, response) => {
 // database that already has to know the right answer (Decision 1) compute
 // it start to finish.
 router.get('/summary', async (_request, response) => {
-  const [todayResult, outstandingResult, lowStockAlerts, deliveriesResult, expiredStock, likelySellOut, awaitingApproval, kitchen] = await Promise.all([
+  const [todayResult, outstandingResult, deliveriesResult, likelySellOut, awaitingApproval, kitchen] = await Promise.all([
     pool.query(`
       WITH today_range AS (
         SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date AS local_date,
@@ -359,10 +332,6 @@ router.get('/summary', async (_request, response) => {
         ${billingListSql.join}
        WHERE o.status <> 'CANCELLED' AND (o.total_amount - COALESCE(paid.amount, 0)) > 0
     `),
-    // PHASE 8, DECISION 7 — the first thing anything in this app has ever
-    // READ from stock_alerts. Phase 5 has been writing it since Step 5;
-    // nothing until now looked.
-    getLowStockAlerts(),
     // Only deliveries someone can still act on: a row whose order is
     // already COMPLETED or CANCELLED cannot be assigned (routes/deliveries.js
     // refuses it), so counting it here sent staff to a queue of dead work.
@@ -370,7 +339,6 @@ router.get('/summary', async (_request, response) => {
     // assign" and opens exactly this list. An ASSIGNED delivery already
     // has one; it is the driver's to move, not the counter's.
     pool.query(`SELECT COUNT(*)::int AS n FROM deliveries d JOIN orders o ON o.order_id = d.order_id WHERE d.status = 'PENDING_ASSIGNMENT' AND o.status NOT IN ('COMPLETED', 'CANCELLED')`),
-    getExpiredStock(),
     // PHASE10 B1 — products the latest forecast says run out by tomorrow.
     likelySellOutSummary(),
     // PHASE10 D3 — bulk orders waiting for an admin.
@@ -391,14 +359,10 @@ router.get('/summary', async (_request, response) => {
       collected: todayRow.collected,
     },
     outstanding: outstandingResult.rows[0].outstanding,
-    lowStockAlerts: lowStockAlerts.alerts,
-    // The true count, separate from the capped list above — the dashboard
-    // renders this number, not lowStockAlerts.length, so a truncated list
-    // can never under-report how much actually needs attention.
-    lowStockAlertsTotal: lowStockAlerts.total,
+    // Low and expired stock are not here: the Dashboard reads them from
+    // /api/inventory through the same rule the Inventory screen filters
+    // by (PAPER_VS_SYSTEM.md H4).
     deliveriesNeedingAttention: deliveriesResult.rows[0].n,
-    expiredStock: expiredStock.items,
-    expiredStockTotal: expiredStock.total,
     likelySellOut,
     ordersAwaitingApproval: awaitingApproval.rows[0].n,
     ordersToPrepare: kitchen.rows[0].to_prepare,
