@@ -1,6 +1,6 @@
 # PAPER_FIX_PART_A.md — Part A: factual errors, ready to paste
 
-For editing `docs/PECTRACK.pdf` (second upload, 2026-10-08). Page numbers
+For editing the second upload of the paper (2026-10-08; now replaced by `docs/PECTRACK_REVISED.pdf`). Page numbers
 are that file's PDF pages. Each fix gives the text to **find** and the text
 to **replace it with**. Each claim was checked against the code on
 2026-10-08.
