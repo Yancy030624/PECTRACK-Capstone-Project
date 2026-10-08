@@ -52,7 +52,7 @@ router.post('/run', requireRole('ADMIN'), async (request, response) => {
   const sources = SOURCE_SETS[kind]
   if (!sources) return response.status(422).json({ message: 'Choose which history to train on: ASSUMED or REAL.', errors: { source: 'Choose ASSUMED or REAL.' } })
 
-  const { yesterday } = await manilaDays()
+  const { today, yesterday } = await manilaDays()
 
   // Today is excluded from training: it is not over, and a half-day of
   // sales would read as a slump.
@@ -75,29 +75,6 @@ router.post('/run', requireRole('ADMIN'), async (request, response) => {
     byProduct.set(row.product_id, list)
   }
 
-  // Each product's series runs from its first recorded day to yesterday,
-  // with the missing days filled as zero. Missing is not the same as
-  // unknown here: the sources record every sale, so a day with no row sold
-  // nothing. Starting from the product's OWN first day stops a product
-  // added last month looking like it sold nothing all year.
-  const results = []
-  for (const product of products) {
-    const rows = byProduct.get(product.product_id) ?? []
-    if (rows.length === 0) {
-      results.push({ product, outcome: { skipped: 'No history for this product in the chosen data.' } })
-      continue
-    }
-    const known = new Map(rows.map((row) => [row.date, row]))
-    const first = rows[0].date
-    const length = daysBetween(first, yesterday) + 1
-    const series = Array.from({ length }, (_, index) => {
-      const date = addDays(first, index)
-      const row = known.get(date)
-      return { date, units: row?.units ?? 0, censored: row?.censored ?? false }
-    })
-    results.push({ product, outcome: forecastProduct(series, { horizon: HORIZON_DAYS }) })
-  }
-
   // Distinct days of each source actually used — the answer to "what was
   // this trained on?" that the run carries forever.
   const coverage = await pool.query(
@@ -110,6 +87,48 @@ router.post('/run', requireRole('ADMIN'), async (request, response) => {
   const daysBySource = Object.fromEntries(coverage.rows.map((row) => [row.data_source, row.days]))
   const historyFrom = coverage.rows.map((row) => row.first).sort()[0] ?? null
   const historyTo = coverage.rows.map((row) => row.last).sort().at(-1) ?? null
+
+  // Where each product's series ends.
+  //
+  // REAL sales run to yesterday: the system records every sale, so a day
+  // with no row genuinely sold nothing and counts as zero.
+  //
+  // ASSUMED history is a generated year that stops on the day it was
+  // generated. The days after that are not "sold nothing" — they are not
+  // in the data at all. Filling them with zeros taught every method that
+  // sales had collapsed (forecasts near zero, accuracy around 20%), so the
+  // series ends where the generated history ends, and the forecast is
+  // projected forward from there to today and the week after. The
+  // generator writes a row for every product-day, zeros included, so a
+  // product's own last row is where its generated history ends.
+  const seriesEndFor = (rows) => (kind === 'ASSUMED' && rows.at(-1).date < yesterday ? rows.at(-1).date : yesterday)
+
+  // Each product's series runs from its first recorded day to seriesEnd,
+  // with the missing days in between filled as zero. Starting from the
+  // product's OWN first day stops a product added last month looking like
+  // it sold nothing all year.
+  const results = []
+  for (const product of products) {
+    const rows = byProduct.get(product.product_id) ?? []
+    if (rows.length === 0) {
+      results.push({ product, outcome: { skipped: 'No history for this product in the chosen data.' } })
+      continue
+    }
+    const known = new Map(rows.map((row) => [row.date, row]))
+    const first = rows[0].date
+    const seriesEnd = seriesEndFor(rows)
+    const length = daysBetween(first, seriesEnd) + 1
+    const series = Array.from({ length }, (_, index) => {
+      const date = addDays(first, index)
+      const row = known.get(date)
+      return { date, units: row?.units ?? 0, censored: row?.censored ?? false }
+    })
+    const outcome = forecastProduct(series, { horizon: daysBetween(seriesEnd, today) + HORIZON_DAYS - 1 })
+    // Keep only today and the six days after it — the days the bakery can
+    // still act on.
+    if (!outcome.skipped) outcome.forecast = outcome.forecast.filter((day) => day.date >= today).slice(0, HORIZON_DAYS)
+    results.push({ product, outcome })
+  }
 
   const forecast = results.filter((result) => !result.outcome.skipped)
   const client = await pool.connect()

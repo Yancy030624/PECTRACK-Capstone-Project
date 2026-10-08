@@ -140,6 +140,36 @@ describe('demand forecasting API', () => {
     assert.equal(bun.candidates.length, 3)
   })
 
+  // Generated history stops on the day it was generated. The days after
+  // that are not in the data — they must not be read as zero sales, or
+  // every forecast collapses toward zero.
+  test('assumed history that stops before yesterday is not zero-filled: the forecast still starts today at the usual level', async () => {
+    const staleId = (await pool.query(`INSERT INTO products (category_id, product_name, price, variant) VALUES ($1, 'Stale Bun', 10, $2) RETURNING product_id`, [categoryId, runId])).rows[0].product_id
+    await pool.query('INSERT INTO inventory (product_id) VALUES ($1)', [staleId])
+    try {
+      // 70 days of a steady 20 a day, ending ten days before yesterday.
+      const lastDay = addDays(yesterday, -10)
+      const dates = Array.from({ length: 70 }, (_, index) => addDays(lastDay, index - 69))
+      await pool.query(
+        `INSERT INTO assumed_daily_demand (local_date, product_id, units, generator_version) SELECT d, $1, 20, 'test' FROM unnest($2::date[]) AS d`,
+        [staleId, dates],
+      )
+      assert.equal((await json(adminCookie, 'POST', '/api/forecasts/run', { source: 'ASSUMED' })).status, 201)
+      const latest = await (await json(adminCookie, 'GET', '/api/forecasts/latest')).json()
+      const stale = latest.products.find((product) => product.productId === staleId)
+      assert.ok(stale, 'the product is forecast')
+      assert.equal(stale.days.length, 7)
+      assert.equal(stale.days[0].date, addDays(yesterday, 1), 'the forecast starts today, not the day after the history ends')
+      const average = stale.days.reduce((sum, day) => sum + Number(day.predicted), 0) / 7
+      assert.ok(average > 15, `forecast stays near 20 a day, got ${average}`)
+    } finally {
+      await pool.query('DELETE FROM forecast_runs WHERE run_by = ANY($1)', [userIds])
+      await pool.query('DELETE FROM assumed_daily_demand WHERE product_id = $1', [staleId])
+      await pool.query('DELETE FROM inventory WHERE product_id = $1', [staleId])
+      await pool.query('DELETE FROM products WHERE product_id = $1', [staleId])
+    }
+  })
+
   test('a run on REAL sales trains on nothing assumed, and says plainly when there is too little', async () => {
     const run = await json(adminCookie, 'POST', '/api/forecasts/run', { source: 'REAL' })
     assert.equal(run.status, 201)
