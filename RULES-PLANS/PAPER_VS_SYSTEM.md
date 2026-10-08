@@ -194,7 +194,7 @@ recommendations.
 | D4 | 15 | "**Modify** orders" | Remove; orders can be cancelled (with reason) and re-placed. |
 | D5 | 38–39 | Driver "Payment Verification" gate | Reword to: the driver sees the payment status and records cash on delivery. |
 | D6 | 40 | Delivery fee | Remove or say free within Lucban. |
-| D7 | 41, 76 | Customer downloads receipt as **PDF** | Remove, or build it (H9). |
+| D7 | 41, 76 | Customer downloads receipt as **PDF** | **Built (H9).** Keep it; describe it as "Print / Save as PDF" from the receipt screen. |
 | D8 | 13, 72 | Delivery personnel "access the Customer Management module" | Reword: the driver sees the delivery address and contact number on each assigned delivery only. |
 | D9 | — | Customers are **notified** when the order status changes | Not built — customers check My Orders. Add to Limitations if the paper implies notifications. |
 
@@ -315,3 +315,19 @@ Ranked by impact. These are fixes to the **code or data**, not the paper.
 | H8 | **Duplicate forecast runs.** Pressing Run forecast twice stores two identical runs (it happened on Oct 8). | Clutter in history | Optional: disable the button while a run is in progress (it is) and skip a run if one finished in the last minute. |
 | H9 | **No printable customer receipt.** The paper promises a PDF receipt; the receipt screen has no Print / Save as PDF. | Paper promise unmet | Add the existing Print / Save as PDF button to the receipt (about an hour), or remove the promise (D7). |
 | H10 | **Order items cannot be edited** after placing. | Paper says "modify orders" | Keep as is (cancel and re-order is safer for stock and payments) and reword the paper (D4). |
+
+### Status of Part H (2026-10-08)
+
+| # | Status | What was done |
+|---|---|---|
+| H1 | Done | The seed script logs in without sending an OTP email and builds orders that fit today's rules (live orders get a pickup/delivery time; cancellations get a reason). Demo data was cleared and re-seeded (57 orders), assumed demand regenerated to Oct 7, and the forecast run once. |
+| H2 | Done (hours still to confirm) | Name, address, hours and phones live in `src/lib/bakery.js`; the footer, Visit Us, Home, Our Story and checkout read from it. The real opening hours still need the client's answer — change them once in that file. |
+| H3 | Done | The 22 files moved to `docs/code-walkthrough/`, with a README saying they describe an earlier version. |
+| H4 | Done | `/summary` no longer computes the low-stock or expired lists. |
+| H5 | Done | The Reports → Inventory tab uses the same live rule as the Dashboard and Inventory page (stock at or under the minimum). `stock_alerts` remains the alert history. |
+| H6 | Done | Shared `lib/dates.js` (Manila dates), `lib/theme.js` (chart colours), `isDeliverable` in `lib/bakery.js` (Lucban rule on the client), and `components/storefront/PageBanner.jsx`. |
+| H7 | Left as is | Documented in migration 022. |
+| H8 | No change needed | The button is already disabled while a run is in progress; the Oct 8 duplicates came from scripted test clicks. |
+| H9 | Done | The receipt has a Print / Save as PDF button that prints only the receipt (one page). Staff and customers both have it, so D7 can stay in the paper. |
+| H10 | Paper only | Reword "modify orders" in the paper (see D4). |
+| H11 | Done (found while testing) | A forecast run failed outright if a product was deleted during the few seconds of training. The run now locks the products it saves and leaves out any already deleted. |
