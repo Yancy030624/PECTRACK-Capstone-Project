@@ -22,6 +22,58 @@ redundancy and errors found in the **system** (not the paper), with fixes.
 
 ---
 
+## Re-check of the revised paper (second upload, 2026-10-08)
+
+A teammate revised `docs/PECTRACK.pdf`. It was compared page by page with
+the first upload. Nothing in the revision contradicts this plan; most
+edits apply items from it. The revised paper's pages 21–94 are **one page
+later** than the page numbers used in Parts A–G (the Background grew by a
+page). Pages 1–20 and 95 onward are unchanged.
+
+**Already fixed by the revision**
+
+| Item | Where (new page) | Change |
+|---|---|---|
+| A2 | 93 | "ecrypt" → **bcrypt** |
+| A6, A10 | 70, 86, 94 | Maya and cards removed; **GCash only** |
+| A12 (part) | 69 | PostgreSQL **18** (the system runs 18.6) |
+| A1 (part) | 81 | "PHP-based" → "Web-based" |
+| B5 (part) | 14 | Cashier proposes **stock quantities** only, not prices or descriptions |
+| D2 (part) | 14, 26 | Says expired products are hidden from customers |
+| A5 (part) | 19 | The broken "both" removed |
+
+**New errors introduced by the revision**
+
+| # | Page | Paper says now | Problem | Fix |
+|---|---|---|---|---|
+| R1 | 14 | "The Product Availability Calendar staff to view product availability and expiration periods." | Broken sentence (words deleted mid-sentence), and the Calendar was never built (D2). | Delete that sentence. Keep the next one: "The system automatically displays only products that are currently available and hides expired or unavailable items…" |
+| R2 | 16 | "…while preventing orders from being prepared or dispatched without verified proof of payment." | **False.** Orders can be prepared and delivered unpaid (cash on delivery, partial payments). The system only refuses to mark an order **Completed** while it still owes money. | "…and an order cannot be marked Completed until it is fully paid." |
+| R3 | 16 | Walk-in: "the cashier, who processes cash payments" | Incomplete: the counter also records **GCash** payments (by reference number). | "…who records cash or GCash payments directly in the system." |
+| R4 | 26 | "Products are unavailable to customers when it's currently expired." | Grammar ("it's" for plural products); repeats p. 14 word for word; sits under Customer Management, but it is about products. | Move it to the Inventory part. Use: "Expired products are hidden from customers automatically." |
+| R5 | 31 | Figure 5.3: "a checkbox for **email** order updates" | Still not built: the system sends no order-update emails (only sign-in codes, email confirmation, password reset and email-change notices). SMS → email does not fix D3/D9. | Label Figure 5.3 an early mockup, or remove the Notification and Marketing cards from the description. |
+| R6 | 14 | "inventory levels are automatically adjusted whenever an order is placed" followed by "The AI Inventory Automation feature automatically updates product stock levels whenever an order is processed" | Same fact twice in a row; the second also says "AI" (D1, pending). | Keep the first sentence; start the second at "The system also monitors stock levels…" |
+| R7 | 84 | "organizing **REACT** and Tailwind CSS" | Capitalisation, and the server code (Node.js/Express) is not mentioned. | "…organizing the React, Node.js (Express) and Tailwind CSS code…" |
+
+**Decision for the team: cash on delivery (p. 16 vs. p. 129)**
+
+The revised p. 16 offers delivery customers "the option of cash on
+delivery". In the client interview (p. 129, 00:13:43–00:14:21) the General
+Manager was wary of COD for food: a customer may refuse the order and the
+bakery loses it. A team member answered that it would be removed. The
+system today **does** allow it: a delivery order can go out unpaid, and the
+driver records the cash collected. A panelist who reads both pages may ask.
+Choose one:
+
+1. **Keep COD** (current system). Say in the paper that the bakery asked
+   about the risk, and that COD is limited to Lucban, where the bakery
+   knows its customers. Mention that bulk orders (over 100 items) need
+   approval first.
+2. **Online payment first for delivery.** This is a system change: a
+   delivery order cannot be dispatched until it is paid. Then remove COD
+   from p. 16.
+
+---
+
 ## Part A — Factual errors in the paper (fix regardless)
 
 | # | Page | Paper says | Correct statement |
