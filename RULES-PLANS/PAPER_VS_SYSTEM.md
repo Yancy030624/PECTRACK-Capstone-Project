@@ -120,6 +120,8 @@ Ready-to-paste text for every item below: `PAPER_FIX_PART_A.md`.
 
 ## Part B — Section-by-section changes
 
+Ready-to-paste text for every module below: `PAPER_FIX_PART_B.md` (pages of `PECTRACK_REVISED.pdf`).
+
 ### B1. Purpose and Description — Login Module (pp. 11–12) and Login Module scope (p. 20)
 
 | Paper | System now |
