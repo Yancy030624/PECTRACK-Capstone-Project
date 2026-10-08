@@ -29,6 +29,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import bcrypt from 'bcrypt'
 import { bcryptRounds } from '../server/lib/accounts.js'
+import { createSession, sessionCookieName } from '../server/lib/auth.js'
 import { pool } from '../server/db.js'
 
 const baseUrl = 'http://localhost:3001'
@@ -71,38 +72,35 @@ async function call(method, urlPath, cookie, body) {
 // no ON DELETE clause — RESTRICT) makes deleting the user row fail on
 // purpose. Leaving it in place is not just simpler, it is the honest
 // record of who actually performed the restock.
+// Two changes since this was first written:
+//   - It no longer signs in through /api/auth/login. An admin sign-in
+//     emails a one-time code, so every seed run sent a real email through
+//     the bakery's Gmail to a .local address nobody reads. The session is
+//     created directly in the database instead — the same row a
+//     successful sign-in would write.
+//   - It reuses the retired helper from an earlier run (reactivated for
+//     the run, retired again at the end) instead of adding one more
+//     admin account each time.
 async function createTempAdmin() {
-  const suffix = crypto.randomUUID().slice(0, 8)
-  const username = `seedadmin_${suffix}`
-  const password = `SeedAdmin-${suffix}!`
-  const passwordHash = await bcrypt.hash(password, bcryptRounds)
-  const userResult = await pool.query(`INSERT INTO users (username, password_hash, user_type) VALUES ($1, $2, 'ADMIN') RETURNING user_id`, [username, passwordHash])
-  const userId = userResult.rows[0].user_id
-  // The NAME matters, and not for tidiness. order_status_history.
-  // updated_by resolves through this row, and OrderManagement.jsx's
-  // detail panel renders it verbatim: "CANCELLED by {updatedByName}".
-  // The admin-cancelled refund below therefore puts this string on
-  // screen, on the one refunded order a panel is most likely to open —
-  // so it has to read like a real person's role, not like a script.
-  // (Decision 9's "no visible marker" rule, reached through a column
-  // that isn't obviously a display field.)
-  await pool.query('INSERT INTO admins (user_id, name, contact_num, email) VALUES ($1, $2, $3, $4)', [userId, 'Store Admin', '09171234567', `${username}@pectrack.local`])
-
-  await call('POST', '/api/auth/login', null, { identifier: username, password })
-  const rawCode = '482913'
-  const challengeToken = `seed-challenge-${crypto.randomUUID()}`
-  await pool.query(
-    `INSERT INTO otp_codes (user_id, code_hash, challenge_token, expires_at) VALUES ($1, $2, $3, CURRENT_TIMESTAMP + INTERVAL '5 minutes')`,
-    [userId, crypto.createHash('sha256').update(rawCode).digest('hex'), challengeToken],
+  const existing = await pool.query(
+    `SELECT u.user_id FROM users u JOIN admins a ON a.user_id = u.user_id
+      WHERE u.username LIKE 'seedadmin\\_%' ORDER BY u.user_id LIMIT 1`,
   )
-  const raw = await fetch(`${baseUrl}/api/auth/verify-otp`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ challengeToken, code: rawCode }),
-  })
-  const cookie = raw.headers.get('set-cookie')?.split(';')[0]
-  if (!cookie) throw new Error(`Temp admin OTP verification failed: ${JSON.stringify(await raw.json())}`)
-  return { userId, cookie }
+  let userId = existing.rows[0]?.user_id
+  if (userId) {
+    await pool.query('UPDATE users SET is_active = TRUE WHERE user_id = $1', [userId])
+  } else {
+    const suffix = crypto.randomUUID().slice(0, 8)
+    const username = `seedadmin_${suffix}`
+    const passwordHash = await bcrypt.hash(crypto.randomUUID(), bcryptRounds)
+    userId = (await pool.query(`INSERT INTO users (username, password_hash, user_type) VALUES ($1, $2, 'ADMIN') RETURNING user_id`, [username, passwordHash])).rows[0].user_id
+    // The NAME matters: order_status_history.updated_by resolves through
+    // this row, and the order detail panel shows "CANCELLED by {name}" on
+    // the refunded order — so it reads like a role, not like a script.
+    await pool.query('INSERT INTO admins (user_id, name, contact_num, email) VALUES ($1, $2, $3, $4)', [userId, 'Store Admin', '09171234567', `${username}@pectrack.local`])
+  }
+  const sessionId = await createSession(userId)
+  return { userId, cookie: `${sessionCookieName}=${sessionId}` }
 }
 
 async function login(username, password) {
@@ -207,10 +205,11 @@ async function main() {
   // `orderType`/`addressId` follow COUNTER_ORDER_PLAN.md Decision 4's
   // legal shapes — DELIVERY is only ever used with customer1 here, since
   // a walk-in has no saved address.
-  async function placeOrder(cookie, { customerId, orderType = 'PICKUP', items, addressId } = {}) {
+  async function placeOrder(cookie, { customerId, orderType = 'PICKUP', items, addressId, requestedFulfillmentTime } = {}) {
     const body = { orderType, items }
     if (customerId) body.customerId = customerId
     if (orderType === 'DELIVERY') body.addressId = addressId
+    if (requestedFulfillmentTime) body.requestedFulfillmentTime = requestedFulfillmentTime
     const result = await call('POST', '/api/orders', cookie, body)
     if (result.status !== 201) throw new Error(`Order placement failed: ${JSON.stringify(result.body)}`)
     orderIds.push(result.body.order.id)
@@ -302,7 +301,9 @@ async function main() {
       customerId: i % 2 === 0 ? undefined : customer1.customerId,
       items: randomItems(commonProducts),
     })
-    const cancelResult = await call('PATCH', `/api/orders/${order.id}`, i % 2 === 0 ? cashierCookie : customerCookie, { status: 'CANCELLED' })
+    // A cancellation needs a logged reason (PHASE10 B7).
+    const reasons = ['Customer changed their mind', 'Cancelled by customer: Ordered by mistake', 'Customer did not pick up', 'Cancelled by customer: Pickup or delivery time no longer works']
+    const cancelResult = await call('PATCH', `/api/orders/${order.id}`, i % 2 === 0 ? cashierCookie : customerCookie, { status: 'CANCELLED', note: reasons[i % reasons.length] })
     if (cancelResult.status !== 200) throw new Error(`Cancel failed: ${JSON.stringify(cancelResult.body)}`)
     await backdateOrder(order.id, randomPastInstant(90))
   }
@@ -347,14 +348,17 @@ async function main() {
 
   // ============ 6. Live mid-status board — dated TODAY, not backdated ============
   log('Seeding today\'s in-progress orders...')
-  const confirmedOrder = await placeOrder(cashierCookie, { items: randomItems(commonProducts) })
+  // Each due a few hours from now, so Production → Due today shows real
+  // hours instead of only "as soon as possible".
+  const dueIn = (hours) => new Date(Date.now() + hours * 60 * 60 * 1000).toISOString()
+  const confirmedOrder = await placeOrder(cashierCookie, { items: randomItems(commonProducts), requestedFulfillmentTime: dueIn(5) })
   await advanceStatus(confirmedOrder.id, 'CONFIRMED')
 
-  const inProductionOrder = await placeOrder(cashierCookie, { items: randomItems(commonProducts) })
+  const inProductionOrder = await placeOrder(cashierCookie, { items: randomItems(commonProducts), requestedFulfillmentTime: dueIn(2) })
   await advanceStatus(inProductionOrder.id, 'CONFIRMED')
   await advanceStatus(inProductionOrder.id, 'IN_PRODUCTION')
 
-  const readyOrder = await placeOrder(cashierCookie, { items: randomItems(commonProducts) })
+  const readyOrder = await placeOrder(cashierCookie, { items: randomItems(commonProducts), requestedFulfillmentTime: dueIn(1) })
   await advanceStatus(readyOrder.id, 'CONFIRMED')
   await advanceStatus(readyOrder.id, 'IN_PRODUCTION')
   await advanceStatus(readyOrder.id, 'READY_FOR_PICKUP')
@@ -391,7 +395,13 @@ async function main() {
     const quantity = inventoryRow.stock_quantity - targetRemaining
     if (quantity <= 0) continue
     const order = await placeOrder(cashierCookie, { items: [{ productId: product.id, quantity }] })
-    await backdateOrder(order.id, randomPastInstant(14, 2))
+    // A past sale, finished: paid and completed. Left PLACED, it sat in
+    // "Orders to prepare" and Production → Due today every day forever.
+    const paymentId = await recordPayment(order.id, order.totalAmount)
+    await advanceStatus(order.id, 'COMPLETED')
+    const instant = randomPastInstant(14, 2)
+    await backdateOrder(order.id, instant)
+    await backdatePayment(paymentId, instant)
   }
   log(`  Ordered heavily against ${scarceProducts.map((p) => p.name).join(', ')}.\n`)
 
