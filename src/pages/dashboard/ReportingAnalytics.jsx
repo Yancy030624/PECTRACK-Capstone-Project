@@ -13,30 +13,14 @@ import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
 import { ForecastPanel } from './ForecastPanel.jsx'
 import { PeakPeriods } from './PeakPeriods.jsx'
 import { PrintButton, PrintHeader } from '../../components/PrintReport.jsx'
+import { manilaDate, manilaDateFromToday } from '../../lib/dates.js'
+import { cssVar } from '../../lib/theme.js'
 
 const paymentMethodOptions = ['CASH', 'GCASH']
 const paymentStatusOptions = ['PENDING', 'PAID', 'FAILED', 'CANCELLED', 'REFUNDED']
 const transactionsLimit = 50
 const logsLimit = 20
 
-const reportingTimeZone = 'Asia/Manila'
-
-const manilaDateParts = new Intl.DateTimeFormat('en-US', {
-  timeZone: reportingTimeZone,
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-})
-
-function manilaDateIso(instant = new Date()) {
-  const parts = manilaDateParts.formatToParts(instant)
-  const part = (type) => parts.find((candidate) => candidate.type === type).value
-  return `${part('year')}-${part('month')}-${part('day')}`
-}
-
-function manilaDateIsoDaysAgo(days) {
-  return manilaDateIso(new Date(Date.now() - days * 86400000))
-}
 
 // UI_AUDIT.md Stage 5.5's specific instruction for this screen: "Chart
 // colours are currently hard-coded hex values; move them onto the token
@@ -48,7 +32,6 @@ function manilaDateIsoDaysAgo(days) {
 // defines are what the canvases use, so a Figma re-skin that changes the
 // tokens re-skins the charts too, with nothing to update here.
 
-const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 
 // Phase 9B adds 'Forecast' for both roles: a cashier planning the morning
 // bake needs it; only an admin can start a new run (ForecastPanel.jsx).
@@ -76,8 +59,8 @@ export function ReportingAnalytics({ user }) {
   const tabs = tabsFor(user.role)
   const [activeTab, setActiveTab] = useState('Sales')
 
-  const [fromInput, setFromInput] = useState(manilaDateIsoDaysAgo(29))
-  const [toInput, setToInput] = useState(manilaDateIso())
+  const [fromInput, setFromInput] = useState(() => manilaDateFromToday(-29))
+  const [toInput, setToInput] = useState(() => manilaDate())
   const [groupBy, setGroupBy] = useState('day')
   const [productLimit, setProductLimit] = useState('10')
 
@@ -401,7 +384,7 @@ export function ReportingAnalytics({ user }) {
           <>
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Units lost</p><p className="mt-3 text-4xl font-semibold text-ink-900">{inventory.lossUnits}</p></Card>
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Open low-stock alerts</p><p className="mt-3 text-4xl font-semibold text-ink-900">{inventory.lowStockAlertsTotal}</p></Card>
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Low stock now</p><p className="mt-3 text-4xl font-semibold text-ink-900">{inventory.lowStockAlertsTotal}</p></Card>
             </div>
 
             <Card className="mt-6 p-6">
@@ -431,7 +414,7 @@ export function ReportingAnalytics({ user }) {
 
             <Card className="mt-6 p-6">
               <h2 className="text-lg font-semibold text-ink-900">Needs attention</h2>
-              {inventory.lowStockAlerts.length === 0 ? <p className="mt-4 text-sm text-ink-500">No open low-stock alerts.</p> : (
+              {inventory.lowStockAlerts.length === 0 ? <p className="mt-4 text-sm text-ink-500">No product is at or under its minimum.</p> : (
                 <>
                   <div className="mt-4 divide-y divide-line-100">
                     {inventory.lowStockAlerts.map((alert) => (
@@ -441,7 +424,7 @@ export function ReportingAnalytics({ user }) {
                     ))}
                   </div>
                   {inventory.lowStockAlertsTotal > inventory.lowStockAlerts.length && (
-                    <p className="mt-4 text-xs font-medium text-status-wait-fg">Showing the {inventory.lowStockAlerts.length} oldest of {inventory.lowStockAlertsTotal} open alerts — resolve some in Inventory Management to see the rest.</p>
+                    <p className="mt-4 text-xs font-medium text-status-wait-fg">Showing the {inventory.lowStockAlerts.length} furthest under their minimum, of {inventory.lowStockAlertsTotal} — Inventory Management lists them all.</p>
                   )}
                 </>
               )}

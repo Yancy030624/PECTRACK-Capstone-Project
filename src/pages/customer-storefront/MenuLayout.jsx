@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Eyebrow, ScallopEdge } from '../../components/storefront/Decor.jsx'
+import { PageBanner } from '../../components/storefront/PageBanner.jsx'
 import { sectionAnchor } from './useMenuData.js'
 
 // The frame both menus share — a cream banner, the sticky category chips,
@@ -19,16 +19,9 @@ export function MenuLayout({ loading, sections, message, emptyText, toolbar, sho
 
   return (
     <>
-      <section className="relative overflow-hidden bg-cream-50">
-        <div aria-hidden="true" className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-butter-100" />
-        <div className="relative mx-auto max-w-7xl px-4 pb-10 pt-12 sm:px-7 sm:pt-16">
-          <Eyebrow>Our menu</Eyebrow>
-          <h1 className="mt-4 font-display text-5xl font-bold text-cocoa-900 sm:text-6xl">Fresh from Pecto&apos;s oven</h1>
-          <p className="mt-4 max-w-2xl text-lg leading-8 text-cocoa-700">Everything on the counter today, grouped the way our bakery shelves are. Prices are per piece or per pack, as marked.</p>
-          {toolbar}
-        </div>
-        <ScallopEdge className="text-cream-100" />
-      </section>
+      <PageBanner eyebrow="Our menu" title="Fresh from Pecto's oven" lead="Everything on the counter today, grouped the way our bakery shelves are. Prices are per piece or per pack, as marked.">
+        {toolbar}
+      </PageBanner>
 
       {showChips && !loading && sections.length > 1 && (
         <nav aria-label="Jump to category" className="sticky top-0 z-20 border-b border-cream-200 bg-cream-100/95 backdrop-blur">

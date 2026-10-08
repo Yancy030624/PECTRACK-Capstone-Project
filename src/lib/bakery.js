@@ -21,6 +21,11 @@ export const bakery = {
   phones: ['(042) 540-4366', '(042) 540-8838'],
 }
 
+// Delivery covers this town only (PHASE10 B7); the server enforces it
+// (routes/orders.js) and checkout uses this to grey out other addresses.
+export const deliveryTown = 'Lucban'
+export const isDeliverable = (address) => address?.municipality?.trim().toLowerCase() === deliveryTown.toLowerCase()
+
 export const bakeryAddress = `${bakery.street}, ${bakery.town}`
 export const bakeryMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${bakery.name}, ${bakeryAddress}`)}`
 export const telHref = (phone) => `tel:${phone.replace(/[^\d+]/g, '')}`

@@ -4,6 +4,7 @@ import { apiGet, apiPost } from '../../api/client.js'
 import { AddressForm } from '../../components/AddressForm.jsx'
 import { useCart } from '../../cart/CartContext.jsx'
 import { formatPeso } from '../../lib/format.js'
+import { isDeliverable } from '../../lib/bakery.js'
 
 const instructionsMaxLength = 500
 
@@ -35,7 +36,7 @@ export function CheckoutPage({ user }) {
     apiGet('/api/addresses').then((data) => {
       setAddresses(data.addresses)
       // Only a Lucban address can be delivered to (PHASE10 B7).
-      const deliverable = data.addresses.filter((address) => address.municipality?.trim().toLowerCase() === 'lucban')
+      const deliverable = data.addresses.filter(isDeliverable)
       const defaultAddress = deliverable.find((address) => address.isDefault) ?? deliverable[0]
       if (defaultAddress) setAddressId(defaultAddress.id)
     }).catch(() => setAddresses([]))
@@ -154,7 +155,7 @@ export function CheckoutPage({ user }) {
                     {addresses.map((address) => {
                       // Delivery is within Lucban only (PHASE10 B7); the
                       // server refuses the rest, so they are not offered.
-                      const outside = address.municipality?.trim().toLowerCase() !== 'lucban'
+                      const outside = !isDeliverable(address)
                       return (
                       <label key={address.id} className={`flex items-start gap-3 rounded-xl border p-3 text-xs transition ${outside ? 'cursor-not-allowed border-cream-300 opacity-60' : 'cursor-pointer'} ${addressId === address.id ? 'border-crust-600 bg-cream-100' : 'border-cream-300'}`}>
                         <input type="radio" name="addressId" checked={addressId === address.id} disabled={outside} onChange={() => setAddressId(address.id)} className="mt-0.5 h-5 w-5 accent-crust-600" />

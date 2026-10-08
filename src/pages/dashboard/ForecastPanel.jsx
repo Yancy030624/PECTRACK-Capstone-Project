@@ -10,6 +10,7 @@ import { Select } from '../../components/ui/Select.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { formatDateTime } from '../../lib/format.js'
+import { cssVar } from '../../lib/theme.js'
 
 // Reporting & Analytics → Forecast. Phase 9B,
 // RULES-PLANS/PHASE9B_PREDICTIVE_ANALYSIS_PLAN.md.
@@ -33,7 +34,6 @@ const METHOD_HELP = {
   regression: 'Learns how much each weekday, payday, holiday and the overall trend raises or lowers sales.',
 }
 
-const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 const withAlpha = (hex, alpha) => {
   const value = hex.replace('#', '')
   const channels = value.length === 3 ? value.split('').map((c) => parseInt(c + c, 16)) : [0, 2, 4].map((i) => parseInt(value.slice(i, i + 2), 16))

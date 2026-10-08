@@ -10,6 +10,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { PrintButton, PrintHeader } from '../../components/PrintReport.jsx'
 import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
+import { manilaDate } from '../../lib/dates.js'
 
 // My Deliveries → History. PHASE10 B4, the paper's "review their delivery
 // history and completed transactions" (p.15) and its Delivery Reports
@@ -18,7 +19,6 @@ import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
 // counts a delivery report needs, and Save as PDF.
 //
 // Dates are the bakery's calendar (Asia/Manila), the same as every report.
-const manilaDate = (instant) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(instant)
 
 export function DeliveryHistory({ user }) {
   const [fromInput, setFromInput] = useState(() => manilaDate(new Date(Date.now() - 29 * 86400000)))

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Chart from 'chart.js/auto'
 import { apiGet } from '../../api/client.js'
 import { Card } from '../../components/ui/Card.jsx'
+import { cssVar } from '../../lib/theme.js'
 
 // Reporting → Sales → Peak ordering periods. PHASE10 B2, the paper's
 // "peak ordering periods" (p.16).
@@ -21,7 +22,6 @@ const hourLabel = (hour) => {
   const twelve = hour % 12 === 0 ? 12 : hour % 12
   return `${twelve} ${suffix}`
 }
-const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 
 function BarChart({ labels, values, label, color, highlight }) {
   const ref = useRef(null)

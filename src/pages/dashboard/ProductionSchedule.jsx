@@ -9,6 +9,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { PrintButton, PrintHeader } from '../../components/PrintReport.jsx'
 import { formatDate, formatDateTime } from '../../lib/format.js'
+import { manilaDate } from '../../lib/dates.js'
 
 // Production → Due today. PHASE10 B5 — the interview problem still open
 // (thesis p.9): "if the order is for 6:00 but the bread is finished at
@@ -18,7 +19,6 @@ import { formatDate, formatDateTime } from '../../lib/format.js'
 //
 // Today refreshes itself every minute: "due soon" and "overdue" are about
 // the clock, and a screen left open at the counter should not go stale.
-const manilaDate = (instant) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(instant)
 const hourLabel = (hour) => `${hour % 12 === 0 ? 12 : hour % 12} ${hour < 12 ? 'AM' : 'PM'}`
 const slotTitle = (slot) => {
   if (slot.key === 'EARLIER') return 'Overdue from earlier days'

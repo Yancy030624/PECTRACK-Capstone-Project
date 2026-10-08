@@ -1,6 +1,6 @@
 import { LineIcon } from '../../components/storefront/Decor.jsx'
 import { bakery, bakeryAddress, bakeryMapsUrl, telHref } from '../../lib/bakery.js'
-import { PageBanner } from './AboutPage.jsx'
+import { PageBanner } from '../../components/storefront/PageBanner.jsx'
 
 export function ContactPage() {
   return (
