@@ -28,9 +28,9 @@ const METHOD_LABELS = {
   regression: 'Calendar regression',
 }
 const METHOD_HELP = {
-  seasonal_naive: 'The average of the last four of the same weekday. The baseline every other method has to beat.',
-  holt_winters: 'Tracks a level, a trend and a weekly pattern, giving recent days more weight.',
-  regression: 'Weighs day of week, paydays, holidays and a trend — each effect can be read as a number.',
+  seasonal_naive: 'The average of the last four of the same weekday. The simple yardstick every other method has to beat.',
+  holt_winters: 'Follows the recent level, trend and weekly pattern, giving the latest days more weight.',
+  regression: 'Learns how much each weekday, payday, holiday and the overall trend raises or lowers sales.',
 }
 
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
@@ -47,8 +47,6 @@ const dayLabel = (iso) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefi
 const axisDay = (iso) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })
 const longDay = (iso) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 const whole = (value) => Math.round(Number(value)).toLocaleString()
-const percent = (value) => (value == null ? '—' : `${Math.round(Number(value) * 100)}%`)
-const quantity = (value) => Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })
 
 export function ForecastPanel({ user, active }) {
   const isAdmin = user.role === 'ADMIN'
@@ -173,20 +171,30 @@ export function ForecastPanel({ user, active }) {
   const beatBaseline = products.filter((product) => product.mae != null && product.baselineMae != null && product.mae < product.baselineMae).length
   const scored = products.filter((product) => product.mae != null).length
   const methodCounts = products.reduce((counts, product) => ({ ...counts, [product.method]: (counts[product.method] ?? 0) + 1 }), {})
+  // The plain-language summary. Accuracy is 1 − WAPE over every scored
+  // product: of all the items the methods had to predict in testing, how
+  // much they got right. Shown as a percentage because "88% accurate"
+  // means something to anyone; "WAPE 0.12" does not.
+  const weekTotal = products.reduce((sum, product) => sum + Number(product.total), 0)
+  const scoredProducts = products.filter((product) => product.wape != null)
+  const weightedError = scoredProducts.reduce((sum, product) => sum + Number(product.wape) * Number(product.total), 0)
+  const scoredTotal = scoredProducts.reduce((sum, product) => sum + Number(product.total), 0)
+  const accuracy = scoredTotal > 0 ? Math.max(0, Math.round((1 - weightedError / scoredTotal) * 100)) : null
+  const toBakeNow = (data?.restock ?? []).filter((item) => item.recommended > 0)
 
   return (
     <div>
       <Card className="mt-6 p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            <h2 className="text-lg font-semibold text-ink-900">Demand forecast — next 7 days</h2>
-            <p className="mt-1 max-w-2xl text-sm text-ink-500">How many of each product are likely to sell each day, to plan the bake. Each product is forecast by whichever of three methods predicted its own past most accurately.</p>
+            <h2 className="text-lg font-semibold text-ink-900">Sales forecast — what to bake this week</h2>
+            <p className="mt-1 max-w-2xl text-sm text-ink-500">PECTRACK studies past daily sales and predicts how many of each product will sell over the next 7 days, then compares that with what is on the shelf — so the bakery bakes enough, not too much.</p>
           </div>
           {isAdmin && (
             <div className="flex flex-wrap items-end gap-2 print:hidden">
               <Field label="Train on">
                 <Select value={source} onChange={(event) => setSource(event.target.value)} className="w-auto">
-                  <option value="ASSUMED">Assumed history</option>
+                  <option value="ASSUMED">Practice data (assumed)</option>
                   <option value="REAL">Real sales</option>
                 </Select>
               </Field>
@@ -205,18 +213,16 @@ export function ForecastPanel({ user, active }) {
           <div className="mt-5 space-y-3">
             <div className="flex flex-wrap items-center gap-2 text-xs text-ink-500">
               <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${isAssumed ? 'bg-status-wait-bg text-status-wait-fg' : 'bg-status-done-bg text-status-done-fg'}`}>
-                {isAssumed ? 'Trained on assumed history' : 'Trained on real sales'}
+                {isAssumed ? 'Practice data (assumed)' : 'Real sales'}
               </span>
               <span>
-                Run #{data.run.id} · {formatDateTime(data.run.createdAt)}{data.run.runByName ? ` by ${data.run.runByName}` : ''}
-                {data.run.historyFrom && <> · history {longDay(data.run.historyFrom)} – {longDay(data.run.historyTo)}</>}
-                {' · '}{Object.entries(data.run.daysBySource ?? {}).map(([name, count]) => `${count} days ${name.toLowerCase()}`).join(', ') || 'no history'}
+                Updated {formatDateTime(data.run.createdAt)}{data.run.runByName ? ` by ${data.run.runByName}` : ''}
+                {data.run.historyFrom && <> · learned from {longDay(data.run.historyFrom)} – {longDay(data.run.historyTo)}</>}
               </span>
-              <a href="/api/forecasts/latest?format=csv" download className="ml-auto inline-flex h-8 items-center rounded-control border border-line-200 bg-surface px-3 text-xs font-medium text-ink-700 transition hover:bg-surface-sunk print:hidden">Export CSV</a>
             </div>
             {isAssumed && (
               <p className="rounded-control border border-status-wait-fg/20 bg-status-wait-bg/60 px-3 py-2 text-xs text-status-wait-fg">
-                <span className="font-semibold">These numbers come from generated history, not the bakery's records.</span> The accuracy shown measures how well each method recovers the assumed patterns (weekends, paydays, holidays). It is not a measure of how well it predicts real sales. Switch to <span className="font-semibold">Real sales</span> once enough of the bakery's own history exists.
+                <span className="font-semibold">Practice mode.</span> The bakery&apos;s own sales records are still too short to learn from, so this forecast learned from a year of sample (assumed) sales built from the bakery&apos;s usual patterns — busier weekends, paydays and holidays. It shows how the feature works; switch to <span className="font-semibold">Real sales</span> once enough real history is recorded.
               </p>
             )}
           </div>
@@ -235,9 +241,9 @@ export function ForecastPanel({ user, active }) {
           ) : (
             <>
               <div className="mt-6 grid gap-4 sm:grid-cols-3">
-                <Card className="p-5"><p className="text-sm font-medium text-ink-500">Products forecast</p><p className="mt-2 text-3xl font-semibold text-ink-900 tabular-nums">{data.run.productsForecast}</p><p className="mt-1 text-xs text-ink-500">{data.run.productsSkipped} skipped</p></Card>
-                <Card className="p-5"><p className="text-sm font-medium text-ink-500">Beat the baseline</p><p className="mt-2 text-3xl font-semibold text-ink-900 tabular-nums">{beatBaseline} / {scored}</p><p className="mt-1 text-xs text-ink-500">More accurate than the same-weekday average</p></Card>
-                <Card className="p-5"><p className="text-sm font-medium text-ink-500">Method chosen</p><p className="mt-2 text-sm text-ink-700">{Object.entries(methodCounts).map(([method, count]) => <span key={method} className="block tabular-nums">{count} × {METHOD_LABELS[method] ?? method}</span>)}</p></Card>
+                <SummaryCard label="Expected to sell this week" value={`${whole(weekTotal)} items`} note={`Across ${products.length} products, next 7 days`} />
+                <SummaryCard label="Need baking now" value={`${toBakeNow.length} product${toBakeNow.length === 1 ? '' : 's'}`} note="Not enough on the shelf for today and tomorrow" tone={toBakeNow.length > 0 ? 'attention' : 'good'} />
+                <SummaryCard label="How accurate" value={accuracy == null ? 'Not tested yet' : `About ${accuracy}%`} note={accuracy == null ? 'Needs about eight weeks of history' : `Checked against past weeks it had not seen${scored ? ` · ${beatBaseline} of ${scored} products beat a simple average` : ''}`} />
               </div>
 
               <RestockCard restock={data.restock ?? []} dates={days} isAssumed={isAssumed} onSelect={setSelectedId} />
@@ -247,10 +253,9 @@ export function ForecastPanel({ user, active }) {
                   <div className="min-w-0">
                     <h3 className="text-base font-semibold text-ink-900">{selected ? `${selected.name}${selected.variant ? ` (${selected.variant})` : ''}` : 'Product'}</h3>
                     {selected && (
-                      <p className="mt-1 text-xs text-ink-500">
-                        {METHOD_LABELS[selected.method]} — {METHOD_HELP[selected.method]}
-                        {selected.mae != null && <> Off by about <span className="font-semibold text-ink-700">{quantity(selected.mae)}</span> a day in testing ({percent(selected.wape)} of sales){selected.baselineMae != null && <>, against {quantity(selected.baselineMae)} for the baseline</>}.</>}
-                        {selected.note && <> {selected.note}</>}
+                      <p className="mt-1 text-sm text-ink-500">
+                        Expected to sell <span className="font-semibold text-ink-900">{whole(selected.total)}</span> this week
+                        {selected.mae != null && <> — usually within <span className="font-semibold text-ink-900">±{whole(Math.max(1, selected.mae))}</span> a day</>}.
                       </p>
                     )}
                   </div>
@@ -263,21 +268,19 @@ export function ForecastPanel({ user, active }) {
                 <div className="relative mt-4 h-72">
                   <canvas ref={canvasRef} role="img" aria-label={selected ? `Last eight weeks of sales and the next seven days' forecast for ${selected.name}` : 'Sales and forecast chart'} />
                 </div>
-                <p className="mt-2 text-xs text-ink-500">Shaded: the range about 80% of days fell inside when this method was tested on the past. Triangles: days the product sold out, left out of the forecast because they show the shelf running empty, not what people wanted.</p>
+                <p className="mt-2 text-xs text-ink-500"><span className="font-semibold text-ink-700">Green line</span>: what actually sold. <span className="font-semibold text-ink-700">Orange dots</span>: what we expect to sell. <span className="font-semibold text-ink-700">Shaded band</span>: the likely range. <span className="font-semibold text-ink-700">Red triangles</span>: days it sold out — ignored when learning, because sales stopped only because the shelf was empty.</p>
               </Card>
 
               <Card className="mt-6 p-6">
-                <h3 className="text-base font-semibold text-ink-900">Forecast by product</h3>
-                <p className="mt-1 text-xs text-ink-500">Items likely to sell each day, busiest first. Select a row to chart it.</p>
+                <h3 className="text-base font-semibold text-ink-900">Expected sales, day by day</h3>
+                <p className="mt-1 text-xs text-ink-500">How many of each product we expect to sell, busiest first. Tap a product to see its chart above.</p>
                 <div className="mt-4">
                   <Table caption="Seven-day forecast by product">
                     <Thead>
                       <Tr className="hover:bg-transparent">
                         <Th>Product</Th>
-                        <Th align="right">7 days</Th>
-                        {days.map((date, index) => <Th key={date} align="right" priority={index < 2 ? undefined : index < 4 ? 'md' : 'lg'}>{index === 0 ? 'Today' : dayLabel(date)}</Th>)}
-                        <Th priority="xl">Method</Th>
-                        <Th align="right" priority="xl">Test error</Th>
+                        <Th align="right">This week</Th>
+                        {days.map((date, index) => <Th key={date} align="right" priority={index < 2 ? undefined : index < 4 ? 'md' : 'lg'}>{index === 0 ? 'Today' : index === 1 ? 'Tomorrow' : dayLabel(date)}</Th>)}
                       </Tr>
                     </Thead>
                     <Tbody>
@@ -289,13 +292,8 @@ export function ForecastPanel({ user, active }) {
                           </Td>
                           <Td numeric className="font-semibold text-ink-900">{whole(product.total)}</Td>
                           {product.days.map((day, index) => (
-                            <Td key={day.date} numeric priority={index < 2 ? undefined : index < 4 ? 'md' : 'lg'}>
-                              {whole(day.predicted)}
-                              <span className="block text-[10px] text-ink-500">{whole(day.low)}–{whole(day.high)}</span>
-                            </Td>
+                            <Td key={day.date} numeric priority={index < 2 ? undefined : index < 4 ? 'md' : 'lg'}>{whole(day.predicted)}</Td>
                           ))}
-                          <Td priority="xl">{METHOD_LABELS[product.method] ?? product.method}</Td>
-                          <Td numeric priority="xl">{product.mae == null ? '—' : `±${quantity(product.mae)}`}<span className="block text-[10px] text-ink-500">{product.wape == null ? 'not scored' : `${percent(product.wape)} of sales`}</span></Td>
                         </Tr>
                       ))}
                     </Tbody>
@@ -303,6 +301,24 @@ export function ForecastPanel({ user, active }) {
                 </div>
               </Card>
             </>
+          )}
+
+          {products.length > 0 && (
+            <Card className="mt-6 p-6 print:hidden">
+              <details>
+                <summary className="cursor-pointer text-sm font-semibold text-ink-900">How it was calculated</summary>
+                <div className="mt-4 space-y-4 text-sm text-ink-700">
+                  <p>For every product, PECTRACK tries three forecasting methods on that product&apos;s own sales history, tests each one on past weeks it was not allowed to see, and keeps whichever was closest:</p>
+                  <ul className="space-y-2">
+                    {Object.entries(METHOD_LABELS).map(([key, label]) => (
+                      <li key={key}><span className="font-semibold text-ink-900">{label}</span> ({methodCounts[key] ?? 0} product{methodCounts[key] === 1 ? '' : 's'}) — {METHOD_HELP[key]}</li>
+                    ))}
+                  </ul>
+                  <p>&ldquo;Usually within ±N a day&rdquo; is the average miss in that test (mean absolute error). &ldquo;How accurate&rdquo; is 100% minus the share of items missed overall (weighted absolute percentage error). Days a product sold out are left out of learning and testing, because they show the shelf running empty, not what people wanted.</p>
+                  <a href="/api/forecasts/latest?format=csv" download className="inline-flex h-8 items-center rounded-control border border-line-200 bg-surface px-3 text-xs font-medium text-ink-700 transition hover:bg-surface-sunk">Download the full forecast (CSV)</a>
+                </div>
+              </details>
+            </Card>
           )}
 
           {data.skipped.length > 0 && (
@@ -326,6 +342,17 @@ export function ForecastPanel({ user, active }) {
   )
 }
 
+function SummaryCard({ label, value, note, tone }) {
+  const dot = tone === 'attention' ? 'bg-red-500' : tone === 'good' ? 'bg-emerald-500' : null
+  return (
+    <Card className="p-5">
+      <p className="flex items-center gap-2 text-sm font-medium text-ink-500">{dot && <span className={`h-2.5 w-2.5 rounded-full ${dot}`} aria-hidden="true" />}{label}</p>
+      <p className="mt-2 text-2xl font-semibold text-ink-900 tabular-nums">{value}</p>
+      <p className="mt-1 text-xs text-ink-500">{note}</p>
+    </Card>
+  )
+}
+
 // PHASE10 B1 — the paper's "Automated Inventory": which products will run
 // out, and how many to bake. The forecast says how many will SELL; this
 // sets that against what is on the shelf now. Only products that need
@@ -346,20 +373,20 @@ function RestockCard({ restock, dates, isAssumed, onSelect }) {
   }
   return (
     <Card className="mt-6 p-6">
-      <h3 className="text-base font-semibold text-ink-900">Restock recommendations</h3>
-      <p className="mt-1 max-w-3xl text-xs text-ink-500">
-        What to bake to cover today and tomorrow, with a safety margin, minus what is already on the shelf. Soonest to run out first.
-        {isAssumed && <span className="font-semibold text-status-wait-fg"> Demand here comes from assumed history, set against the real stock on hand — it shows how the recommendation works, not what the bakery will actually sell.</span>}
+      <h3 className="text-base font-semibold text-ink-900">What to bake</h3>
+      <p className="mt-1 max-w-3xl text-sm text-ink-500">
+        Enough to cover expected sales today and tomorrow, plus a little extra for a busy day, minus what is already on the shelf. Soonest to run out first.
+        {isAssumed && <span className="font-semibold text-status-wait-fg"> Practice mode: expected sales come from sample data; the shelf counts are real.</span>}
       </p>
       {needed.length === 0 ? (
-        <p className="mt-4 text-sm text-ink-500">Nothing needs baking to cover today and tomorrow.</p>
+        <p className="mt-4 text-sm text-ink-500">Nothing needs baking — the shelf covers today and tomorrow.</p>
       ) : (
         <div className="mt-4">
           <Table caption="Restock recommendations">
             <Thead>
               <Tr className="hover:bg-transparent">
                 <Th>Product</Th>
-                <Th align="right">On hand</Th>
+                <Th align="right">On the shelf</Th>
                 <Th>Runs out</Th>
                 <Th align="right">Bake</Th>
               </Tr>
