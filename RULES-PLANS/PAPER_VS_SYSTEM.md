@@ -72,6 +72,28 @@ Choose one:
    delivery order cannot be dispatched until it is paid. Then remove COD
    from p. 16.
 
+**Decided 2026-10-08: option 2.** The client does not allow cash on
+delivery. The system change is planned in `NO_COD_PLAN.md`; the paper
+changes for it are listed at the end of that plan.
+
+## Re-check of `docs/PECTRACK_REVISED.pdf` (third upload, 2026-10-08)
+
+Part A and R1–R7 were applied correctly: A1, A2, A3, A4, A5, A11, A12
+(React, Tailwind), R1–R6. A7 and A8 were handled by **deleting** the
+MediaDevices and OOP sections on p. 70, not by replacing them. That is
+acceptable, because the file-upload and modular-design text was optional.
+The pages from p. 88 onward moved one more page later in this upload
+(for example, CUSTOMER TABLE is now on p. 101).
+
+Still open:
+- p. 16: "…in addition to the option of cash on delivery" — remove it
+  once the change in `NO_COD_PLAN.md` is built.
+- p. 92: Delivery Personnel "record cash collected on delivery" — same.
+- p. 86: "includedto" should be "included to" (typo from the edit).
+- p. 16: "Payment and Billing Module" heading printed twice (older error).
+- p. 67/68 (optional): "Node.js (Version 22 or later)"; "Chart.js
+  (Version 4.5)" spacing.
+
 ---
 
 ## Part A — Factual errors in the paper (fix regardless)
