@@ -401,7 +401,7 @@ Ranked by impact. These are fixes to the **code or data**, not the paper.
 | # | Status | What was done |
 |---|---|---|
 | H1 | Done | The seed script logs in without sending an OTP email and builds orders that fit today's rules (live orders get a pickup/delivery time; cancellations get a reason). Demo data was cleared and re-seeded (57 orders), assumed demand regenerated to Oct 7, and the forecast run once. |
-| H2 | Done (hours still to confirm) | Name, address, hours and phones live in `src/lib/bakery.js`; the footer, Visit Us, Home, Our Story and checkout read from it. The real opening hours still need the client's answer — change them once in that file. |
+| H2 | Done | Name, address, hours and phones live in `src/lib/bakery.js`; the footer, Visit Us, Home, Our Story and checkout read from it. Hours follow the bakery's own About page (Daily 5:00 AM – 8:00 PM, fresh batches at 5 AM and 3 PM), adopted 2026-10-13. |
 | H3 | Done | The 22 files moved to `docs/code-walkthrough/`, with a README saying they describe an earlier version. |
 | H4 | Done | `/summary` no longer computes the low-stock or expired lists. |
 | H5 | Done | The Reports → Inventory tab uses the same live rule as the Dashboard and Inventory page (stock at or under the minimum). `stock_alerts` remains the alert history. |

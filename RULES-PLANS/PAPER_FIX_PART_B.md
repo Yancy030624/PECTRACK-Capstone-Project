@@ -389,13 +389,15 @@ ends "…update the order status in real time."
 **Replace with:**
 > After the delivery personnel taps "Start delivery", the card shows the proof-of-delivery photo upload, which opens the phone's camera or gallery and accepts up to five photos, a "Mark delivered" button, and a "Mark failed" button with a field for the reason.
 
-**Mismatch to settle (p. 16):** the paper says delivery personnel "are
-also required to upload proof of delivery". The system allows marking an
-order delivered **without** a photo, and the failure reason is optional.
-Choose one:
-- Reword p. 16 to "are expected to upload proof of delivery".
-- Have the system enforce it: Delivered needs at least one photo, and
-  Failed needs a reason. This is a small change, with tests.
+**Proof of delivery (p. 16) — decided 2026-10-13: reword the paper.** The
+system lets delivery personnel upload photos but does not require one,
+and the failure reason is optional.
+
+**Find** (pp. 15–16):
+> To ensure accountability and verification, delivery personnel are also required to upload proof of delivery, such as a photo or confirmation, once the order has been successfully handed over to the customer.
+
+**Replace with:**
+> For accountability, delivery personnel can also upload photos as proof of delivery once the order has been handed over to the customer.
 
 ### p. 34 — Figure 9 description
 
