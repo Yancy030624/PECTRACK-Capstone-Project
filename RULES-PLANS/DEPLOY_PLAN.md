@@ -200,8 +200,11 @@ Use the Gmail account that sends PECTRACK's emails today (`SMTP_USER` in
 2. In the same project, **+ New → GitHub Repository →
    `PECTRACK-Capstone-Project`**, branch `main`.
 3. In that service's **Settings**:
-   - **Build command:** `npm ci && npm run build`
-   - **Start command:** `npm start`
+   - **Build command:** `npm run build`. Railway's own install step already
+     runs `npm ci` (including the dev tools, such as Vite). Running it again
+     fails with `EBUSY … node_modules/.vite`, because Railway keeps that
+     folder locked as a build cache.
+   - **Start command:** `npm start`; **Healthcheck path:** `/api/health`
    - **Networking → Generate Domain.** This is the public address, e.g.
      `https://pectrack-production.up.railway.app`.
    - Leave **Serverless** (app sleeping) **off**.
