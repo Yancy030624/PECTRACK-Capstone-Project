@@ -15,6 +15,45 @@ configuration that Claude can do.
 
 ---
 
+## Findings (2026-10-14)
+
+**Host checks, from each host's own docs:**
+
+| | Railway | Render (free) |
+|---|---|---|
+| Sleeps when idle? | No. "Serverless" sleeping is opt-in per service — leave it off. | Yes, after 15 minutes; waking takes about a minute. |
+| Outbound SMTP? | **Blocked** on Trial and Hobby ("SMTP is only available on the Pro plan and above"). | **Blocked** on free web services (ports 25, 465, 587). |
+| Disk for uploads | Volumes: 0.5 GB on Trial, 5 GB on Hobby. | None on free. |
+| Database | Included; check the PostgreSQL version when adding it. | Free database expires after 30 days. |
+| Cost | Trial: one-time $5 credit, 30 days. Hobby: $5/month, includes $5 of usage, needs a card. | Free, with the limits above. |
+
+**Choice: Railway**, because it doesn't sleep, which matters for measuring loading time. Start on the Trial; move to Hobby if the $5 runs out
+before testing ends.
+
+**Email must change on either host (D5 is now required).** Gmail over
+SMTP cannot be used. The decision is in D5 below.
+
+**PayMongo test mode, checked with the team's test key:**
+- A full GCash test payment works end to end. PayMongo's simulator
+  authorizes it, and the checkout-session lookup used by
+  confirm-on-return returns the paid payment's id (`pay_…`).
+- **The ₱100 floor is not PayMongo's.** Test-mode GCash payments of ₱1,
+  ₱19.99, ₱20 and ₱28 all went through. Our own
+  `paymongoMinimumAmountCentavos` (₱100) is what refuses small balances,
+  and with no cash on delivery that blocks small delivery orders from
+  paying online. **Decision for the team:** lower the floor to ₱1, which
+  removes it in practice. Live mode may have its own limit; if so,
+  PayMongo refuses the payment and the customer pays at the counter.
+- PayMongo's checkout asks the payer for their name and email. **Possible
+  improvement:** the system can pass the customer's name, email and
+  phone when it creates the checkout, so the customer doesn't type them
+  again.
+- The checkout page shows the PayMongo account's business name (currently
+  the account owner's name). **(team)** Set it to Pecto's Bakery in
+  PayMongo's business settings before testers see it.
+
+---
+
 ## Decisions
 
 **D1. One web service serves both the website and the API, from the same
@@ -50,11 +89,30 @@ forecast), so testers see today's orders.
 **D4. Secrets live only in the host's environment settings.** Never in
 git, never in the plan. The table in Step 4 lists them.
 
-**D5. Email fallback, only if the host blocks SMTP.** Switch
-`server/lib/mail.js` from Gmail SMTP to an email service with an HTTPS
-API (for example Brevo or Resend; both have free tiers). This is a
-small code change: one function sends mail, so only that function
-changes. Decide in Step 1, once the host is known.
+**D5. Email over HTTPS instead of SMTP — required (see Findings).** One
+function in `server/lib/mail.js` sends every email, so only that
+function changes. Options, for the team to choose:
+
+1. **Gmail API with the same Gmail account (recommended).**
+   - Mail still comes from the bakery's Gmail address, so it lands in
+     inboxes as it does now.
+   - Free, and no new dependency: two HTTPS calls, to get a token and
+     to send.
+   - Setup (team, with Claude's steps): a Google Cloud project with the
+     Gmail API on, an OAuth client, and a one-time sign-in that gives a
+     refresh token, stored as an environment variable.
+2. **An email service with a free tier (Brevo, about 300 emails a day).**
+   - Quicker to set up.
+   - Sending "from" a gmail.com address through a third party can fail
+     Gmail's DMARC checks and land in spam. Check the service's current
+     rules on free-mail senders first.
+3. **Buy a domain** (for example pectosbakery.com) and use an email
+   service with that domain.
+   - The most professional, and it also gives the site a proper address.
+   - It costs money and takes DNS setup.
+
+The test suite keeps printing mail to the console instead of sending it
+(`NODE_TEST_CONTEXT`), whichever option is chosen.
 
 **D6. PayMongo stays in test mode for testing.** Test keys (`sk_test_…`)
 use PayMongo's GCash simulator: no real money moves. Live keys need
