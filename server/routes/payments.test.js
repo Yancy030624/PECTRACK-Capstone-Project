@@ -165,8 +165,6 @@ describe('payment & billing', () => {
   const paymongoWebhookSecret = 'whsk_test_fixture_secret_for_this_file_only'
   config.paymongo.secretKey = 'sk_test_fixture_key_for_this_file_only'
   config.paymongo.webhookSecret = paymongoWebhookSecret
-  config.paymongo.successUrl = 'http://localhost:5173/'
-  config.paymongo.cancelUrl = 'http://localhost:5173/'
 
   const originalFetch = globalThis.fetch
   // Lets one test make PayMongo artificially slow, to prove no database
@@ -178,8 +176,20 @@ describe('payment & billing', () => {
   // the next refund call answer with an error, for the retry test.
   const refundRequests = []
   let refundsFail = false
+  // Every checkout session the stub created, by id, so the confirm-on-return
+  // tests can mark one paid or expired the way PayMongo would, and read back
+  // the success_url it was given.
+  const checkoutSessions = new Map()
+  let sessionLookupsFail = false
   globalThis.fetch = async (url, options) => {
     if (!String(url).startsWith('https://api.paymongo.com/')) return originalFetch(url, options)
+    const lookup = String(url).match(/\/checkout_sessions\/([^/]+)$/)
+    if (lookup) {
+      if (sessionLookupsFail) return { ok: false, status: 500, json: async () => ({ errors: [{ detail: 'stubbed lookup failure' }] }) }
+      const session = checkoutSessions.get(decodeURIComponent(lookup[1]))
+      if (!session) return { ok: false, status: 404, json: async () => ({ errors: [{ detail: 'not found' }] }) }
+      return { ok: true, json: async () => ({ data: { id: lookup[1], attributes: { status: session.status, payments: session.payments } } }) }
+    }
     if (/\/refunds$/.test(String(url))) {
       const attributes = JSON.parse(options.body).data.attributes
       refundRequests.push(attributes)
@@ -187,13 +197,14 @@ describe('payment & billing', () => {
       const id = `ref_test_${crypto.randomUUID().slice(0, 12)}`
       return { ok: true, json: async () => ({ data: { id, attributes: { status: 'pending', amount: attributes.amount, payment_id: attributes.payment_id } } }) }
     }
-    // Only these two PayMongo calls are ever made by this file's code
-    // paths — asserted rather than silently branching, so this stub fails
-    // loudly the day lib/paymongo.js starts calling a third endpoint this
-    // fixture doesn't know how to fake.
+    // Only these three PayMongo calls are ever made by this file's code
+    // paths (session lookups are answered above) — asserted rather than
+    // silently branching, so this stub fails loudly the day lib/paymongo.js
+    // starts calling an endpoint this fixture doesn't know how to fake.
     assert.match(String(url), /\/checkout_sessions$/, 'the fetch stub only knows how to fake checkout sessions and refunds')
     if (paymongoStubDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, paymongoStubDelayMs))
     const id = `cs_test_${crypto.randomUUID().slice(0, 12)}`
+    checkoutSessions.set(id, { status: 'active', payments: [], successUrl: JSON.parse(options.body).data.attributes.success_url })
     return { ok: true, json: async () => ({ data: { id, attributes: { checkout_url: `https://checkout.paymongo.com/${id}` } } }) }
   }
 
@@ -1150,5 +1161,76 @@ describe('payment & billing', () => {
       const response = await fetch(`${baseUrl}/api/payments?limit=999999`, { headers: { Cookie: cashierCookie } })
       assert.equal(response.status, 200, 'an oversized limit must be capped, not refused')
     })
+  })
+
+  // ==========================================================================
+  // Confirm-on-return (POST /api/payments/:id/confirm): when the payer comes
+  // back from GCash, the payment screen asks PayMongo whether the checkout
+  // session was paid, so the payment is recorded even when the webhook
+  // cannot reach this server.
+  // ==========================================================================
+  const confirmPayment = (paymentId, cookie = customerCookie) =>
+    fetch(`${baseUrl}/api/payments/${paymentId}/confirm`, { method: 'POST', headers: { Cookie: cookie } })
+
+  test('a customer is sent back to that order in My Payments, and confirm settles a paid session', async () => {
+    const { orderId } = await createOrder(2) // total 200
+    const intent = await createIntent(orderId, customerCookie)
+    assert.equal(intent.status, 201)
+    const { paymentId } = await intent.json()
+    const sessionId = await gatewayReferenceFor(paymentId)
+    assert.match(checkoutSessions.get(sessionId).successUrl, new RegExp(`/account\\?tab=payments&order=${orderId}$`))
+
+    // Not paid yet: the attempt stays pending.
+    const early = await confirmPayment(paymentId)
+    assert.equal(early.status, 200)
+    assert.equal((await early.json()).status, 'PENDING')
+
+    checkoutSessions.get(sessionId).payments = [{ id: 'pay_confirm_test', type: 'payment', attributes: { status: 'paid' } }]
+    const paid = await confirmPayment(paymentId)
+    assert.equal((await paid.json()).status, 'PAID')
+    const row = (await pool.query('SELECT status, gateway_payment_id FROM payments WHERE payment_id = $1', [paymentId])).rows[0]
+    assert.equal(row.status, 'PAID')
+    assert.equal(row.gateway_payment_id, 'pay_confirm_test', 'the PayMongo payment id is kept, for a later refund')
+    assert.equal((await getOrder(orderId)).payment.isFullyPaid, true)
+
+    // The webhook arriving afterwards is a no-op, not a second credit.
+    const event = buildPaymentEvent('payment.paid', sessionId, 'pay_confirm_test')
+    assert.equal((await sendWebhook(event, signWebhook(event))).status, 200)
+    const count = await pool.query(`SELECT COUNT(*)::int AS n FROM payments WHERE order_id = $1 AND status = 'PAID'`, [orderId])
+    assert.equal(count.rows[0].n, 1)
+    assert.equal((await getOrder(orderId)).payment.amountPaid, '200.00')
+  })
+
+  test('confirm marks an expired, unpaid session failed, so a new attempt can start', async () => {
+    const { orderId } = await createOrder(2)
+    const { paymentId } = await (await createIntent(orderId, customerCookie)).json()
+    checkoutSessions.get(await gatewayReferenceFor(paymentId)).status = 'expired'
+    assert.equal((await (await confirmPayment(paymentId)).json()).status, 'FAILED')
+    assert.equal((await createIntent(orderId, customerCookie)).status, 201, 'the failed attempt no longer blocks a new one')
+  })
+
+  test('confirm is scoped like the receipt: another customer gets 404, staff may confirm any', async () => {
+    const { orderId } = await createOrder(2)
+    const { paymentId } = await (await createIntent(orderId, customerCookie)).json()
+    assert.equal((await confirmPayment(paymentId, secondCustomerCookie)).status, 404)
+    assert.equal((await confirmPayment(paymentId, cashierCookie)).status, 200)
+  })
+
+  test('confirm reports a PayMongo outage as 502 and leaves the payment pending', async () => {
+    const { orderId } = await createOrder(2)
+    const { paymentId } = await (await createIntent(orderId, customerCookie)).json()
+    sessionLookupsFail = true
+    try {
+      assert.equal((await confirmPayment(paymentId)).status, 502)
+    } finally {
+      sessionLookupsFail = false
+    }
+    assert.equal((await pool.query('SELECT status FROM payments WHERE payment_id = $1', [paymentId])).rows[0].status, 'PENDING')
+  })
+
+  test('staff paying online are sent back to the dashboard', async () => {
+    const { orderId } = await createOrder(2)
+    const { paymentId } = await (await createIntent(orderId, cashierCookie)).json()
+    assert.match(checkoutSessions.get(await gatewayReferenceFor(paymentId)).successUrl, /\/dashboard$/)
   })
 })

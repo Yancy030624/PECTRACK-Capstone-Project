@@ -87,6 +87,11 @@ export function PaymentBilling({ user, params, onNavigate }) {
 
   useEffect(() => {
     loadOrders()
+    // Back from PayMongo: the return link names the order
+    // (?order=<id>, routes/payments.js POST /intent), so its receipt opens
+    // at once — and opening it confirms the payment (below).
+    const returnedOrderId = Number(new URLSearchParams(window.location.search).get('order'))
+    if (Number.isInteger(returnedOrderId) && returnedOrderId > 0) openOrder(returnedOrderId)
   }, [])
 
   // "Still owes" is the question this screen exists to answer, so it is
@@ -104,7 +109,21 @@ export function PaymentBilling({ user, params, onNavigate }) {
     setPaymentErrors({})
     setNotice('')
     try {
-      const data = await apiGet(`/api/orders/${orderId}`)
+      let data = await apiGet(`/api/orders/${orderId}`)
+      // Confirm-on-return: ask the server to check each pending GCash
+      // attempt with PayMongo (POST /api/payments/:id/confirm), so a payer
+      // back from GCash sees the order paid without waiting for PayMongo's
+      // webhook. A failed check is not an error here — the payment stays
+      // pending and the webhook can still settle it.
+      const pending = data.order.status === 'CANCELLED' ? [] : data.order.payment.payments.filter((payment) => payment.status === 'PENDING')
+      if (pending.length) {
+        const results = await Promise.all(pending.map((payment) => apiPost(`/api/payments/${payment.id}/confirm`, {}).catch(() => null)))
+        if (results.some((result) => result && result.status !== 'PENDING')) {
+          data = await apiGet(`/api/orders/${orderId}`)
+          if (results.some((result) => result?.status === 'PAID')) setNotice('GCash payment confirmed.')
+          loadOrders()
+        }
+      }
       setOrderDetail(data.order)
     } catch (error) {
       setMessage(error.message)
@@ -300,7 +319,7 @@ export function PaymentBilling({ user, params, onNavigate }) {
               >
                 {gcashSubmitting ? 'Redirecting to GCash…' : 'Pay with GCash'}
               </button>
-              <p className="mt-1.5 text-xs text-ink-500">You'll be taken to PayMongo's secure checkout page. If you just paid and this still shows a balance, refresh in a moment — confirmation can take a few seconds.</p>
+              <p className="mt-1.5 text-xs text-ink-500">You'll be taken to PayMongo's secure checkout page, then brought back here, where the payment is confirmed.</p>
             </div>
           )}
 

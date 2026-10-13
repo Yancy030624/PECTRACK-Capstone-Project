@@ -22,7 +22,7 @@ import { getBillingSummary } from '../lib/billing.js'
 import { config } from '../config.js'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
-import { createCheckoutSession, PaymongoApiError, paymongoMinimumAmountCentavos, PaymongoWebhookVerificationError, verifyPaymongoWebhook } from '../lib/paymongo.js'
+import { PaymongoApiError, PaymongoWebhookVerificationError, createCheckoutSession, paymongoMinimumAmountCentavos, retrieveCheckoutSession, verifyPaymongoWebhook } from '../lib/paymongo.js'
 import { describeGatewayRefunds, settleGatewayRefunds } from '../lib/refunds.js'
 import { dateRangeSql, parseDateRange } from '../lib/reporting.js'
 import { normalize, parseId } from '../lib/validation.js'
@@ -92,6 +92,60 @@ const paymentListSelectQuery = `SELECT p.payment_id, p.order_id, o.status AS ord
        LEFT JOIN cashiers rc ON rc.user_id = p.recorded_by
        LEFT JOIN delivery_personnel rd ON rd.user_id = p.recorded_by
        LEFT JOIN admins fa ON fa.user_id = p.refunded_by`
+
+// ============================================================================
+// Settling a gateway payment — shared by POST /webhook (PayMongo tells us)
+// and POST /:id/confirm (we ask PayMongo when the customer comes back).
+// Both can report the same payment, in either order and more than once, so
+// each write is conditional on the row still being open: the first report
+// settles it and every later one matches no row.
+// ============================================================================
+
+// A CANCELLED intent can still be paid: the checkout link was live in the
+// customer's browser when it was closed — by an order cancel, or by staff
+// clearing an abandoned attempt (PATCH /:id below) — and by the time PayMongo
+// reports it their money has moved. Ignoring it would leave collected money
+// with no record at all. What it becomes depends on the ORDER, not on which
+// of those closed the intent:
+//
+//   - the order still stands: PAID, the money is owed and has arrived (an
+//     intent cleared by mistake, then paid after all);
+//   - the order is CANCELLED: PAID then immediately REFUNDED, the same
+//     transition the cancel itself performs, refunded_by NULL because no
+//     person did this — and settleGatewayRefunds sends the money back
+//     through PayMongo.
+//
+// gateway_payment_id (migration 009) is the PayMongo Payment id — the id
+// its Refunds API needs. Written on every paid row, cancelled order or not,
+// so a LATER cancel can refund it too.
+//
+// NO order-row lock, unlike every other money-writing path in this file.
+// Nothing here needs one: the UPDATE targets exactly one payments row by its
+// unique gateway_reference and takes that row's lock itself. There is no
+// aggregate computed and no overpayment guard re-run (PHASE6.5_PLAN.md,
+// Decision 9).
+async function markGatewayPaymentPaid(checkoutSessionId, paymongoPaymentId) {
+  const settled = await pool.query(
+    `UPDATE payments p
+        SET status = CASE WHEN o.status = 'CANCELLED' THEN 'REFUNDED' ELSE 'PAID' END::payment_status,
+            payment_date = CURRENT_TIMESTAMP,
+            gateway_payment_id = COALESCE($2, p.gateway_payment_id),
+            refunded_at = CASE WHEN o.status = 'CANCELLED' THEN CURRENT_TIMESTAMP ELSE p.refunded_at END,
+            refund_reason = CASE WHEN o.status = 'CANCELLED' THEN 'Order was cancelled before the gateway confirmed this payment.' ELSE p.refund_reason END
+       FROM orders o
+      WHERE o.order_id = p.order_id AND p.gateway_reference = $1 AND p.status IN ('PENDING', 'CANCELLED')
+    RETURNING p.order_id, p.status`,
+    [checkoutSessionId, paymongoPaymentId],
+  )
+  if (settled.rows[0]?.status === 'REFUNDED') {
+    // Outside any transaction, after the ledger write — see lib/refunds.js.
+    await settleGatewayRefunds(settled.rows[0].order_id)
+  }
+}
+
+async function markGatewayPaymentFailed(checkoutSessionId) {
+  await pool.query(`UPDATE payments SET status = 'FAILED' WHERE gateway_reference = $1 AND status = 'PENDING'`, [checkoutSessionId])
+}
 
 // ============================================================================
 // POST /api/payments/webhook — PayMongo's server, not a signed-in user.
@@ -175,68 +229,12 @@ router.post('/webhook', async (request, response) => {
     return response.status(200).json({ received: true })
   }
 
-  // ------------------------------------------------------------------
-  // PATTERN E (PHASE6.5_PLAN.md) — the conditional UPDATE IS the
-  // idempotency guard, not a separate check-then-write. PayMongo
-  // redelivers webhooks on failure or timeout, so the SAME event can
-  // arrive more than once. The first delivery finds the row PENDING and
-  // flips it; every redelivery after that finds the row already
-  // PAID/FAILED, matches zero rows, and is correctly treated as a no-op
-  // — not an error, not a second credit. This is the fifth use of this
-  // exact shape in the codebase (stock deduction, the order status claim,
-  // change-request review, the Phase 6 overpayment guard in POST / below)
-  // — not a new idea for this file.
-  //
-  // NO order-row lock here, unlike every other money-writing route in
-  // this app. Nothing about this UPDATE needs one: it targets exactly one
-  // payments row by its own unique gateway_reference, and the UPDATE
-  // statement itself takes the row lock it needs for that. There is no
-  // aggregate being computed and no overpayment guard being re-run here —
-  // see Decision 9 for exactly why not.
-  // ------------------------------------------------------------------
-  if (eventType === 'payment.paid') {
-    // A CANCELLED intent can still be paid: the checkout link was live in
-    // the customer's browser when it was closed — by an order cancel, or
-    // by staff clearing an abandoned attempt (PATCH /:id below) — and by
-    // the time this event arrives their money has moved. Ignoring it
-    // would leave collected money with no record at all. What it becomes
-    // depends on the ORDER, not on which of those closed the intent:
-    //
-    //   - the order still stands: PAID, the money is owed and has
-    //     arrived (an intent cleared by mistake, then paid after all);
-    //   - the order is CANCELLED: PAID then immediately REFUNDED, the
-    //     same transition the cancel itself performs, refunded_by NULL
-    //     because no person did this — and settleGatewayRefunds below
-    //     sends the money back through PayMongo.
-    //
-    // gateway_payment_id (migration 009) is the PayMongo Payment id this
-    // event carries — the only place we ever learn it, and the id its
-    // Refunds API needs. Written on every paid row, cancelled order or
-    // not, so a LATER cancel can refund it too.
-    const paymongoPaymentId = event?.data?.attributes?.data?.id ?? null
-    const settled = await pool.query(
-      `UPDATE payments p
-          SET status = CASE WHEN o.status = 'CANCELLED' THEN 'REFUNDED' ELSE 'PAID' END::payment_status,
-              payment_date = CURRENT_TIMESTAMP,
-              gateway_payment_id = COALESCE($2, p.gateway_payment_id),
-              refunded_at = CASE WHEN o.status = 'CANCELLED' THEN CURRENT_TIMESTAMP ELSE p.refunded_at END,
-              refund_reason = CASE WHEN o.status = 'CANCELLED' THEN 'Order was cancelled before the gateway confirmed this payment.' ELSE p.refund_reason END
-         FROM orders o
-        WHERE o.order_id = p.order_id AND p.gateway_reference = $1 AND p.status IN ('PENDING', 'CANCELLED')
-      RETURNING p.order_id, p.status`,
-      [checkoutSessionId, paymongoPaymentId],
-    )
-    if (settled.rows[0]?.status === 'REFUNDED') {
-      // Outside any transaction, after the ledger write — see lib/refunds.js.
-      await settleGatewayRefunds(settled.rows[0].order_id)
-    }
-  } else {
-    await pool.query(
-      `UPDATE payments SET status = 'FAILED'
-        WHERE gateway_reference = $1 AND status = 'PENDING'`,
-      [checkoutSessionId],
-    )
-  }
+  // PATTERN E (PHASE6.5_PLAN.md) — the conditional UPDATE inside the
+  // helpers above IS the idempotency guard. PayMongo redelivers webhooks,
+  // and POST /:id/confirm may already have settled this payment; either
+  // way a repeat matches no open row and is a no-op, not a second credit.
+  if (eventType === 'payment.paid') await markGatewayPaymentPaid(checkoutSessionId, event?.data?.attributes?.data?.id ?? null)
+  else await markGatewayPaymentFailed(checkoutSessionId)
 
   return response.status(200).json({ received: true })
 })
@@ -585,6 +583,14 @@ router.post('/intent', billingRoles, async (request, response) => {
     return response.status(422).json({ message: `The remaining balance is below PayMongo's ₱${(paymongoMinimumAmountCentavos / 100).toFixed(2)} minimum for an online payment — settle it by cash or a GCash reference at the counter instead.` })
   }
 
+  // Where PayMongo sends the payer afterwards: back to this order's receipt,
+  // where POST /:id/confirm settles the payment at once (a customer to My
+  // Payments; staff to their dashboard). Built from CLIENT_ORIGIN, so it is
+  // right wherever the app is served.
+  const returnUrl = request.user.role === 'CUSTOMER'
+    ? `${config.clientOrigin}/account?tab=payments&order=${orderId}`
+    : `${config.clientOrigin}/dashboard`
+
   // ---- PHASE 2: the network call, holding no database resources. ---------
   let session
   try {
@@ -593,8 +599,8 @@ router.post('/intent', billingRoles, async (request, response) => {
       amountCentavos,
       referenceNumber: `order-${orderId}`,
       description: `PECTRACK order #${orderId}`,
-      successUrl: config.paymongo.successUrl,
-      cancelUrl: config.paymongo.cancelUrl,
+      successUrl: returnUrl,
+      cancelUrl: returnUrl,
     })
   } catch (error) {
     if (error instanceof PaymongoApiError) {
@@ -675,6 +681,46 @@ router.post('/intent', billingRoles, async (request, response) => {
   } finally {
     client.release()
   }
+})
+
+// POST /api/payments/:id/confirm — confirm-on-return. Asks PayMongo whether
+// a PENDING online payment went through, and settles it now instead of
+// waiting for the webhook — which cannot reach a server PayMongo cannot see
+// (a laptop, a test deployment before its webhook is registered), and which
+// can simply be late. The payment screen calls this for every pending
+// payment it shows, so a customer back from GCash sees the order paid.
+// Same scoping as PATCH /:id below: staff any, a customer only their own.
+router.post('/:id/confirm', billingRoles, async (request, response) => {
+  const paymentId = parseId(request.params.id)
+  if (!paymentId) return response.status(404).json({ message: 'Payment not found.' })
+
+  const existing = await pool.query('SELECT p.status, p.gateway_reference, o.customer_id FROM payments p JOIN orders o ON o.order_id = p.order_id WHERE p.payment_id = $1', [paymentId])
+  const payment = existing.rows[0]
+  if (!payment) return response.status(404).json({ message: 'Payment not found.' })
+  if (request.user.role === 'CUSTOMER') {
+    const customerResult = await pool.query('SELECT customer_id FROM customers WHERE user_id = $1', [request.user.id])
+    if (payment.customer_id == null || payment.customer_id !== customerResult.rows[0]?.customer_id) return response.status(404).json({ message: 'Payment not found.' })
+  }
+  // Already settled (by the webhook, or an earlier confirm): nothing to ask.
+  if (payment.status !== 'PENDING' || !payment.gateway_reference) return response.json({ status: payment.status })
+  if (!config.paymongo.secretKey) return response.status(503).json({ message: 'Online payment is not set up yet.' })
+
+  let session
+  try {
+    session = await retrieveCheckoutSession({ secretKey: config.paymongo.secretKey, checkoutSessionId: payment.gateway_reference })
+  } catch (error) {
+    if (error instanceof PaymongoApiError) return response.status(502).json({ message: 'The payment provider could not be reached. Please try again in a moment.' })
+    throw error
+  }
+
+  // Paid → settled exactly as the webhook would. Expired with nothing paid
+  // → the attempt is over, so it no longer blocks a new one. Still active
+  // and unpaid → the customer has not finished; leave it pending.
+  if (session.paidPaymentId) await markGatewayPaymentPaid(payment.gateway_reference, session.paidPaymentId)
+  else if (session.status === 'expired') await markGatewayPaymentFailed(payment.gateway_reference)
+
+  const current = await pool.query('SELECT status FROM payments WHERE payment_id = $1', [paymentId])
+  return response.json({ status: current.rows[0].status })
 })
 
 // PATCH /api/payments/:id — closes an abandoned gateway intent. The only

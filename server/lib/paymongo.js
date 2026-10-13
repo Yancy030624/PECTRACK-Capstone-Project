@@ -118,6 +118,36 @@ export async function createCheckoutSession({ secretKey, amountCentavos, referen
   return { id: body.data.id, checkoutUrl: body.data.attributes.checkout_url }
 }
 
+// Reads a Checkout Session back from PayMongo — the confirm-on-return
+// check (routes/payments.js POST /:id/confirm). The webhook is the normal
+// way a payment is confirmed, but it needs PayMongo to reach this server
+// over the internet; asking PayMongo directly when the customer comes back
+// works wherever the server runs. Shape per docs.paymongo.com's Checkout
+// Session resource (checked 2026-10-13): attributes.status is 'active' or
+// 'expired', and attributes.payments lists the Payments made through the
+// session — each { id: 'pay_…', attributes: { status: 'paid', … } }. That
+// list is returned only to the secret key, which is what this call uses.
+export async function retrieveCheckoutSession({ secretKey, checkoutSessionId }) {
+  let response
+  try {
+    response = await fetch(`${paymongoApiBase}/checkout_sessions/${encodeURIComponent(checkoutSessionId)}`, {
+      signal: AbortSignal.timeout(paymongoRequestTimeoutMs),
+      headers: { Authorization: `Basic ${Buffer.from(`${secretKey}:`).toString('base64')}` },
+    })
+  } catch (error) {
+    throw new PaymongoApiError('Could not reach PayMongo.', { status: null, body: { cause: error.name } })
+  }
+
+  const body = await response.json().catch(() => null)
+  if (!response.ok) {
+    throw new PaymongoApiError('PayMongo rejected the checkout session lookup.', { status: response.status, body })
+  }
+
+  const attributes = body?.data?.attributes ?? {}
+  const paid = (attributes.payments ?? []).find((payment) => payment?.attributes?.status === 'paid')
+  return { status: attributes.status ?? null, paidPaymentId: paid?.id ?? null }
+}
+
 // Refunds a settled PayMongo Payment (pay_...) — the id the payment.paid
 // webhook carries, stored as payments.gateway_payment_id (migration 009).
 // A checkout session id cannot be refunded; only the Payment it produced.
