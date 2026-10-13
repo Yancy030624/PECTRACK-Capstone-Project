@@ -161,9 +161,13 @@ Use the Gmail account that sends PECTRACK's emails today (`SMTP_USER` in
      and developer contact.
    - Scopes: you can skip adding them here; the script asks for
      `gmail.send` itself.
-   - **Publish the app** (Audience → **Publish app**, status **In
-     production**). Do not leave it in "Testing": a Testing app's sign-in
-     expires after 7 days, and the emails would stop.
+   - **For now, stay in Testing** and add the sending Gmail under
+     **Audience → Test users**. Google enables **Publish app** only after
+     the **Branding** page has a home page, a privacy policy and terms of
+     service on the app's own site, so publishing waits for Step 6b. A
+     Testing app's sign-in expires after **7 days**: until then, re-run
+     `npm run gmail:auth` and update `GMAIL_REFRESH_TOKEN` (locally and on
+     Railway) when emails stop.
 4. **Credentials (Clients) → Create client → Application type: Desktop
    app**, name **PECTRACK mail**. Copy the **Client ID** and **Client
    secret** into `.env`:
@@ -257,6 +261,22 @@ Use the Gmail account that sends PECTRACK's emails today (`SMTP_USER` in
    mark it delivered.
 4. Check that `http://` redirects to `https://` and that
    `Strict-Transport-Security` is present.
+
+### Step 6b — publish the Gmail sign-in **(team)**
+
+Once the site is live, in Google Cloud → **Branding** (Google Auth
+Platform), fill in:
+- **App home page:** `https://<public address>/`
+- **Privacy policy:** `https://<public address>/privacy`
+- **Terms of service:** `https://<public address>/terms`
+- **Authorized domains:** the public address's domain. Google may refuse
+  a Railway subdomain because the team does not own it. If it does,
+  stay in Testing and refresh the token weekly, or buy a domain.
+
+Then **Audience → Publish app** (status **In production**), run
+`npm run gmail:auth` once more, and put the new `GMAIL_REFRESH_TOKEN` in
+Railway's Variables. A token from an app in production does not expire
+after 7 days.
 
 ### Step 7 — PayMongo webhook **(team, then Claude verifies)**
 
