@@ -15,7 +15,7 @@ export function ContactPage() {
           <InfoCard icon="clock" title="Opening hours">
             <p>{bakery.hours.days}</p>
             <p className="font-display text-2xl font-bold text-cocoa-900">{bakery.hours.time}</p>
-            {bakery.hours.closedNote && <p className="mt-1 text-sm text-cocoa-500">{bakery.hours.closedNote}</p>}
+            {bakery.hours.note && <p className="mt-1 text-sm text-cocoa-500">{bakery.hours.note}</p>}
           </InfoCard>
           <InfoCard icon="phone" title="Call us">
             {bakery.phones.map((number) => (

@@ -2,10 +2,9 @@
 // Visit Us, Home, Our Story) reads them from here, so a change to the
 // hours or a phone number is one edit, not five.
 //
-// HOURS — to confirm with the client. The site has used Monday–Saturday,
-// 6:00 AM – 8:00 PM; the bakery's own About page says "Daily 5:00 AM –
-// 8:00 PM, fresh batches at 5 AM and 3 PM". Change the values below once
-// confirmed and every page follows.
+// HOURS — from the bakery's own About page ("Daily 5:00 AM – 8:00 PM,
+// fresh batches at 5 AM and 3 PM"), adopted by the team on 2026-10-13.
+// Change the values below and every page follows.
 export const bakery = {
   name: "Pecto's Bakery",
   tagline: "Lucban's Best Delicacies",
@@ -13,10 +12,10 @@ export const bakery = {
   street: '93 Quezon Avenue',
   town: 'Lucban, Quezon',
   hours: {
-    days: 'Monday – Saturday',
-    time: '6:00 AM – 8:00 PM',
-    opens: '6 AM',
-    closedNote: 'Closed on Sundays',
+    days: 'Daily',
+    time: '5:00 AM – 8:00 PM',
+    opens: '5 AM',
+    note: 'Fresh batches at 5 AM and 3 PM',
   },
   phones: ['(042) 540-4366', '(042) 540-8838'],
 }
