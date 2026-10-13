@@ -9,7 +9,8 @@ import assert from 'node:assert/strict'
 import { after, before, beforeEach, describe, test } from 'node:test'
 import app from '../app.js'
 import { pool } from '../db.js'
-import { rateLimit, resetRateLimits } from './security.js'
+import { config } from '../config.js'
+import { httpsRedirect, rateLimit, resetRateLimits } from './security.js'
 
 describe('security headers', () => {
   let server
@@ -188,5 +189,27 @@ describe('rate limiting', () => {
     assert.equal(await run('198.51.100.1'), 200)
     assert.equal(await run('198.51.100.1'), 429)
     assert.equal(await run('198.51.100.2'), 200, 'one caller flooding must not lock out everyone else')
+  })
+})
+
+// The host's health check arrives over plain HTTP from inside the platform;
+// redirecting it to HTTPS made the first Railway deploy fail its health check.
+describe('HTTPS redirect in production', () => {
+  const run = (path, secure = false) => {
+    let redirectedTo = null
+    let passed = false
+    httpsRedirect({ path, secure, originalUrl: path, headers: { host: 'pectrack.example' } }, { redirect: (_status, url) => { redirectedTo = url } }, () => { passed = true })
+    return { redirectedTo, passed }
+  }
+  test('plain HTTP is redirected, except the health check', () => {
+    const original = config.isProduction
+    config.isProduction = true
+    try {
+      assert.deepEqual(run('/menu'), { redirectedTo: 'https://pectrack.example/menu', passed: false })
+      assert.deepEqual(run('/api/health'), { redirectedTo: null, passed: true })
+      assert.deepEqual(run('/menu', true), { redirectedTo: null, passed: true }, 'HTTPS (secure) passes')
+    } finally {
+      config.isProduction = original
+    }
   })
 })

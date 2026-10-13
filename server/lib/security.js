@@ -77,8 +77,14 @@ export function securityHeaders(_request, response, next) {
 // 308, not 302: it preserves the method and body, so a POST that arrives
 // over HTTP is replayed as a POST. A 302 would silently turn it into a
 // GET and the caller would see a confusing failure instead of a redirect.
+//
+// /api/health is exempt. The host's health check (Railway, DEPLOY_PLAN.md)
+// calls it from inside the platform over plain HTTP, with no
+// X-Forwarded-Proto — a redirect there reads as "unhealthy" and the
+// deploy never goes live. It returns only {"status":"ok"}, nothing worth
+// protecting with TLS.
 export function httpsRedirect(request, response, next) {
-  if (!config.isProduction || request.secure) return next()
+  if (!config.isProduction || request.secure || request.path === '/api/health') return next()
   return response.redirect(308, `https://${request.headers.host}${request.originalUrl}`)
 }
 
