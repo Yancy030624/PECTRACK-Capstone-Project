@@ -110,7 +110,7 @@ export function RegisterForm({ onSwitchToLogin }) {
             <p className={`text-xs ${form.password && passwordHint === strongPasswordHint ? 'text-crust-600' : 'text-stone-500'}`}>{passwordHint}</p>
             <label className="flex cursor-pointer items-start gap-2 rounded-xl bg-white/70 p-2.5 text-xs leading-5 shadow-sm">
               <input type="checkbox" checked={form.agree} onChange={(event) => updateField('agree', event.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-crust-600" />
-              I agree to the <a href="#terms" className="font-bold text-crust-600 underline">Terms of Service</a> and <a href="#privacy" className="font-bold text-crust-600 underline">Privacy Policy</a>.
+              I agree to the <a href="/terms" target="_blank" rel="noopener" className="font-bold text-crust-600 underline">Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener" className="font-bold text-crust-600 underline">Privacy Policy</a>.
             </label>
             {message && <p role="status" className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{message}</p>}
             <button type="submit" disabled={submitting} className="w-full rounded-2xl bg-crust-600 py-2.5 text-sm font-bold text-white shadow-lg shadow-crust-600/25 transition hover:bg-crust-700 focus:ring-4 focus:ring-cream-200 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Creating account…' : 'Create account'}</button>

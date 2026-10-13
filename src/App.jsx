@@ -13,6 +13,7 @@ import { AboutPage } from './pages/customer-storefront/AboutPage.jsx'
 import { CartPage } from './pages/customer-storefront/CartPage.jsx'
 import { CheckoutPage } from './pages/customer-storefront/CheckoutPage.jsx'
 import { ContactPage } from './pages/customer-storefront/ContactPage.jsx'
+import { PrivacyPage, TermsPage } from './pages/customer-storefront/LegalPages.jsx'
 import { HomePage } from './pages/customer-storefront/HomePage.jsx'
 import { MenuPage } from './pages/customer-storefront/MenuPage.jsx'
 import { OrderPlacedPage } from './pages/customer-storefront/OrderPlacedPage.jsx'
@@ -224,6 +225,8 @@ function AppRoutes() {
           <Route path="/menu" element={<MenuPage user={user} />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/contact" element={<ContactPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
           <Route path="/cart" element={<RequireCustomer user={user} openAuth={openAuth}><CartPage /></RequireCustomer>} />
           <Route path="/checkout" element={<RequireCustomer user={user} openAuth={openAuth}><CheckoutPage user={user} /></RequireCustomer>} />
           <Route path="/order-placed/:orderId" element={<RequireCustomer user={user} openAuth={openAuth}><OrderPlacedPage /></RequireCustomer>} />

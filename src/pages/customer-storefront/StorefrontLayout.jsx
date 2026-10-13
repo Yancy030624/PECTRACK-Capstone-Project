@@ -71,6 +71,10 @@ export function SiteFooter() {
         <p className="mx-auto flex max-w-7xl items-center gap-2 px-4 py-5 text-xs text-cream-200/70 sm:px-7">
           <WheatSprig className="h-4 w-4 text-butter-400" />
           © {new Date().getFullYear()} Pecto&apos;s Bakery · Orders by PECTRACK
+          <span className="ml-auto flex gap-4">
+            <Link to="/privacy" className="hover:text-cream-50 hover:underline">Privacy Policy</Link>
+            <Link to="/terms" className="hover:text-cream-50 hover:underline">Terms of Service</Link>
+          </span>
         </p>
       </div>
     </footer>
