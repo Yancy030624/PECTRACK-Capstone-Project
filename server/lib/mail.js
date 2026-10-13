@@ -91,7 +91,67 @@ export async function sendEmailChangedNotice({ to, name, newEmail }) {
   })
 }
 
+// ---------------------------------------------------------------------------
+// Gmail API over HTTPS (DEPLOY_PLAN.md, D5). Railway and Render block SMTP
+// on their free and cheap plans, so online the same Gmail account sends
+// through Google's HTTPS API instead: exchange the refresh token for a
+// short-lived access token, then post the message. No new dependency.
+// ---------------------------------------------------------------------------
+let gmailAccessToken = null
+let gmailAccessTokenExpiresAt = 0
+const gmailTimeoutMs = 15000
+
+async function getGmailAccessToken() {
+  if (gmailAccessToken && Date.now() < gmailAccessTokenExpiresAt - 60000) return gmailAccessToken
+  const { clientId, clientSecret, refreshToken } = config.mail.gmail
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    signal: AbortSignal.timeout(gmailTimeoutMs),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }),
+  })
+  const body = await response.json().catch(() => null)
+  if (!response.ok || !body?.access_token) throw new Error(`Gmail token request failed (${response.status}): ${body?.error ?? 'no body'}`)
+  gmailAccessToken = body.access_token
+  gmailAccessTokenExpiresAt = Date.now() + (body.expires_in ?? 3600) * 1000
+  return gmailAccessToken
+}
+
+// Header values come from this server (addresses on file, fixed subjects),
+// but a stray line break would still let one header become two, so they
+// are stripped. Non-ASCII subjects (an em dash) are RFC 2047 encoded; the
+// body is base64, so any UTF-8 text survives.
+const headerSafe = (value) => String(value).replace(/[\r\n]+/g, ' ')
+const encodeHeader = (value) => (/^[\x20-\x7e]*$/.test(value) ? value : `=?UTF-8?B?${Buffer.from(value, 'utf8').toString('base64')}?=`)
+
+async function sendViaGmailApi({ to, subject, text }) {
+  const message = [
+    `From: ${headerSafe(config.mail.from)}`,
+    `To: ${headerSafe(to)}`,
+    `Subject: ${encodeHeader(headerSafe(subject))}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    Buffer.from(text, 'utf8').toString('base64').replace(/.{76}/g, '$&\r\n'),
+  ].join('\r\n')
+  const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST',
+    signal: AbortSignal.timeout(gmailTimeoutMs),
+    headers: { Authorization: `Bearer ${await getGmailAccessToken()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ raw: Buffer.from(message, 'utf8').toString('base64url') }),
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    throw new Error(`Gmail send failed (${response.status}): ${body?.error?.message ?? 'no body'}`)
+  }
+}
+
 export async function sendMail({ to, subject, text }) {
+  if (config.mail.gmail) {
+    await sendViaGmailApi({ to, subject, text })
+    return { delivered: true }
+  }
   const transport = getTransporter()
   if (!transport) {
     if (!config.isProduction) console.log(`[mail not configured] To: ${to}\nSubject: ${subject}\n\n${text}`)

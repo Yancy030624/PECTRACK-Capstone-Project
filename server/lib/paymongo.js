@@ -28,11 +28,14 @@ const webhookReplayToleranceSeconds = 300
 // that a customer waiting on a checkout redirect gets a clear failure
 // rather than a spinner that never resolves.
 const paymongoRequestTimeoutMs = 15000
-// PayMongo's own stated minimum for any amount field, in centavos
-// (PHP 100.00). Enforced here, not just left for PayMongo's API to reject,
-// so a too-small balance fails with OUR clean error message rather than
-// whatever PayMongo's own validation error happens to say.
-export const paymongoMinimumAmountCentavos = 10000
+// The smallest balance sent to PayMongo, in centavos (PHP 1.00). It was
+// PHP 100.00, believed to be PayMongo's own minimum; on 2026-10-14 test-mode
+// GCash payments of PHP 1, 19.99, 20 and 28 all went through, and PayMongo's
+// docs state no minimum. With no cash on delivery, a PHP 100 floor stopped
+// small delivery orders from paying online at all. If live mode turns out
+// to have a limit, PayMongo refuses the session and the customer pays at
+// the counter.
+export const paymongoMinimumAmountCentavos = 100
 
 export class PaymongoWebhookVerificationError extends Error {}
 export class PaymongoApiError extends Error {
@@ -59,7 +62,10 @@ export class PaymongoApiError extends Error {
 // Decision 3's database-level guard — that stops two DIFFERENT requests
 // (a double-click) from creating two intents; this stops ONE logical
 // request, retried, from becoming two.
-export async function createCheckoutSession({ secretKey, amountCentavos, referenceNumber, description, successUrl, cancelUrl }) {
+// `billing` ({ name, email, phone }, each optional) fills in the payer's
+// details on PayMongo's page, so a signed-in customer does not type them
+// again. Omitted for a walk-in order, which has no customer on file.
+export async function createCheckoutSession({ secretKey, amountCentavos, referenceNumber, description, successUrl, cancelUrl, billing }) {
   let response
   try {
     response = await fetch(`${paymongoApiBase}/checkout_sessions`, {
@@ -94,6 +100,7 @@ export async function createCheckoutSession({ secretKey, amountCentavos, referen
           // way, and PayMongo's own receipt email is a separate feature
           // this phase does not turn on.
           send_email_receipt: false,
+          ...(billing ? { billing } : {}),
         },
       },
     }),

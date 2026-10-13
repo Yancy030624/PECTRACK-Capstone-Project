@@ -591,6 +591,16 @@ router.post('/intent', billingRoles, async (request, response) => {
     ? `${config.clientOrigin}/account?tab=payments&order=${orderId}`
     : `${config.clientOrigin}/dashboard`
 
+  // The order's customer, to fill in PayMongo's payer form. Only the fields
+  // on file are sent; a walk-in order sends none.
+  const payer = (await pool.query(
+    'SELECT c.name, c.email, c.contact_num FROM orders o JOIN customers c ON c.customer_id = o.customer_id WHERE o.order_id = $1',
+    [orderId],
+  )).rows[0]
+  const payerDetails = payer
+    ? Object.fromEntries(Object.entries({ name: payer.name, email: payer.email, phone: payer.contact_num }).filter(([, value]) => value))
+    : null
+
   // ---- PHASE 2: the network call, holding no database resources. ---------
   let session
   try {
@@ -601,6 +611,7 @@ router.post('/intent', billingRoles, async (request, response) => {
       description: `PECTRACK order #${orderId}`,
       successUrl: returnUrl,
       cancelUrl: returnUrl,
+      billing: payerDetails && Object.keys(payerDetails).length ? payerDetails : undefined,
     })
   } catch (error) {
     if (error instanceof PaymongoApiError) {

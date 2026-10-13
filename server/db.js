@@ -22,13 +22,20 @@ const { Pool } = pg
 // type — `SELECT oid FROM pg_type WHERE typname = 'date'`.
 pg.types.setTypeParser(1082, (value) => value)
 
-export const pool = new Pool({
-  host: config.db.host,
-  port: config.db.port,
-  database: config.db.database,
-  user: config.db.user,
-  password: config.db.password,
-})
+export const pool = new Pool(config.db.connectionString
+  ? {
+      connectionString: config.db.connectionString,
+      // Hosted databases often present a certificate Node cannot verify
+      // against its own CA list; the connection is still encrypted.
+      ssl: config.db.ssl ? { rejectUnauthorized: false } : undefined,
+    }
+  : {
+      host: config.db.host,
+      port: config.db.port,
+      database: config.db.database,
+      user: config.db.user,
+      password: config.db.password,
+    })
 
 // The pool keeps connections open between queries. When one of those idle
 // connections dies through no fault of a request — Postgres restarted, the

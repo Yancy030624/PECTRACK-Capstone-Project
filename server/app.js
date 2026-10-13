@@ -1,3 +1,6 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import cors from 'cors'
 import express from 'express'
 import { config } from './config.js'
@@ -64,6 +67,31 @@ app.get('/api/health', async (_request, response) => {
   response.json({ status: 'ok' })
 })
 
+// The built website (DEPLOY_PLAN.md, D1). Online, one service serves both
+// the website and /api from the same address, so the HttpOnly SameSite
+// sign-in cookie just works. Only when `npm run build` has produced dist/;
+// on a developer machine Vite serves the website instead. Registered before
+// the rate limiter, so loading the page and its scripts does not use up the
+// API allowance. Hashed files under assets/ never change, so they are cached
+// for a year; index.html is always revalidated, so a new deploy shows at once.
+const distDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist')
+if (fs.existsSync(path.join(distDir, 'index.html'))) {
+  app.use(express.static(distDir, {
+    index: false,
+    setHeaders: (response, filePath) => {
+      response.setHeader('Cache-Control', filePath.includes(`${path.sep}assets${path.sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache')
+    },
+  }))
+  // Every other page address (/menu, /account?tab=payments&order=12, …)
+  // is a screen of the React app, so it gets index.html. /api never does:
+  // an unknown API path still answers with JSON.
+  app.use((request, response, next) => {
+    if ((request.method !== 'GET' && request.method !== 'HEAD') || request.path === '/api' || request.path.startsWith('/api/')) return next()
+    response.setHeader('Cache-Control', 'no-cache')
+    response.sendFile(path.join(distDir, 'index.html'))
+  })
+}
+
 app.use(apiLimiter)
 
 app.use('/api/addresses', addressesRouter)
@@ -80,6 +108,10 @@ app.use('/api/deliveries', deliveriesRouter)
 app.use('/api/reports', reportsRouter)
 app.use('/api/forecasts', forecastsRouter)
 app.use('/api/settings', settingsRouter)
+
+// An /api path no route answered: JSON, like every other API reply — not
+// Express's HTML error page, and never the website's index.html.
+app.use('/api', (_request, response) => response.status(404).json({ message: 'Not found.' }))
 
 app.use((error, _request, response, _next) => {
   console.error(error)

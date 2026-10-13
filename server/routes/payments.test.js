@@ -204,7 +204,8 @@ describe('payment & billing', () => {
     assert.match(String(url), /\/checkout_sessions$/, 'the fetch stub only knows how to fake checkout sessions and refunds')
     if (paymongoStubDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, paymongoStubDelayMs))
     const id = `cs_test_${crypto.randomUUID().slice(0, 12)}`
-    checkoutSessions.set(id, { status: 'active', payments: [], successUrl: JSON.parse(options.body).data.attributes.success_url })
+    const sent = JSON.parse(options.body).data.attributes
+    checkoutSessions.set(id, { status: 'active', payments: [], successUrl: sent.success_url, billing: sent.billing })
     return { ok: true, json: async () => ({ data: { id, attributes: { checkout_url: `https://checkout.paymongo.com/${id}` } } }) }
   }
 
@@ -278,18 +279,18 @@ describe('payment & billing', () => {
     assert.equal(response.status, 409)
   })
 
-  // PayMongo's own stated minimum for any amount field is PHP 100.00 —
-  // exercised here via a PARTIAL cash payment shrinking the remaining
-  // balance below it, the realistic way this condition actually arises
-  // (an order almost fully settled at the counter, with a small remainder
-  // too small to send through the gateway).
-  test('POST /api/payments/intent refuses a balance under the PayMongo minimum', async () => {
+  // The online floor is PHP 1.00 (lib/paymongo.js) — exercised via a
+  // PARTIAL cash payment shrinking the remaining balance, the realistic way
+  // a small remainder arises. A PHP 50 balance pays online (it was refused
+  // under the old PHP 100 floor); 50 centavos does not.
+  test('POST /api/payments/intent accepts a small balance, and refuses one under PHP 1', async () => {
     const { orderId } = await createOrder(2) // total 200
-    const partial = await recordPayment({ orderId, method: 'CASH', amount: 150 }) // balance 50
-    assert.equal(partial.status, 201)
+    assert.equal((await recordPayment({ orderId, method: 'CASH', amount: 150 })).status, 201) // balance 50
+    assert.equal((await createIntent(orderId)).status, 201, 'a PHP 50 balance can be paid online')
 
-    const response = await createIntent(orderId)
-    assert.equal(response.status, 422)
+    const second = await createOrder(2)
+    assert.equal((await recordPayment({ orderId: second.orderId, method: 'CASH', amount: 199.5 })).status, 201) // balance 0.50
+    assert.equal((await createIntent(second.orderId)).status, 422)
   })
 
   test('POST /api/payments/intent refuses a second attempt while one is already in progress', async () => {
@@ -1226,6 +1227,14 @@ describe('payment & billing', () => {
       sessionLookupsFail = false
     }
     assert.equal((await pool.query('SELECT status FROM payments WHERE payment_id = $1', [paymentId])).rows[0].status, 'PENDING')
+  })
+
+  test("PayMongo's payer form is filled in from the customer on the order", async () => {
+    const { orderId } = await createOrder(2)
+    const { paymentId } = await (await createIntent(orderId, customerCookie)).json()
+    const billing = checkoutSessions.get(await gatewayReferenceFor(paymentId)).billing
+    const onFile = (await pool.query('SELECT c.name, c.email, c.contact_num FROM orders o JOIN customers c ON c.customer_id = o.customer_id WHERE o.order_id = $1', [orderId])).rows[0]
+    assert.deepEqual(billing, { name: onFile.name, email: onFile.email, phone: onFile.contact_num })
   })
 
   test('staff paying online are sent back to the dashboard', async () => {

@@ -19,6 +19,10 @@ export const config = {
   trustProxyHops: Number(process.env.TRUST_PROXY_HOPS ?? 0),
   clientOrigin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5173',
   db: {
+    // Hosts (Railway) hand over one connection URL; it wins when set, and
+    // the separate PG* settings below are for a local database.
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.DATABASE_SSL === 'true',
     host: process.env.PGHOST ?? 'localhost',
     port: Number(process.env.PGPORT ?? 5432),
     database: process.env.PGDATABASE ?? 'pectrack',
@@ -57,5 +61,12 @@ export const config = {
     user: process.env.SMTP_USER,
     password: process.env.SMTP_PASS,
     from: process.env.MAIL_FROM ?? 'PECTRACK <no-reply@pectrack.local>',
+    // Gmail API over HTTPS (DEPLOY_PLAN.md, D5) — for hosts that block SMTP.
+    // When all three are set, mail goes through the Gmail API as the
+    // account that granted the refresh token (scripts/gmail-auth.mjs);
+    // otherwise SMTP as before. Off under the test runner, like SMTP.
+    gmail: process.env.NODE_TEST_CONTEXT ? null : (process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN
+      ? { clientId: process.env.GMAIL_CLIENT_ID, clientSecret: process.env.GMAIL_CLIENT_SECRET, refreshToken: process.env.GMAIL_REFRESH_TOKEN }
+      : null),
   },
 }
