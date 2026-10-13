@@ -121,70 +121,131 @@ for testing.
 
 ---
 
+## Decided (2026-10-14)
+
+- **Host:** Railway.
+- **Email:** Gmail API (D5, option 1).
+- **Online floor:** PHP 1.
+- **PayMongo's payer form:** filled in from the customer.
+
+Step 2 is built (commit `b066ecf`).
+
 ## Steps
 
-### Step 1 — accounts **(team)**
+### Step 1 — accounts **(team)** ✔ PayMongo and Railway done
 
-1. **PayMongo:** sign up at paymongo.com. Test mode works right after
-   sign-up. Copy the **test secret key** (`sk_test_…`) from Developers →
-   API Keys. Keep it private.
-2. **Host:** create the Railway (or Render) account and go through the
-   D2 checks. Tell Claude the results, especially SMTP and sleeping.
-3. If SMTP is blocked: create the email-service account (D5).
+Still to do: in PayMongo's business settings, set the business name the
+checkout page shows to **Pecto's Bakery**.
 
-### Step 2 — code changes (Claude)
+### Step 2 — code changes ✔ done (commit `b066ecf`)
 
-1. **Serve the website from Express in production** (`server/app.js`):
-   - Serve `dist/` with long cache headers for the hashed files in
-     `dist/assets/`.
-   - Any GET that is not `/api/…` returns `dist/index.html`, so links
-     like `/account?tab=payments&order=12` work when opened directly.
-   - Register this after the API routes, so a wrong `/api` path still
-     gets the JSON 404, not the website.
-2. **Database connection from one URL** (`server/config.js`,
-   `server/db.js`): accept `DATABASE_URL` (what hosts provide) and keep
-   the separate `PG*` variables for local use. Add `ssl` when the host
-   requires it (`DATABASE_SSL=true`).
-3. **`package.json`:** `"engines": { "node": ">=22" }` so the host uses
-   a supported Node version. The build command is `npm ci && npm run build`,
-   and the start command is `npm start` (already `node server/index.js`).
-4. If D5 applies: the email-service change in `server/lib/mail.js`, with
-   the test suite still printing mail to the console instead of sending
-   it (`NODE_TEST_CONTEXT`).
-5. Tests for 1 and 2:
-   - A non-API path returns the website.
-   - `/api/unknown` returns the JSON 404.
-   - `DATABASE_URL` is parsed.
+- Express serves the built website and `/api` from one address.
+- Unknown `/api` paths get a JSON 404.
+- `DATABASE_URL` / `DATABASE_SSL` for the hosted database.
+- Gmail API email, set up with `npm run gmail:auth`.
+- PHP 1 online floor.
+- PayMongo's payer form is filled in from the customer on the order.
+- `engines: node >= 22`.
+- Tests: 449 pass.
 
-   Then `npm test` (twice), `npm run build`, `npm run lint`.
+### Step 3 — Gmail API setup **(team, about 15 minutes, on the laptop)**
 
-### Step 3 — database **(team, with Claude's commands)**
+Use the Gmail account that sends PECTRACK's emails today (`SMTP_USER` in
+`.env`).
 
-1. Refresh the demo data locally (D3).
-2. Back up: `pg_dump … -F c` (same command as for the teammate).
-3. Restore into the host's database with `pg_restore --no-owner -d "<DATABASE_URL>"`.
-4. Run `npm run sync:images -- --apply` against the hosted database.
-   Expected result: "0 products to update".
+1. Go to **console.cloud.google.com**, signed in as that Gmail account.
+   Create a project named **PECTRACK**.
+2. **APIs & Services → Library → Gmail API → Enable.**
+3. **OAuth consent screen** (also called **Google Auth Platform**):
+   - User type **External**; app name **PECTRACK**; your email as support
+     and developer contact.
+   - Scopes: you can skip adding them here; the script asks for
+     `gmail.send` itself.
+   - **Publish the app** (Audience → **Publish app**, status **In
+     production**). Do not leave it in "Testing": a Testing app's sign-in
+     expires after 7 days, and the emails would stop.
+4. **Credentials (Clients) → Create client → Application type: Desktop
+   app**, name **PECTRACK mail**. Copy the **Client ID** and **Client
+   secret** into `.env`:
+   ```
+   GMAIL_CLIENT_ID=...apps.googleusercontent.com
+   GMAIL_CLIENT_SECRET=...
+   ```
+5. In the project folder, run `npm run gmail:auth`. Open the link it
+   prints and sign in with the same Gmail account.
+   - Google warns **"Google hasn't verified this app"**. This is expected
+     for your own unpublished-to-the-public app: choose **Advanced → Go
+     to PECTRACK (unsafe)**, then allow **Send email on your behalf**.
+6. The terminal prints `GMAIL_REFRESH_TOKEN=…`. Paste that line into
+   `.env`. **Treat it like a password: it lets anyone who has it send
+   mail as that Gmail account.**
+7. Make sure `MAIL_FROM` in `.env` uses that same Gmail address. The
+   Gmail API sends as the signed-in account.
+8. Restart `npm run server`, then sign in as the admin. The sign-in code
+   now arrives through the Gmail API. Tell Claude if it does not arrive.
 
-### Step 4 — environment variables (set in the host's dashboard)
+### Step 4 — Railway **(team clicks; Claude can guide on a call)**
+
+1. **New project → Database → PostgreSQL.**
+   - Open the database's **Variables** tab. It has `DATABASE_URL`
+     (internal) and `DATABASE_PUBLIC_URL` (reachable from the laptop).
+   - Check the PostgreSQL version (first lines of its **Deploy logs**, or
+     ask Claude to run `SELECT version()` through the public URL). The
+     local database is 18.6: if Railway's is older, the restore in
+     Step 5 uses the plain-SQL fallback.
+2. In the same project, **+ New → GitHub Repository →
+   `PECTRACK-Capstone-Project`**, branch `main`.
+3. In that service's **Settings**:
+   - **Build command:** `npm ci && npm run build`
+   - **Start command:** `npm start`
+   - **Networking → Generate Domain.** This is the public address, e.g.
+     `https://pectrack-production.up.railway.app`.
+   - Leave **Serverless** (app sleeping) **off**.
+4. In the service's **Variables** tab, add:
 
 | Variable | Value |
 |---|---|
 | `NODE_ENV` | `production` — turns on the HTTPS redirect, HSTS and secure cookies |
-| `CLIENT_ORIGIN` | the public address, e.g. `https://pectrack.up.railway.app` (no trailing slash) — used in email links and the PayMongo return link |
-| `DATABASE_URL` | from the host's PostgreSQL |
-| `DATABASE_SSL` | `true` if the host requires it |
-| `TRUST_PROXY_HOPS` | `1` — the host's proxy, so HTTPS and client IPs are read correctly |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | same as local `.env` (or the email-service key, if D5) |
+| `CLIENT_ORIGIN` | the public address from 3, no trailing slash |
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (Railway's reference to the database's internal URL) |
+| `TRUST_PROXY_HOPS` | `1` |
+| `MAIL_FROM` | same as `.env` |
+| `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN` | same as `.env` (Step 3) |
 | `PAYMONGO_SECRET_KEY` | the `sk_test_…` key |
-| `PAYMONGO_WEBHOOK_SECRET` | from Step 6 |
+| `PAYMONGO_WEBHOOK_SECRET` | later, from Step 7 |
 
-`PORT` is set by the host. `PAYMONGO_SUCCESS_URL` and
-`PAYMONGO_CANCEL_URL` are no longer used.
+   Notes on the variables:
+   - Leave `SMTP_*` out: Railway blocks SMTP, and the Gmail API settings
+     take over.
+   - `DATABASE_SSL` is not needed on Railway's internal network.
+   - `PORT` is set by Railway.
+   - `PAYMONGO_SUCCESS_URL` and `PAYMONGO_CANCEL_URL` are no longer used.
 
-### Step 5 — deploy and smoke-test (Claude, with the team's phone)
+5. **No volume yet.** Product photos come with the code. Proof-of-delivery
+   photos taken during testing are lost on each redeploy, which is
+   acceptable for testing. For real use, a volume and a separate uploads
+   folder for proofs come later.
 
-1. Deploy from GitHub `main`.
+### Step 5 — database **(Claude runs the commands, team watches)**
+
+1. Refresh the demo data locally (D3): clear and re-seed, regenerate the
+   assumed demand up to yesterday, and run the forecast.
+2. Back up locally, leaving out sessions and one-time codes:
+   ```
+   pg_dump -U postgres -d pectrack -F c -f pectrack.backup --exclude-table-data=sessions --exclude-table-data=otp_codes --exclude-table-data=password_reset_tokens --exclude-table-data=email_verification_tokens
+   ```
+3. Restore into Railway, using the database's **public** URL:
+   ```
+   pg_restore --no-owner --no-privileges -d "<DATABASE_PUBLIC_URL>" pectrack.backup
+   ```
+   If Railway's PostgreSQL is older than 18, use a plain-SQL dump instead
+   (`pg_dump … -F p -f pectrack.sql`, then `psql "<DATABASE_PUBLIC_URL>" -f pectrack.sql`).
+4. Delete the local `pectrack.backup` file afterwards; it holds customer
+   data and password hashes.
+
+### Step 6 — deploy and smoke-test (Claude, with the team's phone)
+
+1. Redeploy (Railway → **Deploy**), and watch the build log for errors.
 2. On a phone, over mobile data (not the laptop's Wi-Fi):
    - Open the home page.
    - Register a test customer and confirm the email (the link must open
@@ -194,38 +255,27 @@ for testing.
 3. As admin: sign in with the email code, confirm the order, assign a
    driver. As driver on a phone: start the delivery, upload a photo,
    mark it delivered.
-4. Check the response headers: HTTP redirects to HTTPS, and
+4. Check that `http://` redirects to `https://` and that
    `Strict-Transport-Security` is present.
-5. **Check the online-payment minimum.** The system refuses GCash below
-   ₱100 (`paymongoMinimumAmountCentavos`, set during Phase 6.5).
-   PayMongo's current docs do not state a minimum. Try a ₱28 order in
-   test mode:
-   - **If PayMongo accepts it:** lower or remove the floor.
-   - **If PayMongo refuses it:** the team decides how small delivery
-     orders are paid. Options: a ₱100 minimum for delivery orders, or
-     pay at the counter.
 
-   This matters because there is no cash on delivery.
+### Step 7 — PayMongo webhook **(team, then Claude verifies)**
 
-### Step 6 — PayMongo webhook **(team, then Claude verifies)**
-
-In PayMongo → Developers → Webhooks, add an endpoint:
+In PayMongo → Developers → **Webhooks**, add an endpoint:
 - URL: `https://<public address>/api/payments/webhook`
 - Events: `payment.paid` and `payment.failed`
 
-Copy its secret (`whsk_…`) into `PAYMONGO_WEBHOOK_SECRET` and redeploy.
-Payments then confirm even if the payer never returns to the site.
-Confirm-on-return remains the backup.
+Copy its secret (`whsk_…`) into Railway's `PAYMONGO_WEBHOOK_SECRET`.
+Payments then confirm even if the payer never returns to the site;
+confirm-on-return remains the backup.
 
-### Step 7 — measuring for the test **(team)**
+### Step 8 — measuring for the test **(team)**
 
-- **Loading:** for each test session, note the first-visit and repeat-
-  visit load times on a phone (Chrome → Lighthouse, or simply a
-  stopwatch from tap to usable). Separate any cold start (D2) from
-  normal loading.
+- **Loading:** for each test session, note the first-visit and
+  repeat-visit load times on a phone (Chrome → Lighthouse, or simply a
+  stopwatch from tap to usable).
 - **Responsiveness:** go through every customer screen and the driver's
-  screens on a phone. Note anything cut off, too small to tap, or
-  needing sideways scrolling.
+  screens on a phone. Note anything cut off, too small to tap, or needing
+  sideways scrolling.
 
 ---
 
