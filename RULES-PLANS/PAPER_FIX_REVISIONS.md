@@ -134,3 +134,82 @@ The table still has `refunded_by`, `refunded_at`, `refund_reason` and `refund_re
 
 ### Figures to retake after R2
 16.
+
+---
+
+## R3 — No expiry; stock losses are "Reject"
+
+The bakery does not track expiry. Bread past its best is toasted and sold again, or rejected. Only rejects are written down; burned or dropped bread is not recorded. The system no longer has expiry dates, shelf life, or an "Expired" status, and a stock loss has one reason: Reject.
+
+### 1. Purpose and Description, Inventory Management
+
+**Find:**
+> Each product can have an expiration date; the menu shows only products that are available and not expired, and expired stock cannot be ordered.
+
+**Replace with:**
+> The menu shows only products that are available, and a product cannot be ordered beyond the stock on hand.
+
+### 2. Scope, Inventory Management Module
+
+This replaces the R1 change to the same paragraph, so apply R1 item 2 first, or apply this directly to the paragraph as it is in the paper now.
+
+**Find:**
+> …assigning each product a name, description, category, unit price, availability status, shelf life, and product image.
+
+**Replace with:**
+> …assigning each product a name, description, category, unit price, availability status, and product image.
+
+**Find** (the paper's current text):
+> Cashiers cannot change stock directly; they submit stock corrections and loss reports (spoilage, damaged, expired, or production loss), which take effect only after the administrator approves them.
+
+Or, if R1 item 2 is already applied:
+> Both administrators and cashiers update stock quantities directly, giving a reason for each change, while the minimum stock level of each product is set by the administrator.
+
+**Replace with:**
+> Both administrators and cashiers update stock quantities directly, giving one of three reasons for each change: a restock, a reject, or a recount. Rejected bread is the only loss the bakery records. The minimum stock level of each product is set by the administrator.
+
+**Find:**
+> Each product is given a status -- Good, Running low, Low stock, or Expired -- and the list can be filtered by status…
+
+**Replace with:**
+> Each product is given a status -- Good, Running low, or Low stock -- and the list can be filtered by status…
+
+### 3. Figure 2 / 2.1 description, the dashboard tiles
+
+**Find:**
+> …Low stock, Running low, Expired stock, Orders to prepare…
+
+**Replace with:**
+> …Low stock, Running low, Orders to prepare…
+
+### 4. Figure 9 description, Menu (customer)
+
+**Find:**
+> Products that are unavailable or expired are not offered.
+
+**Replace with:**
+> Products that are unavailable are not offered.
+
+### 5. Reporting and Analytics Module, the Inventory tab line
+
+**Find:**
+> Inventory: stock movements, losses, and products currently low on stock.
+
+**Replace with:**
+> Inventory: stock movements, rejects, and products currently low on stock.
+
+### 6. Earlier Part A / Part B texts, if your team used them
+
+- Part A, R4 (Customer Management, p. 26): "Products are unavailable to customers when it's currently expired. The system automatically displays only products that are currently available and hides expired or unavailable items…" — **replace with:** "The system automatically displays only products that are currently available and hides unavailable items."
+- Part A (the Product Availability Calendar): if your team kept "…to view product availability and expiration periods", remove "and expiration periods".
+- Part B, the Inventory flowchart description: if your team used "If stock is insufficient, or the product has expired, the order is refused…", remove ", or the product has expired".
+- Figure 10 / 10.1 descriptions: if a description lists "expiration date" among the inventory columns, remove it.
+
+### 7. Database chapter (Part F)
+
+- **INVENTORY:** remove `expiration_date` from the attribute list.
+- **PRODUCT:** remove `shelf_life_days` from the attribute list.
+- **INVENTORY_MOVEMENT:** the reason list gains `REJECT`. `SPOILAGE`, `PRODUCTION_LOSS`, `EXPIRED` and `DAMAGED` stay only for records made before this change. Say this in one sentence, or list only `ORDER_PLACED`, `ORDER_CANCELLED`, `RESTOCK`, `REJECT` and `CORRECTION`.
+
+### Figures to retake after R3
+2, 2.1 (no Expired tile), 10 and 10.1 (no Expiry column, the new reasons), 11 (the reasons list).
