@@ -171,11 +171,6 @@ describe('payment & billing', () => {
   // lock or pooled connection is held while waiting on it. Zero for every
   // other test.
   let paymongoStubDelayMs = 0
-  // Every refund request the stub answered, so a test can assert WHICH
-  // PayMongo payment was refunded and for how much. `refundsFail` makes
-  // the next refund call answer with an error, for the retry test.
-  const refundRequests = []
-  let refundsFail = false
   // Every checkout session the stub created, by id, so the confirm-on-return
   // tests can mark one paid or expired the way PayMongo would, and read back
   // the success_url it was given.
@@ -190,18 +185,11 @@ describe('payment & billing', () => {
       if (!session) return { ok: false, status: 404, json: async () => ({ errors: [{ detail: 'not found' }] }) }
       return { ok: true, json: async () => ({ data: { id: lookup[1], attributes: { status: session.status, payments: session.payments } } }) }
     }
-    if (/\/refunds$/.test(String(url))) {
-      const attributes = JSON.parse(options.body).data.attributes
-      refundRequests.push(attributes)
-      if (refundsFail) return { ok: false, status: 400, json: async () => ({ errors: [{ detail: 'stubbed refund failure' }] }) }
-      const id = `ref_test_${crypto.randomUUID().slice(0, 12)}`
-      return { ok: true, json: async () => ({ data: { id, attributes: { status: 'pending', amount: attributes.amount, payment_id: attributes.payment_id } } }) }
-    }
-    // Only these three PayMongo calls are ever made by this file's code
+    // Only these two PayMongo calls are ever made by this file's code
     // paths (session lookups are answered above) — asserted rather than
     // silently branching, so this stub fails loudly the day lib/paymongo.js
     // starts calling an endpoint this fixture doesn't know how to fake.
-    assert.match(String(url), /\/checkout_sessions$/, 'the fetch stub only knows how to fake checkout sessions and refunds')
+    assert.match(String(url), /\/checkout_sessions$/, 'the fetch stub only knows how to fake checkout sessions')
     if (paymongoStubDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, paymongoStubDelayMs))
     const id = `cs_test_${crypto.randomUUID().slice(0, 12)}`
     const sent = JSON.parse(options.body).data.attributes
@@ -427,86 +415,45 @@ describe('payment & billing', () => {
 
   // The checkout link was live in the customer's browser when the order
   // was cancelled, and by the time payment.paid arrives their money has
-  // moved. Ignoring the event would leave collected money with no record;
-  // recording it as PAID would credit a cancelled order. It is recorded
-  // as PAID then REFUNDED in one step — the same PAID -> REFUNDED
-  // transition an admin's cancel performs — with the reason saying why.
-  test('a payment.paid webhook for an intent the cancel already closed is recorded as PAID then REFUNDED, never as live money', async () => {
+  // moved. Ignoring the event would leave collected money with no record.
+  // The bakery gives no refunds (CLIENT_REVISIONS_PLAN.md, R2), so it is
+  // recorded as PAID against the cancelled order — which staff then settle
+  // with the customer — and nothing is sent back through PayMongo.
+  test('a payment that arrives after the order was cancelled is recorded as PAID, not refunded', async () => {
     const { orderId } = await createOrder(1, customerCookie) // total 100
-    const intentResponse = await createIntent(orderId, customerCookie)
-    const { paymentId } = await intentResponse.json()
+    const { paymentId } = await (await createIntent(orderId, customerCookie)).json()
     const checkoutSessionId = await gatewayReferenceFor(paymentId)
 
     const cancelResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(cancelResponse.status, 200)
-    const closed = await pool.query('SELECT status FROM payments WHERE payment_id = $1', [paymentId])
-    assert.equal(closed.rows[0].status, 'CANCELLED', 'the cancel closes the open intent')
+    assert.equal((await pool.query('SELECT status FROM payments WHERE payment_id = $1', [paymentId])).rows[0].status, 'CANCELLED', 'the cancel closes the open intent')
 
-    const eventBody = buildPaymentEvent('payment.paid', checkoutSessionId)
-    const webhookResponse = await sendWebhook(eventBody, signWebhook(eventBody))
-    assert.equal(webhookResponse.status, 200)
+    const eventBody = buildPaymentEvent('payment.paid', checkoutSessionId, 'pay_after_cancel')
+    assert.equal((await sendWebhook(eventBody, signWebhook(eventBody))).status, 200)
 
-    const row = await pool.query('SELECT status, payment_date, refunded_at, refunded_by, refund_reason, gateway_payment_id, refund_reference FROM payments WHERE payment_id = $1', [paymentId])
-    assert.equal(row.rows[0].status, 'REFUNDED')
-    assert.ok(row.rows[0].payment_date, 'the money did arrive, so payment_date is set')
-    assert.ok(row.rows[0].refunded_at)
-    assert.equal(row.rows[0].refunded_by, null, 'no person issued this refund')
-    assert.match(row.rows[0].refund_reason, /cancelled before the gateway confirmed/)
-    assert.match(row.rows[0].gateway_payment_id, /^pay_/, 'the PayMongo payment id from the event is kept')
-    assert.match(row.rows[0].refund_reference, /^ref_test_/, 'and the money was sent back through PayMongo')
-    assert.equal(refundRequests.at(-1).payment_id, row.rows[0].gateway_payment_id)
-    assert.equal(refundRequests.at(-1).amount, 10000)
+    const row = (await pool.query('SELECT status, payment_date, gateway_payment_id, refunded_at FROM payments WHERE payment_id = $1', [paymentId])).rows[0]
+    assert.equal(row.status, 'PAID')
+    assert.ok(row.payment_date, 'the money did arrive, so payment_date is set')
+    assert.equal(row.gateway_payment_id, 'pay_after_cancel')
+    assert.equal(row.refunded_at, null)
 
     const order = await getOrder(orderId, customerCookie)
-    assert.equal(order.payment.amountPaid, '0.00', 'a REFUNDED row must not count as money in hand')
+    assert.equal(order.status, 'CANCELLED')
+    assert.equal(order.payment.amountPaid, '100.00', 'the money is on record, for staff to settle with the customer')
   })
 
-  // Cancelling a PAID online order now refunds at the gateway too, after
-  // the transaction commits; the response says whether the money moved.
-  test('cancelling an order paid through PayMongo refunds it at the gateway and records the refund id', async () => {
-    const { orderId } = await createOrder(1, customerCookie) // total 100
-    const { paymentId } = await (await createIntent(orderId, customerCookie)).json()
-    const checkoutSessionId = await gatewayReferenceFor(paymentId)
-    const eventBody = buildPaymentEvent('payment.paid', checkoutSessionId, 'pay_cancel_refund_case')
-    assert.equal((await sendWebhook(eventBody, signWebhook(eventBody))).status, 200)
-
-    const cancelResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Oven broke' }) })
-    assert.equal(cancelResponse.status, 200)
-    assert.match((await cancelResponse.json()).message, /1 online payment\(s\) refunded through PayMongo/)
-
-    const row = await pool.query('SELECT status, gateway_payment_id, refund_reference FROM payments WHERE payment_id = $1', [paymentId])
-    assert.equal(row.rows[0].status, 'REFUNDED')
-    assert.equal(row.rows[0].gateway_payment_id, 'pay_cancel_refund_case')
-    assert.match(row.rows[0].refund_reference, /^ref_test_/)
-    assert.equal(refundRequests.at(-1).payment_id, 'pay_cancel_refund_case')
-  })
-
-  test('a gateway refund that fails leaves the row owed, and an admin can retry it from POST /:id/refund', async () => {
+  // No refunds (R2): once a GCash payment is in, the order cannot be
+  // cancelled by anyone, the admin included.
+  test('an order paid through PayMongo cannot be cancelled', async () => {
     const { orderId } = await createOrder(1, customerCookie)
     const { paymentId } = await (await createIntent(orderId, customerCookie)).json()
-    const checkoutSessionId = await gatewayReferenceFor(paymentId)
-    const eventBody = buildPaymentEvent('payment.paid', checkoutSessionId)
+    const eventBody = buildPaymentEvent('payment.paid', await gatewayReferenceFor(paymentId))
     assert.equal((await sendWebhook(eventBody, signWebhook(eventBody))).status, 200)
 
-    refundsFail = true
-    try {
-      const cancelResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
-      assert.equal(cancelResponse.status, 200, 'the cancel itself succeeds — the ledger is right even when the gateway is not')
-      assert.match((await cancelResponse.json()).message, /could not be sent to PayMongo/)
-    } finally {
-      refundsFail = false
-    }
-    const owed = await pool.query('SELECT status, refund_reference FROM payments WHERE payment_id = $1', [paymentId])
-    assert.equal(owed.rows[0].status, 'REFUNDED')
-    assert.equal(owed.rows[0].refund_reference, null)
-
-    const cashierRetry = await fetch(`${baseUrl}/api/payments/${paymentId}/refund`, { method: 'POST', headers: { Cookie: cashierCookie } })
-    assert.equal(cashierRetry.status, 403)
-    const retry = await fetch(`${baseUrl}/api/payments/${paymentId}/refund`, { method: 'POST', headers: { Cookie: adminCookie } })
-    assert.equal(retry.status, 200)
-    assert.match((await retry.json()).refundReference, /^ref_test_/)
-    const again = await fetch(`${baseUrl}/api/payments/${paymentId}/refund`, { method: 'POST', headers: { Cookie: adminCookie } })
-    assert.equal(again.status, 409, 'a refund already at the gateway is never sent twice')
+    const cancel = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Oven broke' }) })
+    assert.equal(cancel.status, 409)
+    assert.match((await cancel.json()).message, /paid, so it can't be cancelled/)
+    assert.equal((await pool.query('SELECT status FROM payments WHERE payment_id = $1', [paymentId])).rows[0].status, 'PAID')
   })
 
   // The abandoned-intent dead end: a PENDING row blocked every new online
@@ -1191,7 +1138,7 @@ describe('payment & billing', () => {
     assert.equal((await paid.json()).status, 'PAID')
     const row = (await pool.query('SELECT status, gateway_payment_id FROM payments WHERE payment_id = $1', [paymentId])).rows[0]
     assert.equal(row.status, 'PAID')
-    assert.equal(row.gateway_payment_id, 'pay_confirm_test', 'the PayMongo payment id is kept, for a later refund')
+    assert.equal(row.gateway_payment_id, 'pay_confirm_test', 'the PayMongo payment id is kept, as the payment reference')
     assert.equal((await getOrder(orderId)).payment.isFullyPaid, true)
 
     // The webhook arriving afterwards is a no-op, not a second credit.

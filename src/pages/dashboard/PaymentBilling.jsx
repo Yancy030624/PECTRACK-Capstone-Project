@@ -164,20 +164,6 @@ export function PaymentBilling({ user, params, onNavigate }) {
     }
   }
 
-  // ADMIN only — resends a refund the ledger already records to PayMongo,
-  // for a row whose gateway refund failed or ran before credentials
-  // existed (POST /api/payments/:id/refund).
-  const handleRetryRefund = async (paymentId) => {
-    setMessage('')
-    try {
-      const data = await apiPost(`/api/payments/${paymentId}/refund`)
-      await openOrder(selectedOrderId)
-      setNotice(data.message ?? 'Refund sent to PayMongo.')
-    } catch (error) {
-      setMessage(error.message)
-    }
-  }
-
   const handlePaymentSubmit = async (event) => {
     event.preventDefault()
     setPaymentSubmitting(true)
@@ -262,7 +248,9 @@ export function PaymentBilling({ user, params, onNavigate }) {
 
             {orderDetail.status === 'CANCELLED' ? (
               <p className="mt-2 rounded-full bg-status-fail-bg px-2.5 py-1 text-center text-[10px] font-semibold uppercase tracking-wide text-status-fail-fg">
-                {orderDetail.payment.payments.some((payment) => payment.status === 'REFUNDED') ? 'Cancelled — payment refunded' : 'Cancelled — nothing was paid'}
+                {Number(orderDetail.payment.amountPaid) > 0
+                  ? 'Cancelled, but paid after cancellation — settle with the customer'
+                  : orderDetail.payment.payments.some((payment) => payment.status === 'REFUNDED') ? 'Cancelled — payment refunded' : 'Cancelled — nothing was paid'}
               </p>
             ) : (
               <>
@@ -286,19 +274,11 @@ export function PaymentBilling({ user, params, onNavigate }) {
                     <span>
                       {payment.method} · <span className="tabular-nums">{formatPeso(payment.amount)}</span> {payment.gatewayReference && <span className="text-ink-500">({payment.gatewayReference})</span>}
                       <span className="block text-xs text-ink-500">{formatDateTime(payment.paymentDate ?? payment.createdAt)}{payment.recordedByName ? ` · ${payment.recordedByName}` : ''}</span>
-                      {payment.status === 'REFUNDED' && payment.gatewayPaymentId && (
-                        <span className={`block text-xs ${payment.refundReference ? 'text-ink-500' : 'font-semibold text-status-fail-fg'}`}>
-                          {payment.refundReference ? `Refunded through PayMongo (${payment.refundReference})` : 'Gateway refund not yet sent'}
-                        </span>
-                      )}
                     </span>
                     <span className="flex items-center gap-2">
                       <StatusBadge status={payment.status} />
                       {payment.status === 'PENDING' && orderDetail.status !== 'CANCELLED' && (
                         <Button type="button" size="sm" variant="secondary" onClick={() => handleCancelAttempt(payment.id)}>Cancel attempt</Button>
-                      )}
-                      {user.role === 'ADMIN' && payment.status === 'REFUNDED' && payment.gatewayPaymentId && !payment.refundReference && (
-                        <Button type="button" size="sm" variant="secondary" onClick={() => handleRetryRefund(payment.id)}>Retry refund</Button>
                       )}
                     </span>
                   </li>

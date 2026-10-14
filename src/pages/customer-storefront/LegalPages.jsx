@@ -11,7 +11,7 @@ import { Link } from 'react-router-dom'
 import { PageBanner } from '../../components/storefront/PageBanner.jsx'
 import { bakery, bakeryAddress, deliveryTown, telHref } from '../../lib/bakery.js'
 
-const lastUpdated = 'October 14, 2026'
+const lastUpdated = 'October 15, 2026'
 
 function LegalPage({ eyebrow, title, lead, sections }) {
   return (
@@ -84,7 +84,7 @@ const privacySections = [
       <List items={[
         'To create and run your account, and to confirm your email address.',
         'To prepare, deliver and hand over your orders, and to let you follow them.',
-        'To take and record payments, issue receipts and refunds.',
+        'To take and record payments and issue receipts.',
         'To keep your account safe: one-time sign-in codes for the bakery\'s administrator, locking an account after repeated wrong passwords, and the security records above.',
         'To run the bakery: sales and stock reports, and estimates of how much to bake. These use totals, not your personal details.',
       ]} />
@@ -164,7 +164,7 @@ const termsSections = [
         'An order is accepted only if the products are in stock and not past their date; the menu shows only what is available.',
         'You may ask for a date and time up to 30 days ahead. We bake to have it ready by then.',
         'Large orders (above the number of items the bakery sets, currently 100) are reviewed by the bakery before they are confirmed. You can pay once the bakery approves the order.',
-        'Once placed, the items in an order cannot be changed; cancel it and place a new one instead.',
+        'Once placed, the items in an order cannot be changed. An unpaid order can be cancelled and placed again.',
       ]} />
     ),
   },
@@ -193,12 +193,12 @@ const termsSections = [
   },
   {
     id: 'cancel',
-    title: 'Cancellations and refunds',
+    title: 'Cancellations',
     body: (
       <List items={[
-        'You can cancel your own order, with a reason, while it is still "Placed" — before the bakery confirms it.',
-        'After that, call the bakery. The bakery may also cancel an order, for example if a product is no longer available, and will give the reason.',
-        'If a cancelled order was already paid, the payment is refunded. Online GCash payments are refunded through PayMongo; refunds of counter payments are arranged with the bakery.',
+        'You can cancel your own order, with a reason, while it is still "Placed" and has not been paid.',
+        'The bakery does not give refunds. Once an order has been paid, it can no longer be cancelled; for any problem with a paid order, please contact the bakery.',
+        'The bakery may cancel an unpaid order, for example if a product is no longer available, and will give the reason.',
       ]} />
     ),
   },

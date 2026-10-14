@@ -42,14 +42,18 @@ const customerCancelReasons = ['Ordered by mistake', 'Changed my mind', 'Need to
 // NO_COD_PLAN — a delivery order moves forward only once fully paid; the
 // server refuses it anyway, this just doesn't offer what would fail.
 const awaitingDeliveryPayment = (order) => order.orderType === 'DELIVERY' && order.payment && !order.payment.isFullyPaid
+// No refunds (CLIENT_REVISIONS_PLAN.md, R2): an order with any payment
+// cannot be cancelled, so Cancel is not offered for one.
+const hasPaid = (order) => Number(order.payment?.amountPaid ?? 0) > 0
 function nextStatusOptions(order, role) {
-  if (order.awaitingApproval && role !== 'ADMIN') return ['CANCELLED']
-  if (awaitingDeliveryPayment(order)) return ['CANCELLED']
+  const cancel = hasPaid(order) ? [] : ['CANCELLED']
+  if (order.awaitingApproval && role !== 'ADMIN') return cancel
+  if (awaitingDeliveryPayment(order)) return cancel
   const forward = Object.keys(statusRank).filter((status) => statusRank[status] > statusRank[order.status])
   return forward
     .filter((status) => status !== 'OUT_FOR_DELIVERY')
     .filter((status) => status !== 'READY_FOR_PICKUP' || order.orderType === 'PICKUP')
-    .concat('CANCELLED')
+    .concat(cancel)
 }
 const humanize = (status) => status.replaceAll('_', ' ')
 const itemCount = (order) => order.items.reduce((sum, item) => sum + item.quantity, 0)
@@ -248,10 +252,10 @@ function StaffOrderManagement({ user }) {
   const handleStatusSubmit = async (event) => {
     event.preventDefault()
     if (!statusChoice) return
-    // Cancelling restores stock and, on a paid order, refunds it — none of
+    // Cancelling restores stock — which cannot be
     // which can be undone. The customer's own cancel button already asks;
     // the staff path, with broader powers, asked nothing.
-    if (statusChoice === 'CANCELLED' && !window.confirm(`Cancel order #${selectedOrderId}? Stock is restored and any payment is refunded. This cannot be undone.`)) return
+    if (statusChoice === 'CANCELLED' && !window.confirm(`Cancel order #${selectedOrderId}? Its stock goes back on the shelf. This cannot be undone.`)) return
     setStatusSubmitting(true)
     setMessage('')
     try {
@@ -349,6 +353,11 @@ function StaffOrderManagement({ user }) {
           {orderDetail.payment && (
             <p className="text-xs text-ink-500">
               Paid {formatPeso(orderDetail.payment.amountPaid)} · {orderDetail.payment.isFullyPaid ? <span className="font-semibold text-status-done-fg">Fully paid</span> : <span className="font-semibold text-status-fail-fg">Owes {formatPeso(orderDetail.payment.balanceDue)}</span>}
+            </p>
+          )}
+          {orderDetail.status === 'CANCELLED' && hasPaid(orderDetail) && (
+            <p className="rounded-panel bg-status-wait-bg p-3 text-xs font-semibold text-status-wait-fg">
+              Paid after cancellation ({formatPeso(orderDetail.payment.amountPaid)}) — the bakery gives no refunds, so settle this with the customer.
             </p>
           )}
 
@@ -623,7 +632,10 @@ function CustomerOrders({ user, onNavigate }) {
             </div>
           )}
 
-          {orderDetail.status === 'PLACED' && (
+          {orderDetail.status === 'PLACED' && hasPaid(orderDetail) && (
+            <p className="border-t border-line-100 pt-3 text-xs text-ink-500">This order has been paid, so it can&apos;t be cancelled here. For any problem with it, please contact the bakery.</p>
+          )}
+          {orderDetail.status === 'PLACED' && !hasPaid(orderDetail) && (
             <div className="border-t border-line-100 pt-3">
               {/* PHASE10 B7 — a cancellation carries a reason; a customer
                   picks one rather than typing it. */}

@@ -23,7 +23,6 @@ import { config } from '../config.js'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { PaymongoApiError, PaymongoWebhookVerificationError, createCheckoutSession, paymongoMinimumAmountCentavos, retrieveCheckoutSession, verifyPaymongoWebhook } from '../lib/paymongo.js'
-import { describeGatewayRefunds, settleGatewayRefunds } from '../lib/refunds.js'
 import { dateRangeSql, parseDateRange } from '../lib/reporting.js'
 import { normalize, parseId } from '../lib/validation.js'
 
@@ -105,19 +104,13 @@ const paymentListSelectQuery = `SELECT p.payment_id, p.order_id, o.status AS ord
 // customer's browser when it was closed — by an order cancel, or by staff
 // clearing an abandoned attempt (PATCH /:id below) — and by the time PayMongo
 // reports it their money has moved. Ignoring it would leave collected money
-// with no record at all. What it becomes depends on the ORDER, not on which
-// of those closed the intent:
+// with no record at all, so it is always recorded as PAID. The bakery gives
+// no refunds (CLIENT_REVISIONS_PLAN.md, R2): if the order was cancelled in
+// the meantime, the order shows as "paid after cancellation" for staff to
+// settle with the customer — nothing is sent back automatically.
 //
-//   - the order still stands: PAID, the money is owed and has arrived (an
-//     intent cleared by mistake, then paid after all);
-//   - the order is CANCELLED: PAID then immediately REFUNDED, the same
-//     transition the cancel itself performs, refunded_by NULL because no
-//     person did this — and settleGatewayRefunds sends the money back
-//     through PayMongo.
-//
-// gateway_payment_id (migration 009) is the PayMongo Payment id — the id
-// its Refunds API needs. Written on every paid row, cancelled order or not,
-// so a LATER cancel can refund it too.
+// gateway_payment_id (migration 009) is the PayMongo Payment id, kept on
+// every paid row as the reference for that payment.
 //
 // NO order-row lock, unlike every other money-writing path in this file.
 // Nothing here needs one: the UPDATE targets exactly one payments row by its
@@ -125,22 +118,12 @@ const paymentListSelectQuery = `SELECT p.payment_id, p.order_id, o.status AS ord
 // aggregate computed and no overpayment guard re-run (PHASE6.5_PLAN.md,
 // Decision 9).
 async function markGatewayPaymentPaid(checkoutSessionId, paymongoPaymentId) {
-  const settled = await pool.query(
-    `UPDATE payments p
-        SET status = CASE WHEN o.status = 'CANCELLED' THEN 'REFUNDED' ELSE 'PAID' END::payment_status,
-            payment_date = CURRENT_TIMESTAMP,
-            gateway_payment_id = COALESCE($2, p.gateway_payment_id),
-            refunded_at = CASE WHEN o.status = 'CANCELLED' THEN CURRENT_TIMESTAMP ELSE p.refunded_at END,
-            refund_reason = CASE WHEN o.status = 'CANCELLED' THEN 'Order was cancelled before the gateway confirmed this payment.' ELSE p.refund_reason END
-       FROM orders o
-      WHERE o.order_id = p.order_id AND p.gateway_reference = $1 AND p.status IN ('PENDING', 'CANCELLED')
-    RETURNING p.order_id, p.status`,
+  await pool.query(
+    `UPDATE payments
+        SET status = 'PAID', payment_date = CURRENT_TIMESTAMP, gateway_payment_id = COALESCE($2, gateway_payment_id)
+      WHERE gateway_reference = $1 AND status IN ('PENDING', 'CANCELLED')`,
     [checkoutSessionId, paymongoPaymentId],
   )
-  if (settled.rows[0]?.status === 'REFUNDED') {
-    // Outside any transaction, after the ledger write — see lib/refunds.js.
-    await settleGatewayRefunds(settled.rows[0].order_id)
-  }
 }
 
 async function markGatewayPaymentFailed(checkoutSessionId) {
@@ -761,32 +744,6 @@ router.patch('/:id', billingRoles, async (request, response) => {
   const closed = await pool.query(`UPDATE payments SET status = 'CANCELLED' WHERE payment_id = $1 AND status = 'PENDING' RETURNING payment_id`, [paymentId])
   if (closed.rowCount === 0) return response.status(409).json({ message: 'This payment attempt is no longer pending.' })
   return response.json({ message: 'Payment attempt cancelled.' })
-})
-
-// POST /api/payments/:id/refund — ADMIN only. Retries the gateway side of
-// a refund the ledger already records: a REFUNDED row with a
-// gateway_payment_id and no refund_reference (migration 009). It never
-// changes the row's status — that decision was made when the order was
-// cancelled — it only asks PayMongo to move the money and records the
-// refund id it answers with.
-router.post('/:id/refund', requireRole('ADMIN'), async (request, response) => {
-  const paymentId = parseId(request.params.id)
-  if (!paymentId) return response.status(404).json({ message: 'Payment not found.' })
-
-  const existing = await pool.query('SELECT order_id, status, gateway_payment_id, refund_reference FROM payments WHERE payment_id = $1', [paymentId])
-  const payment = existing.rows[0]
-  if (!payment) return response.status(404).json({ message: 'Payment not found.' })
-  if (payment.status !== 'REFUNDED' || !payment.gateway_payment_id) {
-    return response.status(409).json({ message: 'Only a refunded online payment can be sent to PayMongo for refund.' })
-  }
-  if (payment.refund_reference) return response.status(409).json({ message: `This payment was already refunded through PayMongo (${payment.refund_reference}).` })
-
-  const result = await settleGatewayRefunds(payment.order_id)
-  const updated = await pool.query('SELECT refund_reference FROM payments WHERE payment_id = $1', [paymentId])
-  if (!updated.rows[0].refund_reference) {
-    return response.status(502).json({ message: describeGatewayRefunds(result) ?? 'The refund could not be sent to PayMongo.' })
-  }
-  return response.json({ message: describeGatewayRefunds(result), refundReference: updated.rows[0].refund_reference })
 })
 
 export default router

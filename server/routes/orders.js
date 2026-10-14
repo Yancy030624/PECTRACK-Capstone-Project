@@ -16,7 +16,6 @@ import { pool } from '../db.js'
 import { billingListSql, getBillingSummary, mapBillingColumns } from '../lib/billing.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { expiredSql, syncStockAlert } from '../lib/inventory.js'
-import { describeGatewayRefunds, settleGatewayRefunds } from '../lib/refunds.js'
 import { getBulkOrderThreshold } from '../lib/settings.js'
 import { parseId } from '../lib/validation.js'
 
@@ -682,23 +681,17 @@ router.patch('/:id', async (request, response) => {
       }
     }
 
-    // PHASE 6, DECISION 8 — cancelling a PAID order is admin-only, and
-    // refunds it. An order with no PAID payments cancels exactly as it
-    // did in Phase 5 (nothing below changes for that case). One with
-    // PAID payments may only be cancelled by an ADMIN, because cancelling
-    // it means the bakery owes that money back — a cashier or the
-    // customer themselves should not be able to trigger a refund alone.
-    //
-    // hasPayments is computed once here, under the same lock reasoning as
-    // the COMPLETED check above, and reused after the stock-restore loop
-    // below to decide whether the refund UPDATE has anything to do.
-    let hasPayments = false
+    // No refunds (CLIENT_REVISIONS_PLAN.md, R2): the bakery does not give
+    // money back, so an order with any PAID payment cannot be cancelled by
+    // anyone — the admin included. Problems with a paid order are settled
+    // with the customer at the counter. Checked here, after the claim and
+    // under the order's row lock, like the COMPLETED check above, so a
+    // payment and a cancel racing on one order cannot both go through.
     if (status === 'CANCELLED') {
       const billing = await getBillingSummary(client, orderId)
-      hasPayments = billing.hasPayments
-      if (hasPayments && request.user.role !== 'ADMIN') {
+      if (billing.hasPayments) {
         await client.query('ROLLBACK')
-        return response.status(409).json({ message: 'This order has already been paid — only an admin can cancel it, since doing so refunds the payment.' })
+        return response.status(409).json({ message: "This order has been paid, so it can't be cancelled. Settle any problem with the customer at the counter." })
       }
     }
 
@@ -731,36 +724,13 @@ router.patch('/:id', async (request, response) => {
         await syncStockAlert(client, { inventoryId: restored.rows[0].inventory_id, stockQuantity: restored.rows[0].stock_quantity, minStockLevel: restored.rows[0].min_stock_level })
       }
 
-      // PHASE 6, DECISION 8 (continued) — the refund itself. A status
-      // change on the EXISTING row, not a new negative one:
-      // payments.amount has CHECK (amount >= 0), so a negative row is
-      // impossible by design, and payment_status already has REFUNDED
-      // for precisely this. hasPayments was computed above, before the
-      // admin-only gate, so this only runs when there is genuinely
-      // something to refund.
-      //
-      // WHERE status = 'PAID' rather than an unconditional UPDATE: a
-      // payment can never have MORE than one meaningful transition
-      // (PAID -> REFUNDED), so this is naturally a no-op against any row
-      // that was never PAID in the first place — nothing here needs to
-      // filter payments by hand first.
-      if (hasPayments) {
-        await client.query(
-          `UPDATE payments
-              SET status = 'REFUNDED', refunded_by = $1, refunded_at = CURRENT_TIMESTAMP, refund_reason = $2
-            WHERE order_id = $3 AND status = 'PAID'`,
-          [request.user.id, note ?? 'Order cancelled.', orderId],
-        )
-      }
-
       // A PENDING gateway intent (routes/payments.js POST /intent) is not
-      // money in hand, so it is not part of hasPayments above — but left
+      // money in hand, so it does not block the cancel above — but left
       // PENDING it is a live checkout link for an order nobody will fill.
-      // Closing it here is what lets the webhook tell "paid before the
-      // cancel" (PAID, refunded above) from "paid after it" (this row,
-      // now CANCELLED — see POST /webhook for how a late payment.paid on
-      // it is recorded). Runs regardless of role: a customer cancelling
-      // their own PLACED order can hold an open intent too.
+      // Closing it here marks a payment that still arrives as one made
+      // AFTER the cancel (see POST /webhook: it is recorded as PAID and the
+      // order is flagged for staff to settle). Runs regardless of role: a
+      // customer cancelling their own PLACED order can hold an open intent.
       await client.query(
         `UPDATE payments SET status = 'CANCELLED' WHERE order_id = $1 AND status = 'PENDING'`,
         [orderId],
@@ -793,25 +763,7 @@ router.patch('/:id', async (request, response) => {
     client.release()
   }
 
-  // The gateway side of the refund, AFTER the commit and with the client
-  // released — a network call to PayMongo must never run while this
-  // transaction holds the order lock (see lib/refunds.js). The ledger is
-  // already right whatever happens here; the message tells the admin
-  // whether the money moved too.
-  let gatewayNote = null
-  if (status === 'CANCELLED') {
-    try {
-      gatewayNote = describeGatewayRefunds(await settleGatewayRefunds(orderId))
-    } catch (error) {
-      // The cancel is committed; a failure HERE (a database blip while
-      // reading the owed rows, say) must not report it as failed. The
-      // rows stay owed, and the admin retry route picks them up.
-      console.error(`Gateway refund settlement failed after cancelling order ${orderId}:`, error)
-      gatewayNote = 'Online refunds could not be sent to PayMongo right now — an admin can retry from Payment & Billing.'
-    }
-  }
-
-  return response.json({ message: gatewayNote ? `Order updated. ${gatewayNote}` : 'Order updated.', order: { id: Number(orderId), status } })
+  return response.json({ message: 'Order updated.', order: { id: Number(orderId), status } })
 })
 
 export default router

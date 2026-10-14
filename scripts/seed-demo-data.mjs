@@ -50,8 +50,7 @@ async function call(method, urlPath, cookie, body) {
   return { status: response.status, body: payload }
 }
 
-// The three admin-only steps below (an admin-cancel refund, and
-// Decision 10's restock/spoilage pass) need an authenticated ADMIN
+// The admin-only steps below (Decision 10's restock/spoilage pass) need an authenticated ADMIN
 // session — but ymata_admin is the user's own real account, and this
 // script has no business knowing that password. Rather than touch the
 // real admin, it creates a small helper admin through the same real
@@ -94,9 +93,8 @@ async function createTempAdmin() {
     const username = `seedadmin_${suffix}`
     const passwordHash = await bcrypt.hash(crypto.randomUUID(), bcryptRounds)
     userId = (await pool.query(`INSERT INTO users (username, password_hash, user_type) VALUES ($1, $2, 'ADMIN') RETURNING user_id`, [username, passwordHash])).rows[0].user_id
-    // The NAME matters: order_status_history.updated_by resolves through
-    // this row, and the order detail panel shows "CANCELLED by {name}" on
-    // the refunded order — so it reads like a role, not like a script.
+    // The NAME matters: the stock history shows who made each change, so
+    // it reads like a role, not like a script.
     await pool.query('INSERT INTO admins (user_id, name, contact_num, email) VALUES ($1, $2, $3, $4)', [userId, 'Store Admin', '09171234567', `${username}@pectrack.local`])
   }
   const sessionId = await createSession(userId)
@@ -314,22 +312,10 @@ async function main() {
   }
   log('  4 cancelled orders seeded.\n')
 
-  // ============ 3. One REFUNDED payment — paid, then admin-cancelled ============
-  // PHASE6_PLAN.md, Decision 8 — cancelling a PAID order is admin-only,
-  // and automatically refunds it. Seeded through that exact real path,
-  // not by hand-flipping a payments row to REFUNDED.
-  log('Seeding one paid-then-refunded order...')
-  {
-    const order = await placeOrder(cashierCookie, { items: randomItems(commonProducts) })
-    const paymentId = await recordPayment(order.id, order.totalAmount)
-    const cancelResult = await call('PATCH', `/api/orders/${order.id}`, adminCookie, { status: 'CANCELLED', note: 'Customer requested a refund.' })
-    if (cancelResult.status !== 200) throw new Error(`Admin refund-cancel failed: ${JSON.stringify(cancelResult.body)}`)
-    const instant = randomPastInstant(60, 5)
-    await backdateOrder(order.id, instant)
-    await backdatePayment(paymentId, instant)
-    await pool.query(`UPDATE payments SET refunded_at = $1 WHERE payment_id = $2`, [instant, paymentId])
-  }
-  log('  1 refunded order seeded.\n')
+  // ============ 3. (removed) No refunds ============
+  // The bakery gives no refunds (CLIENT_REVISIONS_PLAN.md, R2): a paid
+  // order can no longer be cancelled, so the old "paid, then
+  // admin-cancelled and refunded" demo order is gone.
 
   // ============ 4. A few unpaid, open orders — outstanding > 0 ============
   log('Seeding unpaid open orders...')

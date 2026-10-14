@@ -554,9 +554,14 @@ describe('delivery management', () => {
     const { orderId, deliveryId } = await placeDeliveryOrder()
     await assign(deliveryId, firstDriverId)
 
+    // A delivery order is paid before it is confirmed, and a paid order can
+    // no longer be cancelled (no refunds, CLIENT_REVISIONS_PLAN.md R2) — so
+    // this state now only exists in older data. It is set up directly; the
+    // guard below still has to hold for it.
     const cancel = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
-    assert.equal(cancel.status, 200)
-    assert.equal((await pool.query('SELECT status FROM deliveries WHERE delivery_id = $1', [deliveryId])).rows[0].status, 'FAILED')
+    assert.equal(cancel.status, 409, 'a paid delivery order cannot be cancelled')
+    await pool.query(`UPDATE orders SET status = 'CANCELLED' WHERE order_id = $1`, [orderId])
+    await pool.query(`UPDATE deliveries SET status = 'FAILED', failed_at = CURRENT_TIMESTAMP WHERE delivery_id = $1`, [deliveryId])
 
     const retry = await setStatus(deliveryId, 'PENDING_ASSIGNMENT', adminCookie, 'try again')
     assert.equal(retry.status, 409, 'a cancelled order\'s delivery must not go back in the queue')

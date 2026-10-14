@@ -117,10 +117,6 @@ export function ReportingAnalytics({ user }) {
         datasets: [
           { label: 'Ordered', data: sales.buckets.map((bucket) => Number(bucket.ordered)), backgroundColor: cssVar('--color-brand-600'), borderColor: cssVar('--color-brand-600') },
           { label: 'Collected', data: sales.buckets.map((bucket) => Number(bucket.collected)), backgroundColor: cssVar('--color-accent-600'), borderColor: cssVar('--color-accent-600') },
-          // 'Refunds issued', not 'Refunded' — the legend is read next to
-          // the Collected series, and the same non-subtraction applies here
-          // as on the cards below.
-          { label: 'Refunds issued', data: sales.buckets.map((bucket) => Number(bucket.refunded)), backgroundColor: cssVar('--color-status-fail-fg'), borderColor: cssVar('--color-status-fail-fg') },
         ],
       },
       options: {
@@ -296,11 +292,10 @@ export function ReportingAnalytics({ user }) {
       <div hidden={activeTab !== 'Sales'}>
         {sales ? (
           <>
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="mt-6 grid gap-4 sm:grid-cols-3">
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Orders placed</p><p className="mt-3 text-4xl font-semibold text-ink-900">{sales.totals.ordersPlaced}</p></Card>
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Ordered</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.ordered)}</p><p className="mt-2 text-xs text-ink-500">Value of orders placed in this range</p></Card>
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Collected</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.collected)}</p><p className="mt-2 text-xs text-ink-500">Money received; refunds already taken out</p></Card>
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Refunds issued</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.refunded)}</p><p className="mt-2 text-xs text-ink-500">For information — not part of Collected</p></Card>
             </div>
             <p className="mt-3 text-xs text-ink-500">
               Average payment: {formatPeso(sales.totals.averagePayment)}
@@ -326,7 +321,6 @@ export function ReportingAnalytics({ user }) {
                     <Th>Orders placed</Th>
                     <Th align="right">Ordered</Th>
                     <Th align="right">Collected</Th>
-                    <Th align="right">Refunds issued</Th>
                   </Tr>
                 </Thead>
                 <Tbody>
@@ -336,7 +330,6 @@ export function ReportingAnalytics({ user }) {
                       <Td>{bucket.ordersPlaced}</Td>
                       <Td numeric>{formatPeso(bucket.ordered)}</Td>
                       <Td numeric>{formatPeso(bucket.collected)}</Td>
-                      <Td numeric>{formatPeso(bucket.refunded)}</Td>
                     </Tr>
                   ))}
                 </Tbody>
