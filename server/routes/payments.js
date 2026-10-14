@@ -528,7 +528,9 @@ router.post('/', requireRole('CASHIER', 'ADMIN'), async (request, response) => {
 // trade: an unused checkout link simply expires unused, whereas holding
 // the lock stalls the whole system.
 // ============================================================================
-router.post('/intent', billingRoles, async (request, response) => {
+// Customers only (CLIENT_REVISIONS_PLAN.md, R1): staff take payment at the
+// counter (POST / above) and have no reason to open a GCash checkout.
+router.post('/intent', requireRole('CUSTOMER'), async (request, response) => {
   const orderId = parseId(request.body.orderId)
   if (!orderId) return response.status(422).json({ message: 'Select a valid order.', errors: { orderId: 'Select a valid order.' } })
 
@@ -583,13 +585,10 @@ router.post('/intent', billingRoles, async (request, response) => {
     return response.status(422).json({ message: `The remaining balance is below PayMongo's ₱${(paymongoMinimumAmountCentavos / 100).toFixed(2)} minimum for an online payment — settle it by cash or a GCash reference at the counter instead.` })
   }
 
-  // Where PayMongo sends the payer afterwards: back to this order's receipt,
-  // where POST /:id/confirm settles the payment at once (a customer to My
-  // Payments; staff to their dashboard). Built from CLIENT_ORIGIN, so it is
-  // right wherever the app is served.
-  const returnUrl = request.user.role === 'CUSTOMER'
-    ? `${config.clientOrigin}/account?tab=payments&order=${orderId}`
-    : `${config.clientOrigin}/dashboard`
+  // Where PayMongo sends the payer afterwards: back to this order's receipt
+  // in My Payments, where POST /:id/confirm settles the payment at once.
+  // Built from CLIENT_ORIGIN, so it is right wherever the app is served.
+  const returnUrl = `${config.clientOrigin}/account?tab=payments&order=${orderId}`
 
   // The order's customer, to fill in PayMongo's payer form. Only the fields
   // on file are sent; a walk-in order sends none.

@@ -226,7 +226,7 @@ describe('payment & billing', () => {
   })
   const sendWebhook = (bodyString, signatureHeader) =>
     fetch(`${baseUrl}/api/payments/webhook`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Paymongo-Signature': signatureHeader }, body: bodyString })
-  const createIntent = (orderId, cookie = cashierCookie) =>
+  const createIntent = (orderId, cookie = customerCookie) =>
     fetch(`${baseUrl}/api/payments/intent`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ orderId }) })
   const gatewayReferenceFor = async (paymentId) => (await pool.query('SELECT gateway_reference FROM payments WHERE payment_id = $1', [paymentId])).rows[0].gateway_reference
 
@@ -1237,9 +1237,10 @@ describe('payment & billing', () => {
     assert.deepEqual(billing, { name: onFile.name, email: onFile.email, phone: onFile.contact_num })
   })
 
-  test('staff paying online are sent back to the dashboard', async () => {
+  // CLIENT_REVISIONS_PLAN.md, R1 — staff take payment at the counter only.
+  test('staff cannot start an online payment', async () => {
     const { orderId } = await createOrder(2)
-    const { paymentId } = await (await createIntent(orderId, cashierCookie)).json()
-    assert.match(checkoutSessions.get(await gatewayReferenceFor(paymentId)).successUrl, /\/dashboard$/)
+    assert.equal((await createIntent(orderId, cashierCookie)).status, 403)
+    assert.equal((await createIntent(orderId, adminCookie)).status, 403)
   })
 })

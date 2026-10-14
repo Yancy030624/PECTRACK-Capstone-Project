@@ -200,7 +200,9 @@ export function PaymentBilling({ user, params, onNavigate }) {
   }
 
   const canRecordPayment = isStaff && orderDetail && orderDetail.status !== 'CANCELLED' && !orderDetail.payment.isFullyPaid
-  const canPayOnline = canRecordPayment || (orderDetail && orderDetail.status !== 'CANCELLED' && !orderDetail.payment.isFullyPaid && user.role === 'CUSTOMER')
+  // Customers only (CLIENT_REVISIONS_PLAN.md, R1); staff record payments
+  // taken at the counter with the form below.
+  const canPayOnline = Boolean(orderDetail) && orderDetail.status !== 'CANCELLED' && !orderDetail.payment.isFullyPaid && user.role === 'CUSTOMER'
 
   const tabs = [
     { key: 'billing', label: 'Billing' },
