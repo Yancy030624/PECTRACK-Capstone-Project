@@ -82,3 +82,55 @@ R3 changes the loss reasons again; see that section when it is added.
 
 ### Figures to retake after R1
 11, 13, 8, 2.2 (and 10.1 if added).
+
+---
+
+## R2 — No refunds: a paid order can't be cancelled
+
+### 1. Scope, Order Management Module (the paragraph from Part B, B6)
+
+**Find:**
+> Cashiers can cancel orders with a required reason, which restores the stock and refunds any payment. A customer may cancel their own order only while it is still Placed.
+
+**Replace with:**
+> An unpaid order can be cancelled with a required reason, which returns its stock to the shelf; a customer may cancel their own order only while it is still Placed and unpaid. The bakery does not give refunds, so once an order has been paid it can no longer be cancelled, and any problem with it is settled with the customer at the counter.
+
+### 2. Scope, Payment and Billing Module (the paragraph from Part B, B7)
+
+**Find:**
+> Refunds are handled by the administrator; when a paid order is cancelled, an online payment is refunded automatically through PayMongo.
+
+**Replace with:**
+> The bakery does not give refunds, so a paid order cannot be cancelled. If a customer completes an online payment after their order was cancelled, the payment is still recorded and the order is flagged for the staff to settle with the customer.
+
+### 3. Flowchart description, Payment and Billing (from Part B, B7)
+
+**Find:**
+> The Admin can record payments the same way as the Cashier, and is the only user who can issue refunds.
+
+**Replace with:**
+> The Admin can record payments the same way as the Cashier.
+
+### 4. Figure 16 description, Reporting & Analytics, Sales (from Part B, B9)
+
+**Find:**
+> …then the orders placed, the amount ordered, the amount collected, and refunds for the period, followed by the sales chart.
+
+**Replace with:**
+> …then the orders placed, the amount ordered, and the amount collected for the period, followed by the sales chart.
+
+**Screenshot:** retake. The old one shows a "Refunds issued" card.
+
+### 5. If your team added the "Built, but not in the paper" list (Part C)
+
+- **Find:** "Refunds, partial payments, balance due"
+- **Replace with:** "Partial payments and balance due"
+
+If your team listed refunds anywhere else as a feature, remove it there too.
+
+### 6. Database chapter (Part F), PAYMENT table
+
+The table still has `refunded_by`, `refunded_at`, `refund_reason` and `refund_reference`. They hold the history of refunds made before this change, and no new refund is ever written. Describe them in one sentence, or leave them out of the attribute list if your team prefers. The `REFUNDED` status also stays only for past records.
+
+### Figures to retake after R2
+16.
