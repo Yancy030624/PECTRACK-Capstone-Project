@@ -213,3 +213,89 @@ Or, if R1 item 2 is already applied:
 
 ### Figures to retake after R3
 2, 2.1 (no Expired tile), 10 and 10.1 (no Expiry column, the new reasons), 11 (the reasons list).
+
+---
+
+## R4 — Daily order numbers, recent orders, new-order alerts, cleaner dashboards
+
+Orders are now numbered #1, #2, #3… each day, starting again at #1 the next day. Staff see a Recent orders list and are alerted to each new order; delivery personnel are alerted to each new delivery assigned to them. The Dashboard shows only what needs action.
+
+### 1. Purpose and Description, Order Management Module
+
+**Find:**
+> This ensures that the order is reflected in the system in real time, preventing conflicts or discrepancies with the inventory.
+
+**Replace with:**
+> This ensures that the order is reflected in the system in real time, preventing conflicts or discrepancies with the inventory. Each order receives a daily order number (#1, #2, #3…) that starts again at #1 every day, so staff and customers can call out an order easily. The administrator and cashiers are alerted as soon as a new order is placed, through a notification bell, a pop-up message, and an optional sound, even while they are working in another part of the system.
+
+### 2. Scope, Order Management Module
+
+**Find:**
+> An order queue displays all active orders progressing through the stages of Order Placed, Confirmed, In Production, Out for Delivery or Ready for Pickup, and Completed.
+
+**Replace with:**
+> Each order is given a daily order number that starts again at #1 every day. An order queue displays all active orders progressing through the stages of Order Placed, Confirmed, In Production, Out for Delivery or Ready for Pickup, and Completed, and new orders are announced to the administrator and cashiers as they arrive.
+
+### 3. Figure 2 / 2.1 description, the Dashboard
+
+This replaces the whole description, including the R3 change to its tile list. It also removes the stray "nd clear typography…" fragment at its end.
+
+**Replace the description with:**
+> The Dashboard of the admin and cashier opens with a greeting that states how many things need attention, beside today's number of orders, the amount ordered, and the amount collected. "Needs action now" shows only the status tiles that need attention, red first and then yellow: Low stock, Running low, Orders to prepare (red when an order is past its requested time), Deliveries to assign, Bulk orders to approve (admin only), Unpaid balances, and Likely to sell out (from the sales forecast). The tiles that are fine fold into one "All good" line. Clicking a tile opens the module already filtered to the problem. Below it, "Recent orders" lists the eight newest orders with their number, time, customer, pickup or delivery, total, payment, and status, and refreshes on its own; clicking one opens it. A "Restock first" list shows the five products furthest below their minimum stock level. The bell at the top of every staff screen counts the new orders not yet seen, and a pop-up appears for each new order.
+
+### 4. Figure 2.2 description, delivery personnel
+
+**Find:**
+> Delivery personnel have no separate dashboard; after signing in they land on My Deliveries, built for use on a phone.
+
+**Replace with:**
+> Delivery personnel have no separate dashboard; after signing in they land on My Deliveries, built for use on a phone. Deliveries already on the road are listed first under "To deliver now", followed by those "Assigned to you", and the bell announces each newly assigned delivery.
+
+(If your team already added the R1 sentence about the order items, keep it.)
+
+### 5. Figure 6 description, Order Management (admin)
+
+**Find:**
+> The admin's Order Management page lists the orders with their customer, date placed, requested time, total, and status, and can be searched and filtered by status.
+
+**Replace with:**
+> The admin's Order Management page lists the orders by their daily order number with their customer, date placed, requested time, total, and status, and can be searched by order number or customer and filtered by status.
+
+### 6. Figure 13 description, Payment & Billing (cashier)
+
+**Find:** "…such as Order ID, Customer Name…"
+**Replace with:** "…such as Order No., Customer Name…"
+
+(Figure 13 is already being retaken for R1; the old description of that screen is checked again in the PDF review.)
+
+### 7. Development / modules list (the dashboard sentence, two places)
+
+**Find:**
+> The dashboard module provides an overview of daily transactions, inventory status, low-stock notifications, and quick access to important system functions.
+
+**Replace with:**
+> The dashboard module provides an overview of daily transactions, what needs action now, the most recent orders, and low-stock notifications, with an alert for every new order.
+
+**Find:**
+> The dashboard module provides an overview of daily transactions, inventory status, and system notifications.
+
+**Replace with:**
+> The dashboard module provides an overview of daily transactions, inventory status, recent orders, and new-order notifications.
+
+### 8. Database chapter, ORDER table
+
+**Attributes — add after OrderDate:**
+- OrderDay
+- DailyNumber
+
+**Add one sentence to the table description:**
+> DailyNumber is the order's number within its day (OrderDay); it starts again at 1 every day, and the pair is unique.
+
+If your team lists every table, add:
+
+**DAILY_ORDER_NUMBERS TABLE** — keeps the last order number given out on each day, so two orders placed at the same moment never get the same number.
+- Primary Key: Day
+- Attributes: Day(PK), LastNumber
+
+### Figures to retake after R4
+2, 2.1, 2.2, 6, 7, 8, 12, 13, 14 — every screen that shows an order number or the Dashboard. Add a screenshot of the bell with a new-order pop-up if your team wants to show it.
