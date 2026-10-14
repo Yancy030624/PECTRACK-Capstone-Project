@@ -5,6 +5,13 @@ on one laptop. Testers use their own phones, so loading time,
 responsiveness, email links and GCash payments are tested the way the
 bakery's customers will meet them.
 
+**Live address:** `https://pectrack.up.railway.app`. It was first
+`pectrack-capstone-project-production.up.railway.app` and was renamed on
+2026-10-15. Whenever the address changes, update all of these:
+- Railway's `CLIENT_ORIGIN` (used in email links and the PayMongo return link);
+- the three links on Google's Branding page;
+- the PayMongo webhook URL.
+
 **Already done for this:** confirm-on-return (commit `783c797`). A GCash
 payment is confirmed when the payer comes back to the receipt, so
 payments work even before PayMongo's webhook is set up.
@@ -206,7 +213,7 @@ Use the Gmail account that sends PECTRACK's emails today (`SMTP_USER` in
      folder locked as a build cache.
    - **Start command:** `npm start`; **Healthcheck path:** `/api/health`
    - **Networking → Generate Domain.** This is the public address, e.g.
-     `https://pectrack-production.up.railway.app`.
+     `https://pectrack.up.railway.app`.
    - Leave **Serverless** (app sleeping) **off**.
 4. In the service's **Variables** tab, add:
 
