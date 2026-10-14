@@ -1,10 +1,10 @@
 // Product catalog management. Admin has full CRUD; cashiers and customers
 // can only view — customers specifically only ever see products that are
 // currently available (the "Product Availability Calendar" rule from the
-// paper: unavailable/expired items are hidden from customers). Mounted at
+// paper: unavailable items are hidden from customers). Mounted at
 // /api/products in app.js.
 //
-// Stock quantity, min stock level, and expiration date live on the
+// Stock quantity and min stock level live on the
 // `inventory` table and are deliberately NOT managed here — that's Phase 5
 // (Inventory Management). Creating a product still inserts a matching
 // inventory row (the schema requires exactly one per product), just with
@@ -12,7 +12,6 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { optionalAuth, requireAuth, requireRole } from '../lib/auth.js'
-import { expiredSql } from '../lib/inventory.js'
 import { deleteFile, filePath, saveNamedFile } from '../lib/storage.js'
 import { normalize, parseId } from '../lib/validation.js'
 
@@ -23,9 +22,9 @@ const router = express.Router()
 // at it. null means "no photo yet" (show the Menu's placeholder tile),
 // never an empty string or a key it would have to know how to turn into
 // a URL itself — that translation happens exactly once, here.
-// `staff` adds the internal fields (shelf life). They are internal: the public catalogue keeps exactly the shape
-// it has always had — products.test.js guards that list by name.
-const mapProductRow = (row, { staff = false } = {}) => ({
+// The public catalogue keeps exactly the shape it has always had —
+// products.test.js guards that list by name.
+const mapProductRow = (row) => ({
   id: row.product_id,
   categoryId: row.category_id,
   categoryName: row.category_name,
@@ -40,7 +39,6 @@ const mapProductRow = (row, { staff = false } = {}) => ({
   // replaced photo still shows at once: new photo, new key, new URL. The
   // route ignores the parameter.
   imageUrl: row.image_key ? `/api/products/${row.product_id}/image?v=${row.image_key.match(/-([0-9a-f]{8})\.\w+$/)?.[1] ?? row.image_key.slice(0, 8)}` : null,
-  ...(staff ? { shelfLifeDays: row.shelf_life_days } : {}),
   // A boolean, never the count. availability_status is what the bakery
   // CHOOSES to sell; this is whether there is any to sell right now.
   // Without it the Menu offered a product at stock 0 as if it were on the
@@ -52,15 +50,10 @@ const mapProductRow = (row, { staff = false } = {}) => ({
 })
 
 const productSelectQuery = `SELECT p.product_id, p.category_id, c.category_name, p.product_name, p.description, p.price, p.variant, p.availability_status, p.image_key,
-            p.shelf_life_days,
             COALESCE(i.stock_quantity, 0) > 0 AS in_stock
      FROM products p
      JOIN categories c ON c.category_id = p.category_id
      LEFT JOIN inventory i ON i.product_id = p.product_id`
-// Requires the inventory join above (alias i). The rule itself lives in
-// lib/inventory.js so this router, order placement, and the dashboard can
-// never disagree on what "expired" is.
-const notExpiredSql = `NOT ${expiredSql('i')}`
 
 // Same shape as deliveries.js's allowedProofMimeTypes — the content type
 // IS the validation (express.raw({ type: [...keys] }) below refuses
@@ -112,16 +105,6 @@ function validateProductFields(body, { partial }) {
     if (typeof availabilityStatus !== 'boolean') errors.availabilityStatus = 'availabilityStatus must be true or false.'
     else values.availabilityStatus = availabilityStatus
   }
-  // Checked with `in body`, never has(): a nullable column with no
-  // default an absence should trigger.
-  if ('shelfLifeDays' in body) {
-    if (body.shelfLifeDays == null || body.shelfLifeDays === '') values.shelfLifeDays = null
-    else {
-      const days = Number(body.shelfLifeDays)
-      if (!Number.isInteger(days) || days <= 0) errors.shelfLifeDays = 'Enter a whole number of days, greater than zero.'
-      else values.shelfLifeDays = days
-    }
-  }
 
   return { errors, values }
 }
@@ -139,14 +122,13 @@ router.get('/', optionalAuth, async (request, response) => {
   // separate "public" one — because a customer view is already the most
   // restricted view this table has. `!request.user` covers the storefront;
   // the CUSTOMER check is unchanged from before this endpoint was public.
-  // "Unavailable/expired items are hidden from customers" — the paper's
-  // own availability rule, of which only the first half was enforced
-  // until now. Expired means inventory.expiration_date is before today;
-  // NULL (no expiry recorded) never hides anything.
+  // "Unavailable items are hidden from customers" — the paper's own
+  // availability rule. There is no expiry (CLIENT_REVISIONS_PLAN.md, R3):
+  // old bread is toasted and sold again, or recorded as a reject.
   const restrictToAvailable = !request.user || request.user.role === 'CUSTOMER'
-  const query = restrictToAvailable ? `${productSelectQuery} WHERE p.availability_status = TRUE AND ${notExpiredSql} ORDER BY p.product_name` : `${productSelectQuery} ORDER BY p.product_name`
+  const query = restrictToAvailable ? `${productSelectQuery} WHERE p.availability_status = TRUE ORDER BY p.product_name` : `${productSelectQuery} ORDER BY p.product_name`
   const result = await pool.query(query)
-  return response.json({ products: result.rows.map((row) => mapProductRow(row, { staff: !restrictToAvailable })) })
+  return response.json({ products: result.rows.map((row) => mapProductRow(row)) })
 })
 
 router.get('/:id', optionalAuth, async (request, response) => {
@@ -155,13 +137,13 @@ router.get('/:id', optionalAuth, async (request, response) => {
   const productId = parseId(request.params.id)
   if (!productId) return response.status(404).json({ message: 'Product not found.' })
 
-  const result = await pool.query(`${productSelectQuery} WHERE p.product_id = $1 AND (${notExpiredSql} OR $2) `, [productId, Boolean(request.user && request.user.role !== 'CUSTOMER')])
+  const result = await pool.query(`${productSelectQuery} WHERE p.product_id = $1`, [productId])
   const row = result.rows[0]
-  // An anonymous or CUSTOMER caller asking for a hidden (or expired)
-  // product gets the same 404 as a nonexistent one — no confirmation that
-  // it exists at all. Staff ($2 true above) still see it.
+  // An anonymous or CUSTOMER caller asking for a hidden product gets the
+  // same 404 as a nonexistent one — no confirmation that it exists at all.
+  // Staff still see it.
   if (!row || ((!request.user || request.user.role === 'CUSTOMER') && !row.availability_status)) return response.status(404).json({ message: 'Product not found.' })
-  return response.json({ product: mapProductRow(row, { staff: Boolean(request.user && request.user.role !== 'CUSTOMER') }) })
+  return response.json({ product: mapProductRow(row) })
 })
 
 // GET /api/products/:id/image — public, same visibility rule as the
@@ -173,13 +155,11 @@ router.get('/:id/image', optionalAuth, async (request, response) => {
   if (!productId) return response.status(404).json({ message: 'Product not found.' })
 
   const result = await pool.query(
-    `SELECT p.image_key, p.availability_status, ${notExpiredSql} AS not_expired
-       FROM products p LEFT JOIN inventory i ON i.product_id = p.product_id
-      WHERE p.product_id = $1`,
+    `SELECT p.image_key, p.availability_status FROM products p WHERE p.product_id = $1`,
     [productId],
   )
   const row = result.rows[0]
-  if (!row || !row.image_key || ((!request.user || request.user.role === 'CUSTOMER') && (!row.availability_status || !row.not_expired))) {
+  if (!row || !row.image_key || ((!request.user || request.user.role === 'CUSTOMER') && !row.availability_status)) {
     return response.status(404).json({ message: 'Image not found.' })
   }
 
@@ -226,7 +206,7 @@ router.post('/', requireRole('ADMIN'), async (request, response) => {
     await client.query('COMMIT')
 
     const created = await pool.query(`${productSelectQuery} WHERE p.product_id = $1`, [productId])
-    return response.status(201).json({ product: mapProductRow(created.rows[0], { staff: true }) })
+    return response.status(201).json({ product: mapProductRow(created.rows[0]) })
   } catch (error) {
     await client.query('ROLLBACK')
     if (error.code === '23505') return response.status(409).json({ message: 'A product with that name and variant already exists in this category.' })
@@ -261,8 +241,7 @@ router.patch('/:id', requireRole('ADMIN'), async (request, response) => {
            description = CASE WHEN $3 THEN $4 ELSE description END,
            variant = CASE WHEN $5 THEN $6 ELSE variant END,
            price = COALESCE($7, price),
-           availability_status = COALESCE($8, availability_status),
-           shelf_life_days = CASE WHEN $10 THEN $11::int ELSE shelf_life_days END
+           availability_status = COALESCE($8, availability_status)
        WHERE product_id = $9`,
       [
         values.categoryId ?? null,
@@ -274,8 +253,6 @@ router.patch('/:id', requireRole('ADMIN'), async (request, response) => {
         values.price ?? null,
         values.availabilityStatus ?? null,
         productId,
-        'shelfLifeDays' in values,
-        values.shelfLifeDays ?? null,
       ],
     )
   } catch (error) {
@@ -285,7 +262,7 @@ router.patch('/:id', requireRole('ADMIN'), async (request, response) => {
   }
 
   const updated = await pool.query(`${productSelectQuery} WHERE p.product_id = $1`, [productId])
-  return response.json({ product: mapProductRow(updated.rows[0], { staff: true }) })
+  return response.json({ product: mapProductRow(updated.rows[0]) })
 })
 
 // POST /api/products/:id/image — ADMIN only (STOREFRONT_PLAN.md, Decision
@@ -329,7 +306,7 @@ router.post(
     if (oldKey && oldKey !== storageKey) await deleteFile(oldKey)
 
     const updated = await pool.query(`${productSelectQuery} WHERE p.product_id = $1`, [productId])
-    return response.status(201).json({ product: mapProductRow(updated.rows[0], { staff: true }) })
+    return response.status(201).json({ product: mapProductRow(updated.rows[0]) })
   },
 )
 

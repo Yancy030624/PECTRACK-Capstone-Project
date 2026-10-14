@@ -4,7 +4,7 @@
 // range or by account, only the ids the seed itself created.
 //
 // Deliberately does NOT touch:
-//   - the RESTOCK/SPOILAGE inventory_movements rows Decision 10's pass
+//   - the RESTOCK/REJECT inventory_movements rows Decision 10's pass
 //     wrote, or the stock levels they set. Those are real inventory
 //     corrections the seed made NECESSARY, not fake sales activity —
 //     undoing them would leave stock in a state nothing ever actually
@@ -78,7 +78,7 @@ async function main() {
     // alongside order_details.
     await client.query('DELETE FROM payments WHERE order_id = ANY($1)', [orderIds])
     // Only the ORDER_PLACED/ORDER_CANCELLED movements this seed's own
-    // orders created — never a RESTOCK/SPOILAGE row (those have no
+    // orders created — never a RESTOCK/REJECT row (those have no
     // order_id at all, so ANY($1) against order_id can't match them
     // regardless).
     await client.query('DELETE FROM inventory_movements WHERE order_id = ANY($1)', [orderIds])

@@ -9,7 +9,6 @@
 // sell out" count), from this one function, so the two can never
 // disagree about which products are at risk.
 import { pool } from '../db.js'
-import { expiredSql } from './inventory.js'
 
 // Bread is baked every day. Recommending a week's worth would recommend
 // bread that goes stale before it sells; two days covers today plus the
@@ -39,8 +38,7 @@ export function recommendRestock({ days, stock }) {
 }
 
 // Every forecast product in a run, with its recommendation, most urgent
-// first. Expired stock counts as zero: it cannot be sold, so it cannot
-// cover demand.
+// first.
 export async function restockForRun(runId) {
   const [days, stock] = await Promise.all([
     pool.query(
@@ -49,8 +47,7 @@ export async function restockForRun(runId) {
     ),
     pool.query(
       `SELECT p.product_id, p.product_name, p.variant,
-              CASE WHEN ${expiredSql('i')} THEN 0 ELSE i.stock_quantity END AS sellable,
-              ${expiredSql('i')} AS expired
+              i.stock_quantity AS sellable
          FROM products p
          JOIN inventory i ON i.product_id = p.product_id
         WHERE p.product_id IN (SELECT DISTINCT product_id FROM forecasts WHERE run_id = $1)`,
@@ -75,7 +72,6 @@ export async function restockForRun(runId) {
       name: row.product_name,
       variant: row.variant,
       stock: Number(row.sellable),
-      stockExpired: row.expired,
       ...result,
     }
   })

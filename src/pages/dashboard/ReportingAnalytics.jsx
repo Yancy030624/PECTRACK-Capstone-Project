@@ -55,6 +55,22 @@ const tabsFor = (role) => (role === 'ADMIN' ? ['Sales', 'Products', 'Inventory',
 // not, matching reports.js restricting GET /api/reports/logs to ADMIN.
 // generate/applyTxFilters/the logs effect all build the exact same
 // request params as before — this is presentation only.
+// Readable names for the ledger's reasons. REJECT is the one loss the
+// bakery records now (CLIENT_REVISIONS_PLAN.md, R3); the older loss reasons
+// only appear on movements recorded before that change.
+const movementReasonLabels = {
+  ORDER_PLACED: 'Sold (order placed)',
+  ORDER_CANCELLED: 'Returned (order cancelled)',
+  RESTOCK: 'Restock',
+  REJECT: 'Reject',
+  CORRECTION: 'Correction (recount)',
+  PRODUCTION: 'Production',
+  SPOILAGE: 'Spoilage (before rejects)',
+  PRODUCTION_LOSS: 'Production loss (before rejects)',
+  EXPIRED: 'Expired (before rejects)',
+  DAMAGED: 'Damaged (before rejects)',
+}
+
 export function ReportingAnalytics({ user }) {
   const tabs = tabsFor(user.role)
   const [activeTab, setActiveTab] = useState('Sales')
@@ -395,7 +411,7 @@ export function ReportingAnalytics({ user }) {
                     <Tbody>
                       {inventory.movements.map((movement) => (
                         <Tr key={movement.reason}>
-                          <Td className="font-semibold text-ink-900">{movement.reason}</Td>
+                          <Td className="font-semibold text-ink-900">{movementReasonLabels[movement.reason] ?? movement.reason}</Td>
                           <Td numeric className={`font-semibold ${movement.netChange < 0 ? 'text-status-fail-fg' : 'text-status-done-fg'}`}>{movement.netChange > 0 ? '+' : ''}{movement.netChange}</Td>
                         </Tr>
                       ))}

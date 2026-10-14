@@ -38,10 +38,10 @@ export function DashboardHome({ user, onNavigate }) {
   const isAdmin = user.role === 'ADMIN'
   const loaded = summary && inventory
 
-  const stockCounts = { GOOD: 0, OKAY: 0, LOW: 0, EXPIRED: 0 }
+  const stockCounts = { GOOD: 0, OKAY: 0, LOW: 0 }
   for (const item of inventory ?? []) stockCounts[stockStatus(item)] += 1
   const lowItems = (inventory ?? [])
-    .filter((item) => ['LOW', 'EXPIRED'].includes(stockStatus(item)))
+    .filter((item) => stockStatus(item) === 'LOW')
     .sort((a, b) => a.stockQuantity - a.minStockLevel - (b.stockQuantity - b.minStockLevel))
 
   // Each tile: a count, the rule that colours it, and where it leads.
@@ -59,13 +59,6 @@ export function DashboardHome({ user, onNavigate }) {
       tone: stockCounts.OKAY > 0 ? 'okay' : 'good',
       note: stockCounts.OKAY > 0 ? 'Close to the minimum — plan the bake' : 'Nothing close to the minimum',
       to: ['Inventory Management', { stockFilter: 'OKAY' }],
-    },
-    {
-      label: 'Expired stock',
-      value: stockCounts.EXPIRED,
-      tone: stockCounts.EXPIRED > 0 ? 'attention' : 'good',
-      note: stockCounts.EXPIRED > 0 ? 'Hidden from the menu — write it off' : 'Nothing past its date',
-      to: ['Inventory Management', { stockFilter: 'EXPIRED' }],
     },
     {
       label: 'Orders to prepare',
@@ -148,10 +141,10 @@ export function DashboardHome({ user, onNavigate }) {
                 <span className={`h-2.5 w-2.5 rounded-full ${TONES.attention.dot}`} aria-hidden="true" />
                 Restock first
               </h2>
-              <p className="mt-1 text-sm text-ink-500">Low or expired, the furthest under its minimum at the top.</p>
+              <p className="mt-1 text-sm text-ink-500">At or under the minimum, the furthest under at the top.</p>
             </div>
             {allowed.has('Inventory Management') && (
-              <button type="button" onClick={() => onNavigate('Inventory Management', { stockFilter: 'ATTENTION' })} className="text-sm font-semibold text-brand-700 hover:underline">
+              <button type="button" onClick={() => onNavigate('Inventory Management', { stockFilter: 'LOW' })} className="text-sm font-semibold text-brand-700 hover:underline">
                 View all {lowItems.length} →
               </button>
             )}

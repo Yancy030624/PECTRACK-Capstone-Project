@@ -400,7 +400,7 @@ function RestockCard({ restock, dates, isAssumed, onSelect }) {
                       {item.name}
                       {item.variant && <span className="block text-xs font-normal text-ink-500">{item.variant}</span>}
                     </Td>
-                    <Td numeric>{whole(item.stock)}{item.stockExpired && <span className="block text-[10px] text-status-fail-fg">expired stock</span>}</Td>
+                    <Td numeric>{whole(item.stock)}</Td>
                     <Td>
                       <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${urgent ? 'bg-status-fail-bg text-status-fail-fg' : item.sellsOutOn ? 'bg-status-wait-bg text-status-wait-fg' : 'bg-status-done-bg text-status-done-fg'}`}>
                         {whenLabel(item.sellsOutOn)}

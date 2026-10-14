@@ -5,8 +5,9 @@
 //   GOOD     comfortably stocked — more than twice the minimum level
 //   OKAY     running low — above the minimum, at most twice it
 //   LOW      needs attention — at or under the minimum (incl. sold out)
-//   EXPIRED  needs attention — past its date with stock still on hand;
-//            hidden from the menu and refused at checkout until handled
+//
+// There is no "expired" status: the bakery does not track expiry
+// (CLIENT_REVISIONS_PLAN.md, R3).
 //
 // LOW matches the server's own `lowStock` (stock_quantity <=
 // min_stock_level, routes/inventory.js) exactly; OKAY is the early
@@ -15,7 +16,6 @@
 export function stockStatus(item) {
   const stock = Number(item.stockQuantity)
   const minimum = Number(item.minStockLevel)
-  if (item.expired && stock > 0) return 'EXPIRED'
   if (stock <= minimum) return 'LOW'
   if (minimum > 0 && stock <= minimum * 2) return 'OKAY'
   return 'GOOD'
@@ -25,7 +25,6 @@ export const STOCK_STATUSES = {
   GOOD: { label: 'Good', tone: 'good' },
   OKAY: { label: 'Running low', tone: 'okay' },
   LOW: { label: 'Low stock', tone: 'attention' },
-  EXPIRED: { label: 'Expired', tone: 'attention' },
 }
 
 // The three indicator colours, by meaning. `neutral` is for a plain

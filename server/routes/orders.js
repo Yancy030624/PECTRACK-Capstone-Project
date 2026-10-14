@@ -15,7 +15,7 @@ import express from 'express'
 import { pool } from '../db.js'
 import { billingListSql, getBillingSummary, mapBillingColumns } from '../lib/billing.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
-import { expiredSql, syncStockAlert } from '../lib/inventory.js'
+import { syncStockAlert } from '../lib/inventory.js'
 import { getBulkOrderThreshold } from '../lib/settings.js'
 import { parseId } from '../lib/validation.js'
 
@@ -325,14 +325,9 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     const productIds = parsedItems.map((item) => item.productId)
     // ::bigint[] casts the array explicitly rather than leaving Postgres to
     // infer a type for the string values parseId produced.
-    // The expiry check joins inventory here, in the same read: a product
-    // past its expiration_date is not for sale whatever availability_status
-    // says (products.js hides it from the catalogue by the same rule), and
-    // the stock guard further down cannot express "there is stock, but it
-    // is expired".
     const productsResult = await client.query(
-      `SELECT p.product_id, p.price, p.availability_status, ${expiredSql('i')} AS expired
-         FROM products p LEFT JOIN inventory i ON i.product_id = p.product_id
+      `SELECT p.product_id, p.price, p.availability_status
+         FROM products p
         WHERE p.product_id = ANY($1::bigint[])`,
       [productIds],
     )
@@ -343,7 +338,7 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     const productsById = new Map(productsResult.rows.map((row) => [row.product_id, row]))
     for (const item of parsedItems) {
       const product = productsById.get(item.productId)
-      if (!product || !product.availability_status || product.expired) {
+      if (!product || !product.availability_status) {
         await client.query('ROLLBACK')
         return response.status(422).json({ message: `Product ${item.productId} is not available.`, errors: { items: `Product ${item.productId} is not available.` } })
       }

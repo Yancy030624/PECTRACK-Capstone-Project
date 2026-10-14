@@ -50,7 +50,7 @@ async function call(method, urlPath, cookie, body) {
   return { status: response.status, body: payload }
 }
 
-// The admin-only steps below (Decision 10's restock/spoilage pass) need an authenticated ADMIN
+// The admin-only steps below (Decision 10's restock/reject pass) need an authenticated ADMIN
 // session — but ymata_admin is the user's own real account, and this
 // script has no business knowing that password. Rather than touch the
 // real admin, it creates a small helper admin through the same real
@@ -64,7 +64,7 @@ async function call(method, urlPath, cookie, body) {
 // 'DELIVERY_PERSONNEL')` — an ADMIN row is structurally excluded, and no
 // other screen in this app lists admin accounts at all. Deleting it
 // would also be a genuine FK problem, not just extra code: the RESTOCK
-// and SPOILAGE rows it writes into inventory_movements are real
+// and REJECT rows it writes into inventory_movements are real
 // inventory corrections Decision 10 explicitly says clear-demo-data.mjs
 // must NOT undo, so inventory_movements.changed_by keeps pointing at
 // this account forever, and that reference (REFERENCES users(user_id),
@@ -411,7 +411,7 @@ async function main() {
   }
   log(`  Ordered heavily against ${scarceProducts.map((p) => p.name).join(', ')}.\n`)
 
-  // ============ 9. Restock everything else (Decision 10), and log spoilage ============
+  // ============ 9. Restock everything else (Decision 10), and log rejects ============
   log('Restocking (Decision 10 — everything except the three scarce products)...')
   const scarceIds = new Set(scarceProducts.map((p) => p.id))
   const stockResult = await pool.query('SELECT product_id, stock_quantity FROM inventory')
@@ -422,14 +422,14 @@ async function main() {
     if (current >= 80) continue
     await call('PATCH', `/api/inventory/${product.id}`, adminCookie, { stockQuantity: 100, reason: 'RESTOCK' })
   }
-  // Two SPOILAGE movements — the number a bakery cares most about, and
-  // until now nothing in this seed (or the app) ever recorded one.
-  const spoilageTargets = [byName('Cheese Loaf'), byName('Broas Plate')].filter(Boolean)
-  for (const product of spoilageTargets) {
+  // Two REJECT movements — the only loss the bakery writes down
+  // (CLIENT_REVISIONS_PLAN.md, R3), and the number it cares most about.
+  const rejectTargets = [byName('Cheese Loaf'), byName('Broas Plate')].filter(Boolean)
+  for (const product of rejectTargets) {
     const current = (await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [product.id])).rows[0].stock_quantity
-    await call('PATCH', `/api/inventory/${product.id}`, adminCookie, { stockQuantity: Math.max(0, current - 5), reason: 'SPOILAGE' })
+    await call('PATCH', `/api/inventory/${product.id}`, adminCookie, { stockQuantity: Math.max(0, current - 5), reason: 'REJECT', note: 'Rejected at the end of the day' })
   }
-  log(`  Restocked; logged SPOILAGE on ${spoilageTargets.map((p) => p.name).join(', ')}.\n`)
+  log(`  Restocked; logged rejects on ${rejectTargets.map((p) => p.name).join(', ')}.\n`)
 
   // ============ Provenance (PHASE9A_DATA_FOUNDATION_PLAN.md, Decision 9) ============
   // Every order this script placed went through the real API, which writes
@@ -437,11 +437,11 @@ async function main() {
   // From the bakery's point of view it was not — these are demo rows — and
   // the whole point of the column is that a model can tell the two apart.
   await pool.query(`UPDATE orders SET data_source = 'ASSUMED' WHERE order_id = ANY($1)`, [orderIds])
-  // The ledger rows those orders wrote, and the RESTOCK / SPOILAGE rows
+  // The ledger rows those orders wrote, and the RESTOCK / REJECT rows
   // Decision 10's pass wrote through the helper admin, are marked the same
   // way: the stock they moved is real state, the events are not real
   // history. analytics_daily_waste would otherwise report the two seeded
-  // spoilages as genuine waste.
+  // rejects as genuine waste.
   const marked = await pool.query(
     `UPDATE inventory_movements SET data_source = 'ASSUMED'
       WHERE order_id = ANY($1) OR (changed_by = $2 AND created_at >= $3)`,
@@ -450,7 +450,7 @@ async function main() {
   log(`Marked every seeded order and ${marked.rowCount} inventory movements data_source = ASSUMED.`)
 
   // ============ Retire the helper admin ============
-  // It cannot be deleted — the RESTOCK/SPOILAGE rows it wrote reference it
+  // It cannot be deleted — the RESTOCK/REJECT rows it wrote reference it
   // through inventory_movements.changed_by, which is exactly the point of
   // an audit trail. But it must not stay USABLE: it is a full admin whose
   // sign-in codes go to a .local address nobody reads, and every run of

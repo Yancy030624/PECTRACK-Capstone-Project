@@ -215,7 +215,7 @@ describe('editing stock directly', () => {
 
   // CLIENT_REVISIONS_PLAN.md, R1 — cashiers encode stock themselves, with
   // no approval step; the ledger records which cashier did it. The minimum
-  // level and expiry stay admin settings.
+  // level stays an admin setting.
   test('a cashier changes the stock count directly, and the ledger names the cashier', async () => {
     const before = (await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [productId])).rows[0].stock_quantity
     const response = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ stockQuantity: before + 4, reason: 'RESTOCK', note: 'Morning delivery' }) })
@@ -234,11 +234,9 @@ describe('editing stock directly', () => {
     await pool.query(`DELETE FROM inventory_movements WHERE inventory_id = (SELECT inventory_id FROM inventory WHERE product_id = $1) AND reason = 'RESTOCK' AND note = 'Morning delivery'`, [productId])
   })
 
-  test('a cashier cannot change the minimum level or the expiry', async () => {
-    for (const body of [{ minStockLevel: 8 }, { expirationDate: '2030-01-01' }]) {
-      const response = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify(body) })
-      assert.equal(response.status, 403, JSON.stringify(body))
-    }
+  test('a cashier cannot change the minimum level', async () => {
+    const response = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ minStockLevel: 8 }) })
+    assert.equal(response.status, 403)
   })
 
   test('a malformed or nonexistent product id is treated as "not found"', async () => {
@@ -248,24 +246,19 @@ describe('editing stock directly', () => {
     }
   })
 
-  test('updates minStockLevel and expirationDate without requiring a reason', async () => {
+  test('updates minStockLevel without requiring a reason', async () => {
     const response = await fetch(`${baseUrl}/api/inventory/${productId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
-      body: JSON.stringify({ minStockLevel: 8, expirationDate: '2026-12-31' }),
+      body: JSON.stringify({ minStockLevel: 8 }),
     })
     assert.equal(response.status, 200)
     const body = await response.json()
     assert.equal(body.item.minStockLevel, 8)
-    assert.equal(body.item.expirationDate, '2026-12-31')
     // Untouched by this request — proves COALESCE preserved it.
     assert.equal(body.item.stockQuantity, 20)
-  })
-
-  test('expirationDate can be cleared back to null', async () => {
-    const response = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ expirationDate: null }) })
-    assert.equal(response.status, 200)
-    assert.equal((await response.json()).item.expirationDate, null)
+    // No expiry any more (CLIENT_REVISIONS_PLAN.md, R3).
+    assert.ok(!('expirationDate' in body.item) && !('expired' in body.item))
   })
 
   test('changing stockQuantity without a reason is rejected, and nothing changes', async () => {
@@ -316,14 +309,14 @@ describe('editing stock directly', () => {
   })
 
   // A reason and a new figure arrive separately, and used to be accepted
-  // in any combination. RESTOCK only adds; a loss reason only removes.
+  // in any combination. RESTOCK only adds; REJECT only removes.
   test('a reason that contradicts the direction of the change is refused, and the ledger is untouched', async () => {
     // Stock is 35 going in.
     const before = await pool.query('SELECT COUNT(*)::int AS n FROM inventory_movements WHERE inventory_id = $1', [inventoryId])
     const restockDown = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ stockQuantity: 30, reason: 'RESTOCK' }) })
     assert.equal(restockDown.status, 422)
-    const spoilageUp = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ stockQuantity: 40, reason: 'SPOILAGE' }) })
-    assert.equal(spoilageUp.status, 422)
+    const rejectUp = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ stockQuantity: 40, reason: 'REJECT' }) })
+    assert.equal(rejectUp.status, 422)
     const after = await pool.query('SELECT COUNT(*)::int AS n, (SELECT stock_quantity FROM inventory WHERE inventory_id = $1) AS stock FROM inventory_movements WHERE inventory_id = $1', [inventoryId])
     assert.equal(after.rows[0].n, before.rows[0].n)
     assert.equal(after.rows[0].stock, 35)
@@ -341,43 +334,39 @@ describe('editing stock directly', () => {
     assert.equal(after.rows[0].n, before.rows[0].n, 'no-op change must not add a movement row')
   })
 
-  test('a negative movement (spoilage) is recorded with the correct sign', async () => {
+  test('a negative movement (reject) is recorded with the correct sign', async () => {
     // Stock is 35 going in.
     const response = await fetch(`${baseUrl}/api/inventory/${productId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
-      body: JSON.stringify({ stockQuantity: 30, reason: 'SPOILAGE', note: 'Five units past expiry' }),
+      body: JSON.stringify({ stockQuantity: 30, reason: 'REJECT', note: 'Five rejected at the end of the day' }),
     })
     assert.equal(response.status, 200)
     assert.equal((await response.json()).item.stockQuantity, 30)
 
     const latest = await pool.query('SELECT quantity_change, reason FROM inventory_movements WHERE inventory_id = $1 ORDER BY movement_id DESC LIMIT 1', [inventoryId])
     assert.equal(latest.rows[0].quantity_change, -5) // 30 - 35
-    assert.equal(latest.rows[0].reason, 'SPOILAGE')
+    assert.equal(latest.rows[0].reason, 'REJECT')
   })
 
-  // migration 008 (RULES-PLANS/INVENTORY_REVIEW.md) — an admin's direct edit
-  // can now name WHICH kind of loss this was, not just SPOILAGE for
-  // everything. Stock is 30 going in from the previous test.
-  test('an admin direct edit accepts the three loss-specific reasons and records each correctly', async () => {
-    const cases = [
-      { reason: 'PRODUCTION_LOSS', from: 30, to: 26 },
-      { reason: 'EXPIRED', from: 26, to: 23 },
-      { reason: 'DAMAGED', from: 23, to: 21 },
-    ]
-    for (const { reason, from, to } of cases) {
+  // CLIENT_REVISIONS_PLAN.md, R3 — REJECT is the one loss reason a person
+  // may record. The older loss reasons stay in the enum for past rows only,
+  // so a new edit naming one is refused, and the ledger is untouched.
+  test('the retired loss reasons are refused for new edits', async () => {
+    // Stock is 30 going in from the previous test.
+    const before = await pool.query('SELECT COUNT(*)::int AS n FROM inventory_movements WHERE inventory_id = $1', [inventoryId])
+    for (const reason of ['SPOILAGE', 'PRODUCTION_LOSS', 'EXPIRED', 'DAMAGED']) {
       const response = await fetch(`${baseUrl}/api/inventory/${productId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
-        body: JSON.stringify({ stockQuantity: to, reason }),
+        body: JSON.stringify({ stockQuantity: 25, reason }),
       })
-      assert.equal(response.status, 200, reason)
-      assert.equal((await response.json()).item.stockQuantity, to, reason)
-
-      const latest = await pool.query('SELECT quantity_change, reason FROM inventory_movements WHERE inventory_id = $1 ORDER BY movement_id DESC LIMIT 1', [inventoryId])
-      assert.equal(latest.rows[0].quantity_change, to - from, reason)
-      assert.equal(latest.rows[0].reason, reason)
+      assert.equal(response.status, 422, reason)
+      assert.ok((await response.json()).errors.reason, reason)
     }
+    const after = await pool.query('SELECT COUNT(*)::int AS n, (SELECT stock_quantity FROM inventory WHERE inventory_id = $1) AS stock FROM inventory_movements WHERE inventory_id = $1', [inventoryId])
+    assert.equal(after.rows[0].n, before.rows[0].n)
+    assert.equal(after.rows[0].stock, 30)
   })
 
   // syncStockAlert itself is unit-tested thoroughly in lib/inventory.test.js
@@ -385,7 +374,7 @@ describe('editing stock directly', () => {
   // whatever stock is going in, this PATCH sets it ABSOLUTELY to 5, so the
   // prior test's ending figure doesn't matter here).
   test('dropping stock to the minimum opens an alert; restoring it resolves the alert', async () => {
-    const dropResponse = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ stockQuantity: 5, reason: 'SPOILAGE' }) })
+    const dropResponse = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ stockQuantity: 5, reason: 'REJECT' }) })
     assert.equal(dropResponse.status, 200)
 
     const opened = await pool.query('SELECT is_resolved FROM stock_alerts WHERE inventory_id = $1', [inventoryId])

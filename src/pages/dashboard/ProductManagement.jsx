@@ -141,9 +141,6 @@ export function ProductManagement({ user }) {
     setEditingProductId(product.id)
     setEditingProduct({
       categoryId: product.categoryId, name: product.name, description: product.description ?? '', price: product.price, variant: product.variant ?? '', availabilityStatus: product.availabilityStatus,
-      // Phase 9A packaging — strings for the inputs; saveProduct sends
-      // them as-is and the server clears both when both are blank.
-      shelfLifeDays: product.shelfLifeDays == null ? '' : String(product.shelfLifeDays),
     })
     setEditingProductErrors({})
   }
@@ -367,11 +364,6 @@ export function ProductManagement({ user }) {
                           </Field>
                           <Field label="Price (₱)" error={editingProductErrors.price}>
                             <Input type="number" min="0" step="0.01" value={editingProduct.price} onChange={(event) => updateEditingProductField('price', event.target.value)} />
-                          </Field>
-                        </div>
-                        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                          <Field label="Shelf life (days, optional)" error={editingProductErrors.shelfLifeDays}>
-                            <Input value={editingProduct.shelfLifeDays ?? ''} onChange={(event) => updateEditingProductField('shelfLifeDays', event.target.value)} inputMode="numeric" />
                           </Field>
                         </div>
                         <div className="mt-3 flex gap-2">

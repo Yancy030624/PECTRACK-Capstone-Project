@@ -1,6 +1,6 @@
 // Inventory management (Phase 5). Every product has exactly one inventory
 // row (products.js creates it on product creation), so this router is
-// about the STOCK side of that row — quantity, minimum level, expiry —
+// about the STOCK side of that row — quantity and minimum level —
 // not the product's own name/price/description, which stay in
 // routes/products.js.
 //
@@ -17,30 +17,24 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
-import { expiredSql, syncStockAlert } from '../lib/inventory.js'
+import { syncStockAlert } from '../lib/inventory.js'
 import { normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
 
-// Reasons a direct stock edit is allowed to record. Deliberately narrower
-// than the full stock_movement_reason enum: ORDER_PLACED and
-// ORDER_CANCELLED are written by the system itself when an order moves
-// (Steps 3–4), never chosen by a person filling in a form here.
-//
-// PRODUCTION_LOSS/EXPIRED/DAMAGED (migration 008 — INVENTORY_REVIEW.md)
-// widen this beyond Phase 5's original RESTOCK/SPOILAGE/CORRECTION so an
-// edit recording a loss can say WHICH kind it was. Before this, every
-// loss — burned, expired, or genuinely spoiled — had to be filed as
-// SPOILAGE, so analytics could never separate a production accident from
-// ordinary overproduction.
-const manualMovementReasons = new Set(['RESTOCK', 'SPOILAGE', 'CORRECTION', 'PRODUCTION_LOSS', 'EXPIRED', 'DAMAGED'])
-// Which way each manual reason is allowed to move stock. RESTOCK only ever
-// adds; the four loss reasons only ever remove; CORRECTION is the one that
-// goes either way (a recount can find more or less). Checked on the
-// direct edit, where the reason and the new figure arrive separately and
-// used to be accepted in any combination — a "+20 SPOILAGE" ledger row is
-// not a loss, and analytics built on the ledger would read it as one.
-const reasonDirection = { RESTOCK: 1, SPOILAGE: -1, PRODUCTION_LOSS: -1, EXPIRED: -1, DAMAGED: -1 }
+// Reasons a direct stock edit may record (CLIENT_REVISIONS_PLAN.md, R3).
+// ORDER_PLACED and ORDER_CANCELLED are written by the system itself when an
+// order moves, never chosen in a form. The bakery records only rejected
+// bread as a loss — burned or dropped bread is not written down — so REJECT
+// is the one loss reason. The older loss reasons (SPOILAGE, PRODUCTION_LOSS,
+// EXPIRED, DAMAGED) stay in the enum for past ledger rows only.
+const manualMovementReasons = new Set(['RESTOCK', 'REJECT', 'CORRECTION'])
+// Which way each reason may move stock: a restock only adds, a reject only
+// removes, a correction (a recount) goes either way. Checked because the
+// reason and the new figure arrive separately — a "+20 REJECT" ledger row
+// would not be a loss, and the loss figures built on the ledger would read
+// it as one.
+const reasonDirection = { RESTOCK: 1, REJECT: -1 }
 
 const mapInventoryRow = (row) => ({
   productId: row.product_id,
@@ -52,22 +46,15 @@ const mapInventoryRow = (row) => ({
   categoryName: row.category_name,
   stockQuantity: row.stock_quantity,
   minStockLevel: row.min_stock_level,
-  expirationDate: row.expiration_date,
   lastUpdated: row.last_updated,
   // Computed rather than stored: it's always exactly this comparison, so
   // storing it would just be a second place it could go stale relative to
   // stock_quantity and min_stock_level.
   lowStock: row.stock_quantity <= row.min_stock_level,
-  // Same "computed, never stored" reasoning as lowStock. True once
-  // expiration_date is before today: the product is hidden from the
-  // catalogue and refused at checkout (routes/products.js, routes/orders.js)
-  // until the date is cleared or the stock replaced.
-  expired: row.expired,
 })
 
 const inventorySelectQuery = `SELECT i.inventory_id, i.product_id, p.product_name, p.variant, p.category_id, c.category_name,
-            i.stock_quantity, i.min_stock_level, i.expiration_date, i.last_updated,
-            ${expiredSql('i')} AS expired
+            i.stock_quantity, i.min_stock_level, i.last_updated
      FROM inventory i
      JOIN products p ON p.product_id = i.product_id
      JOIN categories c ON c.category_id = p.category_id`
@@ -81,12 +68,12 @@ router.get('/', async (_request, response) => {
 
 // PATCH /api/inventory/:productId — a direct stock edit, applied at once.
 // Admin and cashier both change the stock count (with a reason, written to
-// the ledger with who made it). The minimum level and expiry are settings,
-// not counts, and stay with the admin.
-const adminOnlyInventoryFields = ['minStockLevel', 'expirationDate']
+// the ledger with who made it). The minimum level is a setting, not a
+// count, and stays with the admin.
+const adminOnlyInventoryFields = ['minStockLevel']
 router.patch('/:productId', async (request, response) => {
   if (request.user.role !== 'ADMIN' && adminOnlyInventoryFields.some((field) => field in request.body)) {
-    return response.status(403).json({ message: 'Only an admin can change the minimum level or the expiry date.' })
+    return response.status(403).json({ message: 'Only an admin can change the minimum level.' })
   }
   const productId = parseId(request.params.productId)
   if (!productId) return response.status(404).json({ message: 'Product not found.' })
@@ -114,12 +101,6 @@ router.patch('/:productId', async (request, response) => {
     if (!Number.isInteger(minStockLevel) || minStockLevel < 0) errors.minStockLevel = 'Enter a whole number, zero or greater.'
     else values.minStockLevel = minStockLevel
   }
-  if ('expirationDate' in request.body) {
-    const rawExpirationDate = request.body.expirationDate
-    if (rawExpirationDate == null || rawExpirationDate === '') values.expirationDate = null
-    else if (!/^\d{4}-\d{2}-\d{2}$/.test(rawExpirationDate)) errors.expirationDate = 'Enter a valid date (YYYY-MM-DD).'
-    else values.expirationDate = rawExpirationDate
-  }
 
   // A stock_quantity change must say WHY — that's the entire point of the
   // movement ledger (see PHASE5_PLAN.md, Decision 1). Every other field on
@@ -127,7 +108,7 @@ router.patch('/:productId', async (request, response) => {
   let reason = null
   if ('stockQuantity' in values) {
     reason = normalize(request.body.reason).toUpperCase()
-    if (!manualMovementReasons.has(reason)) errors.reason = 'Select why stock is changing: restock, spoilage, correction, production loss, expired, or damaged.'
+    if (!manualMovementReasons.has(reason)) errors.reason = 'Select why stock is changing: restock, reject, or recount.'
   }
 
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
@@ -172,31 +153,26 @@ router.patch('/:productId', async (request, response) => {
       if (expected && direction !== 0 && direction !== expected) {
         await client.query('ROLLBACK')
         const message = expected > 0
-          ? `A restock adds stock — the new quantity is below the current ${current.stock_quantity}. Use correction, or a loss reason, for a decrease.`
-          : `${reason.toLowerCase().replaceAll('_', ' ')} removes stock — the new quantity is above the current ${current.stock_quantity}. Use restock, or correction, for an increase.`
+          ? `A restock adds stock — the new quantity is below the current ${current.stock_quantity}. Use reject, or a recount, for a decrease.`
+          : `${reason.toLowerCase().replaceAll('_', ' ')} removes stock — the new quantity is above the current ${current.stock_quantity}. Use restock, or a recount, for an increase.`
         return response.status(422).json({ message, errors: { reason: message } })
       }
     }
 
-    // expiration_date is nullable and clearing it to NULL is a real, valid
-    // edit — COALESCE alone can't distinguish "not sent" from "sent as
-    // null", so it uses a CASE keyed on presence, same as products.js's
-    // description/variant fields. stock_quantity and min_stock_level are
-    // NOT NULL columns where an omitted field is never intentionally null,
-    // so plain COALESCE is safe for those two.
+    // stock_quantity and min_stock_level are NOT NULL columns where an
+    // omitted field is never intentionally null, so plain COALESCE is safe.
     const updated = await client.query(
       `UPDATE inventory
        SET stock_quantity = COALESCE($1, stock_quantity),
            min_stock_level = COALESCE($2, min_stock_level),
-           expiration_date = CASE WHEN $3 THEN $4 ELSE expiration_date END,
            last_updated = CURRENT_TIMESTAMP
-       WHERE product_id = $5
+       WHERE product_id = $3
        RETURNING stock_quantity, min_stock_level`,
-      [values.stockQuantity ?? null, values.minStockLevel ?? null, 'expirationDate' in values, values.expirationDate ?? null, productId],
+      [values.stockQuantity ?? null, values.minStockLevel ?? null, productId],
     )
 
-    // Only stock_quantity changes get a ledger row — min_stock_level and
-    // expiration_date are thresholds/metadata, not stock itself, so
+    // Only stock_quantity changes get a ledger row — min_stock_level is a
+    // threshold, not stock itself, so
     // inventory_movements (which exists to explain changes IN STOCK) has
     // nothing to say about them.
     if ('stockQuantity' in values) {

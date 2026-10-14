@@ -359,7 +359,7 @@ router.get('/summary', async (_request, response) => {
       collected: todayRow.collected,
     },
     outstanding: outstandingResult.rows[0].outstanding,
-    // Low and expired stock are not here: the Dashboard reads them from
+    // Low stock is not here: the Dashboard reads it from
     // /api/inventory through the same rule the Inventory screen filters
     // by (PAPER_VS_SYSTEM.md H4).
     deliveriesNeedingAttention: deliveriesResult.rows[0].n,
@@ -445,14 +445,13 @@ router.get('/inventory', async (request, response) => {
     ),
     // Stock LOST gets its own headline figure — for a bakery this is the
     // single most operationally meaningful number in the whole section.
-    // Since migration 008 a loss is filed under whichever of four reasons
-    // fits (SPOILAGE, PRODUCTION_LOSS, EXPIRED, DAMAGED); summing only
-    // SPOILAGE, as this did before, silently dropped the other three from
-    // the headline the moment anyone used them.
+    // Losses are recorded as REJECT now (migration 023); the four older
+    // reasons are still summed so a range that includes past rows is
+    // complete.
     pool.query(
       `SELECT COALESCE(SUM(-im.quantity_change), 0)::int AS lost_units
          FROM inventory_movements im
-        WHERE im.reason IN ('SPOILAGE', 'PRODUCTION_LOSS', 'EXPIRED', 'DAMAGED') AND ${dateRangeSql('im.created_at')}`,
+        WHERE im.reason IN ('REJECT', 'SPOILAGE', 'PRODUCTION_LOSS', 'EXPIRED', 'DAMAGED') AND ${dateRangeSql('im.created_at')}`,
       [from, to],
     ),
     getLowStockAlerts(),
@@ -566,7 +565,8 @@ router.get('/analytics', async (request, response) => {
             COALESCE(s.units_sold, 0) AS units_sold, COALESCE(s.revenue, 0)::numeric(12, 2) AS revenue, COALESCE(s.orders, 0) AS orders,
             COALESCE(s.stocked_out, FALSE) AS stocked_out,
             COALESCE(w.expired, 0) AS expired, COALESCE(w.spoiled, 0) AS spoiled, COALESCE(w.damaged, 0) AS damaged,
-            COALESCE(w.production_loss, 0) AS production_loss, COALESCE(w.correction, 0) AS correction
+            COALESCE(w.production_loss, 0) AS production_loss, COALESCE(w.correction, 0) AS correction,
+            COALESCE(w.rejected, 0) AS rejected
        FROM days d
        JOIN products p ON p.product_id = d.product_id
        LEFT JOIN analytics_daily_sales s ON s.local_date = d.local_date AND s.product_id = d.product_id AND s.data_source = d.data_source
@@ -590,6 +590,7 @@ router.get('/analytics', async (request, response) => {
     damaged: row.damaged,
     productionLoss: row.production_loss,
     correction: row.correction,
+    rejected: row.rejected,
   }))
 
   if (request.user.role === 'ADMIN') {
@@ -601,8 +602,8 @@ router.get('/analytics', async (request, response) => {
   }
 
   if (format === 'csv') {
-    const header = ['Date', 'Product ID', 'Product', 'Variant', 'Data source', 'Units sold', 'Revenue', 'Orders', 'Stocked out', 'Expired', 'Spoiled', 'Damaged', 'Production loss', 'Correction']
-    const lines = [csvRow(header), ...rows.map((row) => csvRow([row.date, row.productId, row.productName, row.variant, row.dataSource, row.unitsSold, row.revenue, row.orders, row.stockedOut, row.expired, row.spoiled, row.damaged, row.productionLoss, row.correction]))]
+    const header = ['Date', 'Product ID', 'Product', 'Variant', 'Data source', 'Units sold', 'Revenue', 'Orders', 'Stocked out', 'Expired', 'Spoiled', 'Damaged', 'Production loss', 'Correction', 'Rejected']
+    const lines = [csvRow(header), ...rows.map((row) => csvRow([row.date, row.productId, row.productName, row.variant, row.dataSource, row.unitsSold, row.revenue, row.orders, row.stockedOut, row.expired, row.spoiled, row.damaged, row.productionLoss, row.correction, row.rejected]))]
     response.type('text/csv')
     response.set('Content-Disposition', `attachment; filename="analytics-${from}-to-${to}.csv"`)
     return response.send(lines.join('\r\n'))
