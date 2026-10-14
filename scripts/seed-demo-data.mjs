@@ -431,6 +431,49 @@ async function main() {
   }
   log(`  Restocked; logged rejects on ${rejectTargets.map((p) => p.name).join(', ')}.\n`)
 
+  // ============ 10. Ingredients (CLIENT_REVISIONS_PLAN.md, R5) ============
+  // A bakery's usual raw materials, with a week of restocks, usage and one
+  // reject, so the Ingredients tab, its Dashboard tile and the report have
+  // something to show. Three are left low or close to it on purpose. An
+  // ingredient that already exists (a second run) is left alone.
+  log('Adding demo ingredients...')
+  const demoIngredients = [
+    { name: 'Bread flour', unit: 'kg', min: '25', opening: '50', moves: [['USAGE', '18'], ['RESTOCK', '50'], ['USAGE', '22.5']] },
+    { name: 'All-purpose flour', unit: 'kg', min: '20', opening: '40', moves: [['USAGE', '12'], ['USAGE', '9.5']] },
+    { name: 'White sugar', unit: 'kg', min: '15', opening: '30', moves: [['USAGE', '8'], ['USAGE', '6.25']] },
+    { name: 'Brown sugar', unit: 'kg', min: '10', opening: '14', moves: [['USAGE', '4'], ['USAGE', '3']] },
+    { name: 'Eggs', unit: 'tray', min: '5', opening: '12', moves: [['USAGE', '4'], ['REJECT', '1', 'Cracked in delivery'], ['RESTOCK', '6']] },
+    { name: 'Butter', unit: 'kg', min: '5', opening: '9', moves: [['USAGE', '2.5']] },
+    { name: 'Instant yeast', unit: 'pack', min: '10', opening: '30', moves: [['USAGE', '6']] },
+    { name: 'Evaporated milk', unit: 'pc', min: '24', opening: '48', moves: [['USAGE', '12']] },
+    { name: 'Cheese', unit: 'kg', min: '3', opening: '4', moves: [['USAGE', '1.5']] },
+    { name: 'Salt', unit: 'kg', min: '2', opening: '10', moves: [['USAGE', '1']] },
+  ]
+  const ingredientIds = []
+  for (const demo of demoIngredients) {
+    const created = await call('POST', '/api/ingredients', adminCookie, { name: demo.name, unit: demo.unit, minStockLevel: demo.min, stockQuantity: demo.opening })
+    if (created.status === 409) continue
+    if (created.status !== 201) throw new Error(`Ingredient ${demo.name} failed: ${JSON.stringify(created.body)}`)
+    const id = created.body.ingredient.id
+    ingredientIds.push(id)
+    for (const [reason, quantity, note] of demo.moves) {
+      const moved = await call('POST', `/api/ingredients/${id}/movements`, adminCookie, { reason, quantity, ...(note ? { note } : {}) })
+      if (moved.status !== 201) throw new Error(`Ingredient ${demo.name} ${reason} failed: ${JSON.stringify(moved.body)}`)
+    }
+  }
+  // Spread each ingredient's history over the past week: the opening count
+  // seven days ago, then one movement a day after it, in the order made.
+  await pool.query(
+    `UPDATE ingredient_movements m
+        SET created_at = CURRENT_TIMESTAMP - make_interval(days => 7 - n.position) + INTERVAL '2 hours',
+            data_source = 'ASSUMED'
+       FROM (SELECT movement_id, (ROW_NUMBER() OVER (PARTITION BY ingredient_id ORDER BY movement_id) - 1)::int AS position
+               FROM ingredient_movements WHERE ingredient_id = ANY($1)) n
+      WHERE n.movement_id = m.movement_id`,
+    [ingredientIds],
+  )
+  log(`  Added ${ingredientIds.length} ingredients with a week of movements.\n`)
+
   // ============ Daily order numbers (CLIENT_REVISIONS_PLAN.md, R4) ============
   // Each order was numbered for the day it was placed — today — and then
   // moved to an earlier day. Number every day again from order_date.
@@ -466,7 +509,7 @@ async function main() {
   log('Deactivated the helper admin account used for the restock pass.')
 
   // ============ Manifest ============
-  await fs.writeFile(manifestPath, JSON.stringify({ seededAt: new Date().toISOString(), orderIds }, null, 2))
+  await fs.writeFile(manifestPath, JSON.stringify({ seededAt: new Date().toISOString(), orderIds, ingredientIds }, null, 2))
   log(`Done. ${orderIds.length} orders seeded. Manifest written to ${manifestPath}.`)
   log('Run scripts/clear-demo-data.mjs to remove exactly these rows later.')
 

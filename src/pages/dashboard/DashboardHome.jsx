@@ -32,14 +32,16 @@ const restockRows = 5
 export function DashboardHome({ user, onNavigate }) {
   const [summary, setSummary] = useState(null)
   const [inventory, setInventory] = useState(null)
+  const [ingredients, setIngredients] = useState(null)
   const [recentOrders, setRecentOrders] = useState(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    Promise.all([apiGet('/api/reports/summary'), apiGet('/api/inventory')])
-      .then(([summaryData, inventoryData]) => {
+    Promise.all([apiGet('/api/reports/summary'), apiGet('/api/inventory'), apiGet('/api/ingredients')])
+      .then(([summaryData, inventoryData, ingredientData]) => {
         setSummary(summaryData)
         setInventory(inventoryData.inventory)
+        setIngredients(ingredientData.ingredients)
       })
       .catch((fetchError) => setError(fetchError.message))
   }, [])
@@ -59,6 +61,9 @@ export function DashboardHome({ user, onNavigate }) {
 
   const stockCounts = { GOOD: 0, OKAY: 0, LOW: 0 }
   for (const item of inventory ?? []) stockCounts[stockStatus(item)] += 1
+  // Ingredients (CLIENT_REVISIONS_PLAN.md, R5), by the same rule.
+  const ingredientCounts = { GOOD: 0, OKAY: 0, LOW: 0 }
+  for (const ingredient of ingredients ?? []) ingredientCounts[stockStatus(ingredient)] += 1
   const lowItems = (inventory ?? [])
     .filter((item) => stockStatus(item) === 'LOW')
     .sort((a, b) => a.stockQuantity - a.minStockLevel - (b.stockQuantity - b.minStockLevel))
@@ -78,6 +83,13 @@ export function DashboardHome({ user, onNavigate }) {
       tone: stockCounts.OKAY > 0 ? 'okay' : 'good',
       note: stockCounts.OKAY > 0 ? 'Close to the minimum' : 'Nothing close',
       to: ['Inventory Management', { stockFilter: 'OKAY' }],
+    },
+    {
+      label: 'Ingredients running low',
+      value: ingredientCounts.LOW + ingredientCounts.OKAY,
+      tone: ingredientCounts.LOW > 0 ? 'attention' : ingredientCounts.OKAY > 0 ? 'okay' : 'good',
+      note: ingredientCounts.LOW > 0 ? `${ingredientCounts.LOW} at or under the minimum` : ingredientCounts.OKAY > 0 ? 'Close to the minimum' : 'Well stocked',
+      to: ['Inventory Management', { tab: 'Ingredients', stockFilter: ingredientCounts.LOW > 0 ? 'LOW' : 'OKAY' }],
     },
     {
       label: 'Orders to prepare',

@@ -93,3 +93,19 @@ export function validateAccountFields(body) {
 
   return { errors, values: { name, username, email, contactNumber, password } }
 }
+
+// A NUMERIC quantity (ingredient stock, CLIENT_REVISIONS_PLAN.md R5), kept
+// as a STRING so it reaches Postgres exactly as typed — 12.5 kg is never a
+// binary float on the way. Returns null when invalid: not a plain decimal,
+// more than `decimals` places, outside [min, max], or zero unless allowed.
+export function parseQuantity(raw, { min = 0, max = 999999999, decimals = 3, allowZero = false } = {}) {
+  const text = normalize(raw)
+  if (!/^-?\d+(\.\d+)?$/.test(text)) return null
+  const value = Number(text)
+  if (!Number.isFinite(value)) return null
+  const fraction = text.split('.')[1] ?? ''
+  if (fraction.length > decimals) return null
+  if (value < min || value > max) return null
+  if (!allowZero && value === 0) return null
+  return text.replace(/^(-?)0+(?=\d)/, '$1')
+}

@@ -455,6 +455,44 @@ CREATE TABLE inventory_movements (
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Migration 025 (CLIENT_REVISIONS_PLAN.md, R5). Ingredient stock only — no
+-- recipes, batches or costing. Same rule as finished goods: the stock figure
+-- never changes without a movement row in the same transaction.
+CREATE TYPE ingredient_movement_reason AS ENUM ('RESTOCK', 'USAGE', 'REJECT', 'CORRECTION');
+
+CREATE TABLE ingredients (
+  ingredient_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  name VARCHAR(150) NOT NULL UNIQUE,
+  -- kg, g, L, mL, pc, pack, sack, tray — checked by routes/ingredients.js,
+  -- not an enum, so a new unit is a line of code, not a migration.
+  unit VARCHAR(20) NOT NULL,
+  -- NUMERIC(12,3): flour is 12.5 kg.
+  stock_quantity NUMERIC(12, 3) NOT NULL DEFAULT 0 CHECK (stock_quantity >= 0),
+  min_stock_level NUMERIC(12, 3) NOT NULL DEFAULT 0 CHECK (min_stock_level >= 0),
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- RESTOCK adds, USAGE and REJECT remove, CORRECTION (a recount) goes
+-- either way. data_source keeps the demo seed's rows separable, as on the
+-- product ledger.
+CREATE TABLE ingredient_movements (
+  movement_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  ingredient_id BIGINT NOT NULL REFERENCES ingredients(ingredient_id),
+  changed_by BIGINT NOT NULL REFERENCES users(user_id),
+  quantity_change NUMERIC(12, 3) NOT NULL CHECK (quantity_change <> 0),
+  reason ingredient_movement_reason NOT NULL,
+  note TEXT,
+  data_source data_source NOT NULL DEFAULT 'RECORDED',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CHECK (
+    (reason = 'RESTOCK' AND quantity_change > 0)
+    OR (reason IN ('USAGE', 'REJECT') AND quantity_change < 0)
+    OR reason = 'CORRECTION'
+  )
+);
+
 CREATE TABLE report_logs (
   report_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   generated_by BIGINT NOT NULL REFERENCES admins(admin_id),
@@ -512,6 +550,8 @@ CREATE INDEX security_events_user_id_idx ON security_events (user_id, created_at
 CREATE INDEX security_events_type_idx ON security_events (event_type, created_at DESC);
 CREATE INDEX security_events_ip_idx ON security_events (ip_address, created_at DESC);
 CREATE INDEX inventory_movements_inventory_id_idx ON inventory_movements (inventory_id, created_at DESC);
+CREATE INDEX ingredient_movements_ingredient_id_idx ON ingredient_movements (ingredient_id, created_at DESC);
+CREATE INDEX ingredient_movements_created_at_idx ON ingredient_movements (created_at DESC);
 -- At most one PENDING gateway-initiated payment per order (Phase 6.5 —
 -- PayMongo Checkout Sessions). A confirmed gateway payment cannot simply
 -- be refused if it would overpay the order the way the manual cash/GCash
@@ -538,6 +578,10 @@ CREATE TRIGGER customers_set_updated_at
 
 CREATE TRIGGER customer_addresses_set_updated_at
   BEFORE UPDATE ON customer_addresses
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER ingredients_set_updated_at
+  BEFORE UPDATE ON ingredients
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- Analytics views (migration 014; the costing and production views were

@@ -24,3 +24,13 @@ export function formatDate(value) {
   if (!value) return ''
   return new Date(value).toLocaleDateString(undefined, { dateStyle: 'medium' })
 }
+
+// An ingredient amount with its unit: "12.5 kg", "1,250 g", "3 tray". The
+// API sends NUMERIC strings ("12.500"); trailing zeros are display noise.
+const quantityFormatter = new Intl.NumberFormat('en-PH', { maximumFractionDigits: 3 })
+
+export function formatQuantity(value, unit) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return '—'
+  return unit ? `${quantityFormatter.format(number)} ${unit}` : quantityFormatter.format(number)
+}

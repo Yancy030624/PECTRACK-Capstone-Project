@@ -9,7 +9,7 @@ import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
-import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
+import { formatDate, formatDateTime, formatPeso, formatQuantity } from '../../lib/format.js'
 import { orderLabel } from '../../lib/orderNumber.js'
 import { ForecastPanel } from './ForecastPanel.jsx'
 import { PeakPeriods } from './PeakPeriods.jsx'
@@ -439,6 +439,52 @@ export function ReportingAnalytics({ user }) {
                 </>
               )}
             </Card>
+
+            {/* Ingredients (CLIENT_REVISIONS_PLAN.md, R5): what came in,
+                was used, and was thrown out in the range, and what is low
+                now. */}
+            {inventory.ingredients && (
+              <Card className="mt-6 p-6">
+                <h2 className="text-lg font-semibold text-ink-900">Ingredients</h2>
+                {inventory.ingredients.movements.length === 0 ? <p className="mt-4 text-sm text-ink-500">No ingredient changes in this range.</p> : (
+                  <div className="mt-4">
+                    <Table caption="Ingredient movements in the range">
+                      <Thead>
+                        <Tr className="hover:bg-transparent">
+                          <Th>Ingredient</Th>
+                          <Th align="right">Restocked</Th>
+                          <Th align="right">Used</Th>
+                          <Th align="right">Rejected</Th>
+                          <Th align="right" priority="md">Recount</Th>
+                        </Tr>
+                      </Thead>
+                      <Tbody>
+                        {inventory.ingredients.movements.map((row) => (
+                          <Tr key={row.ingredientId}>
+                            <Td className="font-semibold text-ink-900">{row.name}</Td>
+                            <Td numeric>{formatQuantity(row.restocked, row.unit)}</Td>
+                            <Td numeric>{formatQuantity(row.used, row.unit)}</Td>
+                            <Td numeric className={Number(row.rejected) > 0 ? 'font-semibold text-status-fail-fg' : ''}>{formatQuantity(row.rejected, row.unit)}</Td>
+                            <Td numeric priority="md">{Number(row.corrected) > 0 ? '+' : ''}{formatQuantity(row.corrected, row.unit)}</Td>
+                          </Tr>
+                        ))}
+                      </Tbody>
+                    </Table>
+                  </div>
+                )}
+                <h3 className="mt-6 text-sm font-semibold text-ink-900">Low now</h3>
+                {inventory.ingredients.low.length === 0 ? <p className="mt-2 text-sm text-ink-500">No ingredient is at or under its minimum.</p> : (
+                  <ul className="mt-2 divide-y divide-line-100 text-sm">
+                    {inventory.ingredients.low.map((row) => (
+                      <li key={row.ingredientId} className="flex items-center justify-between gap-4 py-2.5">
+                        <span className="font-medium text-ink-900">{row.name}</span>
+                        <span className="text-xs text-ink-500 tabular-nums">{formatQuantity(row.stockQuantity, row.unit)} left · min {formatQuantity(row.minStockLevel, row.unit)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+            )}
           </>
         ) : <p className="mt-6 text-sm text-ink-500">Loading inventory activity…</p>}
       </div>

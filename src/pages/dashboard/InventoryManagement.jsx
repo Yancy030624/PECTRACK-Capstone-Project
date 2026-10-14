@@ -11,6 +11,7 @@ import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
+import { IngredientsPanel } from './IngredientsPanel.jsx'
 
 const emptyEditForm = { stockQuantity: '', minStockLevel: '', reason: '', note: '' }
 // Matches server/routes/inventory.js's manualMovementReasons exactly
@@ -49,9 +50,32 @@ const matchesFilter = (item, filter) => {
   return status === filter
 }
 
-// `params.stockFilter` opens the page already filtered — the Dashboard's
-// Low stock tile sends 'LOW', so it shows only what is low.
+// Two tabs (CLIENT_REVISIONS_PLAN.md, R5): Products, the finished goods for
+// sale, and Ingredients, what they are baked from. `params.tab` picks one
+// and `params.stockFilter` opens it already filtered — the Dashboard's Low
+// stock tile sends 'LOW', so it shows only what is low.
+const tabs = ['Products', 'Ingredients']
 export function InventoryManagement({ user, params }) {
+  const [tab, setTab] = useState(tabs.includes(params?.tab) ? params.tab : 'Products')
+  return (
+    <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
+      <h1 className="mt-1 text-2xl font-semibold text-ink-900">Inventory Management</h1>
+      <div className="mt-4 flex gap-2" role="tablist">
+        {tabs.map((name) => (
+          <Button key={name} type="button" size="sm" role="tab" aria-selected={tab === name} variant={tab === name ? 'primary' : 'secondary'} onClick={() => setTab(name)}>
+            {name}
+          </Button>
+        ))}
+      </div>
+      {tab === 'Products'
+        ? <ProductStock user={user} params={params} />
+        : <IngredientsPanel user={user} initialFilter={params?.tab === 'Ingredients' ? params.stockFilter : undefined} />}
+    </section>
+  )
+}
+
+function ProductStock({ user, params }) {
   const isAdmin = user.role === 'ADMIN'
   const [stockFilter, setStockFilter] = useState(() => {
     const asked = ['ATTENTION', 'EXPIRED'].includes(params?.stockFilter) ? 'LOW' : params?.stockFilter
@@ -136,10 +160,8 @@ export function InventoryManagement({ user, params }) {
     .sort((a, b) => (stockFilter === 'ALL' ? 0 : statusRank[stockStatus(a)] - statusRank[stockStatus(b)]))
 
   return (
-    <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
-      <h1 className="mt-1 text-2xl font-semibold text-ink-900">Inventory Management</h1>
-      <p className="mt-2 text-sm text-ink-500">Current stock levels. Edit a product to record a restock, a reject, or a recount; every change is logged with who made it.</p>
+    <div>
+      <p className="mt-4 text-sm text-ink-500">Current stock levels. Edit a product to record a restock, a reject, or a recount; every change is logged with who made it.</p>
 
       {message && (
         <div className="mt-4">
@@ -264,6 +286,6 @@ export function InventoryManagement({ user, params }) {
           </div>
         )}
       </Card>
-    </section>
+    </div>
   )
 }

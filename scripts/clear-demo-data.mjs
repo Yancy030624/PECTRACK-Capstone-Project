@@ -90,6 +90,13 @@ async function main() {
     // demo orders leave, and each day's counter goes back to its last real
     // order (migration 024).
     await client.query('SELECT renumber_daily_orders()')
+    // The demo ingredients (R5) and their ledger, if this manifest has any.
+    const ingredientIds = manifest.ingredientIds ?? []
+    if (ingredientIds.length) {
+      await client.query('DELETE FROM ingredient_movements WHERE ingredient_id = ANY($1)', [ingredientIds])
+      await client.query('DELETE FROM ingredients WHERE ingredient_id = ANY($1)', [ingredientIds])
+      console.log(`  Deleted ${ingredientIds.length} demo ingredients.`)
+    }
 
     await client.query('COMMIT')
     console.log(`  Deleted ${deleted.rowCount} orders.`)

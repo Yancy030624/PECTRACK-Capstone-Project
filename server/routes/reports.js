@@ -434,7 +434,7 @@ router.get('/inventory', async (request, response) => {
   const { from, to, errors } = parseDateRange(request.query)
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
 
-  const [movementsResult, lossResult, lowStockAlerts] = await Promise.all([
+  const [movementsResult, lossResult, lowStockAlerts, ingredientResult, lowIngredientResult] = await Promise.all([
     pool.query(
       `SELECT im.reason, COALESCE(SUM(im.quantity_change), 0)::int AS net_change
          FROM inventory_movements im
@@ -455,6 +455,30 @@ router.get('/inventory', async (request, response) => {
       [from, to],
     ),
     getLowStockAlerts(),
+    // Ingredients (CLIENT_REVISIONS_PLAN.md, R5): what came in, was used,
+    // was thrown out, or was corrected by a recount in the range, per
+    // ingredient. Amounts are NUMERIC strings, positive except the
+    // correction, which keeps its sign.
+    pool.query(
+      `SELECT i.ingredient_id, i.name, i.unit,
+              COALESCE(SUM(m.quantity_change) FILTER (WHERE m.reason = 'RESTOCK'), 0)::text AS restocked,
+              COALESCE(-SUM(m.quantity_change) FILTER (WHERE m.reason = 'USAGE'), 0)::text AS used,
+              COALESCE(-SUM(m.quantity_change) FILTER (WHERE m.reason = 'REJECT'), 0)::text AS rejected,
+              COALESCE(SUM(m.quantity_change) FILTER (WHERE m.reason = 'CORRECTION'), 0)::text AS corrected
+         FROM ingredient_movements m
+         JOIN ingredients i ON i.ingredient_id = m.ingredient_id
+        WHERE ${dateRangeSql('m.created_at')}
+        GROUP BY i.ingredient_id, i.name, i.unit
+        ORDER BY i.name`,
+      [from, to],
+    ),
+    // Low right now, not in the range: a shelf figure, like low stock.
+    pool.query(
+      `SELECT ingredient_id, name, unit, stock_quantity, min_stock_level
+         FROM ingredients
+        WHERE is_active AND stock_quantity <= min_stock_level
+        ORDER BY stock_quantity - min_stock_level, name`,
+    ),
   ])
 
   return response.json({
@@ -464,6 +488,10 @@ router.get('/inventory', async (request, response) => {
     lossUnits: lossResult.rows[0].lost_units,
     lowStockAlerts: lowStockAlerts.alerts,
     lowStockAlertsTotal: lowStockAlerts.total,
+    ingredients: {
+      movements: ingredientResult.rows.map((row) => ({ ingredientId: row.ingredient_id, name: row.name, unit: row.unit, restocked: row.restocked, used: row.used, rejected: row.rejected, corrected: row.corrected })),
+      low: lowIngredientResult.rows.map((row) => ({ ingredientId: row.ingredient_id, name: row.name, unit: row.unit, stockQuantity: row.stock_quantity, minStockLevel: row.min_stock_level })),
+    },
   })
 })
 
