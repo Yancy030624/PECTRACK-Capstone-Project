@@ -23,6 +23,7 @@ import { config } from '../config.js'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { PaymongoApiError, PaymongoWebhookVerificationError, createCheckoutSession, paymongoMinimumAmountCentavos, retrieveCheckoutSession, verifyPaymongoWebhook } from '../lib/paymongo.js'
+import { orderLabel } from '../lib/orderNumber.js'
 import { dateRangeSql, parseDateRange } from '../lib/reporting.js'
 import { normalize, parseId } from '../lib/validation.js'
 
@@ -51,6 +52,8 @@ const maxPaymentsLimit = 200
 const mapPaymentListRow = (row) => ({
   id: row.payment_id,
   orderId: row.order_id,
+  orderNumber: row.daily_number,
+  orderDay: row.order_day,
   orderStatus: row.order_status,
   customerName: row.customer_name,
   method: row.payment_method,
@@ -78,7 +81,7 @@ const mapPaymentListRow = (row) => ({
 // relies on). Reading it off row 0 gives GET / (below) the true total
 // match count in the SAME round trip as the page of rows itself, rather
 // than a second COUNT(*) query against the same filters.
-const paymentListSelectQuery = `SELECT p.payment_id, p.order_id, o.status AS order_status, c.name AS customer_name,
+const paymentListSelectQuery = `SELECT p.payment_id, p.order_id, o.daily_number, o.order_day, o.status AS order_status, c.name AS customer_name,
             p.payment_method, p.amount, p.status, p.gateway_reference, p.payment_date, p.created_at,
             COALESCE(ra.name, rc.name, rd.name) AS recorded_by_name,
             p.refunded_at, p.refund_reason, fa.name AS refunded_by_name,
@@ -544,7 +547,7 @@ router.post('/intent', requireRole('CUSTOMER'), async (request, response) => {
   // pass exists to give a fast, specific error for the ordinary cases
   // WITHOUT paying for a checkout session first — not to be the authority
   // on any of them.
-  const preflight = await pool.query('SELECT status, requires_admin_approval FROM orders WHERE order_id = $1', [orderId])
+  const preflight = await pool.query('SELECT status, requires_admin_approval, daily_number, order_day FROM orders WHERE order_id = $1', [orderId])
   if (!preflight.rows[0]) return response.status(404).json({ message: 'Order not found.' })
   if (preflight.rows[0].requires_admin_approval && preflight.rows[0].status === 'PLACED') return response.status(409).json({ message: bulkAwaitingMessage })
   if (preflight.rows[0].status === 'CANCELLED') {
@@ -590,7 +593,7 @@ router.post('/intent', requireRole('CUSTOMER'), async (request, response) => {
       secretKey: config.paymongo.secretKey,
       amountCentavos,
       referenceNumber: `order-${orderId}`,
-      description: `PECTRACK order #${orderId}`,
+      description: `Pecto's Bakery order ${orderLabel(preflight.rows[0].daily_number, preflight.rows[0].order_day)}`,
       successUrl: returnUrl,
       cancelUrl: returnUrl,
       billing: payerDetails && Object.keys(payerDetails).length ? payerDetails : undefined,

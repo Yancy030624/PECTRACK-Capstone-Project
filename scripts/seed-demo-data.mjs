@@ -431,6 +431,11 @@ async function main() {
   }
   log(`  Restocked; logged rejects on ${rejectTargets.map((p) => p.name).join(', ')}.\n`)
 
+  // ============ Daily order numbers (CLIENT_REVISIONS_PLAN.md, R4) ============
+  // Each order was numbered for the day it was placed — today — and then
+  // moved to an earlier day. Number every day again from order_date.
+  await pool.query('SELECT renumber_daily_orders()')
+
   // ============ Provenance (PHASE9A_DATA_FOUNDATION_PLAN.md, Decision 9) ============
   // Every order this script placed went through the real API, which writes
   // data_source = 'RECORDED' because from the API's point of view it was.

@@ -10,6 +10,7 @@ import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatPeso } from '../../lib/format.js'
+import { orderLabel } from '../../lib/orderNumber.js'
 import { MyDeliveries } from './MyDeliveries.jsx'
 
 const statusOptions = ['PENDING_ASSIGNMENT', 'ASSIGNED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED']
@@ -185,7 +186,7 @@ function StaffDeliveryView({ user, params, onNavigate }) {
               <li key={delivery.id} className="rounded-panel border border-line-200 p-4 text-sm">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
-                    <p className="font-semibold text-ink-900">Order #{delivery.orderId} · {delivery.customerName ?? 'Customer'} · <span className="tabular-nums">{formatPeso(delivery.totalAmount)}</span></p>
+                    <p className="font-semibold text-ink-900">Order {orderLabel(delivery)} · {delivery.customerName ?? 'Customer'} · <span className="tabular-nums">{formatPeso(delivery.totalAmount)}</span></p>
                     <p className="mt-1 text-ink-500">{delivery.address.recipientName} · {delivery.address.contactNumber}</p>
                     <p className="mt-0.5 text-xs text-ink-500">
                       {delivery.address.addressLine1}{delivery.address.addressLine2 && `, ${delivery.address.addressLine2}`}
@@ -218,7 +219,7 @@ function StaffDeliveryView({ user, params, onNavigate }) {
                 {delivery.status === 'PENDING_ASSIGNMENT' && !['PLACED', 'COMPLETED', 'CANCELLED'].includes(delivery.orderStatus) && delivery.isFullyPaid && (
                   <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line-100 pt-3">
                     <div className="min-w-40 flex-1">
-                      <Select value={assignChoice[delivery.id] ?? ''} onChange={(event) => setAssignChoice({ ...assignChoice, [delivery.id]: event.target.value })} aria-label={`Assign a driver for order #${delivery.orderId}`}>
+                      <Select value={assignChoice[delivery.id] ?? ''} onChange={(event) => setAssignChoice({ ...assignChoice, [delivery.id]: event.target.value })} aria-label={`Assign a driver for order ${orderLabel(delivery)}`}>
                         <option value="">Select a driver…</option>
                         {personnel.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
                       </Select>
@@ -229,13 +230,13 @@ function StaffDeliveryView({ user, params, onNavigate }) {
 
                 {delivery.status === 'FAILED' && isAdmin && (
                   <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line-100 pt-3">
-                    <Input value={retryNotes[delivery.id] ?? ''} onChange={(event) => setRetryNotes({ ...retryNotes, [delivery.id]: event.target.value })} placeholder="Why is this being retried?" aria-label={`Retry note for order #${delivery.orderId}`} className="flex-1" />
+                    <Input value={retryNotes[delivery.id] ?? ''} onChange={(event) => setRetryNotes({ ...retryNotes, [delivery.id]: event.target.value })} placeholder="Why is this being retried?" aria-label={`Retry note for order ${orderLabel(delivery)}`} className="flex-1" />
                     <Button type="button" size="sm" variant="secondary" onClick={() => handleAdminTransition(delivery.id, 'PENDING_ASSIGNMENT')} disabled={busyId === delivery.id}>Retry</Button>
                   </div>
                 )}
                 {(delivery.status === 'ASSIGNED' || delivery.status === 'OUT_FOR_DELIVERY') && isAdmin && (
                   <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line-100 pt-3">
-                    <Input value={retryNotes[delivery.id] ?? ''} onChange={(event) => setRetryNotes({ ...retryNotes, [delivery.id]: event.target.value })} placeholder="Why is this being recalled from its driver?" aria-label={`Recall note for order #${delivery.orderId}`} className="flex-1" />
+                    <Input value={retryNotes[delivery.id] ?? ''} onChange={(event) => setRetryNotes({ ...retryNotes, [delivery.id]: event.target.value })} placeholder="Why is this being recalled from its driver?" aria-label={`Recall note for order ${orderLabel(delivery)}`} className="flex-1" />
                     <Button type="button" size="sm" variant="destructive" onClick={() => handleAdminTransition(delivery.id, 'FAILED')} disabled={busyId === delivery.id}>Recall from driver</Button>
                   </div>
                 )}

@@ -26,6 +26,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
+import { orderLabel } from '../../lib/orderNumber.js'
 import { useIsLargeScreen } from '../../lib/useMediaQuery.js'
 import { PaymentLog } from './PaymentLog.jsx'
 import { PrintHeader, PrintThisButton } from '../../components/PrintReport.jsx'
@@ -176,7 +177,7 @@ export function PaymentBilling({ user, params, onNavigate }) {
       setPaymentForm(emptyPaymentForm)
       await openOrder(selectedOrderId)
       await loadOrders()
-      setNotice(data.isFullyPaid ? `Payment recorded — order #${selectedOrderId} is now fully paid.` : `Payment recorded — ${formatPeso(data.balanceDue)} still owed.`)
+      setNotice(data.isFullyPaid ? `Payment recorded — order ${orderLabel(orderDetail)} is now fully paid.` : `Payment recorded — ${formatPeso(data.balanceDue)} still owed.`)
     } catch (error) {
       setPaymentErrors(error.errors ?? {})
       setMessage(error.message)
@@ -197,7 +198,7 @@ export function PaymentBilling({ user, params, onNavigate }) {
 
   const receiptCard = (
     <Card className="print-only-target min-w-0 p-6">
-      {orderDetail && <PrintHeader title={`Receipt — Order #${orderDetail.id}`} user={isStaff ? user : null} />}
+      {orderDetail && <PrintHeader title={`Receipt — Order ${orderLabel(orderDetail, { withDay: true })}`} user={isStaff ? user : null} />}
       <div className="flex items-start justify-between gap-3">
         <h2 id="receipt-heading" className="text-lg font-semibold text-ink-900 print:hidden">Receipt</h2>
         <div className="flex items-center gap-2">
@@ -216,7 +217,7 @@ export function PaymentBilling({ user, params, onNavigate }) {
           {notice && <div className="print:hidden"><Alert variant="success">{notice}</Alert></div>}
           <div className="text-xs text-ink-500">
             <p>
-              <strong className="text-ink-900">Order #{orderDetail.id}</strong> · {orderDetail.orderType} · <StatusBadge status={orderDetail.status} />
+              <strong className="text-ink-900">Order {orderLabel(orderDetail)}</strong> · {orderDetail.orderType} · <StatusBadge status={orderDetail.status} />
             </p>
             <p className="mt-1">Customer: {orderDetail.customerName ?? 'Walk-in'} · placed {formatDate(orderDetail.orderDate)}</p>
           </div>
@@ -388,10 +389,10 @@ export function PaymentBilling({ user, params, onNavigate }) {
                 <ul className="mt-4 divide-y divide-line-100 md:hidden">
                   {visibleOrders.map((order) => (
                     <li key={order.id}>
-                      <button type="button" onClick={() => openOrder(order.id)} aria-label={`Open order #${order.id}`} className={`w-full rounded-control px-3 py-3 text-left transition hover:bg-surface-sunk ${selectedOrderId === order.id ? 'bg-brand-50' : ''}`}>
+                      <button type="button" onClick={() => openOrder(order.id)} aria-label={`Open order ${orderLabel(order)}`} className={`w-full rounded-control px-3 py-3 text-left transition hover:bg-surface-sunk ${selectedOrderId === order.id ? 'bg-brand-50' : ''}`}>
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="text-sm font-semibold text-ink-900">
-                            Order #{order.id}
+                            Order {orderLabel(order)}
                             {isStaff && <span className="font-normal text-ink-500"> · {order.customerName ?? 'Walk-in'}</span>}
                           </span>
                           <StatusBadge status={order.status} />
@@ -426,10 +427,10 @@ export function PaymentBilling({ user, params, onNavigate }) {
                                 event.stopPropagation()
                                 openOrder(order.id)
                               }}
-                              aria-label={`Open order #${order.id}`}
+                              aria-label={`Open order ${orderLabel(order)}`}
                               className="-my-2 inline-flex min-h-9 items-center font-semibold text-ink-900 hover:underline focus-visible:underline"
                             >
-                              #{order.id}
+                              {orderLabel(order)}
                             </button>
                           </Td>
                           {isStaff && <Td>{order.customerName ?? 'Walk-in'}</Td>}

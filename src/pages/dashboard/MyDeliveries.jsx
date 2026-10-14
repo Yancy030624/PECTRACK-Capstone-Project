@@ -8,6 +8,7 @@ import { Input } from '../../components/ui/Input.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDateTime, formatPeso } from '../../lib/format.js'
+import { orderLabel } from '../../lib/orderNumber.js'
 import { DeliveryHistory } from './DeliveryHistory.jsx'
 
 // Stage 5 (RULES-PLANS/UI_AUDIT.md) — the delivery role's only screen, and
@@ -33,6 +34,13 @@ import { DeliveryHistory } from './DeliveryHistory.jsx'
 // Decision 8) and the status transition rules/order (PHASE7_PLAN.md's
 // one-directional deliveries.status -> orders.status sync). This is
 // presentation only.
+// Out for delivery first ("To deliver now"), then the ones still waiting
+// at the bakery. An empty group is left out.
+const deliveryGroups = (deliveries) => [
+  { title: 'To deliver now', items: deliveries.filter((delivery) => delivery.status === 'OUT_FOR_DELIVERY') },
+  { title: 'Assigned to you', items: deliveries.filter((delivery) => delivery.status !== 'OUT_FOR_DELIVERY') },
+].filter((group) => group.items.length > 0)
+
 export function MyDeliveries({ user }) {
   const [deliveries, setDeliveries] = useState([])
   const [loading, setLoading] = useState(true)
@@ -121,22 +129,30 @@ export function MyDeliveries({ user }) {
         </div>
       )}
 
-      <h2 className="mt-6 text-lg font-semibold text-ink-900">Assigned to you</h2>
-
+      {/* What is on the road first, then what is still to collect
+          (CLIENT_REVISIONS_PLAN.md, R4). */}
       {loading ? (
-        <LoadingRows className="mt-4" />
+        <LoadingRows className="mt-6" />
       ) : deliveries.length === 0 ? (
-        <div className="mt-4">
-          <EmptyState title="Nothing assigned right now." />
-        </div>
-      ) : (
+        <>
+          <h2 className="mt-6 text-lg font-semibold text-ink-900">Assigned to you</h2>
+          <div className="mt-4">
+            <EmptyState title="Nothing assigned right now." />
+          </div>
+        </>
+      ) : deliveryGroups(deliveries).map((group) => (
+        <div key={group.title}>
+        <h2 className="mt-6 flex items-center gap-2 text-lg font-semibold text-ink-900">
+          {group.title}
+          <span className="rounded-full bg-surface px-2 text-sm font-medium text-ink-500 tabular-nums ring-1 ring-line-200">{group.items.length}</span>
+        </h2>
         <ul className="mt-4 space-y-4">
-          {deliveries.map((delivery) => (
+          {group.items.map((delivery) => (
             <li key={delivery.id}>
               <Card className="p-4 text-sm sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
-                    <p className="font-semibold text-ink-900">Order #{delivery.orderId} · {delivery.customerName ?? 'Customer'}</p>
+                    <p className="font-semibold text-ink-900">Order {orderLabel(delivery)} · {delivery.customerName ?? 'Customer'}</p>
                     {/* The number is a tel: link because this screen is
                         used on a phone, at the door — a driver who needs
                         to say "I'm outside" should not have to memorise
@@ -224,7 +240,7 @@ export function MyDeliveries({ user }) {
                         value={failNotes[delivery.id] ?? ''}
                         onChange={(event) => setFailNotes({ ...failNotes, [delivery.id]: event.target.value })}
                         placeholder="Reason, if it failed"
-                        aria-label={`Reason order #${delivery.orderId}'s delivery failed`}
+                        aria-label={`Reason order ${orderLabel(delivery)}'s delivery failed`}
                       />
                       <Button
                         type="button"
@@ -243,7 +259,8 @@ export function MyDeliveries({ user }) {
             </li>
           ))}
         </ul>
-      )}
+        </div>
+      ))}
       </>
       )}
     </section>

@@ -9,6 +9,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { PrintButton, PrintHeader } from '../../components/PrintReport.jsx'
 import { formatDate, formatDateTime } from '../../lib/format.js'
+import { orderLabel } from '../../lib/orderNumber.js'
 import { manilaDate } from '../../lib/dates.js'
 
 // Production → Due today. PHASE10 B5 — the interview problem still open
@@ -118,7 +119,7 @@ export function ProductionSchedule({ user }) {
                   <ul className="mt-4 divide-y divide-line-100 border-t border-line-100">
                     {slot.orders.map((order) => (
                       <li key={order.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
-                        <span className="font-semibold text-ink-900">#{order.id}</span>
+                        <span className="font-semibold text-ink-900">{orderLabel(order)}</span>
                         <span className="text-ink-700">{order.customerName}</span>
                         <span className="text-xs text-ink-500">{order.orderType === 'DELIVERY' ? 'Delivery' : 'Pickup'}{order.requestedFulfillmentTime ? ` · ${formatDateTime(order.requestedFulfillmentTime)}` : ` · placed ${formatDateTime(order.orderDate)}`}</span>
                         <span className="text-xs text-ink-500">{order.items.map((item) => `${item.quantity}× ${itemName(item)}`).join(', ')}</span>

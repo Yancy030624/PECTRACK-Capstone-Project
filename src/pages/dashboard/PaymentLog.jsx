@@ -17,6 +17,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDateTime, formatPeso } from '../../lib/format.js'
+import { orderLabel } from '../../lib/orderNumber.js'
 
 const pageSize = 25
 const emptyFilters = { from: '', to: '', method: '', status: '' }
@@ -126,7 +127,7 @@ export function PaymentLog({ user }) {
               <Tbody>
                 {payments.map((payment) => (
                   <Tr key={payment.id}>
-                    <Td className="font-semibold text-ink-900">#{payment.orderId}</Td>
+                    <Td className="font-semibold text-ink-900">{orderLabel(payment)}</Td>
                     {!isCustomer && <Td priority="md">{payment.customerName ?? 'Walk-in'}</Td>}
                     <Td>{payment.method}</Td>
                     <Td numeric>{formatPeso(payment.amount)}</Td>

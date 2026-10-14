@@ -16,6 +16,7 @@ import { pool } from '../db.js'
 import { billingListSql, getBillingSummary, mapBillingColumns } from '../lib/billing.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { syncStockAlert } from '../lib/inventory.js'
+import { orderLabel } from '../lib/orderNumber.js'
 import { getBulkOrderThreshold } from '../lib/settings.js'
 import { parseId } from '../lib/validation.js'
 
@@ -67,6 +68,10 @@ function parseFulfillmentTime(raw) {
 
 const mapOrderSummary = (row) => ({
   id: row.order_id,
+  // What people see (CLIENT_REVISIONS_PLAN.md, R4): #orderNumber, which
+  // starts again at 1 each Manila day. `id` stays the key for every request.
+  orderNumber: row.daily_number,
+  orderDay: row.order_day,
   customerId: row.customer_id,
   customerName: row.customer_name,
   orderType: row.order_type,
@@ -89,7 +94,7 @@ const mapOrderSummary = (row) => ({
   ...mapBillingColumns(row),
 })
 
-const orderSummarySelectQuery = `SELECT o.order_id, o.customer_id, c.name AS customer_name, o.order_type, o.status, o.total_amount, o.order_date, o.requested_fulfillment_time, o.requires_admin_approval,
+const orderSummarySelectQuery = `SELECT o.order_id, o.daily_number, o.order_day, o.customer_id, c.name AS customer_name, o.order_type, o.status, o.total_amount, o.order_date, o.requested_fulfillment_time, o.requires_admin_approval,
             ${billingListSql.columns}
      FROM orders o
      LEFT JOIN customers c ON c.customer_id = o.customer_id
@@ -115,12 +120,39 @@ router.get('/', async (request, response) => {
   return response.json({ orders: result.rows.map(mapOrderSummary) })
 })
 
+// GET /api/orders/recent — staff only (CLIENT_REVISIONS_PLAN.md, R4).
+// Without ?since: the newest orders, for the Dashboard's Recent orders
+// panel. With ?since=<time>: the orders placed after it, for the new-order
+// bell, which asks every 20 seconds. The caller passes a time a little
+// before the newest order it already has and drops the ones it knows: an
+// order's time is when its transaction began, so a slow one can commit
+// after a later order that was already seen.
+const recentOrdersLimit = 8
+const newOrdersLimit = 20
+router.get('/recent', requireRole('ADMIN', 'CASHIER'), async (request, response) => {
+  const since = request.query.since
+  if (since == null || since === '') {
+    const result = await pool.query(`${orderSummarySelectQuery} ORDER BY o.order_date DESC, o.order_id DESC LIMIT $1`, [recentOrdersLimit])
+    return response.json({ orders: result.rows.map(mapOrderSummary) })
+  }
+  const sinceDate = new Date(String(since))
+  if (Number.isNaN(sinceDate.getTime())) return response.status(422).json({ message: 'Enter a valid time.', errors: { since: 'Enter a valid time.' } })
+  const result = await pool.query(
+    // Compared at millisecond precision: the time the caller sends back
+    // came from JSON, which drops Postgres's microseconds, so the order it
+    // came from would otherwise count as newer than itself.
+    `${orderSummarySelectQuery} WHERE date_trunc('milliseconds', o.order_date) > $1 ORDER BY o.order_date DESC, o.order_id DESC LIMIT $2`,
+    [sinceDate, newOrdersLimit],
+  )
+  return response.json({ orders: result.rows.map(mapOrderSummary) })
+})
+
 router.get('/:id', async (request, response) => {
   const orderId = parseId(request.params.id)
   if (!orderId) return response.status(404).json({ message: 'Order not found.' })
 
   const orderResult = await pool.query(
-    `SELECT o.order_id, o.customer_id, c.name AS customer_name, o.processed_by, ca.name AS cashier_name,
+    `SELECT o.order_id, o.daily_number, o.order_day, o.customer_id, c.name AS customer_name, o.processed_by, ca.name AS cashier_name,
             o.order_type, o.status, o.instructions, o.requested_fulfillment_time,
             o.total_amount, o.order_date, o.requires_admin_approval
      FROM orders o
@@ -190,6 +222,8 @@ router.get('/:id', async (request, response) => {
   return response.json({
     order: {
       id: order.order_id,
+      orderNumber: order.daily_number,
+      orderDay: order.order_day,
       customerId: order.customer_id,
       customerName: order.customer_name,
       cashierName: order.cashier_name,
@@ -356,10 +390,12 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     const orderResult = await client.query(
       `INSERT INTO orders (customer_id, processed_by, order_type, address_id, instructions, requested_fulfillment_time, requires_admin_approval)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING order_id`,
+       RETURNING order_id, daily_number, order_day`,
       [customerId, processedBy, orderType, addressId, instructions, fulfillment.value, requiresAdminApproval],
     )
     const orderId = orderResult.rows[0].order_id
+    // Given by the orders_daily_number trigger (migration 024).
+    const { daily_number: orderNumber, order_day: orderDay } = orderResult.rows[0]
 
     // PHASE 7, DECISION 3 — the deliveries row is created WITH the order,
     // in the same transaction, not lazily on first assignment. status
@@ -442,7 +478,7 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     await client.query('COMMIT')
     return response.status(201).json({
       message: requiresAdminApproval ? `Order placed. With ${itemCount} items it is a bulk order — the bakery will review it before confirming, and payment opens once it is approved.` : 'Order placed.',
-      order: { id: orderId, status: 'PLACED', totalAmount, requiresAdminApproval, awaitingApproval: requiresAdminApproval },
+      order: { id: orderId, orderNumber, orderDay, status: 'PLACED', totalAmount, requiresAdminApproval, awaitingApproval: requiresAdminApproval },
     })
   } catch (error) {
     await client.query('ROLLBACK')
@@ -463,6 +499,7 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
 router.post('/:id/approve', requireRole('ADMIN'), async (request, response) => {
   const orderId = parseId(request.params.id)
   if (!orderId) return response.status(404).json({ message: 'Order not found.' })
+  let label
 
   const client = await pool.connect()
   try {
@@ -470,7 +507,7 @@ router.post('/:id/approve', requireRole('ADMIN'), async (request, response) => {
     const claimed = await client.query(
       `UPDATE orders SET requires_admin_approval = FALSE
         WHERE order_id = $1 AND requires_admin_approval AND status = 'PLACED'
-      RETURNING order_id`,
+      RETURNING order_id, daily_number, order_day`,
       [orderId],
     )
     if (claimed.rowCount === 0) {
@@ -484,13 +521,14 @@ router.post('/:id/approve', requireRole('ADMIN'), async (request, response) => {
       [orderId, request.user.id, 'PLACED', 'Bulk order approved — payment is now open.'],
     )
     await client.query('COMMIT')
+    label = orderLabel(claimed.rows[0].daily_number, claimed.rows[0].order_day)
   } catch (error) {
     await client.query('ROLLBACK')
     throw error
   } finally {
     client.release()
   }
-  return response.json({ message: `Bulk order #${orderId} approved. It is confirmed once it is paid.` })
+  return response.json({ message: `Bulk order ${label} approved. It is confirmed once it is paid.` })
 })
 
 router.patch('/:id', async (request, response) => {

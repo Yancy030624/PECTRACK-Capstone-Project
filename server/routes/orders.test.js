@@ -1004,6 +1004,73 @@ describe('order management', () => {
     assert.equal((await fetch(`${baseUrl}/api/settings`, { headers: { Cookie: customerCookie } })).status, 403)
   })
 
+  // CLIENT_REVISIONS_PLAN.md, R4 — orders are numbered #1, #2… per Manila
+  // day, by the orders_daily_number trigger (migration 024).
+  test('two simultaneous orders get different daily numbers, and both carry the day', async () => {
+    const place = () => fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 1 }] }) })
+    const responses = await Promise.all([place(), place()])
+    const orders = []
+    for (const response of responses) {
+      assert.equal(response.status, 201)
+      const { order } = await response.json()
+      createdOrderIds.push(order.id)
+      orders.push(order)
+    }
+    assert.ok(Number.isInteger(orders[0].orderNumber) && orders[0].orderNumber > 0)
+    assert.notEqual(orders[0].orderNumber, orders[1].orderNumber)
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())
+    assert.equal(orders[0].orderDay, today)
+    const detail = await (await fetch(`${baseUrl}/api/orders/${orders[0].id}`, { headers: { Cookie: cashierCookie } })).json()
+    assert.equal(detail.order.orderNumber, orders[0].orderNumber)
+  })
+
+  // Isolated past days, so no other test's orders share them. Placed
+  // straight into the table: the trigger numbers every insert, whatever
+  // made it.
+  test('numbering restarts each day, and renumbering a day follows the time the orders were placed', async () => {
+    const insert = (orderDate) => pool.query(`INSERT INTO orders (order_type, order_date) VALUES ('PICKUP', $1) RETURNING order_id, order_day, daily_number`, [orderDate])
+    const days = ['2019-03-03', '2019-03-04']
+    try {
+      const late = (await insert('2019-03-03 10:00:00+08')).rows[0]
+      const early = (await insert('2019-03-03 09:00:00+08')).rows[0]
+      const nextDay = (await insert('2019-03-04 00:30:00+08')).rows[0]
+      // 23:30 UTC on the 3rd is already the 4th in Manila.
+      const nextDayToo = (await insert('2019-03-03 23:30:00Z')).rows[0]
+      assert.deepEqual([late.daily_number, early.daily_number], [1, 2], 'numbered as inserted')
+      assert.deepEqual([nextDay.order_day, nextDay.daily_number], ['2019-03-04', 1], 'a new day starts at #1')
+      assert.deepEqual([nextDayToo.order_day, nextDayToo.daily_number], ['2019-03-04', 2], 'the day is Manila\'s')
+
+      await pool.query('SELECT renumber_daily_orders($1)', ['2019-03-03'])
+      const renumbered = await pool.query('SELECT order_id, daily_number FROM orders WHERE order_id = ANY($1) ORDER BY daily_number', [[late.order_id, early.order_id]])
+      assert.deepEqual(renumbered.rows.map((row) => row.order_id), [early.order_id, late.order_id], 'the earlier order is #1')
+      const counter = await pool.query('SELECT last_number FROM daily_order_numbers WHERE day = $1', ['2019-03-03'])
+      assert.equal(counter.rows[0].last_number, 2)
+    } finally {
+      await pool.query('DELETE FROM orders WHERE order_day = ANY($1::date[])', [days])
+      await pool.query('DELETE FROM daily_order_numbers WHERE day = ANY($1::date[])', [days])
+    }
+  })
+
+  test('GET /api/orders/recent is staff-only and, with ?since, returns only newer orders', async () => {
+    assert.equal((await fetch(`${baseUrl}/api/orders/recent`, { headers: { Cookie: customerCookie } })).status, 403)
+    assert.equal((await fetch(`${baseUrl}/api/orders/recent?since=not-a-time`, { headers: { Cookie: adminCookie } })).status, 422)
+
+    const recent = await (await fetch(`${baseUrl}/api/orders/recent`, { headers: { Cookie: adminCookie } })).json()
+    assert.ok(recent.orders.length > 0 && recent.orders.length <= 8)
+    const since = recent.orders[0].orderDate
+
+    const placed = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 1 }] }) })
+    const { order } = await placed.json()
+    createdOrderIds.push(order.id)
+
+    const newer = await (await fetch(`${baseUrl}/api/orders/recent?${new URLSearchParams({ since })}`, { headers: { Cookie: cashierCookie } })).json()
+    assert.ok(newer.orders.some((row) => row.id === order.id), 'the new order is listed')
+    assert.ok(newer.orders.every((row) => new Date(row.orderDate) > new Date(since)), 'nothing at or before since')
+    const listed = newer.orders.find((row) => row.id === order.id)
+    assert.equal(listed.orderNumber, order.orderNumber)
+    assert.equal(listed.customerName, null)
+  })
+
   test('routes reject delivery personnel entirely for now', async () => {
     const dpPasswordHash = await bcrypt.hash('Delivery-Password-9!', 4)
     const dpResult = await pool.query(`INSERT INTO users (username, password_hash, user_type) VALUES ($1, $2, 'DELIVERY_PERSONNEL') RETURNING user_id`, [`orderdp_${runId}`, dpPasswordHash])

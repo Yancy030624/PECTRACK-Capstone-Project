@@ -10,6 +10,7 @@ import { Select } from '../../components/ui/Select.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
+import { orderLabel } from '../../lib/orderNumber.js'
 import { ForecastPanel } from './ForecastPanel.jsx'
 import { PeakPeriods } from './PeakPeriods.jsx'
 import { PrintButton, PrintHeader } from '../../components/PrintReport.jsx'
@@ -492,7 +493,7 @@ export function ReportingAnalytics({ user }) {
                   <Tbody>
                     {txResult.payments.map((payment) => (
                       <Tr key={payment.id}>
-                        <Td className="font-semibold text-ink-900">#{payment.orderId}</Td>
+                        <Td className="font-semibold text-ink-900">{orderLabel(payment)}</Td>
                         <Td priority="md">{payment.customerName ?? 'Walk-in'}</Td>
                         <Td>{payment.method}</Td>
                         <Td numeric>{formatPeso(payment.amount)}</Td>

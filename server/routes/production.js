@@ -44,7 +44,7 @@ router.get('/schedule', async (request, response) => {
   const isToday = date === today
 
   const orders = await pool.query(
-    `SELECT o.order_id, o.status, o.order_type, o.requested_fulfillment_time, o.order_date, o.instructions,
+    `SELECT o.order_id, o.daily_number, o.order_day, o.status, o.order_type, o.requested_fulfillment_time, o.order_date, o.instructions,
             COALESCE(c.name, 'Walk-in') AS customer_name,
             (o.order_type = 'DELIVERY' AND o.total_amount - COALESCE(paid.amount, 0) > 0) AS awaiting_payment,
             CASE
@@ -102,6 +102,8 @@ router.get('/schedule', async (request, response) => {
     if (!slots.has(row.slot)) slots.set(row.slot, [])
     slots.get(row.slot).push({
       id: row.order_id,
+      orderNumber: row.daily_number,
+      orderDay: row.order_day,
       status: row.status,
       orderType: row.order_type,
       customerName: row.customer_name,

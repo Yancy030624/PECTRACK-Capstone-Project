@@ -68,6 +68,9 @@ const maxProofsPerDelivery = 5
 const mapDeliveryRow = (row) => ({
   id: row.delivery_id,
   orderId: row.order_id,
+  // The daily order number people see (CLIENT_REVISIONS_PLAN.md, R4).
+  orderNumber: row.daily_number,
+  orderDay: row.order_day,
   orderStatus: row.order_status,
   totalAmount: row.total_amount,
   customerName: row.customer_name,
@@ -133,7 +136,7 @@ const mapProofRow = (row) => ({
 
 const deliverySelectQuery = `SELECT d.delivery_id, d.order_id, d.delivery_personnel_id, dp.name AS delivery_personnel_name,
             d.status, d.assigned_at, d.delivered_at, d.failed_at, d.note,
-            o.status AS order_status, o.total_amount, o.instructions, o.requested_fulfillment_time, c.name AS customer_name,
+            o.status AS order_status, o.daily_number, o.order_day, o.total_amount, o.instructions, o.requested_fulfillment_time, c.name AS customer_name,
             a.label, a.recipient_name, a.contact_num, a.address_line_1, a.address_line_2,
             a.barangay, a.municipality, a.province, a.postal_code, a.delivery_notes,
             (SELECT COUNT(*) FROM delivery_proofs dpf WHERE dpf.delivery_id = d.delivery_id) AS proof_count,

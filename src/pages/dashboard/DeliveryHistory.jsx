@@ -10,6 +10,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { PrintButton, PrintHeader } from '../../components/PrintReport.jsx'
 import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
+import { orderLabel } from '../../lib/orderNumber.js'
 import { manilaDate } from '../../lib/dates.js'
 
 // My Deliveries → History. PHASE10 B4, the paper's "review their delivery
@@ -97,7 +98,7 @@ export function DeliveryHistory({ user }) {
                 <Card className="p-4 text-sm">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="font-semibold text-ink-900">Order #{delivery.orderId} · {delivery.customerName ?? 'Customer'}</p>
+                      <p className="font-semibold text-ink-900">Order {orderLabel(delivery)} · {delivery.customerName ?? 'Customer'}</p>
                       <p className="mt-0.5 text-xs text-ink-500">
                         {delivery.address.addressLine1}{delivery.address.barangay && `, ${delivery.address.barangay}`}, {delivery.address.municipality}
                       </p>

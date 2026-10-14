@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Brand } from '../../components/Brand.jsx'
+import { NotificationBell } from '../../components/NotificationBell.jsx'
 import { Button } from '../../components/ui/Button.jsx'
 import { ModuleIcon } from '../../components/ui/ModuleIcon.jsx'
 import { CustomerManagement } from './CustomerManagement.jsx'
@@ -60,6 +61,13 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
     setActiveModule(name)
     setModuleParams(params)
   }
+  // The bell (CLIENT_REVISIONS_PLAN.md, R4): an order opens in Order
+  // Management, a delivery in My Deliveries. `at` makes a second click on
+  // the same order open it again.
+  const openNotified = (kind, item) => {
+    if (kind === 'order') openModule('Order Management', { orderId: item.id, at: Date.now() })
+    else openModule('My Deliveries')
+  }
   // Calculate the navigation items for the signed-in role.
   const allowedModules = modules.filter((module) => module.roles.includes(user.role))
   const ActiveModuleComponent = moduleComponents[activeModule]
@@ -113,6 +121,7 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
           <Brand compact />
         </Link>
         <div className="flex items-center gap-3">
+          <NotificationBell user={user} onOpen={openNotified} />
           <span className="hidden text-right text-xs text-ink-500 sm:block">
             <strong className="block font-semibold text-ink-900">{user.name}</strong>
             {user.role}

@@ -255,11 +255,61 @@ CREATE TABLE orders (
   requires_admin_approval BOOLEAN NOT NULL DEFAULT FALSE,
   total_amount NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (total_amount >= 0),
   data_source data_source NOT NULL DEFAULT 'RECORDED',
+  -- Migration 024 (CLIENT_REVISIONS_PLAN.md, R4). The Asia/Manila day the
+  -- order was placed and its number within that day (#1, #2, … restarting
+  -- daily) — what people see. order_id stays the key. Both are set by the
+  -- orders_daily_number trigger below, never by the caller.
+  order_day DATE NOT NULL,
+  daily_number INTEGER NOT NULL,
+  CONSTRAINT orders_daily_number_unique UNIQUE (order_day, daily_number) DEFERRABLE INITIALLY IMMEDIATE,
   CHECK (
     (order_type = 'PICKUP' AND address_id IS NULL)
     OR (order_type = 'DELIVERY' AND address_id IS NOT NULL)
   )
 );
+
+-- Migration 024. The last daily number given out per day. The trigger's
+-- upsert locks the day's row until the order's transaction ends, so two
+-- orders placed at once never share a number, and a rolled-back order
+-- gives its number back.
+CREATE TABLE daily_order_numbers (
+  day DATE PRIMARY KEY,
+  last_number INTEGER NOT NULL CHECK (last_number > 0)
+);
+
+CREATE FUNCTION assign_daily_order_number() RETURNS trigger AS $$
+BEGIN
+  NEW.order_day := (COALESCE(NEW.order_date, CURRENT_TIMESTAMP) AT TIME ZONE 'Asia/Manila')::date;
+  INSERT INTO daily_order_numbers AS d (day, last_number) VALUES (NEW.order_day, 1)
+  ON CONFLICT (day) DO UPDATE SET last_number = d.last_number + 1
+  RETURNING d.last_number INTO NEW.daily_number;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER orders_daily_number
+BEFORE INSERT ON orders
+FOR EACH ROW EXECUTE FUNCTION assign_daily_order_number();
+
+-- With a day: only the orders placed on that day (by order_date), for a
+-- caller that moved orders onto it. Without: every day — the demo seed and
+-- clear scripts, run with nothing else writing orders.
+CREATE FUNCTION renumber_daily_orders(only_day DATE DEFAULT NULL) RETURNS void AS $$
+BEGIN
+  SET CONSTRAINTS orders_daily_number_unique DEFERRED;
+  UPDATE orders o
+     SET order_day = n.day, daily_number = n.number
+    FROM (SELECT order_id, day, ROW_NUMBER() OVER (PARTITION BY day ORDER BY order_date, order_id)::int AS number
+            FROM (SELECT order_id, order_date, (order_date AT TIME ZONE 'Asia/Manila')::date AS day FROM orders) placed
+           WHERE only_day IS NULL OR day = only_day) n
+   WHERE n.order_id = o.order_id
+     AND (o.order_day IS DISTINCT FROM n.day OR o.daily_number IS DISTINCT FROM n.number);
+  DELETE FROM daily_order_numbers WHERE only_day IS NULL OR day = only_day;
+  INSERT INTO daily_order_numbers (day, last_number)
+  SELECT order_day, MAX(daily_number) FROM orders WHERE only_day IS NULL OR order_day = only_day GROUP BY order_day;
+  SET CONSTRAINTS orders_daily_number_unique IMMEDIATE;
+END;
+$$ LANGUAGE plpgsql;
 
 CREATE TABLE order_details (
   order_detail_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -442,6 +492,8 @@ CREATE TABLE order_status_history (
 
 CREATE INDEX orders_customer_id_idx ON orders (customer_id);
 CREATE INDEX orders_status_order_date_idx ON orders (status, order_date DESC);
+-- Migration 024: the Recent orders panel and the new-order poll.
+CREATE INDEX orders_order_date_idx ON orders (order_date DESC);
 CREATE INDEX order_details_order_id_idx ON order_details (order_id);
 -- Migration 021. The admin's queue of bulk orders waiting for approval.
 CREATE INDEX orders_awaiting_approval_idx ON orders (order_date) WHERE requires_admin_approval AND status = 'PLACED';

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { apiGet } from '../../api/client.js'
 import { formatPeso } from '../../lib/format.js'
+import { orderLabel } from '../../lib/orderNumber.js'
 
 export function OrderPlacedPage() {
   const { orderId } = useParams()
@@ -38,7 +39,7 @@ export function OrderPlacedPage() {
       <div className="rounded-2xl border border-cream-200 bg-white p-8 text-center">
         <span className="grid h-14 w-14 place-items-center rounded-full bg-butter-100 text-2xl text-crust-700">✓</span>
         <h1 className="mt-4 text-2xl font-extrabold tracking-tight text-cocoa-900">Order placed!</h1>
-        <p className="mt-2 text-sm text-cocoa-500">Order #{order.id} — {order.orderType === 'DELIVERY' ? 'we\'ll deliver this to you' : 'ready for pickup at the bakery'} once it's prepared.</p>
+        <p className="mt-2 text-sm text-cocoa-500">Order {orderLabel(order)} — {order.orderType === 'DELIVERY' ? 'we\'ll deliver this to you' : 'ready for pickup at the bakery'} once it's prepared.</p>
 
         <div className="mt-6 rounded-xl bg-butter-100 p-5 text-left text-sm">
           <div className="flex items-center justify-between"><span className="text-cocoa-700">Status</span><span className="font-bold text-cocoa-900">{order.status}</span></div>

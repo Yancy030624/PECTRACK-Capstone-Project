@@ -23,6 +23,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
+import { matchesOrderSearch, orderLabel } from '../../lib/orderNumber.js'
 import { useIsLargeScreen } from '../../lib/useMediaQuery.js'
 import { NewOrderForm } from './NewOrderForm.jsx'
 
@@ -96,8 +97,8 @@ function BulkThresholdSetting() {
   )
 }
 
-export function OrderManagement({ user, onNavigate }) {
-  return user.role === 'ADMIN' || user.role === 'CASHIER' ? <StaffOrderManagement user={user} /> : <CustomerOrders user={user} onNavigate={onNavigate} />
+export function OrderManagement({ user, params, onNavigate }) {
+  return user.role === 'ADMIN' || user.role === 'CASHIER' ? <StaffOrderManagement user={user} params={params} /> : <CustomerOrders user={user} onNavigate={onNavigate} />
 }
 
 // Wraps the detail card: a sibling column on large screens, an overlay
@@ -122,12 +123,12 @@ function OrderCardList({ orders, selectedOrderId, onOpen, showCustomer }) {
           <button
             type="button"
             onClick={() => onOpen(order.id)}
-            aria-label={`Open order #${order.id}`}
+            aria-label={`Open order ${orderLabel(order)}`}
             className={`w-full rounded-control px-3 py-3 text-left transition hover:bg-surface-sunk ${selectedOrderId === order.id ? 'bg-brand-50' : ''}`}
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-sm font-semibold text-ink-900">
-                Order #{order.id}
+                Order {orderLabel(order, { numberOnly: true })}
                 {showCustomer && <span className="font-normal text-ink-500"> · {order.customerName ?? 'Walk-in'}</span>}
               </span>
               <span className="flex items-center gap-1.5">{order.awaitingApproval && <ApprovalPill />}<StatusBadge status={order.status} /></span>
@@ -179,7 +180,9 @@ function DeliveryProgress({ delivery }) {
   )
 }
 
-function StaffOrderManagement({ user }) {
+// `params.orderId` opens that order at once — from the bell, a toast, or
+// the Dashboard's Recent orders (CLIENT_REVISIONS_PLAN.md, R4).
+function StaffOrderManagement({ user, params }) {
   const isCashier = user.role === 'CASHIER'
   const isAdmin = user.role === 'ADMIN'
   const [activeTab, setActiveTab] = useState('Orders')
@@ -189,7 +192,9 @@ function StaffOrderManagement({ user }) {
   const [message, setMessage] = useState('')
   const [notice, setNotice] = useState('')
 
-  const [statusFilter, setStatusFilter] = useState('OPEN')
+  // An order opened from elsewhere may be closed already; show every
+  // status so it is in the list beside its detail.
+  const [statusFilter, setStatusFilter] = useState(params?.orderId ? 'ALL' : 'OPEN')
   const [search, setSearch] = useState('')
 
   const [selectedOrderId, setSelectedOrderId] = useState(null)
@@ -212,6 +217,7 @@ function StaffOrderManagement({ user }) {
 
   useEffect(() => {
     loadOrders()
+    if (params?.orderId) openOrder(params.orderId)
   }, [])
 
   // Filtering is client-side: the list is already fully loaded (GET
@@ -224,7 +230,7 @@ function StaffOrderManagement({ user }) {
       if (statusFilter === 'OPEN' && !openStatuses.has(order.status)) return false
       if (statusFilter !== 'OPEN' && statusFilter !== 'ALL' && order.status !== statusFilter) return false
       if (!term) return true
-      return `#${order.id}`.includes(term) || String(order.id).includes(term) || (order.customerName ?? 'walk-in').toLowerCase().includes(term)
+      return matchesOrderSearch(order, term) || (order.customerName ?? 'walk-in').toLowerCase().includes(term)
     })
   }, [orders, statusFilter, search])
 
@@ -255,14 +261,14 @@ function StaffOrderManagement({ user }) {
     // Cancelling restores stock — which cannot be
     // which can be undone. The customer's own cancel button already asks;
     // the staff path, with broader powers, asked nothing.
-    if (statusChoice === 'CANCELLED' && !window.confirm(`Cancel order #${selectedOrderId}? Its stock goes back on the shelf. This cannot be undone.`)) return
+    if (statusChoice === 'CANCELLED' && !window.confirm(`Cancel order ${orderLabel(orderDetail)}? Its stock goes back on the shelf. This cannot be undone.`)) return
     setStatusSubmitting(true)
     setMessage('')
     try {
       const data = await apiPatch(`/api/orders/${selectedOrderId}`, { status: statusChoice, note: statusNote || null })
       await openOrder(selectedOrderId)
       await loadOrders()
-      setNotice(data.message ?? `Order #${selectedOrderId} is now ${humanize(statusChoice).toLowerCase()}.`)
+      setNotice(data.message ?? `Order ${orderLabel(orderDetail)} is now ${humanize(statusChoice).toLowerCase()}.`)
     } catch (error) {
       setMessage(error.message)
     } finally {
@@ -275,8 +281,8 @@ function StaffOrderManagement({ user }) {
   const approveBulkOrder = async () => {
     const approveOnly = awaitingDeliveryPayment(orderDetail)
     if (!window.confirm(approveOnly
-      ? `Approve bulk order #${selectedOrderId}? Payment opens; it is confirmed once fully paid.`
-      : `Approve bulk order #${selectedOrderId}? It is confirmed and payment opens.`)) return
+      ? `Approve bulk order ${orderLabel(orderDetail)}? Payment opens; it is confirmed once fully paid.`
+      : `Approve bulk order ${orderLabel(orderDetail)}? It is confirmed and payment opens.`)) return
     setStatusSubmitting(true)
     setMessage('')
     try {
@@ -285,7 +291,7 @@ function StaffOrderManagement({ user }) {
         setNotice(data.message)
       } else {
         await apiPatch(`/api/orders/${selectedOrderId}`, { status: 'CONFIRMED', note: 'Bulk order approved.' })
-        setNotice(`Bulk order #${selectedOrderId} approved and confirmed.`)
+        setNotice(`Bulk order ${orderLabel(orderDetail)} approved and confirmed.`)
       }
       await openOrder(selectedOrderId)
       await loadOrders()
@@ -317,7 +323,7 @@ function StaffOrderManagement({ user }) {
           {notice && <Alert variant="success">{notice}</Alert>}
           <div className="text-xs text-ink-500">
             <p>
-              <strong className="text-ink-900">Order #{orderDetail.id}</strong> · {orderDetail.orderType} · <StatusBadge status={orderDetail.status} />
+              <strong className="text-ink-900">Order {orderLabel(orderDetail)}</strong> · {orderDetail.orderType} · <StatusBadge status={orderDetail.status} />
             </p>
             <p className="mt-1">
               Customer: {orderDetail.customerName ?? 'Walk-in'}
@@ -479,10 +485,10 @@ function StaffOrderManagement({ user }) {
                               event.stopPropagation()
                               openOrder(order.id)
                             }}
-                            aria-label={`Open order #${order.id}`}
+                            aria-label={`Open order ${orderLabel(order)}`}
                             className="-my-2 inline-flex min-h-9 items-center font-semibold text-ink-900 hover:underline focus-visible:underline"
                           >
-                            #{order.id}
+                            {orderLabel(order, { numberOnly: true })}
                           </button>
                         </Td>
                         <Td>{order.customerName ?? 'Walk-in'}</Td>
@@ -560,15 +566,16 @@ function CustomerOrders({ user, onNavigate }) {
 
   const cancelOrder = async () => {
     if (!cancelReason) return
-    if (!window.confirm(`Cancel order #${selectedOrderId}? This cannot be undone.`)) return
+    if (!window.confirm(`Cancel order ${orderLabel(orderDetail)}? This cannot be undone.`)) return
     setCancelling(true)
     setMessage('')
     try {
       await apiPatch(`/api/orders/${selectedOrderId}`, { status: 'CANCELLED', note: `Cancelled by customer: ${cancelReason}` })
       setCancelReason('')
+      const label = orderLabel(orderDetail)
       await openOrder(selectedOrderId)
       await loadOrders()
-      setNotice(`Order #${selectedOrderId} was cancelled.`)
+      setNotice(`Order ${label} was cancelled.`)
     } catch (error) {
       setMessage(error.message)
     } finally {
@@ -593,7 +600,7 @@ function CustomerOrders({ user, onNavigate }) {
           {notice && <Alert variant="success">{notice}</Alert>}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-ink-500">
-              <strong className="text-ink-900">Order #{orderDetail.id}</strong> · {orderDetail.orderType} · placed {formatDate(orderDetail.orderDate)}
+              <strong className="text-ink-900">Order {orderLabel(orderDetail)}</strong> · {orderDetail.orderType} · placed {formatDate(orderDetail.orderDate)}
             </p>
             <span className="flex items-center gap-1.5">{orderDetail.awaitingApproval && <ApprovalPill />}<StatusBadge status={orderDetail.status} /></span>
           </div>

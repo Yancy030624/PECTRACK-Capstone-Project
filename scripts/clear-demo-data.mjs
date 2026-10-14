@@ -86,6 +86,10 @@ async function main() {
     await client.query('DELETE FROM order_details WHERE order_id = ANY($1)', [orderIds])
     await client.query('DELETE FROM deliveries WHERE order_id = ANY($1)', [orderIds])
     const deleted = await client.query('DELETE FROM orders WHERE order_id = ANY($1) RETURNING order_id', [orderIds])
+    // The remaining orders are numbered again per day, without the gaps the
+    // demo orders leave, and each day's counter goes back to its last real
+    // order (migration 024).
+    await client.query('SELECT renumber_daily_orders()')
 
     await client.query('COMMIT')
     console.log(`  Deleted ${deleted.rowCount} orders.`)
