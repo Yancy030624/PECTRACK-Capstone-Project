@@ -4,6 +4,26 @@
 // setting is needed.
 import 'dotenv/config'
 
+// CLIENT_ORIGIN goes into a response header (CORS) and into every email
+// link and PayMongo return link, so it has to be exactly a bare origin.
+// A value pasted into a host's dashboard can carry an invisible character
+// (a line break, a zero-width space) — on Railway that made Node refuse the
+// header on EVERY request, the health check included, and the deploy
+// failed. Anything outside printable ASCII is dropped, then the value is
+// reduced to scheme://host[:port]; a value that is still not a URL stops
+// the server with a clear message instead of failing request by request.
+export function normalizeOrigin(raw) {
+  const cleaned = String(raw).replace(/[^\x21-\x7e]/g, '')
+  let url
+  try {
+    url = new URL(cleaned)
+  } catch {
+    throw new Error(`CLIENT_ORIGIN is not a valid address: "${cleaned}". Use the site's address, e.g. https://pectrack.up.railway.app`)
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error(`CLIENT_ORIGIN must start with https:// or http:// (got "${cleaned}").`)
+  return url.origin
+}
+
 export const config = {
   port: Number(process.env.PORT ?? 3001),
   isProduction: process.env.NODE_ENV === 'production',
@@ -17,7 +37,7 @@ export const config = {
   // request.secure is always false. See RULES-PLANS/SECURITY_REVIEW.md,
   // finding K.
   trustProxyHops: Number(process.env.TRUST_PROXY_HOPS ?? 0),
-  clientOrigin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5173',
+  clientOrigin: normalizeOrigin(process.env.CLIENT_ORIGIN ?? 'http://localhost:5173'),
   db: {
     // Hosts (Railway) hand over one connection URL; it wins when set, and
     // the separate PG* settings below are for a local database.

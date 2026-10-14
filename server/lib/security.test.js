@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import { after, before, beforeEach, describe, test } from 'node:test'
 import app from '../app.js'
 import { pool } from '../db.js'
-import { config } from '../config.js'
+import { config, normalizeOrigin } from '../config.js'
 import { httpsRedirect, rateLimit, resetRateLimits } from './security.js'
 
 describe('security headers', () => {
@@ -211,5 +211,20 @@ describe('HTTPS redirect in production', () => {
     } finally {
       config.isProduction = original
     }
+  })
+})
+
+// A CLIENT_ORIGIN pasted with an invisible character took the Railway
+// deploy down (every response failed on the CORS header).
+describe('CLIENT_ORIGIN is cleaned before use', () => {
+  test('invisible characters, spaces and a trailing slash or path are removed', () => {
+    assert.equal(normalizeOrigin('https://pectrack.up.railway.app\n'), 'https://pectrack.up.railway.app')
+    assert.equal(normalizeOrigin(' https://pectrack.up.rail\u200bway.app/ '), 'https://pectrack.up.railway.app')
+    assert.equal(normalizeOrigin('https://pectrack.up.railway.app/menu'), 'https://pectrack.up.railway.app')
+    assert.equal(normalizeOrigin('http://localhost:5173'), 'http://localhost:5173')
+  })
+  test('a value that is not an address stops the server with a clear message', () => {
+    assert.throws(() => normalizeOrigin('pectrack.up.railway.app'), /CLIENT_ORIGIN is not a valid address/)
+    assert.throws(() => normalizeOrigin('ftp://pectrack.up.railway.app'), /must start with https/)
   })
 })
