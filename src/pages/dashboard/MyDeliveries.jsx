@@ -166,6 +166,22 @@ export function MyDeliveries({ user }) {
                   <StatusBadge status={delivery.status} />
                 </div>
 
+                {/* What to hand over (CLIENT_REVISIONS_PLAN.md, R1), checked
+                    against the bag before leaving and at the door. */}
+                {delivery.items?.length > 0 && (
+                  <div className="mt-3 rounded-panel bg-surface-sunk p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Order items</p>
+                    <ul className="mt-1.5 space-y-1 text-sm text-ink-900">
+                      {delivery.items.map((item, index) => (
+                        <li key={index} className="flex justify-between gap-3">
+                          <span>{item.name}{item.variant && <span className="text-ink-500"> · {item.variant}</span>}</span>
+                          <span className="font-semibold tabular-nums">× {item.quantity}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
                 {delivery.status === 'ASSIGNED' && (
                   <div className="mt-4 border-t border-line-100 pt-4">
                     <Button type="button" size="touch" className="w-full" onClick={() => setStatus(delivery.id, 'OUT_FOR_DELIVERY')} disabled={busyId === delivery.id}>

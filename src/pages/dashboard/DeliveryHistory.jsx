@@ -107,6 +107,14 @@ export function DeliveryHistory({ user }) {
                         {delivery.proofCount > 0 && ` · ${delivery.proofCount} proof photo${delivery.proofCount === 1 ? '' : 's'}`}
                       </p>
                       {delivery.status === 'FAILED' && delivery.note && <p className="mt-0.5 whitespace-pre-line text-xs text-status-fail-fg">{delivery.note}</p>}
+                      {delivery.items?.length > 0 && (
+                        <details className="mt-1 text-xs text-ink-700">
+                          <summary className="cursor-pointer font-semibold text-ink-500">Items ({delivery.items.reduce((sum, item) => sum + item.quantity, 0)})</summary>
+                          <ul className="mt-1 space-y-0.5">
+                            {delivery.items.map((item, index) => <li key={index}>{item.quantity} × {item.name}{item.variant ? ` (${item.variant})` : ''}</li>)}
+                          </ul>
+                        </details>
+                      )}
                     </div>
                     <StatusBadge status={delivery.status} />
                   </div>

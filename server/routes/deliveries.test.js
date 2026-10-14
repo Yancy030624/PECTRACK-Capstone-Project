@@ -387,6 +387,17 @@ describe('delivery management', () => {
     assert.ok(!(await asSecondDriver.json()).deliveries.some((delivery) => delivery.id === deliveryId))
   })
 
+  // CLIENT_REVISIONS_PLAN.md, R1 — the driver checks what they hand over.
+  test('a driver sees the items of each assigned order', async () => {
+    const { deliveryId } = await placeDeliveryOrder()
+    await assign(deliveryId, firstDriverId)
+    const mine = await (await fetch(`${baseUrl}/api/deliveries/mine`, { headers: { Cookie: firstDriverCookie } })).json()
+    const card = mine.deliveries.find((delivery) => delivery.id === deliveryId)
+    assert.equal(card.items.length, 1)
+    assert.equal(card.items[0].quantity, 1)
+    assert.ok(card.items[0].name, 'each item has its product name')
+  })
+
   // --- The workflow: ASSIGNED -> OUT_FOR_DELIVERY -> DELIVERED | FAILED --
 
   test('a driver cannot skip ahead — OUT_FOR_DELIVERY from PENDING_ASSIGNMENT (unassigned) is refused', async () => {

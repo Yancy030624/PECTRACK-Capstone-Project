@@ -101,6 +101,28 @@ const mapDeliveryRow = (row) => ({
   },
 })
 
+// The items on each order, so the driver can check what they are handing
+// over (CLIENT_REVISIONS_PLAN.md, R1). One query for all the listed
+// deliveries, not one per delivery.
+async function withItems(rows) {
+  const deliveries = rows.map(mapDeliveryRow)
+  const orderIds = [...new Set(deliveries.map((delivery) => delivery.orderId))]
+  if (orderIds.length === 0) return deliveries
+  const lines = await pool.query(
+    `SELECT od.order_id, p.product_name, p.variant, od.quantity
+       FROM order_details od JOIN products p ON p.product_id = od.product_id
+      WHERE od.order_id = ANY($1::bigint[])
+      ORDER BY p.product_name, p.variant NULLS FIRST`,
+    [orderIds],
+  )
+  const byOrder = new Map()
+  for (const line of lines.rows) {
+    if (!byOrder.has(line.order_id)) byOrder.set(line.order_id, [])
+    byOrder.get(line.order_id).push({ name: line.product_name, variant: line.variant, quantity: line.quantity })
+  }
+  return deliveries.map((delivery) => ({ ...delivery, items: byOrder.get(delivery.orderId) ?? [] }))
+}
+
 const mapProofRow = (row) => ({
   id: row.proof_id,
   proofType: row.proof_type,
@@ -155,7 +177,7 @@ router.get('/', requireRole('ADMIN', 'CASHIER'), async (request, response) => {
   const result = status
     ? await pool.query(`${deliverySelectQuery} WHERE d.status = $1 ${orderClause}`, [status])
     : await pool.query(`${deliverySelectQuery} ${orderClause}`)
-  return response.json({ deliveries: result.rows.map(mapDeliveryRow) })
+  return response.json({ deliveries: await withItems(result.rows) })
 })
 
 // GET /api/deliveries/mine — PATTERN H: the driver's own id, resolved
@@ -168,7 +190,7 @@ router.get('/mine', requireRole('DELIVERY_PERSONNEL'), async (request, response)
      ORDER BY d.assigned_at`,
     [personnelId],
   )
-  return response.json({ deliveries: result.rows.map(mapDeliveryRow) })
+  return response.json({ deliveries: await withItems(result.rows) })
 })
 
 // GET /api/deliveries/mine/history?from&to — PHASE10 B4, the paper's
@@ -220,7 +242,7 @@ router.get('/mine/history', requireRole('DELIVERY_PERSONNEL'), async (request, r
       failed,
       assignedNow: Number(open.rows[0].open),
     },
-    deliveries: rows.rows.map(mapDeliveryRow),
+    deliveries: await withItems(rows.rows),
     truncated: delivered + failed > historyLimit,
   })
 })
@@ -302,7 +324,7 @@ router.patch('/:id/assign', requireRole('ADMIN', 'CASHIER'), async (request, res
   }
 
   const updated = await pool.query(`${deliverySelectQuery} WHERE d.delivery_id = $1`, [deliveryId])
-  return response.json({ delivery: mapDeliveryRow(updated.rows[0]) })
+  return response.json({ delivery: (await withItems(updated.rows))[0] })
 })
 
 // PATCH /api/deliveries/:id/status — two very different callers share this
@@ -449,7 +471,7 @@ router.patch('/:id/status', async (request, response) => {
   }
 
   const updated = await pool.query(`${deliverySelectQuery} WHERE d.delivery_id = $1`, [deliveryId])
-  return response.json({ delivery: mapDeliveryRow(updated.rows[0]) })
+  return response.json({ delivery: (await withItems(updated.rows))[0] })
 })
 
 // POST /api/deliveries/:id/proof — PHASE 7, DECISION 8. Raw image bytes,
