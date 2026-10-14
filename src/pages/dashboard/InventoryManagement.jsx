@@ -11,7 +11,6 @@ import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
-import { InventoryRequests } from './InventoryRequests.jsx'
 
 const emptyEditForm = { stockQuantity: '', minStockLevel: '', expirationDate: '', reason: '', note: '' }
 // PRODUCTION_LOSS/EXPIRED/DAMAGED added by migration 008
@@ -31,11 +30,11 @@ const reasonOptions = [
   { value: 'CORRECTION', label: 'Correction (recount)' },
 ]
 
-// Stage 4 (RULES-PLANS/UI_AUDIT.md) — converted together with
-// InventoryRequests.jsx since this page renders it as its "requests" tab.
-// The role="status" 10px error (C3) is <Alert variant="error">; the
-// rounded-full tab pills are Button, matching OrderManagement/
-// PaymentBilling's tab pattern; the five inputs are Input/Select/Field
+// Admin and cashier both edit stock here, with no approval step
+// (CLIENT_REVISIONS_PLAN.md, R1): cashiers encode stock, and every change
+// is in the movement ledger with who made it. The minimum level and expiry
+// fields are admin-only. The role="status" 10px error (C3) is
+// <Alert variant="error">; the inputs are Input/Select/Field
 // (H3); Stock and Min level are <Td numeric> per the audit's "numeric and
 // currency columns right-aligned with tabular-nums" rule. Each row's
 // status (Good / Running low / Low stock / Expired) comes from
@@ -44,10 +43,7 @@ const reasonOptions = [
 //
 // saveEdit's request-body construction is untouched: it still only adds
 // stockQuantity/reason/note/minStockLevel/expirationDate keys when that
-// field actually changed from editOriginal, same as before. The one
-// change request per product and observed-stock-quantity approval
-// semantics live in InventoryRequests.jsx and are not touched by this
-// pass either.
+// field actually changed from editOriginal, same as before.
 // The status filter's choices. ATTENTION is "everything red" — low and
 // expired together — which is what the Dashboard's "View all" opens.
 const stockFilters = [
@@ -68,7 +64,6 @@ const matchesFilter = (item, filter) => {
 // Low stock tile sends 'LOW', so it shows only what is low.
 export function InventoryManagement({ user, params }) {
   const isAdmin = user.role === 'ADMIN'
-  const [activeTab, setActiveTab] = useState('levels')
   const [stockFilter, setStockFilter] = useState(() => (stockFilters.some((filter) => filter.key === params?.stockFilter) ? params.stockFilter : 'ALL'))
 
   const [inventory, setInventory] = useState([])
@@ -150,16 +145,11 @@ export function InventoryManagement({ user, params }) {
     .filter((item) => matchesFilter(item, stockFilter))
     .sort((a, b) => (stockFilter === 'ALL' ? 0 : statusRank[stockStatus(a)] - statusRank[stockStatus(b)]))
 
-  const tabs = [
-    { key: 'levels', label: 'Stock levels' },
-    { key: 'requests', label: isAdmin ? 'Change requests' : 'Propose a change' },
-  ]
-
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
       <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
       <h1 className="mt-1 text-2xl font-semibold text-ink-900">Inventory Management</h1>
-      <p className="mt-2 text-sm text-ink-500">{isAdmin ? 'View and adjust current stock levels.' : 'Current stock levels across the catalog.'}</p>
+      <p className="mt-2 text-sm text-ink-500">Current stock levels. Edit a product to record a restock, a loss, or a recount; every change is logged with who made it.</p>
 
       {message && (
         <div className="mt-4">
@@ -167,140 +157,131 @@ export function InventoryManagement({ user, params }) {
         </div>
       )}
 
-      <div className="mt-6 flex gap-2">
-        {tabs.map((tab) => (
-          <Button type="button" key={tab.key} size="sm" variant={activeTab === tab.key ? 'primary' : 'secondary'} onClick={() => setActiveTab(tab.key)}>
-            {tab.label}
-          </Button>
-        ))}
-      </div>
-
-      {activeTab === 'requests' && <InventoryRequests user={user} inventory={inventory} />}
-
-      {activeTab === 'levels' && (
-        <Card className="mt-6 p-6">
-          {!loading && inventory.length > 0 && (
-            <div className="mb-5">
-              <p id="stock-filter-label" className="text-xs font-semibold uppercase tracking-wide text-ink-500">Status</p>
-              <div role="group" aria-labelledby="stock-filter-label" className="mt-2 flex flex-wrap gap-2">
-                {stockFilters.map((filter) => {
-                  const count = inventory.filter((item) => matchesFilter(item, filter.key)).length
-                  const active = stockFilter === filter.key
-                  return (
-                    <button
-                      type="button"
-                      key={filter.key}
-                      onClick={() => setStockFilter(filter.key)}
-                      aria-pressed={active}
-                      className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition ${active ? 'border-ink-900 bg-ink-900 text-white' : 'border-line-200 bg-surface text-ink-700 hover:bg-surface-sunk'}`}
-                    >
-                      {filter.tone && <span className={`h-2.5 w-2.5 rounded-full ${TONES[filter.tone].dot}`} aria-hidden="true" />}
-                      {filter.label}
-                      <span className={`rounded-full px-1.5 text-xs tabular-nums ${active ? 'bg-white/20' : 'bg-surface-sunk text-ink-500'}`}>{count}</span>
-                    </button>
-                  )
-                })}
-              </div>
+      <Card className="mt-6 p-6">
+        {!loading && inventory.length > 0 && (
+          <div className="mb-5">
+            <p id="stock-filter-label" className="text-xs font-semibold uppercase tracking-wide text-ink-500">Status</p>
+            <div role="group" aria-labelledby="stock-filter-label" className="mt-2 flex flex-wrap gap-2">
+              {stockFilters.map((filter) => {
+                const count = inventory.filter((item) => matchesFilter(item, filter.key)).length
+                const active = stockFilter === filter.key
+                return (
+                  <button
+                    type="button"
+                    key={filter.key}
+                    onClick={() => setStockFilter(filter.key)}
+                    aria-pressed={active}
+                    className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition ${active ? 'border-ink-900 bg-ink-900 text-white' : 'border-line-200 bg-surface text-ink-700 hover:bg-surface-sunk'}`}
+                  >
+                    {filter.tone && <span className={`h-2.5 w-2.5 rounded-full ${TONES[filter.tone].dot}`} aria-hidden="true" />}
+                    {filter.label}
+                    <span className={`rounded-full px-1.5 text-xs tabular-nums ${active ? 'bg-white/20' : 'bg-surface-sunk text-ink-500'}`}>{count}</span>
+                  </button>
+                )
+              })}
             </div>
-          )}
-          {loading ? (
-            <LoadingRows className="mt-4" />
-          ) : inventory.length === 0 ? (
-            <EmptyState title="No products yet" />
-          ) : visibleInventory.length === 0 ? (
-            <EmptyState title={`No products are ${stockFilters.find((filter) => filter.key === stockFilter).label.toLowerCase()} right now`} description="Pick another status, or All." />
-          ) : (
-            <div>
-              <Table caption="Inventory stock levels">
-                <Thead>
-                  <Tr className="hover:bg-transparent">
-                    <Th>Product</Th>
-                    <Th priority="lg">Category</Th>
-                    <Th align="right">Stock</Th>
-                    <Th align="right" priority="md">Min level</Th>
-                    <Th priority="lg">Expiry</Th>
-                    <Th>Status</Th>
-                    {isAdmin && <Th>Actions</Th>}
-                  </Tr>
-                </Thead>
-                <Tbody>
-                  {visibleInventory.map((item) =>
-                    editingProductId === item.productId ? (
-                      // The edit form spans the whole row as one cell. It
-                      // used to put one input per column, which broke the
-                      // moment a column was hidden on a narrow screen: the
-                      // "Min level" and "Expiry" inputs vanished with their
-                      // columns. One cell, one stacked form, every size.
-                      <Tr key={item.productId}>
-                        <td colSpan={7} className="px-3 py-3 text-sm text-ink-700">
-                          <p className="font-semibold text-ink-900">{item.productName}{item.variant ? ` (${item.variant})` : ''}</p>
-                          <div className="mt-2 grid gap-3 sm:grid-cols-3">
-                            <Field label="Stock" error={editErrors.stockQuantity}>
-                              <Input value={editForm.stockQuantity} onChange={(event) => setEditForm({ ...editForm, stockQuantity: event.target.value })} inputMode="numeric" />
-                            </Field>
-                            <Field label="Min level" error={editErrors.minStockLevel}>
-                              <Input value={editForm.minStockLevel} onChange={(event) => setEditForm({ ...editForm, minStockLevel: event.target.value })} inputMode="numeric" />
-                            </Field>
-                            <Field label="Expiry" error={editErrors.expirationDate}>
-                              <Input type="date" value={editForm.expirationDate} onChange={(event) => setEditForm({ ...editForm, expirationDate: event.target.value })} />
-                            </Field>
-                          </div>
-                          {stockQuantityChanged && (
-                            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                              <Field label="Why is stock changing?" error={editErrors.reason}>
-                                <Select value={editForm.reason} onChange={(event) => setEditForm({ ...editForm, reason: event.target.value })}>
-                                  <option value="">Select a reason</option>
-                                  {reasonOptions.map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </Select>
+          </div>
+        )}
+        {loading ? (
+          <LoadingRows className="mt-4" />
+        ) : inventory.length === 0 ? (
+          <EmptyState title="No products yet" />
+        ) : visibleInventory.length === 0 ? (
+          <EmptyState title={`No products are ${stockFilters.find((filter) => filter.key === stockFilter).label.toLowerCase()} right now`} description="Pick another status, or All." />
+        ) : (
+          <div>
+            <Table caption="Inventory stock levels">
+              <Thead>
+                <Tr className="hover:bg-transparent">
+                  <Th>Product</Th>
+                  <Th priority="lg">Category</Th>
+                  <Th align="right">Stock</Th>
+                  <Th align="right" priority="md">Min level</Th>
+                  <Th priority="lg">Expiry</Th>
+                  <Th>Status</Th>
+                  <Th>Actions</Th>
+                </Tr>
+              </Thead>
+              <Tbody>
+                {visibleInventory.map((item) =>
+                  editingProductId === item.productId ? (
+                    // The edit form spans the whole row as one cell. It
+                    // used to put one input per column, which broke the
+                    // moment a column was hidden on a narrow screen: the
+                    // "Min level" and "Expiry" inputs vanished with their
+                    // columns. One cell, one stacked form, every size.
+                    <Tr key={item.productId}>
+                      <td colSpan={7} className="px-3 py-3 text-sm text-ink-700">
+                        <p className="font-semibold text-ink-900">{item.productName}{item.variant ? ` (${item.variant})` : ''}</p>
+                        <div className="mt-2 grid gap-3 sm:grid-cols-3">
+                          <Field label="Stock" error={editErrors.stockQuantity}>
+                            <Input value={editForm.stockQuantity} onChange={(event) => setEditForm({ ...editForm, stockQuantity: event.target.value })} inputMode="numeric" />
+                          </Field>
+                          {/* Settings, not counts: admin only (routes/inventory.js). */}
+                          {isAdmin && (
+                            <>
+                              <Field label="Min level" error={editErrors.minStockLevel}>
+                                <Input value={editForm.minStockLevel} onChange={(event) => setEditForm({ ...editForm, minStockLevel: event.target.value })} inputMode="numeric" />
                               </Field>
-                              <Field label="Note (optional)">
-                                <Input value={editForm.note} onChange={(event) => setEditForm({ ...editForm, note: event.target.value })} />
+                              <Field label="Expiry" error={editErrors.expirationDate}>
+                                <Input type="date" value={editForm.expirationDate} onChange={(event) => setEditForm({ ...editForm, expirationDate: event.target.value })} />
                               </Field>
-                            </div>
+                            </>
                           )}
-                          <div className="mt-3 flex gap-2">
-                            <Button size="sm" onClick={(event) => saveEdit(event, item)} disabled={editSubmitting}>
-                              {editSubmitting ? 'Saving…' : 'Save'}
-                            </Button>
-                            <Button size="sm" variant="secondary" onClick={cancelEdit}>
-                              Cancel
-                            </Button>
+                        </div>
+                        {stockQuantityChanged && (
+                          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                            <Field label="Why is stock changing?" error={editErrors.reason}>
+                              <Select value={editForm.reason} onChange={(event) => setEditForm({ ...editForm, reason: event.target.value })}>
+                                <option value="">Select a reason</option>
+                                {reasonOptions.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </Select>
+                            </Field>
+                            <Field label="Note (optional)">
+                              <Input value={editForm.note} onChange={(event) => setEditForm({ ...editForm, note: event.target.value })} />
+                            </Field>
                           </div>
-                        </td>
-                      </Tr>
-                    ) : (
-                      <Tr key={item.productId}>
-                        <Td className="font-semibold text-ink-900">
-                          {item.productName}
-                          {item.variant && <span className="block text-xs font-normal text-ink-500">{item.variant}</span>}
-                        </Td>
-                        <Td priority="lg">{item.categoryName}</Td>
-                        <Td numeric>{item.stockQuantity}</Td>
-                        <Td numeric priority="md">{item.minStockLevel}</Td>
-                        <Td priority="lg">{item.expirationDate ?? '—'}{item.expired && <span className="ml-2 rounded-full bg-status-fail-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-fail-fg">Expired</span>}</Td>
-                        <Td>
-                          <StockStatusPill status={stockStatus(item)} />
-                        </Td>
-                        {isAdmin && (
-                          <Td>
-                            <Button size="sm" variant="ghost" onClick={() => startEdit(item)}>
-                              Edit
-                            </Button>
-                          </Td>
                         )}
-                      </Tr>
-                    ),
-                  )}
-                </Tbody>
-              </Table>
-            </div>
-          )}
-        </Card>
-      )}
+                        <div className="mt-3 flex gap-2">
+                          <Button size="sm" onClick={(event) => saveEdit(event, item)} disabled={editSubmitting}>
+                            {editSubmitting ? 'Saving…' : 'Save'}
+                          </Button>
+                          <Button size="sm" variant="secondary" onClick={cancelEdit}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </td>
+                    </Tr>
+                  ) : (
+                    <Tr key={item.productId}>
+                      <Td className="font-semibold text-ink-900">
+                        {item.productName}
+                        {item.variant && <span className="block text-xs font-normal text-ink-500">{item.variant}</span>}
+                      </Td>
+                      <Td priority="lg">{item.categoryName}</Td>
+                      <Td numeric>{item.stockQuantity}</Td>
+                      <Td numeric priority="md">{item.minStockLevel}</Td>
+                      <Td priority="lg">{item.expirationDate ?? '—'}{item.expired && <span className="ml-2 rounded-full bg-status-fail-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-fail-fg">Expired</span>}</Td>
+                      <Td>
+                        <StockStatusPill status={stockStatus(item)} />
+                      </Td>
+                      <Td>
+                        <Button size="sm" variant="ghost" onClick={() => startEdit(item)}>
+                          Edit
+                        </Button>
+                      </Td>
+                    </Tr>
+                  ),
+                )}
+              </Tbody>
+            </Table>
+          </div>
+        )}
+      </Card>
     </section>
   )
 }

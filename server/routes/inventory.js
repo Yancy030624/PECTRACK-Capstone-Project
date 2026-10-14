@@ -8,11 +8,12 @@
 // and delivery personnel have no inventory concern at all. Mounted at
 // /api/inventory in app.js.
 //
-// See PHASE5_PLAN.md for the full design (the movement ledger, the
-// conditional-update deduction pattern, the observed-vs-proposed stock
-// change request shape) — this file now covers Steps 1, 2, 5, and 6 from
-// that plan: the read-only list, admin editing stock directly, low-stock
-// alerting, and the cashier-proposes/admin-approves workflow.
+// See PHASE5_PLAN.md for the movement ledger and the conditional-update
+// deduction pattern. The cashier-proposes/admin-approves workflow was
+// removed at the client's request (CLIENT_REVISIONS_PLAN.md, R1): cashiers
+// encode stock themselves, so the admin and cashiers both change stock
+// directly here, and the ledger records who did it and why. The
+// inventory_change_requests table stays, as the history of past requests.
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
@@ -21,63 +22,25 @@ import { normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
 
-// Reasons a DIRECT admin edit is allowed to record. Deliberately narrower
+// Reasons a direct stock edit is allowed to record. Deliberately narrower
 // than the full stock_movement_reason enum: ORDER_PLACED and
 // ORDER_CANCELLED are written by the system itself when an order moves
 // (Steps 3–4), never chosen by a person filling in a form here.
 //
 // PRODUCTION_LOSS/EXPIRED/DAMAGED (migration 008 — INVENTORY_REVIEW.md)
 // widen this beyond Phase 5's original RESTOCK/SPOILAGE/CORRECTION so an
-// admin recording a loss directly can say WHICH kind it was, the same
-// distinction a cashier's loss report below now makes. Before this, every
+// edit recording a loss can say WHICH kind it was. Before this, every
 // loss — burned, expired, or genuinely spoiled — had to be filed as
 // SPOILAGE, so analytics could never separate a production accident from
 // ordinary overproduction.
 const manualMovementReasons = new Set(['RESTOCK', 'SPOILAGE', 'CORRECTION', 'PRODUCTION_LOSS', 'EXPIRED', 'DAMAGED'])
-// The reasons a CASHIER may pick for a loss report (POST /requests below).
-// Narrower than manualMovementReasons: RESTOCK and CORRECTION make no
-// sense as a "loss" (a correction might not even be a loss — it can go
-// either direction), so they stay reachable only through the admin's
-// direct edit or the cashier's existing recount shape, never through this
-// list.
-const lossReportReasons = new Set(['PRODUCTION_LOSS', 'EXPIRED', 'DAMAGED', 'SPOILAGE'])
 // Which way each manual reason is allowed to move stock. RESTOCK only ever
 // adds; the four loss reasons only ever remove; CORRECTION is the one that
-// goes either way (a recount can find more or less). Checked on the admin
+// goes either way (a recount can find more or less). Checked on the
 // direct edit, where the reason and the new figure arrive separately and
 // used to be accepted in any combination — a "+20 SPOILAGE" ledger row is
 // not a loss, and analytics built on the ledger would read it as one.
 const reasonDirection = { RESTOCK: 1, SPOILAGE: -1, PRODUCTION_LOSS: -1, EXPIRED: -1, DAMAGED: -1 }
-const requestDecisions = new Set(['APPROVED', 'REJECTED'])
-const requestReasonMaxLength = 500
-// Describes whatever pending request is blocking this product, or null if
-// nothing is. Shared by the pre-check and the unique-violation catch in
-// POST /requests, so losing the race reads identically to being refused up
-// front.
-//
-// It NAMES the cashier who has the request open, because GET /requests
-// scopes a cashier to their own rows: without the name, the refusal points
-// at a request the reader is structurally unable to find, which is a dead
-// end rather than an error message. Naming a colleague is the right call
-// here — the two of them disagree about what is on one shelf, and settling
-// that means talking to each other.
-const describePendingRequest = async (productId) => {
-  const result = await pool.query(
-    `SELECT c.name FROM inventory_change_requests r
-      JOIN cashiers c ON c.cashier_id = r.requested_by
-      WHERE r.product_id = $1 AND r.status = 'PENDING'`,
-    [productId],
-  )
-  const row = result.rows[0]
-  // Null means the blocking request was reviewed between the failed write
-  // and this lookup — rare, but it must not become a crash or a message
-  // naming nobody.
-  if (!row) return null
-  return `${row.name} already has a pending request for this product. It needs to be reviewed before another can be submitted.`
-}
-// Used only when the lookup above comes back empty. Says the same thing
-// without a name rather than inventing one.
-const pendingRequestConflictMessage = 'This product already has a pending request. It needs to be reviewed before another can be submitted.'
 
 const mapInventoryRow = (row) => ({
   productId: row.product_id,
@@ -109,37 +72,6 @@ const inventorySelectQuery = `SELECT i.inventory_id, i.product_id, p.product_nam
      JOIN products p ON p.product_id = i.product_id
      JOIN categories c ON c.category_id = p.category_id`
 
-const mapChangeRequestRow = (row) => ({
-  id: row.request_id,
-  productId: row.product_id,
-  productName: row.product_name,
-  variant: row.variant,
-  requestedByName: row.requested_by_name,
-  observedStockQuantity: row.observed_stock_quantity,
-  proposedStockQuantity: row.proposed_stock_quantity,
-  proposedMinStockLevel: row.proposed_min_stock_level,
-  // Present only on a loss report (migration 008) — null on an ordinary
-  // recount, which is how the frontend tells the two shapes apart without
-  // a separate "type" field.
-  movementReason: row.movement_reason,
-  quantityChange: row.quantity_change,
-  reason: row.reason,
-  status: row.status,
-  reviewedByName: row.reviewed_by_name,
-  reviewedAt: row.reviewed_at,
-  reviewerNote: row.reviewer_note,
-  createdAt: row.created_at,
-})
-
-const changeRequestSelectQuery = `SELECT r.request_id, r.product_id, p.product_name, p.variant, r.requested_by, rc.name AS requested_by_name,
-            r.observed_stock_quantity, r.proposed_stock_quantity, r.proposed_min_stock_level,
-            r.movement_reason, r.quantity_change,
-            r.reason, r.status, r.reviewed_by, ra.name AS reviewed_by_name, r.reviewed_at, r.reviewer_note, r.created_at
-     FROM inventory_change_requests r
-     JOIN products p ON p.product_id = r.product_id
-     JOIN cashiers rc ON rc.cashier_id = r.requested_by
-     LEFT JOIN admins ra ON ra.admin_id = r.reviewed_by`
-
 router.use(requireAuth, requireRole('ADMIN', 'CASHIER'))
 
 router.get('/', async (_request, response) => {
@@ -147,353 +79,15 @@ router.get('/', async (_request, response) => {
   return response.json({ inventory: result.rows.map(mapInventoryRow) })
 })
 
-// GET /api/inventory/requests — a cashier sees their OWN proposals (so
-// they can check whether one was approved or rejected); an admin sees
-// everyone's, since reviewing them is the whole point of this screen for
-// that role. Same role-scoping shape as GET /api/orders.
-//
-// Registered BEFORE the /:productId route below even though Express's
-// path matching wouldn't actually confuse a two-segment path like this
-// with a one-segment wildcard — specific literal paths are kept ahead of
-// wildcard ones anyway, as a matter of habit that stays correct if a
-// route here ever changes shape.
-router.get('/requests', async (request, response) => {
-  if (request.user.role === 'CASHIER') {
-    const cashierResult = await pool.query('SELECT cashier_id FROM cashiers WHERE user_id = $1', [request.user.id])
-    const cashierId = cashierResult.rows[0]?.cashier_id
-    const result = await pool.query(`${changeRequestSelectQuery} WHERE r.requested_by = $1 ORDER BY r.created_at DESC`, [cashierId])
-    return response.json({ requests: result.rows.map(mapChangeRequestRow) })
+// PATCH /api/inventory/:productId — a direct stock edit, applied at once.
+// Admin and cashier both change the stock count (with a reason, written to
+// the ledger with who made it). The minimum level and expiry are settings,
+// not counts, and stay with the admin.
+const adminOnlyInventoryFields = ['minStockLevel', 'expirationDate']
+router.patch('/:productId', async (request, response) => {
+  if (request.user.role !== 'ADMIN' && adminOnlyInventoryFields.some((field) => field in request.body)) {
+    return response.status(403).json({ message: 'Only an admin can change the minimum level or the expiry date.' })
   }
-  const result = await pool.query(`${changeRequestSelectQuery} ORDER BY r.created_at DESC`)
-  return response.json({ requests: result.rows.map(mapChangeRequestRow) })
-})
-
-// POST /api/inventory/requests — cashier-only. This is the ONLY way a
-// cashier can influence stock; PATCH /:productId below is admin-only.
-//
-// request_type is HARDCODED to 'INVENTORY' below and never read from the
-// request body at all — that is what actually enforces "cashiers may only
-// submit INVENTORY requests, never PRODUCT_DETAILS" (PHASE5_PLAN.md,
-// Step 6). The database CHECK constraint on this table allows either type
-// for either kind of proposed_* field combination; it does not know or
-// care WHO is submitting. An input that is never read cannot be misused,
-// which is a stronger guarantee than validating a submitted requestType
-// against an allowed set — there is no set to bypass because there is no
-// field.
-router.post('/requests', requireRole('CASHIER'), async (request, response) => {
-  const productId = parseId(request.body.productId)
-  if (!productId) return response.status(422).json({ message: 'Select a valid product.', errors: { productId: 'Select a valid product.' } })
-
-  const errors = {}
-  const values = {}
-
-  if (request.body.proposedStockQuantity != null) {
-    const proposedStockQuantity = Number(request.body.proposedStockQuantity)
-    if (!Number.isInteger(proposedStockQuantity) || proposedStockQuantity < 0) errors.proposedStockQuantity = 'Enter a whole number, zero or greater.'
-    else values.proposedStockQuantity = proposedStockQuantity
-  }
-  if (request.body.proposedMinStockLevel != null) {
-    const proposedMinStockLevel = Number(request.body.proposedMinStockLevel)
-    if (!Number.isInteger(proposedMinStockLevel) || proposedMinStockLevel < 0) errors.proposedMinStockLevel = 'Enter a whole number, zero or greater.'
-    else values.proposedMinStockLevel = proposedMinStockLevel
-  }
-
-  // A LOSS REPORT is a second, mutually exclusive shape this same route
-  // accepts (migration 008 — INVENTORY_REVIEW.md Section 2b). A recount
-  // disputes the count itself ("stock should read 20"); a loss reports a
-  // known quantity leaving a shelf that was otherwise correct ("10 fewer,
-  // because it burned"). Presence of movementReason is what selects this
-  // shape — the same "detect by which optional field showed up" pattern
-  // every other field on this route already uses, rather than a separate
-  // mode flag.
-  //
-  // It needs no observed baseline the way a recount does: see the
-  // approval route below for why a recount's arithmetic depends on what
-  // stock WAS when proposed, and why a loss report's does not.
-  const isLossReport = request.body.movementReason != null
-  let movementReason = null
-  let quantityChange = null
-  if (isLossReport) {
-    movementReason = normalize(request.body.movementReason).toUpperCase()
-    if (!lossReportReasons.has(movementReason)) errors.movementReason = 'Select why stock was lost: production loss, expired, damaged, or spoilage.'
-
-    const quantityLost = Number(request.body.quantityLost)
-    if (!Number.isInteger(quantityLost) || quantityLost <= 0) errors.quantityLost = 'Enter a whole number greater than zero.'
-    // Stored negative, matching inventory_movements.quantity_change's own
-    // signed convention — a loss report can only remove stock, so the
-    // sign is never ambiguous the way it is for CORRECTION.
-    else quantityChange = -quantityLost
-
-    // The two shapes are never mixed on one row. This route is the only
-    // code path that writes this table, so enforcing it here is
-    // sufficient — there is no concurrent writer that could race past it.
-    if (values.proposedStockQuantity !== undefined || values.proposedMinStockLevel !== undefined) {
-      errors.movementReason = 'A loss report cannot also propose a recount. Submit them separately.'
-    }
-  } else if (values.proposedStockQuantity === undefined && values.proposedMinStockLevel === undefined) {
-    // Mirrors the table's own CHECK constraint for a recount-shaped
-    // INVENTORY request: at least one of the two proposed fields must be
-    // present.
-    errors.proposedStockQuantity = 'Propose a new stock quantity, a new minimum level, or both.'
-  }
-
-  const reason = normalize(request.body.reason).slice(0, requestReasonMaxLength)
-  if (!reason) errors.reason = 'Explain why this change is needed.'
-
-  if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
-
-  const cashierResult = await pool.query('SELECT cashier_id FROM cashiers WHERE user_id = $1', [request.user.id])
-  const cashierId = cashierResult.rows[0]?.cashier_id
-
-  const inventoryResult = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [productId])
-  const inventoryRow = inventoryResult.rows[0]
-  if (!inventoryRow) return response.status(404).json({ message: 'Product not found.' })
-
-  // Only ONE pending request per product at a time.
-  //
-  // Without this, two pending proposals for the same product each capture
-  // the SAME observed baseline, and approving both applies BOTH deltas to
-  // the same starting point — compounding into a figure nobody proposed.
-  // Concretely: stock 10, cashier proposes 18 (delta +8), then recounts
-  // and proposes 20 (observed still 10, delta +10). Approving both lands
-  // on 28, when the cashier's own latest belief was 20.
-  //
-  // Rejecting the second submission is the honest fix rather than trying
-  // to reconcile competing counts: two people disagreeing about what's on
-  // one shelf is a question for them to settle, not something arithmetic
-  // can resolve. The first request has to be reviewed (approved or
-  // rejected) before another can be raised.
-  //
-  // This is a friendly pre-check, NOT the enforcement — it reads on a
-  // pooled connection and the INSERT happens separately, so concurrent
-  // submissions can all find nothing pending and all proceed (measured:
-  // four cashiers at once produced four pending rows). Migration 004's
-  // partial unique index is what actually holds the line; the catch below
-  // turns the losing INSERT into the same 409 this returns.
-  const blocking = await describePendingRequest(productId)
-  if (blocking) return response.status(409).json({ message: blocking })
-
-  // observed_stock_quantity is captured HERE, server-side, from the
-  // CURRENT stock — never accepted from the client. A client-supplied
-  // value could already be stale by the moment it's submitted (the
-  // cashier's screen may have loaded minutes ago; orders may have sold
-  // through since); reading it fresh at the instant of submission is what
-  // makes it a trustworthy baseline for the delta calculation an approval
-  // performs later (see PATCH /requests/:requestId, and Decision 2 in
-  // PHASE5_PLAN.md).
-  let created
-  try {
-    created = await pool.query(
-      `INSERT INTO inventory_change_requests (product_id, requested_by, request_type, observed_stock_quantity, proposed_stock_quantity, proposed_min_stock_level, movement_reason, quantity_change, reason)
-       VALUES ($1, $2, 'INVENTORY', $3, $4, $5, $6, $7, $8)
-       RETURNING request_id`,
-      [productId, cashierId, inventoryRow.stock_quantity, values.proposedStockQuantity ?? null, values.proposedMinStockLevel ?? null, movementReason, quantityChange, reason],
-    )
-  } catch (error) {
-    // 23505 on the one-pending-per-product index means another submission
-    // won the race between this route's pre-check and this INSERT. That's
-    // the same refusal, just discovered a moment later — so it gets the
-    // same message rather than a generic 500.
-    if (error.code === '23505' && error.constraint === 'inventory_change_requests_one_pending_per_product_idx') {
-      return response.status(409).json({ message: (await describePendingRequest(productId)) ?? pendingRequestConflictMessage })
-    }
-    throw error
-  }
-
-  const full = await pool.query(`${changeRequestSelectQuery} WHERE r.request_id = $1`, [created.rows[0].request_id])
-  return response.status(201).json({ request: mapChangeRequestRow(full.rows[0]) })
-})
-
-// PATCH /api/inventory/requests/:requestId — admin approve/reject, or the
-// requesting cashier withdrawing their own PENDING proposal (CANCELLED —
-// the one change_request_status value nothing could reach before this: a
-// cashier who mistyped had to wait for an admin to reject it, while the
-// one-pending-per-product rule blocked the corrected proposal).
-router.patch('/requests/:requestId', async (request, response) => {
-  const requestId = parseId(request.params.requestId)
-  if (!requestId) return response.status(404).json({ message: 'Request not found.' })
-
-  const decision = normalize(request.body.status).toUpperCase()
-
-  if (request.user.role === 'CASHIER') {
-    if (decision !== 'CANCELLED') return response.status(403).json({ message: 'Only an admin can approve or reject a request — you can withdraw your own pending one.' })
-    // Ownership and PENDING in the WHERE of the write itself, the same
-    // conditional-claim shape the admin review below uses: a request that
-    // is not theirs 404s (never confirmed to exist), one already reviewed
-    // is a 409, and an admin's approval racing this withdrawal wins or
-    // loses cleanly on the row.
-    const withdrawn = await pool.query(
-      `UPDATE inventory_change_requests r SET status = 'CANCELLED', reviewed_at = CURRENT_TIMESTAMP
-         FROM cashiers c
-        WHERE r.request_id = $1 AND r.status = 'PENDING' AND c.cashier_id = r.requested_by AND c.user_id = $2
-      RETURNING r.request_id`,
-      [requestId, request.user.id],
-    )
-    if (withdrawn.rowCount === 0) {
-      const owns = await pool.query('SELECT 1 FROM inventory_change_requests r JOIN cashiers c ON c.cashier_id = r.requested_by WHERE r.request_id = $1 AND c.user_id = $2', [requestId, request.user.id])
-      if (!owns.rows[0]) return response.status(404).json({ message: 'Request not found.' })
-      return response.status(409).json({ message: 'This request has already been reviewed.' })
-    }
-    const full = await pool.query(`${changeRequestSelectQuery} WHERE r.request_id = $1`, [requestId])
-    return response.json({ request: mapChangeRequestRow(full.rows[0]) })
-  }
-
-  if (!requestDecisions.has(decision)) return response.status(422).json({ message: 'Enter a valid decision.', errors: { status: 'status must be APPROVED or REJECTED.' } })
-
-  const reviewerNote = request.body.reviewerNote == null ? null : normalize(request.body.reviewerNote).slice(0, requestReasonMaxLength) || null
-
-  // A friendly pre-check for the two "can't do this" cases, before
-  // opening a transaction — 404 for a request that never existed, 409 for
-  // one that's already been decided (a request is reviewed exactly once;
-  // there is no "PENDING again" path back).
-  const existing = await pool.query('SELECT status FROM inventory_change_requests WHERE request_id = $1', [requestId])
-  if (!existing.rows[0]) return response.status(404).json({ message: 'Request not found.' })
-  if (existing.rows[0].status !== 'PENDING') return response.status(409).json({ message: 'This request has already been reviewed.' })
-
-  const adminResult = await pool.query('SELECT admin_id FROM admins WHERE user_id = $1', [request.user.id])
-  const adminId = adminResult.rows[0]?.admin_id
-
-  const client = await pool.connect()
-  try {
-    await client.query('BEGIN')
-
-    // Conditional UPDATE, WHERE status = 'PENDING' — the pre-check above
-    // already covers the common case with a friendly message, but this
-    // guards the genuine race: two admins reviewing the same request at
-    // the same moment. rowCount === 0 here means the pre-check's answer
-    // is now stale (someone else's review landed in between), and that's
-    // still correctly a 409, just discovered slightly later.
-    const reviewed = await client.query(
-      `UPDATE inventory_change_requests
-       SET status = $1, reviewed_by = $2, reviewed_at = CURRENT_TIMESTAMP, reviewer_note = $3
-       WHERE request_id = $4 AND status = 'PENDING'
-       RETURNING product_id, observed_stock_quantity, proposed_stock_quantity, proposed_min_stock_level, movement_reason, quantity_change, reason`,
-      [decision, adminId, reviewerNote, requestId],
-    )
-    if (reviewed.rowCount === 0) {
-      await client.query('ROLLBACK')
-      return response.status(409).json({ message: 'This request has already been reviewed.' })
-    }
-    const changeRequest = reviewed.rows[0]
-
-    // A rejection needs nothing further — no inventory row is touched at
-    // all. Only an approval applies anything.
-    if (decision === 'APPROVED') {
-      // FOR UPDATE is load-bearing, not decoration. Everything below is a
-      // read-modify-write: read current stock, compute a new absolute
-      // figure from it in JavaScript, write that figure back. Without the
-      // lock, an order committing in between would be silently clobbered
-      // by the absolute write — measured: stock 10, an order sells 3
-      // (genuinely 7), approving a +8 delta wrote 18 instead of 15, and
-      // those 3 units vanished.
-      //
-      // That is exactly the failure Decision 2 exists to prevent, just in
-      // a narrower window: between proposal and review it's handled by the
-      // observed-delta arithmetic, and between THIS read and THIS write it
-      // needs the row lock. FOR UPDATE holds the row until this
-      // transaction commits, so any concurrent order blocks and then
-      // re-evaluates its own relative deduction against the value written
-      // here. It also makes the min_stock_level write and the
-      // negative-stock guard below sound for the same reason.
-      const inventoryResult = await client.query('SELECT inventory_id, stock_quantity, min_stock_level FROM inventory WHERE product_id = $1 FOR UPDATE', [changeRequest.product_id])
-      const inventoryRow = inventoryResult.rows[0]
-
-      let newStockQuantity = inventoryRow.stock_quantity
-      // Which reason the movement row gets. Stays 'CORRECTION' for a
-      // recount — unchanged from before migration 008 — and is only ever
-      // overwritten in the loss-report branch just below.
-      let ledgerReason = 'CORRECTION'
-      if (changeRequest.quantity_change != null) {
-        // A LOSS REPORT (migration 008). quantity_change already IS the
-        // reported delta (always negative — see POST /requests above), so
-        // it applies directly to CURRENT stock, the same way
-        // routes/orders.js's relative deduction does — no observed
-        // baseline is needed here, because a loss report never disputed
-        // what stock WAS, only how much of it left. That is the entire
-        // reason this branch is simpler than the recount branch below it,
-        // not a shortcut taken for convenience: there is nothing for
-        // observed-delta arithmetic to correct for when the proposal was
-        // never an absolute count in the first place.
-        newStockQuantity = inventoryRow.stock_quantity + changeRequest.quantity_change
-        ledgerReason = changeRequest.movement_reason
-
-        if (newStockQuantity < 0) {
-          await client.query('ROLLBACK')
-          return response.status(409).json({ message: 'Approving this would drive stock negative — more has already sold than remains to report as lost. Reject it and ask for a fresh count instead.' })
-        }
-      } else if (changeRequest.proposed_stock_quantity != null) {
-        // THE OBSERVED-DELTA CALCULATION — PHASE5_PLAN.md, Decision 2.
-        // observed_stock_quantity is what stock WAS when the cashier
-        // proposed this; inventoryRow.stock_quantity is what it IS right
-        // now, which may have moved (orders placed or cancelled) while
-        // this request sat pending. Applying proposed_stock_quantity
-        // directly would silently erase whatever happened in between —
-        // applying the DIFFERENCE the cashier observed to CURRENT stock
-        // preserves it instead: newStock = current + (proposed - observed).
-        //
-        // NULL observed_stock_quantity falls back to treating the
-        // proposal as an absolute value — documented in migration 003 for
-        // any row that could predate this column; every row this route
-        // creates always has one, so that branch is a safety net, not
-        // something this code path exercises in practice.
-        newStockQuantity = changeRequest.observed_stock_quantity != null
-          ? inventoryRow.stock_quantity + (changeRequest.proposed_stock_quantity - changeRequest.observed_stock_quantity)
-          : changeRequest.proposed_stock_quantity
-
-        if (newStockQuantity < 0) {
-          await client.query('ROLLBACK')
-          return response.status(409).json({ message: 'Approving this would drive stock negative — stock has changed since the request was submitted. Reject it and ask for a fresh count instead.' })
-        }
-      }
-      // min_stock_level has no observed baseline (nothing else changes it
-      // automatically the way orders drain stock_quantity), so it's
-      // applied as a plain absolute value.
-      const newMinStockLevel = changeRequest.proposed_min_stock_level ?? inventoryRow.min_stock_level
-
-      const updated = await client.query(
-        'UPDATE inventory SET stock_quantity = $1, min_stock_level = $2, last_updated = CURRENT_TIMESTAMP WHERE inventory_id = $3 RETURNING stock_quantity, min_stock_level',
-        [newStockQuantity, newMinStockLevel, inventoryRow.inventory_id],
-      )
-
-      if (newStockQuantity !== inventoryRow.stock_quantity) {
-        // ledgerReason is 'CORRECTION' for a recount — this movement
-        // originates from a cashier's physical recount being confirmed by
-        // an admin, exactly what CORRECTION means — or the cashier's own
-        // structured reason (PRODUCTION_LOSS/EXPIRED/DAMAGED/SPOILAGE) for
-        // a loss report, copied through rather than flattened to
-        // CORRECTION the way every approval did before migration 008.
-        // request_id (not order_id) is what this movement's cause is;
-        // changed_by is the APPROVING ADMIN's user_id, since they're the
-        // one who actually authorized the stock change, even though a
-        // cashier proposed it.
-        await client.query(
-          'INSERT INTO inventory_movements (inventory_id, request_id, changed_by, quantity_change, reason, note) VALUES ($1, $2, $3, $4, $5, $6)',
-          [inventoryRow.inventory_id, requestId, request.user.id, newStockQuantity - inventoryRow.stock_quantity, ledgerReason, changeRequest.reason],
-        )
-      }
-
-      await syncStockAlert(client, { inventoryId: inventoryRow.inventory_id, stockQuantity: updated.rows[0].stock_quantity, minStockLevel: updated.rows[0].min_stock_level })
-    }
-
-    await client.query('COMMIT')
-  } catch (error) {
-    await client.query('ROLLBACK')
-    throw error
-  } finally {
-    client.release()
-  }
-
-  const full = await pool.query(`${changeRequestSelectQuery} WHERE r.request_id = $1`, [requestId])
-  return response.json({ request: mapChangeRequestRow(full.rows[0]) })
-})
-
-// PATCH /api/inventory/:productId — admin-only direct stock edit. Cashiers
-// can only PROPOSE a stock change (POST /requests above) — this endpoint
-// is the admin path that applies immediately, no approval needed. That
-// split is why requireRole('ADMIN') is added again here even though the
-// router-wide guard above already lets a cashier this far (a cashier
-// needs GET access to this router for /requests, but not this route).
-router.patch('/:productId', requireRole('ADMIN'), async (request, response) => {
   const productId = parseId(request.params.productId)
   if (!productId) return response.status(404).json({ message: 'Product not found.' })
 
