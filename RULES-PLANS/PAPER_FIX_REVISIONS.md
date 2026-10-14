@@ -299,3 +299,70 @@ If your team lists every table, add:
 
 ### Figures to retake after R4
 2, 2.1, 2.2, 6, 7, 8, 12, 13, 14 — every screen that shows an order number or the Dashboard. Add a screenshot of the bell with a new-order pop-up if your team wants to show it.
+
+---
+
+## R5 — Ingredient stock
+
+The system now counts the bakery's ingredients (flour, sugar, eggs and the rest) as well as its products. This is **stock only**: there are no recipes, no production batches, no costing, and nothing is deducted from ingredients automatically when bread is baked or sold. Staff record what came in, what was used, what was thrown out, and recounts.
+
+**Tell the adviser:** the adviser earlier ruled raw-material tracking out of scope. The client asked for ingredient stock at the 2026-10-15 consultation, so it is back, limited to stock counts. Recipes and production costing stay out of scope.
+
+### 1. Purpose and Description, Inventory Management Module (new paragraph)
+
+**Add after the paragraph about stock levels (after the R1 and R3 changes):**
+> The module also keeps the stock of the bakery's ingredients, such as flour, sugar, and eggs, each measured in its own unit (for example kilograms, packs, or trays). Administrators and cashiers record each change: a restock when supplies are delivered, the amount used in baking, the amount rejected or thrown out, or a correction after a recount. Every change is kept in a history showing who made it and when, and an ingredient that falls to or below its minimum level is flagged as running low. Ingredient stock is recorded by staff; the system does not deduct ingredients automatically from the products baked or sold.
+
+### 2. Scope, Inventory Management Module (new paragraph)
+
+**Add after the paragraph from R3 item 2:**
+> Ingredient stock is kept separately from product stock. The administrator adds the ingredients the bakery uses and sets each one's unit and minimum level; administrators and cashiers record restocks, usage, rejects, and recounts, and the system refuses any change that would take an ingredient's stock below zero. Each ingredient is shown as Good, Running low, or Low stock, in the same way as products.
+
+### 3. Figure 2 / 2.1 description, the Dashboard
+
+In the R4 replacement text, **find:**
+> …Low stock, Running low, Orders to prepare…
+
+**Replace with:**
+> …Low stock, Running low, Ingredients running low, Orders to prepare…
+
+### 4. Reporting and Analytics Module, the Inventory tab line
+
+This replaces R3 item 5.
+
+**Find:**
+> Inventory: stock movements, losses, and products currently low on stock.
+
+**Replace with:**
+> Inventory: stock movements, rejects, and products currently low on stock, plus each ingredient's restocks, usage, rejects, and recounts for the period and the ingredients currently low.
+
+### 5. Limitations (new item, after item 1)
+
+> **Ingredient tracking.** The system records ingredient stock as entered by the staff — deliveries, usage, rejects, and recounts. It does not hold recipes, so it does not deduct ingredients automatically when products are baked or sold, and it does not compute production costs.
+
+If your team ever added a sentence saying the system "does not track raw materials" or "inventories finished products only", replace it with this item.
+
+### 6. Review of related literature (no change)
+
+Cruz, Mendoza, and Dela Cruz (2022) is criticised for lacking "ingredient inventory management". The system now has it (stock only), so that gap supports this study. **No change is needed.**
+
+### 7. Database chapter (two new tables)
+
+**INGREDIENT TABLE** — records each ingredient the bakery keeps in stock, its unit of measure, the amount on hand, and the minimum level that marks it as running low.
+- Primary Key: IngredientID
+- Attributes: IngredientID(PK), Name, Unit, StockQuantity, MinStockLevel, IsActive, CreatedAt, UpdatedAt
+
+**INGREDIENT_MOVEMENT TABLE** — records every change in an ingredient's stock: who made it, when, by how much, and why (Restock, Usage, Reject, or Correction). The changes for an ingredient always add up to its stock on hand.
+- Primary Key: MovementID
+- Foreign Keys: IngredientID - INGREDIENT(IngredientID); ChangedBy - USER(UserID)
+- Attributes: MovementID(PK), IngredientID(FK), ChangedBy(FK), QuantityChange, Reason, Note, CreatedAt
+
+Add both to the ERD: INGREDIENT 1 — many INGREDIENT_MOVEMENT, and USER 1 — many INGREDIENT_MOVEMENT.
+
+### 8. New figure (suggested)
+
+**Figure 11.1. Inventory Management — Ingredients**
+> The Ingredients tab lists each ingredient with the amount on hand and its unit, the minimum level, and a colour-coded status, and can be filtered by status. Record opens a short form to log a restock, usage, a reject, or a recount, with an optional note. Below the list, the history shows every change with who made it and when. The administrator can also add ingredients and change their name, unit, and minimum level.
+
+### Figures to retake after R5
+2, 2.1 (the new tile), 10 / 10.1 and 11 (the Products and Ingredients tabs), the new 11.1, and the Reporting Inventory tab if your team shows it.
