@@ -441,3 +441,54 @@ The **Find** texts below are quoted from the revised PDF. Where an R4 replacemen
 
 ### Figures to retake after the notifications changes
 8 (the Call and Text buttons), and 2 / 2.1 if the bell panel is shown open.
+
+---
+
+## Adviser revision A1 — first and last name, required fields marked (2026-10-16)
+
+The adviser asked for the Create Account form to ask for a **first name and a last name** instead of one full name, both saved separately, and for every required field to be marked with an asterisk (*), explained by a "* Required field" legend, and checked both on the form and at the server. Existing accounts were kept: their full name was split once into the two parts (migration 026), and nobody has to register again. Staff accounts still have one name.
+
+### 1. Figure 1.1 description, the registration page
+
+**Find:**
+> The form asks for the customer's full name, username, contact number, email address, password, and password confirmation, and requires agreement to the Terms of Service and Privacy Policy.
+
+**Replace with:**
+> The form asks for the customer's first name, last name, username, contact number, email address, password, and password confirmation, and requires agreement to the Terms of Service and Privacy Policy. Every field is required: each is marked with an asterisk (*), explained by a "* Required field" note at the top of the form, and a field left empty is named below itself before the form is sent. The server checks the same fields again, so they cannot be skipped.
+
+### 2. Figure 5.1 description, the customer's My Profile
+
+**Find:**
+> Profile section shows the username and lets the customer update their full name and contact number.
+
+**Replace with:**
+> Profile section shows the username and lets the customer update their first name, last name, and contact number.
+
+### 3. Customer Management Module (scope paragraph)
+
+**Find:**
+> including basic personal details such as name, contact number, address, and email address.
+
+**Replace with:**
+> including basic personal details such as first and last name, contact number, address, and email address.
+
+### 4. Database chapter, CUSTOMER table
+
+**Find** (in the description):
+> name, contact number, and email address
+
+**Replace with:**
+> first name, last name, contact number, and email address
+
+**Attributes — replace `Name` with:**
+- FirstName
+- LastName
+- Name
+
+**Add one sentence to the table description:**
+> Name is the customer's full name, built by the database from FirstName and LastName and kept in step with them, so receipts and reports show the full name.
+
+(The paper's attribute list also shows `Address`, which lives in CUSTOMER_ADDRESSES; leave that to the team's own Part F decision.)
+
+### Figures to retake after A1
+1.1 (the registration page), 5.1 (My Profile, customer), and the ERD if it lists the CUSTOMER attributes.

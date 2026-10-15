@@ -16,7 +16,7 @@ export const profileJoinsSql = `LEFT JOIN admins a ON a.user_id = u.user_id
 export const profileColumnsSql = `COALESCE(a.name, ca.name, c.name, d.name) AS name,
             COALESCE(a.email, ca.email, c.email, d.email) AS email,
             COALESCE(a.contact_num, ca.contact_num, c.contact_num, d.contact_num) AS contact_num,
-            c.email_verified_at`
+            c.email_verified_at, c.first_name, c.last_name`
 
 // The one shape a signed-in user takes on the wire — login, /me, a
 // profile edit all return this. It used to be written out by hand at four
@@ -36,7 +36,12 @@ export function toPublicUser(row) {
     email: row.email,
     contactNumber: row.contact_num,
   }
-  if (row.user_type === 'CUSTOMER') user.emailVerified = row.email_verified_at != null
+  if (row.user_type === 'CUSTOMER') {
+    user.emailVerified = row.email_verified_at != null
+    // Migration 026: a customer's name in its two parts, for My Profile.
+    user.firstName = row.first_name
+    user.lastName = row.last_name
+  }
   return user
 }
 // "Any role's email matches" — the WHERE half of a lookup by email.

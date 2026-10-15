@@ -41,9 +41,9 @@ describe('order management', () => {
 
   const admin = { username: `orderadmin_${runId}`, password: 'Admin-Only-Password-9!' }
   const cashier = { role: 'CASHIER', name: 'Order Cashier', username: `ordercash_${runId}`, email: `ordercash_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
-  const customer = { name: 'Order Customer', username: `ordercust_${runId}`, email: `ordercust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
-  const secondCustomer = { name: 'Second Customer', username: `ordercust2_${runId}`, email: `ordercust2_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
-  const walkInCustomer = { name: 'Walkin Target', username: `orderwalkin_${runId}`, email: `orderwalkin_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const customer = { name: 'Order Customer', firstName: 'Order', lastName: 'Customer', agree: true, username: `ordercust_${runId}`, email: `ordercust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const secondCustomer = { name: 'Second Customer', firstName: 'Second', lastName: 'Customer', agree: true, username: `ordercust2_${runId}`, email: `ordercust2_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const walkInCustomer = { name: 'Walkin Target', firstName: 'Walkin', lastName: 'Target', agree: true, username: `orderwalkin_${runId}`, email: `orderwalkin_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
 
   before(async () => {
     server = app.listen(0)

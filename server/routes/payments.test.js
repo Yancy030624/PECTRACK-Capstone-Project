@@ -41,8 +41,8 @@ describe('payment & billing', () => {
 
   const admin = { username: `paytest_admin_${runId}`, password: 'Admin-Only-Password-9!' }
   const cashier = { role: 'CASHIER', name: 'Payment Test Cashier', username: `paytest_cash_${runId}`, email: `paytest_cash_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
-  const customer = { name: 'Payment Test Customer', username: `paytest_cust_${runId}`, email: `paytest_cust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
-  const secondCustomer = { name: 'Second Payment Customer', username: `paytest_cust2_${runId}`, email: `paytest_cust2_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const customer = { name: 'Payment Test Customer', firstName: 'Payment Test', lastName: 'Customer', agree: true, username: `paytest_cust_${runId}`, email: `paytest_cust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const secondCustomer = { name: 'Second Payment Customer', firstName: 'Second Payment', lastName: 'Customer', agree: true, username: `paytest_cust2_${runId}`, email: `paytest_cust2_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
 
   before(async () => {
     server = app.listen(0)
@@ -1046,7 +1046,7 @@ describe('payment & billing', () => {
     })
 
     test('pagination returns a correct total and hasMore, scoped to a fresh customer', async () => {
-      const paginationCustomer = { name: 'Pagination Customer', username: `paytest_page_${runId}`, email: `paytest_page_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+      const paginationCustomer = { name: 'Pagination Customer', firstName: 'Pagination', lastName: 'Customer', agree: true, username: `paytest_page_${runId}`, email: `paytest_page_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
       await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...paginationCustomer, confirmPassword: paginationCustomer.password }) })
       // Fixture: confirm the email the way clicking the emailed link would
       // (migration 016). This suite is not testing verification — auth.test.js
@@ -1086,7 +1086,7 @@ describe('payment & billing', () => {
     })
 
     test('an empty result really is total 0 when nothing matches — the past-the-end fix must not invent a count', async () => {
-      const emptyCustomer = { name: 'Empty History Customer', username: `paytest_empty_${runId}`, email: `paytest_empty_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+      const emptyCustomer = { name: 'Empty History Customer', firstName: 'Empty History', lastName: 'Customer', agree: true, username: `paytest_empty_${runId}`, email: `paytest_empty_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
       await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...emptyCustomer, confirmPassword: emptyCustomer.password }) })
       // Fixture: confirm the email the way clicking the emailed link would
       // (migration 016). This suite is not testing verification — auth.test.js

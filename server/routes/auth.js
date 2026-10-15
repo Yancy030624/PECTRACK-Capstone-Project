@@ -13,7 +13,7 @@ import { authLimiter, loginAccountLimiter, passwordResetLimiter, registerLimiter
 import { issueEmailVerification, redeemEmailVerification } from '../lib/emailVerification.js'
 import { recordSecurityEvent } from '../lib/securityEvents.js'
 import { sendEmailChangedNotice, sendMail, sendOtpEmail } from '../lib/mail.js'
-import { normalize, normalizeEmail, validateAccountFields, validateContactNumberField, validateEmailField, validateName, validatePasswordField } from '../lib/validation.js'
+import { normalize, normalizeEmail, validateContactNumberField, validateCustomerRegistration, validateEmailField, validateName, validatePasswordField, validatePersonName } from '../lib/validation.js'
 
 const router = express.Router()
 
@@ -83,7 +83,7 @@ async function createOtpCode(userId) {
 }
 
 router.post('/register', registerLimiter, async (request, response) => {
-  const { errors, values } = validateAccountFields(request.body)
+  const { errors, values } = validateCustomerRegistration(request.body)
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
 
   const client = await pool.connect()
@@ -106,10 +106,13 @@ router.post('/register', registerLimiter, async (request, response) => {
       [values.username, passwordHash],
     )
     const user = userResult.rows[0]
-    await client.query(
-      `INSERT INTO customers (user_id, name, contact_num, email)
-       VALUES ($1, $2, $3, $4)`,
-      [user.user_id, values.name, values.contactNumber, values.email],
+    // customers.name, the full name, is built by the customers_sync_name
+    // trigger from the two parts (migration 026).
+    const customerResult = await client.query(
+      `INSERT INTO customers (user_id, first_name, last_name, contact_num, email)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING name`,
+      [user.user_id, values.firstName, values.lastName, values.contactNumber, values.email],
     )
     await client.query('COMMIT')
     recordSecurityEvent({ request, type: 'ACCOUNT_CREATED', userId: user.user_id, username: user.username, detail: 'CUSTOMER self-registration' })
@@ -119,7 +122,7 @@ router.post('/register', registerLimiter, async (request, response) => {
     // the COMMIT, never inside it: a slow mail server must not hold a
     // transaction open, and a mail failure must not undo the account the
     // customer just filled in — they can ask for another link.
-    const verification = await issueEmailVerification({ userId: user.user_id, email: values.email, name: values.name })
+    const verification = await issueEmailVerification({ userId: user.user_id, email: values.email, name: customerResult.rows[0].name })
     recordSecurityEvent({ request, type: 'EMAIL_VERIFICATION_SENT', userId: user.user_id, username: user.username, detail: verification.sent ? 'at registration' : 'at registration; mail not delivered' })
 
     return response.status(201).json({
@@ -587,11 +590,24 @@ router.patch('/me', requireAuth, async (request, response) => {
   const errors = {}
   const updates = {}
 
+  // A customer has a first and a last name (migration 026); staff keep
+  // one name. A customer sending the full name alone still works: the
+  // trigger splits it.
+  const isCustomer = current.user_type === 'CUSTOMER'
   if ('name' in request.body) {
     const name = normalize(request.body.name)
     const error = validateName(name)
     if (error) errors.name = error
     else updates.name = name
+  }
+  if (isCustomer) {
+    for (const [field, label] of [['firstName', 'first name'], ['lastName', 'last name']]) {
+      if (!(field in request.body)) continue
+      const value = normalize(request.body[field])
+      const error = validatePersonName(value, label)
+      if (error) errors[field] = error
+      else updates[field] = value
+    }
   }
   if ('email' in request.body) {
     const email = normalizeEmail(request.body.email)
@@ -640,10 +656,23 @@ router.patch('/me', requireAuth, async (request, response) => {
         return response.status(409).json({ message: 'Another account already uses that email or contact number.' })
       }
     }
-    await client.query(
-      `UPDATE ${table} SET name = COALESCE($1, name), email = COALESCE($2, email), contact_num = COALESCE($3, contact_num) WHERE user_id = $4`,
-      [updates.name ?? null, updates.email ?? null, updates.contactNumber ?? null, current.user_id],
-    )
+    if (isCustomer) {
+      // The two parts win over a full name sent alongside them; the
+      // trigger then rebuilds customers.name from them.
+      const byParts = updates.firstName !== undefined || updates.lastName !== undefined
+      await client.query(
+        `UPDATE customers SET name = CASE WHEN $5 THEN name ELSE COALESCE($1, name) END,
+                first_name = COALESCE($6, first_name), last_name = COALESCE($7, last_name),
+                email = COALESCE($2, email), contact_num = COALESCE($3, contact_num)
+          WHERE user_id = $4`,
+        [updates.name ?? null, updates.email ?? null, updates.contactNumber ?? null, current.user_id, byParts, updates.firstName ?? null, updates.lastName ?? null],
+      )
+    } else {
+      await client.query(
+        `UPDATE ${table} SET name = COALESCE($1, name), email = COALESCE($2, email), contact_num = COALESCE($3, contact_num) WHERE user_id = $4`,
+        [updates.name ?? null, updates.email ?? null, updates.contactNumber ?? null, current.user_id],
+      )
+    }
     // A customer who changes their email has an unproven address again.
     // Keeping the old verification would let anyone who knows a password
     // swap in an address they do not control and keep ordering — and would

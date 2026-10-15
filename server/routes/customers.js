@@ -12,7 +12,7 @@ import express from 'express'
 import { pool } from '../db.js'
 import { findDuplicateAccount } from '../lib/accounts.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
-import { normalize, normalizeEmail, parseId, validateContactNumberField, validateEmailField, validateName } from '../lib/validation.js'
+import { normalize, normalizeEmail, parseId, validateContactNumberField, validateEmailField, validateName, validatePersonName } from '../lib/validation.js'
 
 const router = express.Router()
 
@@ -31,13 +31,16 @@ const mapCustomerRow = (row) => ({
   customerId: row.customer_id,
   username: row.username,
   name: row.name,
+  // Migration 026: the name in its two parts, for the edit form.
+  firstName: row.first_name,
+  lastName: row.last_name,
   email: row.email,
   contactNumber: row.contact_num,
   isActive: row.is_active,
   createdAt: row.created_at,
 })
 
-const customerSelectQuery = `SELECT u.user_id, u.username, u.is_active, c.customer_id, c.name, c.email, c.contact_num, c.created_at
+const customerSelectQuery = `SELECT u.user_id, u.username, u.is_active, c.customer_id, c.name, c.first_name, c.last_name, c.email, c.contact_num, c.created_at
      FROM users u
      JOIN customers c ON c.user_id = u.user_id`
 
@@ -82,6 +85,13 @@ router.patch('/:id', requireRole('ADMIN'), async (request, response) => {
     if (error) errors.name = error
     else updates.name = name
   }
+  for (const [field, label] of [['firstName', 'first name'], ['lastName', 'last name']]) {
+    if (!(field in request.body)) continue
+    const value = normalize(request.body[field])
+    const error = validatePersonName(value, label)
+    if (error) errors[field] = error
+    else updates[field] = value
+  }
   if ('email' in request.body) {
     const email = normalizeEmail(request.body.email)
     const error = validateEmailField(email)
@@ -112,9 +122,15 @@ router.patch('/:id', requireRole('ADMIN'), async (request, response) => {
         return response.status(409).json({ message: 'Another account already uses that email or contact number.' })
       }
     }
+    // The two name parts win over a full name sent alongside them; the
+    // customers_sync_name trigger rebuilds customers.name (migration 026).
+    const byParts = updates.firstName !== undefined || updates.lastName !== undefined
     await client.query(
-      `UPDATE customers SET name = COALESCE($1, name), email = COALESCE($2, email), contact_num = COALESCE($3, contact_num) WHERE user_id = $4`,
-      [updates.name ?? null, updates.email ?? null, updates.contactNumber ?? null, userId],
+      `UPDATE customers SET name = CASE WHEN $5 THEN name ELSE COALESCE($1, name) END,
+              first_name = COALESCE($6, first_name), last_name = COALESCE($7, last_name),
+              email = COALESCE($2, email), contact_num = COALESCE($3, contact_num)
+        WHERE user_id = $4`,
+      [updates.name ?? null, updates.email ?? null, updates.contactNumber ?? null, userId, byParts, updates.firstName ?? null, updates.lastName ?? null],
     )
     if (updates.isActive !== undefined) {
       await client.query('UPDATE users SET is_active = $1 WHERE user_id = $2', [updates.isActive, userId])

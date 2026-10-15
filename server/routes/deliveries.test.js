@@ -40,7 +40,7 @@ describe('delivery management', () => {
 
   const admin = { username: `delivadmin_${runId}`, password: 'Admin-Only-Password-9!' }
   const cashier = { role: 'CASHIER', name: 'Deliv Cashier', username: `delivcash_${runId}`, email: `delivcash_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
-  const customer = { name: 'Deliv Customer', username: `delivcust_${runId}`, email: `delivcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const customer = { name: 'Deliv Customer', firstName: 'Deliv', lastName: 'Customer', agree: true, username: `delivcust_${runId}`, email: `delivcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
   const firstDriver = { role: 'DELIVERY_PERSONNEL', name: 'First Driver', username: `delivdp1_${runId}`, email: `delivdp1_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Driver-Password-9!' }
   const secondDriver = { role: 'DELIVERY_PERSONNEL', name: 'Second Driver', username: `delivdp2_${runId}`, email: `delivdp2_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Driver-Password-9!' }
 

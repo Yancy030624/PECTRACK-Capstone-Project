@@ -54,7 +54,7 @@ describe('reporting & analytics', () => {
 
   const admin = { username: `repadmin_${runId}`, password: 'Admin-Only-Password-9!' }
   const cashier = { role: 'CASHIER', name: 'Report Cashier', username: `repcash_${runId}`, email: `repcash_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
-  const customer = { name: 'Report Customer', username: `repcust_${runId}`, email: `repcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const customer = { name: 'Report Customer', firstName: 'Report', lastName: 'Customer', agree: true, username: `repcust_${runId}`, email: `repcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
   const driver = { role: 'DELIVERY_PERSONNEL', name: 'Report Driver', username: `repdrv_${runId}`, email: `repdrv_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Driver-Password-9!' }
 
   // Places a ₱100.00 order (1 unit of the fixed-price test product) as the

@@ -32,7 +32,7 @@ describe('product catalog management', () => {
 
   const admin = { username: `prodadmin_${runId}`, password: 'Admin-Only-Password-9!' }
   const cashier = { role: 'CASHIER', name: 'Test Cashier', username: `prodcash_${runId}`, email: `prodcash_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
-  const customer = { name: 'Test Customer', username: `prodcust_${runId}`, email: `prodcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const customer = { name: 'Test Customer', firstName: 'Test', lastName: 'Customer', agree: true, username: `prodcust_${runId}`, email: `prodcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
 
   before(async () => {
     server = app.listen(0)

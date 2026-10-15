@@ -35,7 +35,7 @@ describe('staff routes require an authenticated admin', () => {
   const createdUserIds = []
 
   const admin = { username: `staffadmin_${runId}`, email: `staffadmin_${runId}@example.com`, password: 'Admin-Only-Password-9!' }
-  const customer = { name: 'Test Customer', username: `staffcust_${runId}`, email: `staffcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const customer = { name: 'Test Customer', firstName: 'Test', lastName: 'Customer', agree: true, username: `staffcust_${runId}`, email: `staffcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
 
   before(async () => {
     server = app.listen(0)
@@ -172,7 +172,7 @@ describe('editing and deactivating a staff account', () => {
   const createdUserIds = []
 
   const admin = { username: `editadmin_${runId}`, password: 'Admin-Only-Password-9!' }
-  const customer = { name: 'Test Customer', username: `editcust_${runId}`, email: `editcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const customer = { name: 'Test Customer', firstName: 'Test', lastName: 'Customer', agree: true, username: `editcust_${runId}`, email: `editcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
   const cashier = { role: 'CASHIER', name: 'Edit Target', username: `edittarget_${runId}`, email: `edittarget_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
   const secondCashier = { role: 'CASHIER', name: 'Other Cashier', username: `othercashier_${runId}`, email: `othercashier_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
 

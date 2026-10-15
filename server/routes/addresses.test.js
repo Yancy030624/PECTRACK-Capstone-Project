@@ -33,8 +33,8 @@ describe('customer address management', () => {
 
   const admin = { username: `addrtest_admin_${runId}`, password: 'Admin-Only-Password-9!' }
   const cashier = { role: 'CASHIER', name: 'Addr Test Cashier', username: `addrtest_cash_${runId}`, email: `addrtest_cash_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
-  const customer = { name: 'Addr Test Customer', username: `addrtest_cust_${runId}`, email: `addrtest_cust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
-  const secondCustomer = { name: 'Second Addr Customer', username: `addrtest_cust2_${runId}`, email: `addrtest_cust2_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const customer = { name: 'Addr Test Customer', firstName: 'Addr Test', lastName: 'Customer', agree: true, username: `addrtest_cust_${runId}`, email: `addrtest_cust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const secondCustomer = { name: 'Second Addr Customer', firstName: 'Second Addr', lastName: 'Customer', agree: true, username: `addrtest_cust2_${runId}`, email: `addrtest_cust2_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
 
   const validAddress = () => ({
     recipientName: 'Juan Dela Cruz',
@@ -282,7 +282,7 @@ describe('customer address management', () => {
   // inventory.test.js uses for "the database itself refuses a second
   // pending row".
   test('the database itself refuses a second default address, even when the route\'s own lock is bypassed', async () => {
-    const thirdCustomer = { name: 'Third Addr Customer', username: `addrtest_cust3_${runId}`, email: `addrtest_cust3_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+    const thirdCustomer = { name: 'Third Addr Customer', firstName: 'Third Addr', lastName: 'Customer', agree: true, username: `addrtest_cust3_${runId}`, email: `addrtest_cust3_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
     await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...thirdCustomer, confirmPassword: thirdCustomer.password }) })
     // Fixture: confirm the email the way clicking the emailed link would
     // (migration 016). This suite is not testing verification — auth.test.js

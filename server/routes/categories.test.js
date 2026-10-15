@@ -28,7 +28,7 @@ describe('category management', () => {
   const createdCategoryIds = []
 
   const admin = { username: `catadmin_${runId}`, password: 'Admin-Only-Password-9!' }
-  const customer = { name: 'Test Customer', username: `catcust_${runId}`, email: `catcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const customer = { name: 'Test Customer', firstName: 'Test', lastName: 'Customer', agree: true, username: `catcust_${runId}`, email: `catcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
 
   before(async () => {
     server = app.listen(0)

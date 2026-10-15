@@ -30,8 +30,8 @@ describe('customer record management', () => {
 
   const admin = { username: `custadmin_${runId}`, password: 'Admin-Only-Password-9!' }
   const cashier = { role: 'CASHIER', name: 'Test Cashier', username: `custcash_${runId}`, email: `custcash_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
-  const targetCustomer = { name: 'Findable Customer', username: `findme_${runId}`, email: `findme_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
-  const otherCustomer = { name: 'Other Customer', username: `other_${runId}`, email: `other_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const targetCustomer = { name: 'Findable Customer', firstName: 'Findable', lastName: 'Customer', agree: true, username: `findme_${runId}`, email: `findme_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const otherCustomer = { name: 'Other Customer', firstName: 'Other', lastName: 'Customer', agree: true, username: `other_${runId}`, email: `other_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
 
   before(async () => {
     server = app.listen(0)
@@ -162,6 +162,21 @@ describe('customer record management', () => {
     const after = (await pool.query('SELECT created_at, updated_at FROM customers WHERE user_id = $1', [targetCustomerId])).rows[0]
     assert.equal(after.created_at.getTime(), before.created_at.getTime(), 'created_at must never move')
     assert.ok(after.updated_at.getTime() > before.updated_at.getTime(), 'updated_at should reflect the edit — is migration 001 applied?')
+  })
+
+  // Migration 026: the admin edits the two name parts; the list shows the
+  // full name built from them.
+  test('PATCH /api/customers/:id edits the first and last name, and refuses an empty one', async () => {
+    const response = await fetch(`${baseUrl}/api/customers/${targetCustomerId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ firstName: 'Rosa', lastName: 'Del Mundo' }) })
+    assert.equal(response.status, 200)
+    const { customer } = await response.json()
+    assert.equal(customer.firstName, 'Rosa')
+    assert.equal(customer.lastName, 'Del Mundo')
+    assert.equal(customer.name, 'Rosa Del Mundo')
+
+    const empty = await fetch(`${baseUrl}/api/customers/${targetCustomerId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ firstName: '' }) })
+    assert.equal(empty.status, 422)
+    assert.ok((await empty.json()).errors.firstName)
   })
 
   test('PATCH /api/customers/:id rejects an email already used by another customer', async () => {

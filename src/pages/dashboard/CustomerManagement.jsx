@@ -29,7 +29,7 @@ export function CustomerManagement({ user }) {
   const [message, setMessage] = useState('')
 
   const [editingId, setEditingId] = useState(null)
-  const [editForm, setEditForm] = useState({ name: '', email: '', contactNumber: '' })
+  const [editForm, setEditForm] = useState({ firstName: '', lastName: '', email: '', contactNumber: '' })
   const [editErrors, setEditErrors] = useState({})
   const [editSubmitting, setEditSubmitting] = useState(false)
   const [togglingId, setTogglingId] = useState(null)
@@ -58,7 +58,8 @@ export function CustomerManagement({ user }) {
 
   const startEdit = (customer) => {
     setEditingId(customer.id)
-    setEditForm({ name: customer.name, email: customer.email, contactNumber: customer.contactNumber })
+    // A customer's name is edited in its two parts (migration 026).
+    setEditForm({ firstName: customer.firstName ?? '', lastName: customer.lastName ?? '', email: customer.email, contactNumber: customer.contactNumber })
     setEditErrors({})
   }
 
@@ -141,9 +142,12 @@ export function CustomerManagement({ user }) {
                   <Tr key={customer.id}>
                     <td colSpan={6} className="px-3 py-3 text-sm text-ink-700">
                       <p className="text-xs text-ink-500">Editing {customer.username}</p>
-                      <div className="mt-2 grid gap-3 sm:grid-cols-3">
-                        <Field label="Name" error={editErrors.name}>
-                          <Input value={editForm.name} onChange={(event) => setEditForm({ ...editForm, name: event.target.value })} />
+                      <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <Field label="First name" error={editErrors.firstName}>
+                          <Input value={editForm.firstName} onChange={(event) => setEditForm({ ...editForm, firstName: event.target.value })} />
+                        </Field>
+                        <Field label="Last name" error={editErrors.lastName}>
+                          <Input value={editForm.lastName} onChange={(event) => setEditForm({ ...editForm, lastName: event.target.value })} />
                         </Field>
                         <Field label="Contact number" error={editErrors.contactNumber}>
                           <Input value={editForm.contactNumber} onChange={(event) => setEditForm({ ...editForm, contactNumber: event.target.value })} inputMode="tel" />

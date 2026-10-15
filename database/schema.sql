@@ -166,7 +166,14 @@ CREATE TABLE cashiers (
 CREATE TABLE customers (
   customer_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id BIGINT NOT NULL UNIQUE REFERENCES users(user_id),
+  -- Migration 026. The full name, kept by the customers_sync_name trigger
+  -- from first_name and last_name; every query that shows a customer
+  -- reads this one.
   name VARCHAR(150) NOT NULL,
+  -- Migration 026. Asked for separately at registration. last_name is
+  -- empty only for an older one-word name.
+  first_name VARCHAR(70) NOT NULL,
+  last_name VARCHAR(70),
   contact_num VARCHAR(30) NOT NULL UNIQUE,
   email VARCHAR(254) NOT NULL UNIQUE,
   -- Migration 016. NULL until the customer opens the emailed link; placing
@@ -571,6 +578,57 @@ CREATE UNIQUE INDEX payments_one_pending_per_order_idx
 CREATE TRIGGER users_set_updated_at
   BEFORE UPDATE ON users
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- Migration 026: first_name / last_name and the full name stay in step.
+-- {first, last} from a full name. Used by the backfill and by the trigger
+-- when only the full name is written (the demo seed, older scripts).
+CREATE FUNCTION split_person_name(full_name TEXT) RETURNS TEXT[] AS $$
+DECLARE
+  cleaned TEXT := regexp_replace(btrim(COALESCE(full_name, '')), '\s+', ' ', 'g');
+  parts TEXT[];
+BEGIN
+  parts := regexp_match(
+    cleaned,
+    '^(.+?) ((?:(?:de|dela|del|delos|da|di|san|sta\.?|santa|la|las|los|van|von) )*[^ ]+)$',
+    'i'
+  );
+  IF parts IS NULL THEN
+    RETURN ARRAY[NULLIF(cleaned, ''), NULL];
+  END IF;
+  RETURN parts;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- Keeps the three columns in step, whichever side was written:
+-- - first_name / last_name given (the app): name is built from them;
+-- - only name changed (a script): first_name / last_name are split from it.
+CREATE FUNCTION customers_sync_name() RETURNS trigger AS $$
+DECLARE
+  parts TEXT[];
+BEGIN
+  IF TG_OP = 'UPDATE'
+     AND NEW.first_name IS NOT DISTINCT FROM OLD.first_name
+     AND NEW.last_name IS NOT DISTINCT FROM OLD.last_name
+     AND NEW.name IS DISTINCT FROM OLD.name THEN
+    parts := split_person_name(NEW.name);
+    NEW.first_name := parts[1];
+    NEW.last_name := parts[2];
+  ELSIF NULLIF(btrim(NEW.first_name), '') IS NOT NULL THEN
+    NEW.first_name := btrim(NEW.first_name);
+    NEW.last_name := NULLIF(btrim(NEW.last_name), '');
+  ELSE
+    parts := split_person_name(NEW.name);
+    NEW.first_name := parts[1];
+    NEW.last_name := parts[2];
+  END IF;
+  NEW.name := concat_ws(' ', NEW.first_name, NEW.last_name);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER customers_sync_name
+  BEFORE INSERT OR UPDATE OF name, first_name, last_name ON customers
+  FOR EACH ROW EXECUTE FUNCTION customers_sync_name();
 
 CREATE TRIGGER customers_set_updated_at
   BEFORE UPDATE ON customers

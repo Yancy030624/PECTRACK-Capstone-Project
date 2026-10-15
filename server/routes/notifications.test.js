@@ -54,7 +54,7 @@ describe('notification feed', () => {
 
   const admin = { username: `notifadmin_${runId}`, password: 'Admin-Only-Password-9!' }
   const cashier = { role: 'CASHIER', name: 'Notif Cashier', username: `notifcash_${runId}`, email: `notifcash_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
-  const customer = { name: 'Notif Customer', username: `notifcust_${runId}`, email: `notifcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const customer = { name: 'Notif Customer', firstName: 'Notif', lastName: 'Customer', agree: true, username: `notifcust_${runId}`, email: `notifcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
   const firstDriver = { role: 'DELIVERY_PERSONNEL', name: 'Notif Driver One', username: `notifdp1_${runId}`, email: `notifdp1_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Driver-Password-9!' }
   const secondDriver = { role: 'DELIVERY_PERSONNEL', name: 'Notif Driver Two', username: `notifdp2_${runId}`, email: `notifdp2_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Driver-Password-9!' }
 

@@ -58,7 +58,11 @@ export function MyProfile({ user, onUserUpdated }) {
 }
 
 function ProfileTab({ user, onUserUpdated }) {
-  const [form, setForm] = useState({ name: user.name, email: user.email ?? '', contactNumber: user.contactNumber ?? '' })
+  // A customer's name comes in two parts (migration 026); staff keep one.
+  const isCustomer = user.role === 'CUSTOMER'
+  const [form, setForm] = useState(isCustomer
+    ? { firstName: user.firstName ?? '', lastName: user.lastName ?? '', email: user.email ?? '', contactNumber: user.contactNumber ?? '' }
+    : { name: user.name, email: user.email ?? '', contactNumber: user.contactNumber ?? '' })
   // Changing the email asks for the current password (routes/auth.js):
   // afterwards every reset link — and for an admin every sign-in code —
   // goes to the new address. The field appears only when the email
@@ -98,9 +102,20 @@ function ProfileTab({ user, onUserUpdated }) {
         <Field label="Username">
           <Input value={user.username} disabled />
         </Field>
-        <Field label="Full name" error={errors.name}>
-          <Input value={form.name} onChange={(event) => updateField('name', event.target.value)} autoComplete="name" />
-        </Field>
+        {isCustomer ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="First name" error={errors.firstName}>
+              <Input value={form.firstName} onChange={(event) => updateField('firstName', event.target.value)} autoComplete="given-name" />
+            </Field>
+            <Field label="Last name" error={errors.lastName}>
+              <Input value={form.lastName} onChange={(event) => updateField('lastName', event.target.value)} autoComplete="family-name" />
+            </Field>
+          </div>
+        ) : (
+          <Field label="Full name" error={errors.name}>
+            <Input value={form.name} onChange={(event) => updateField('name', event.target.value)} autoComplete="name" />
+          </Field>
+        )}
         <Field label="Email" error={errors.email}>
           <Input type="email" value={form.email} onChange={(event) => updateField('email', event.target.value)} autoComplete="email" />
         </Field>

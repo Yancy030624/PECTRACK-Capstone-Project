@@ -12,9 +12,50 @@ import { passwordHint as describePassword, strongPasswordHint } from '../lib/pas
 // Registration is CUSTOMER-only and always has been (auth.js hard-codes
 // the role), so there is no mode switch here the way LoginForm has one.
 // Staff accounts are created by an admin in Staff Management.
+// Every field on this form is required (the adviser, 2026-10-16): each
+// label carries a red asterisk, a legend says what it means, and an empty
+// field is named under itself before anything is sent. The server checks
+// the same fields again (lib/validation.js validateCustomerRegistration),
+// so a request sent straight to it cannot skip one.
+const emptyForm = { firstName: '', lastName: '', username: '', email: '', contactNumber: '', password: '', confirmPassword: '', agree: false }
+const requiredMessages = {
+  firstName: 'Enter your first name.',
+  lastName: 'Enter your last name.',
+  username: 'Enter a username.',
+  contactNumber: 'Enter your contact number.',
+  email: 'Enter your email address.',
+  password: 'Enter a password.',
+  confirmPassword: 'Enter your password again.',
+}
+
+// What is still missing, before the form is sent.
+function missingFields(form) {
+  const errors = {}
+  for (const [field, message] of Object.entries(requiredMessages)) {
+    if (!String(form[field]).trim()) errors[field] = message
+  }
+  if (!errors.confirmPassword && form.password !== form.confirmPassword) errors.confirmPassword = 'Passwords do not match.'
+  if (!form.agree) errors.agree = 'Agree to the Terms of Service and Privacy Policy to create an account.'
+  return errors
+}
+
+// A field label with the required mark. The asterisk is hidden from screen
+// readers, which hear the input's own `required` instead.
+function RequiredLabel({ htmlFor, children }) {
+  return (
+    <label htmlFor={htmlFor} className="mb-1.5 block text-xs font-bold">
+      {children} <span aria-hidden="true" className="text-red-600">*</span>
+    </label>
+  )
+}
+
+function FieldError({ id, message }) {
+  return message ? <p id={id} className="mt-1 text-xs font-medium text-red-700">{message}</p> : null
+}
+
 export function RegisterForm({ onSwitchToLogin }) {
   // Store registration form values in one convenient state object.
-  const [form, setForm] = useState({ name: '', username: '', email: '', contactNumber: '', password: '', confirmPassword: '', agree: false })
+  const [form, setForm] = useState(emptyForm)
   // Store feedback after a registration attempt.
   const [message, setMessage] = useState('')
   const [errors, setErrors] = useState({})
@@ -27,21 +68,36 @@ export function RegisterForm({ onSwitchToLogin }) {
   // success line the way the old page did.
   const [created, setCreated] = useState(false)
 
-  // Update a single registration field without losing the others.
-  const updateField = (field, value) => setForm({ ...form, [field]: value })
+  // Update a single registration field without losing the others. Typing
+  // into a field clears its own error, so the message goes as it is fixed.
+  const updateField = (field, value) => {
+    setForm({ ...form, [field]: value })
+    if (errors[field]) setErrors({ ...errors, [field]: undefined })
+  }
+  // The props every required input shares: its error is announced with it.
+  const fieldProps = (field) => ({
+    required: true,
+    'aria-invalid': errors[field] ? true : undefined,
+    'aria-describedby': errors[field] ? `${field}-error` : undefined,
+  })
 
   const passwordHint = describePassword(form.password)
 
   // Submit to the API, which repeats all validation and hashes the password with bcrypt.
   const handleSubmit = async (event) => {
     event.preventDefault()
-    if (!form.agree) return setMessage('Please agree to the Terms of Service and Privacy Policy.')
+    const missing = missingFields(form)
+    if (Object.keys(missing).length) {
+      setErrors(missing)
+      setMessage('Please fill in the fields marked below.')
+      return
+    }
     setSubmitting(true)
     setMessage('')
     setErrors({})
     try {
       const data = await apiPost('/api/auth/register', form)
-      setForm({ name: '', username: '', email: '', contactNumber: '', password: '', confirmPassword: '', agree: false })
+      setForm(emptyForm)
       setCreated(true)
       // The server's own wording — it says a confirmation link went out,
       // which is the one thing the customer has to act on next.
@@ -70,6 +126,7 @@ export function RegisterForm({ onSwitchToLogin }) {
         </div>
       </div>
       <p className="mt-2 text-[11px] font-medium leading-5 text-stone-500">Create your Pectrack profile to place orders and keep your details in one place. Staff accounts are created by an admin.</p>
+      {!created && <p className="mt-1 text-[11px] font-medium text-stone-500"><span aria-hidden="true" className="text-red-600">*</span> Required field</p>}
 
       {created ? (
         // One clear next step, rather than a blank form sitting under a
@@ -81,45 +138,55 @@ export function RegisterForm({ onSwitchToLogin }) {
       ) : (
         <>
           <form className="mt-5 space-y-3" onSubmit={handleSubmit} noValidate>
-            <div>
-              <label htmlFor="full-name" className="mb-1.5 block text-xs font-bold">Full name</label>
-              <input id="full-name" value={form.name} onChange={(event) => updateField('name', event.target.value)} autoComplete="name" placeholder="Your full name" className={fieldClass} />
-              {errors.name && <p className="mt-1 text-xs font-medium text-red-700">{errors.name}</p>}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <RequiredLabel htmlFor="first-name">First name</RequiredLabel>
+                <input id="first-name" value={form.firstName} onChange={(event) => updateField('firstName', event.target.value)} autoComplete="given-name" placeholder="e.g. Maria" className={fieldClass} {...fieldProps('firstName')} />
+                <FieldError id="firstName-error" message={errors.firstName} />
+              </div>
+              <div>
+                <RequiredLabel htmlFor="last-name">Last name</RequiredLabel>
+                <input id="last-name" value={form.lastName} onChange={(event) => updateField('lastName', event.target.value)} autoComplete="family-name" placeholder="e.g. Dela Cruz" className={fieldClass} {...fieldProps('lastName')} />
+                <FieldError id="lastName-error" message={errors.lastName} />
+              </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <label htmlFor="register-username" className="mb-1.5 block text-xs font-bold">Username</label>
-                <input id="register-username" value={form.username} onChange={(event) => updateField('username', event.target.value)} autoComplete="username" placeholder="e.g. Yancy Ymata" className={fieldClass} />
-                {errors.username && <p className="mt-1 text-xs font-medium text-red-700">{errors.username}</p>}
+                <RequiredLabel htmlFor="register-username">Username</RequiredLabel>
+                <input id="register-username" value={form.username} onChange={(event) => updateField('username', event.target.value)} autoComplete="username" placeholder="e.g. maria.delacruz" className={fieldClass} {...fieldProps('username')} />
+                <FieldError id="username-error" message={errors.username} />
               </div>
               <div>
-                <label htmlFor="contact-number" className="mb-1.5 block text-xs font-bold">Contact number</label>
-                <input id="contact-number" maxLength={11} value={form.contactNumber} onChange={(event) => updateField('contactNumber', event.target.value)} autoComplete="tel" inputMode="tel" placeholder="09XXXXXXXXX" className={fieldClass} />
-                {errors.contactNumber && <p className="mt-1 text-xs font-medium text-red-700">{errors.contactNumber}</p>}
+                <RequiredLabel htmlFor="contact-number">Contact number</RequiredLabel>
+                <input id="contact-number" maxLength={11} value={form.contactNumber} onChange={(event) => updateField('contactNumber', event.target.value)} autoComplete="tel" inputMode="tel" placeholder="09XXXXXXXXX" className={fieldClass} {...fieldProps('contactNumber')} />
+                <FieldError id="contactNumber-error" message={errors.contactNumber} />
               </div>
             </div>
             <div>
-              <label htmlFor="register-email" className="mb-1.5 block text-xs font-bold">Email</label>
-              <input id="register-email" type="email" value={form.email} onChange={(event) => updateField('email', event.target.value)} autoComplete="email" placeholder="you@example.com" className={fieldClass} />
-              {errors.email && <p className="mt-1 text-xs font-medium text-red-700">{errors.email}</p>}
+              <RequiredLabel htmlFor="register-email">Email address</RequiredLabel>
+              <input id="register-email" type="email" value={form.email} onChange={(event) => updateField('email', event.target.value)} autoComplete="email" placeholder="you@example.com" className={fieldClass} {...fieldProps('email')} />
+              <FieldError id="email-error" message={errors.email} />
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <label htmlFor="register-password" className="mb-1.5 block text-xs font-bold">Password</label>
-                <div className="relative"><input id="register-password" type={showPassword ? 'text' : 'password'} value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" className={passwordFieldClass} /><PasswordToggle shown={showPassword} onToggle={() => setShowPassword(!showPassword)} /></div>
-                {errors.password && <p className="mt-1 text-xs font-medium text-red-700">{errors.password}</p>}
+                <RequiredLabel htmlFor="register-password">Password</RequiredLabel>
+                <div className="relative"><input id="register-password" type={showPassword ? 'text' : 'password'} value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" placeholder="Create password" className={passwordFieldClass} {...fieldProps('password')} /><PasswordToggle shown={showPassword} onToggle={() => setShowPassword(!showPassword)} /></div>
+                <FieldError id="password-error" message={errors.password} />
               </div>
               <div>
-                <label htmlFor="confirm-password" className="mb-1.5 block text-xs font-bold">Confirm password</label>
-                <div className="relative"><input id="confirm-password" type={showConfirm ? 'text' : 'password'} value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} autoComplete="new-password" className={passwordFieldClass} /><PasswordToggle shown={showConfirm} onToggle={() => setShowConfirm(!showConfirm)} /></div>
-                {errors.confirmPassword && <p className="mt-1 text-xs font-medium text-red-700">{errors.confirmPassword}</p>}
+                <RequiredLabel htmlFor="confirm-password">Confirm password</RequiredLabel>
+                <div className="relative"><input id="confirm-password" type={showConfirm ? 'text' : 'password'} value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} autoComplete="new-password" placeholder="Repeat password" className={passwordFieldClass} {...fieldProps('confirmPassword')} /><PasswordToggle shown={showConfirm} onToggle={() => setShowConfirm(!showConfirm)} /></div>
+                <FieldError id="confirmPassword-error" message={errors.confirmPassword} />
               </div>
             </div>
             <p className={`text-xs ${form.password && passwordHint === strongPasswordHint ? 'text-crust-600' : 'text-stone-500'}`}>{passwordHint}</p>
-            <label className="flex cursor-pointer items-start gap-2 rounded-xl bg-white/70 p-2.5 text-xs leading-5 shadow-sm">
-              <input type="checkbox" checked={form.agree} onChange={(event) => updateField('agree', event.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-crust-600" />
-              I agree to the <a href="/terms" target="_blank" rel="noopener" className="font-bold text-crust-600 underline">Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener" className="font-bold text-crust-600 underline">Privacy Policy</a>.
-            </label>
+            <div>
+              <label className="flex cursor-pointer items-start gap-2 rounded-xl bg-white/70 p-2.5 text-xs leading-5 shadow-sm">
+                <input type="checkbox" checked={form.agree} onChange={(event) => updateField('agree', event.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-crust-600" {...fieldProps('agree')} />
+                <span>I agree to the <a href="/terms" target="_blank" rel="noopener" className="font-bold text-crust-600 underline">Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener" className="font-bold text-crust-600 underline">Privacy Policy</a>. <span aria-hidden="true" className="text-red-600">*</span></span>
+              </label>
+              <FieldError id="agree-error" message={errors.agree} />
+            </div>
             {message && <p role="status" className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{message}</p>}
             <button type="submit" disabled={submitting} className="w-full rounded-2xl bg-crust-600 py-2.5 text-sm font-bold text-white shadow-lg shadow-crust-600/25 transition hover:bg-crust-700 focus:ring-4 focus:ring-cream-200 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Creating account…' : 'Create account'}</button>
           </form>

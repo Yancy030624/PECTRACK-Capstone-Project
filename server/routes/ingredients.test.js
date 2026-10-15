@@ -26,7 +26,7 @@ describe('ingredient stock', () => {
 
   const admin = { username: `ingadmin_${runId}`, password: 'Admin-Only-Password-9!' }
   const cashier = { role: 'CASHIER', name: 'Ingredient Test Cashier', username: `ingcash_${runId}`, email: `ingcash_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
-  const customer = { name: 'Ingredient Test Customer', username: `ingcust_${runId}`, email: `ingcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const customer = { name: 'Ingredient Test Customer', firstName: 'Ingredient Test', lastName: 'Customer', agree: true, username: `ingcust_${runId}`, email: `ingcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
 
   const json = (cookie, method, body) => ({ method, headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(body) })
   const move = (cookie, id, body) => fetch(`${baseUrl}/api/ingredients/${id}/movements`, json(cookie, 'POST', body))

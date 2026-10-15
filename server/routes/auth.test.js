@@ -44,6 +44,9 @@ describe('customer registration and session lifecycle', () => {
 
   const customer = {
     name: 'Test Customer',
+    firstName: 'Test',
+    lastName: 'Customer',
+    agree: true,
     username: `testcust_${runId}`,
     email: `testcust_${runId}@example.com`,
     contactNumber: randomContactNumber(),
@@ -78,6 +81,40 @@ describe('customer registration and session lifecycle', () => {
     assert.ok(body.errors.password)
   })
 
+  // The adviser's request (2026-10-16, migration 026): first and last
+  // name, and every required field refused when empty, at the server too.
+  test('POST /api/auth/register names every empty required field, and wants the terms agreed', async () => {
+    const response = await fetch(`${baseUrl}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstName: ' ', lastName: '', username: '', email: '', contactNumber: '', password: '', confirmPassword: '' }),
+    })
+    assert.equal(response.status, 422)
+    const { errors } = await response.json()
+    assert.equal(errors.firstName, 'Enter your first name.')
+    assert.equal(errors.lastName, 'Enter your last name.')
+    assert.equal(errors.username, 'Enter a username.')
+    assert.equal(errors.email, 'Enter your email address.')
+    assert.equal(errors.contactNumber, 'Enter your contact number.')
+    assert.equal(errors.password, 'Enter a password.')
+    assert.equal(errors.confirmPassword, 'Enter your password again.')
+    assert.ok(errors.agree)
+  })
+
+  test('POST /api/auth/register refuses the old single full name without the two parts', async () => {
+    const { firstName: _first, lastName: _last, ...withNameOnly } = customer
+    const response = await fetch(`${baseUrl}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...withNameOnly, confirmPassword: customer.password }),
+    })
+    assert.equal(response.status, 422)
+    const { errors } = await response.json()
+    assert.ok(errors.firstName && errors.lastName)
+    const { rows } = await pool.query('SELECT 1 FROM users WHERE username = $1', [customer.username])
+    assert.equal(rows.length, 0, 'no account was created')
+  })
+
   test('POST /api/auth/register creates a customer account', async () => {
     const response = await fetch(`${baseUrl}/api/auth/register`, {
       method: 'POST',
@@ -90,6 +127,9 @@ describe('customer registration and session lifecycle', () => {
 
     const { rows } = await pool.query('SELECT user_id FROM users WHERE username = $1', [customer.username])
     createdUserId = rows[0].user_id
+
+    const saved = await pool.query('SELECT name, first_name, last_name FROM customers WHERE user_id = $1', [createdUserId])
+    assert.deepEqual(saved.rows[0], { name: 'Test Customer', first_name: 'Test', last_name: 'Customer' }, 'the two parts are saved, and the full name is built from them')
   })
 
   test('POST /api/auth/register rejects a duplicate username', async () => {
@@ -204,6 +244,37 @@ describe('customer registration and session lifecycle', () => {
     const persisted = await pool.query('SELECT c.name, c.contact_num FROM customers c JOIN users u ON u.user_id = c.user_id WHERE u.username = $1', [customer.username])
     assert.equal(persisted.rows[0].name, 'Renamed Self')
     assert.equal(persisted.rows[0].contact_num, newContactNumber)
+  })
+
+  test('PATCH /api/auth/me lets a customer change their first and last name, and refuses an empty one', async () => {
+    const response = await fetch(`${baseUrl}/api/auth/me`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Cookie: sessionCookie },
+      body: JSON.stringify({ firstName: 'Ana Maria', lastName: 'Dela Cruz' }),
+    })
+    assert.equal(response.status, 200)
+    const { user } = await response.json()
+    assert.equal(user.firstName, 'Ana Maria')
+    assert.equal(user.lastName, 'Dela Cruz')
+    assert.equal(user.name, 'Ana Maria Dela Cruz')
+
+    const empty = await fetch(`${baseUrl}/api/auth/me`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Cookie: sessionCookie },
+      body: JSON.stringify({ firstName: 'Ana', lastName: '  ' }),
+    })
+    assert.equal(empty.status, 422)
+    assert.equal((await empty.json()).errors.lastName, 'Enter your last name.')
+  })
+
+  // Older paths and scripts write customers.name alone; the trigger splits
+  // it, so the parts never fall out of step (migration 026).
+  test('a full name written alone is split into first and last name, particles kept with the surname', async () => {
+    await pool.query(`UPDATE customers SET name = 'Juan de los Reyes' WHERE user_id = $1`, [createdUserId])
+    const split = await pool.query('SELECT name, first_name, last_name FROM customers WHERE user_id = $1', [createdUserId])
+    assert.deepEqual(split.rows[0], { name: 'Juan de los Reyes', first_name: 'Juan', last_name: 'de los Reyes' })
+    const oneWord = await pool.query(`SELECT split_person_name('Cher') AS parts`)
+    assert.deepEqual(oneWord.rows[0].parts, ['Cher', null])
   })
 
   test('PATCH /api/auth/me rejects an invalid email', async () => {
@@ -664,6 +735,9 @@ describe('account lockout cannot be extended indefinitely', () => {
 
   const victim = {
     name: 'Lockout Victim',
+    firstName: 'Lockout',
+    lastName: 'Victim',
+    agree: true,
     username: `lockout_${runId}`,
     email: `lockout_${runId}@example.com`,
     contactNumber: randomContactNumber(),
@@ -788,6 +862,9 @@ describe('customer email verification', () => {
   let userId
   const person = {
     name: 'Verify Customer',
+    firstName: 'Verify',
+    lastName: 'Customer',
+    agree: true,
     username: `verifycust_${runId}`,
     email: `verifycust_${runId}@example.com`,
     contactNumber: randomContactNumber(),
