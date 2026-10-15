@@ -207,10 +207,11 @@ function StaffDeliveryView({ user, params, onNavigate }) {
                 </div>
 
                 {/* routes/deliveries.js refuses assignment while the order is
-                    still PLACED — the kitchen has not accepted it yet. Say so
+                    still PLACED — a delivery order waits there until it is
+                    paid in full, then goes into production by itself. Say so
                     here instead of offering a button that can only 409. */}
                 {delivery.status === 'PENDING_ASSIGNMENT' && delivery.orderStatus === 'PLACED' && (
-                  <p className="mt-3 border-t border-line-100 pt-3 text-xs text-ink-500">Confirm the order in Order Management before assigning a driver.</p>
+                  <p className="mt-3 border-t border-line-100 pt-3 text-xs text-ink-500">Waiting for payment ({formatPeso(delivery.balanceDue)} owed). It goes into production, and can be assigned, once paid in full.</p>
                 )}
                 {delivery.status === 'PENDING_ASSIGNMENT' && (delivery.orderStatus === 'COMPLETED' || delivery.orderStatus === 'CANCELLED') && (
                   <p className="mt-3 border-t border-line-100 pt-3 text-xs text-ink-500">This order is already {delivery.orderStatus.toLowerCase()} — nothing left to deliver.</p>

@@ -277,10 +277,10 @@ router.patch('/:id/assign', requireRole('ADMIN', 'CASHIER'), async (request, res
   if (!personnelCheck.rows[0].is_active) return response.status(422).json({ message: "That delivery person's account is deactivated.", errors: { deliveryPersonnelId: 'Select an active delivery person.' } })
 
   // The order's own state is part of the claim. A delivery may only be
-  // handed out once the kitchen has accepted the order (CONFIRMED or
-  // later): a PLACED order is one nobody has looked at yet — the customer
-  // can still cancel it themselves — and a driver holding it was on the
-  // road for an order that might never be made. And one already COMPLETED
+  // handed out once the order is in production or later: a delivery order
+  // stays PLACED until it is paid in full (lib/orderStatus.js), the
+  // customer can still cancel it, and a driver holding it was on the road
+  // for an order that might never be made. And one already COMPLETED
   // or CANCELLED must not be handed to anyone: cancel fails the delivery
   // itself (Decision 6), but COMPLETED used to leave the row in the queue.
   //
@@ -305,7 +305,7 @@ router.patch('/:id/assign', requireRole('ADMIN', 'CASHIER'), async (request, res
     }
     if (orderStatus === 'PLACED') {
       await client.query('ROLLBACK')
-      return response.status(409).json({ message: 'Confirm the order first — a delivery is assigned once the kitchen has accepted it.' })
+      return response.status(409).json({ message: 'This order is not paid yet — a delivery order goes into production, and can be assigned, once it is paid in full.' })
     }
     const billing = await getBillingSummary(client, orderId)
     if (!billing.isFullyPaid) {

@@ -162,8 +162,9 @@ const termsSections = [
       <List items={[
         'Prices are in Philippine pesos and are the prices shown when you place the order.',
         'An order is accepted only if the products are in stock and not past their date; the menu shows only what is available.',
-        'You may ask for a date and time up to 30 days ahead. We bake to have it ready by then.',
-        'Once placed, the items in an order cannot be changed. An unpaid order can be cancelled and placed again.',
+        'You may ask for a date and time from today up to 30 days ahead, between 5:00 AM and 10:00 PM. We bake to have it ready by then. An order for right now can be placed between 5:00 AM and 10:00 PM.',
+        'A pickup order goes into production as soon as it is placed. A delivery order goes into production as soon as it is paid in full.',
+        'Once placed, the items in an order cannot be changed.',
       ]} />
     ),
   },
@@ -195,7 +196,7 @@ const termsSections = [
     title: 'Cancellations',
     body: (
       <List items={[
-        'You can cancel your own order, with a reason, while it is still "Placed" and has not been paid.',
+        'You can cancel your own delivery order, with a reason, while it is still "Placed", that is, before it is paid. A pickup order goes into production when it is placed, so to change or cancel one, contact the bakery.',
         'The bakery does not give refunds. Once an order has been paid, it can no longer be cancelled; for any problem with a paid order, please contact the bakery.',
         'The bakery may cancel an unpaid order, for example if a product is no longer available, and will give the reason.',
       ]} />

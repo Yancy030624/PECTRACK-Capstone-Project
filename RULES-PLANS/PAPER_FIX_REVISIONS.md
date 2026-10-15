@@ -542,3 +542,89 @@ If any objective or scope item still promises "bulk order requests requiring adm
 
 ### Figures to retake after A2
 2 / 2.1 (if the Bulk orders tile shows), and 6 (Order Management, admin — the setting row is gone).
+
+---
+
+## Adviser revisions A3–A6 — receipt after payment, automatic production, order dates and hours (2026-10-16)
+
+- **A3:** after a successful GCash payment, PayMongo sends the customer straight to the order's receipt. The page confirms the payment with the server and shows a loading state while it waits; nothing is marked paid just by opening it. "Pay now" on the Order placed page now opens GCash directly.
+- **A4:** no confirmation step. A pickup order goes into **In Production** as soon as it is placed. A delivery order goes into In Production as soon as it is paid in full (it still waits as Placed until then, since there is no cash on delivery). A later status is never overwritten. A customer can cancel only an order that is still Placed, which now means an unpaid delivery order.
+- **A5–A6:** orders can be for today or a later day (up to 30 days ahead), between **5:00 AM and 10:00 PM** inclusive, Asia/Manila time, for pickup, delivery and walk-in orders, on the form and at the server. An order "for now" can be placed only within those hours.
+
+The bakery's opening hours on the storefront (5:00 AM – 8:00 PM) are a separate fact and were not changed. If the paper states the bakery's hours as the ordering hours anywhere, it now has to use 5:00 AM – 10:00 PM for ordering.
+
+### 1. Scope, Order Management Module (the stages)
+
+**Find:**
+> An order queue displays all active orders progressing through the stages of Order Placed, Confirmed, In Production, Out for Delivery or Ready for Pickup, and Completed.
+
+(If your team applied R4, the sentence starts "Each order is given a daily order number…"; change the same list inside it.)
+
+**Replace the list with:**
+> …progressing through the stages of Order Placed, In Production, Out for Delivery or Ready for Pickup, and Completed. A pickup order enters In Production as soon as it is placed, and a delivery order as soon as it is paid in full, with no separate confirmation step. Orders can be for today or a later day, up to 30 days ahead, between 5:00 AM and 10:00 PM.
+
+### 2. Order Management flowchart description (the Cashier and Customer paragraphs)
+
+**Find:**
+> Once the order is confirmed, the system records the order and assigns an initial order status.
+
+**Replace with:**
+> Once the order is submitted, the system records it and sets its status: a pickup order goes straight into production, and a delivery order waits for payment.
+
+**Find:**
+> The system records the order and displays the order status, allowing the customer to track the progress of their purchase.
+
+**Replace with:**
+> The customer may choose a date and time for the order, from today up to 30 days ahead, between 5:00 AM and 10:00 PM. The system records the order and displays the order status, allowing the customer to track the progress of their purchase.
+
+### 3. Payment and Billing flowchart description
+
+**Find:**
+> If the payment is successful, the system updates the payment status and confirms the order.
+
+**Replace with:**
+> If the payment is successful, the system updates the payment status, sends a fully paid delivery order into production, and shows the customer the receipt at once.
+
+### 4. Payment and Billing scope (the receipt sentence)
+
+**Find:**
+> The module automatically generates a digital receipt per transaction showing itemized amounts and the total, and maintains a full payment history viewable per order.
+
+**Replace with:**
+> The module automatically generates a digital receipt per transaction showing the order number, the customer, the itemized amounts and the total, the payment method and status, and the transaction reference; after an online payment the customer is taken straight to it. It also maintains a full payment history viewable per order.
+
+### 5. Figure 15 description, Checkout
+
+**Find:**
+> The customer may add special instructions and a requested date and time.
+
+**Replace with:**
+> The customer may add special instructions and a requested date and time: the date picker starts at today and the time runs from 5:00 AM to 10:00 PM.
+
+**Find (Figure 15.1):**
+> The customer pays online beforehand from My Payments, or at the counter when collecting the order.
+
+**Replace with:**
+> The order goes into production as soon as it is placed. The customer pays online beforehand, or at the counter when collecting the order.
+
+### 6. New figure (suggested)
+
+**Figure 15.2. Receipt after payment (customer)**
+> After paying with GCash the customer lands directly on the receipt: the bakery's name, the order number and date, the customer's details, the items with quantities and prices, the total, the payment method, status and transaction reference, with a button to print it or save it as PDF. While GCash is still confirming, the page says so and checks again on its own.
+
+### 7. Use case description, the Customer paragraph
+
+**Find:**
+> They can also cancel orders,
+
+**Replace with:**
+> They can also cancel an order that is still waiting for payment,
+
+(If your team already applied the Notifications fix 7 to this sentence, keep the email part after it.)
+
+### 8. Database chapter
+
+**No change.** The order statuses are the same list; `Confirmed` is simply no longer used for new orders.
+
+### Figures to retake after A3–A6
+6 / 7 (Order Management: status choices without Confirmed), 15 and 15.1 (Checkout: the new date and time pickers), the new 15.2 (receipt), and the Order placed page if shown.

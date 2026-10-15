@@ -16,7 +16,8 @@ import { pool } from '../db.js'
 import { billingListSql, getBillingSummary, mapBillingColumns } from '../lib/billing.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { syncStockAlert } from '../lib/inventory.js'
-import { orderLabel } from '../lib/orderNumber.js'
+import { config } from '../config.js'
+import { checkOrderTime } from '../lib/orderHours.js'
 import { sendInBackground, sendOrderReadyEmail } from '../lib/notices.js'
 import { parseId } from '../lib/validation.js'
 
@@ -55,14 +56,18 @@ const maxItemQuantity = 2147483647
 const maxFulfillmentLeadDays = 30
 
 // Parses an optional requestedFulfillmentTime. Returns { value } (a Date,
-// or null when the field was absent/blank) or { error }.
+// or null when the field was absent/blank) or { error }. Today or later,
+// 5:00 AM to 10:00 PM Manila time, and an order for "now" only within
+// those hours (lib/orderHours.js, the adviser 2026-10-16). Pickup,
+// delivery and walk-in orders all come through here.
 function parseFulfillmentTime(raw) {
-  if (raw == null || String(raw).trim() === '') return { value: null }
-  const value = new Date(raw)
-  if (Number.isNaN(value.getTime())) return { error: 'Enter a valid date and time.' }
-  const now = Date.now()
-  if (value.getTime() < now) return { error: 'The requested time has already passed.' }
-  if (value.getTime() > now + maxFulfillmentLeadDays * 24 * 60 * 60 * 1000) return { error: `Orders can be placed up to ${maxFulfillmentLeadDays} days ahead.` }
+  const now = new Date()
+  const blank = raw == null || String(raw).trim() === ''
+  const value = blank ? null : new Date(raw)
+  if (value && Number.isNaN(value.getTime())) return { error: 'Enter a valid date and time.' }
+  const error = checkOrderTime(value, { now, enforceNowHours: config.orders.enforceNowHours })
+  if (error) return { error }
+  if (value && value.getTime() > now.getTime() + maxFulfillmentLeadDays * 24 * 60 * 60 * 1000) return { error: `Orders can be placed up to ${maxFulfillmentLeadDays} days ahead.` }
   return { value }
 }
 
@@ -186,7 +191,7 @@ router.get('/:id', async (request, response) => {
      LEFT JOIN customers c ON c.user_id = u.user_id
      LEFT JOIN delivery_personnel d ON d.user_id = u.user_id
      WHERE h.order_id = $1
-     ORDER BY h.updated_at`,
+     ORDER BY h.updated_at, h.history_id`,
     [order.order_id],
   )
 
@@ -378,11 +383,15 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     // the line items exist to add up. No order waits for an admin's
     // approval because of its size any more (the adviser, 2026-10-16;
     // migration 027 removed the bulk-order threshold).
+    //
+    // A pickup order goes straight into production; a delivery order waits
+    // as PLACED until it is paid in full (lib/orderStatus.js).
+    const initialStatus = orderType === 'PICKUP' ? 'IN_PRODUCTION' : 'PLACED'
     const orderResult = await client.query(
-      `INSERT INTO orders (customer_id, processed_by, order_type, address_id, instructions, requested_fulfillment_time)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO orders (customer_id, processed_by, order_type, address_id, instructions, requested_fulfillment_time, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING order_id, daily_number, order_day`,
-      [customerId, processedBy, orderType, addressId, instructions, fulfillment.value],
+      [customerId, processedBy, orderType, addressId, instructions, fulfillment.value, initialStatus],
     )
     const orderId = orderResult.rows[0].order_id
     // Given by the orders_daily_number trigger (migration 024).
@@ -465,11 +474,14 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     const totalAmount = totalResult.rows[0].total_amount
 
     await client.query('INSERT INTO order_status_history (order_id, updated_by, status, note) VALUES ($1, $2, $3, $4)', [orderId, request.user.id, 'PLACED', null])
+    if (initialStatus === 'IN_PRODUCTION') {
+      await client.query('INSERT INTO order_status_history (order_id, updated_by, status, note) VALUES ($1, $2, $3, $4)', [orderId, request.user.id, 'IN_PRODUCTION', 'Sent to production automatically.'])
+    }
 
     await client.query('COMMIT')
     return response.status(201).json({
       message: 'Order placed.',
-      order: { id: orderId, orderNumber, orderDay, status: 'PLACED', totalAmount },
+      order: { id: orderId, orderNumber, orderDay, status: initialStatus, totalAmount },
     })
   } catch (error) {
     await client.query('ROLLBACK')

@@ -50,6 +50,9 @@ function nextStatusOptions(order) {
   if (awaitingDeliveryPayment(order)) return cancel
   const forward = Object.keys(statusRank).filter((status) => statusRank[status] > statusRank[order.status])
   return forward
+    // No "Confirmed" step any more: orders go into production on their own
+    // (server/lib/orderStatus.js). The status stays only for older orders.
+    .filter((status) => status !== 'CONFIRMED')
     .filter((status) => status !== 'OUT_FOR_DELIVERY')
     .filter((status) => status !== 'READY_FOR_PICKUP' || order.orderType === 'PICKUP')
     .concat(cancel)
@@ -271,7 +274,7 @@ function StaffOrderManagement({ user, params }) {
           {orderDetail.status === 'PLACED' && awaitingDeliveryPayment(orderDetail) && (
             <div className="rounded-panel border border-line-200 bg-status-wait-bg p-3 text-sm">
               <p className="font-semibold text-status-wait-fg">Not paid yet — don&apos;t bake it</p>
-              <p className="mt-1 text-xs text-ink-700">Delivery orders are confirmed only once fully paid: the customer pays with GCash online, or pays at the counter in Payment &amp; Billing. There is no cash on delivery.</p>
+              <p className="mt-1 text-xs text-ink-700">A delivery order goes into production by itself once fully paid: the customer pays with GCash online, or pays at the counter in Payment &amp; Billing. There is no cash on delivery.</p>
             </div>
           )}
 
@@ -567,7 +570,7 @@ function CustomerOrders({ user, onNavigate }) {
                   {cancelling ? 'Cancelling…' : 'Cancel this order'}
                 </Button>
               </div>
-              <p className="mt-1.5 text-xs text-ink-500">You can cancel while your order is still PLACED — once we start on it, ask staff directly.</p>
+              <p className="mt-1.5 text-xs text-ink-500">You can cancel while your order is still waiting for payment — once we start on it, contact the bakery.</p>
             </div>
           )}
 

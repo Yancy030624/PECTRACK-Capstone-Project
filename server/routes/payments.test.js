@@ -193,7 +193,7 @@ describe('payment & billing', () => {
     if (paymongoStubDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, paymongoStubDelayMs))
     const id = `cs_test_${crypto.randomUUID().slice(0, 12)}`
     const sent = JSON.parse(options.body).data.attributes
-    checkoutSessions.set(id, { status: 'active', payments: [], successUrl: sent.success_url, billing: sent.billing })
+    checkoutSessions.set(id, { status: 'active', payments: [], successUrl: sent.success_url, cancelUrl: sent.cancel_url, billing: sent.billing })
     return { ok: true, json: async () => ({ data: { id, attributes: { checkout_url: `https://checkout.paymongo.com/${id}` } } }) }
   }
 
@@ -251,7 +251,7 @@ describe('payment & billing', () => {
 
   test('POST /api/payments/intent refuses a CANCELLED order', async () => {
     const { orderId } = await createOrder(1, customerCookie)
-    const cancelResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
+    const cancelResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(cancelResponse.status, 200)
 
     const response = await createIntent(orderId)
@@ -356,6 +356,38 @@ describe('payment & billing', () => {
     assert.equal(order.payment.isFullyPaid, true)
   })
 
+  // The adviser (2026-10-16): the payment that settles an order waiting as
+  // PLACED sends it to production by itself — online as well as at the
+  // counter — and never moves an order that is already further along.
+  // (A delivery order is the one kind that waits as PLACED; here a pickup
+  // order is put back to PLACED in SQL, as one from before the change.)
+  test('an online payment that settles a PLACED order sends it to production, once, even if reported twice', async () => {
+    const { orderId } = await createOrder(1)
+    await pool.query(`UPDATE orders SET status = 'PLACED' WHERE order_id = $1`, [orderId])
+    const { paymentId } = await (await createIntent(orderId)).json()
+    const checkoutSessionId = await gatewayReferenceFor(paymentId)
+    const eventBody = buildPaymentEvent('payment.paid', checkoutSessionId)
+    assert.equal((await sendWebhook(eventBody, signWebhook(eventBody))).status, 200)
+    assert.equal((await sendWebhook(eventBody, signWebhook(eventBody))).status, 200, 'a redelivered event is fine')
+
+    const order = await getOrder(orderId)
+    assert.equal(order.status, 'IN_PRODUCTION')
+    // The placement wrote its own IN_PRODUCTION row before the SQL reset;
+    // the payment adds exactly one more, saying why.
+    assert.equal(order.statusHistory.filter((entry) => entry.status === 'IN_PRODUCTION' && entry.note?.startsWith('Paid in full')).length, 1, 'moved once')
+  })
+
+  test('a payment never moves an order back to production from a later status', async () => {
+    const { orderId } = await createOrder(1)
+    await pool.query(`UPDATE orders SET status = 'READY_FOR_PICKUP' WHERE order_id = $1`, [orderId])
+    const { paymentId } = await (await createIntent(orderId)).json()
+    const eventBody = buildPaymentEvent('payment.paid', await gatewayReferenceFor(paymentId))
+    assert.equal((await sendWebhook(eventBody, signWebhook(eventBody))).status, 200)
+    const order = await getOrder(orderId)
+    assert.equal(order.payment.isFullyPaid, true)
+    assert.equal(order.status, 'READY_FOR_PICKUP')
+  })
+
   // The MEANINGFUL idempotency test — not the exact same event redelivered
   // (an UPDATE that re-sets status='PAID' to 'PAID' again is trivially a
   // no-op either way, since there is no ROW being duplicated the way an
@@ -424,7 +456,7 @@ describe('payment & billing', () => {
     const { paymentId } = await (await createIntent(orderId, customerCookie)).json()
     const checkoutSessionId = await gatewayReferenceFor(paymentId)
 
-    const cancelResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
+    const cancelResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(cancelResponse.status, 200)
     assert.equal((await pool.query('SELECT status FROM payments WHERE payment_id = $1', [paymentId])).rows[0].status, 'CANCELLED', 'the cancel closes the open intent')
 
@@ -807,7 +839,7 @@ describe('payment & billing', () => {
 
   test('recording a payment against a CANCELLED order is refused', async () => {
     const { orderId } = await createOrder(1, customerCookie)
-    const cancelResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
+    const cancelResponse = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(cancelResponse.status, 200)
 
     const response = await recordPayment({ orderId, method: 'CASH', amount: 100 })
@@ -1120,13 +1152,15 @@ describe('payment & billing', () => {
   const confirmPayment = (paymentId, cookie = customerCookie) =>
     fetch(`${baseUrl}/api/payments/${paymentId}/confirm`, { method: 'POST', headers: { Cookie: cookie } })
 
-  test('a customer is sent back to that order in My Payments, and confirm settles a paid session', async () => {
+  test('a paying customer is sent straight to the receipt (cancelling, back to My Payments), and confirm settles a paid session', async () => {
     const { orderId } = await createOrder(2) // total 200
     const intent = await createIntent(orderId, customerCookie)
     assert.equal(intent.status, 201)
     const { paymentId } = await intent.json()
     const sessionId = await gatewayReferenceFor(paymentId)
-    assert.match(checkoutSessions.get(sessionId).successUrl, new RegExp(`/account\\?tab=payments&order=${orderId}$`))
+    // The adviser (2026-10-16): no extra click to see the receipt.
+    assert.match(checkoutSessions.get(sessionId).successUrl, new RegExp(`/receipt/${orderId}$`))
+    assert.match(checkoutSessions.get(sessionId).cancelUrl, new RegExp(`/account\\?tab=payments&order=${orderId}$`))
 
     // Not paid yet: the attempt stays pending.
     const early = await confirmPayment(paymentId)

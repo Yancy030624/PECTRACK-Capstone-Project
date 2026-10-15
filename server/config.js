@@ -57,6 +57,13 @@ export const config = {
   // PHASE6.5_PLAN.md's closing note for where to find them in the
   // PayMongo dashboard once ready to wire them in. The page PayMongo sends
   // the payer back to is built from clientOrigin (routes/payments.js).
+  // Ordering hours (lib/orderHours.js). An order for "now" can only be
+  // placed between 5:00 AM and 10:00 PM Manila time. Off under the test
+  // runner, so the suites can place orders at any hour; orders.test.js and
+  // lib/orderHours.test.js turn it on to test the rule itself.
+  orders: {
+    enforceNowHours: !process.env.NODE_TEST_CONTEXT,
+  },
   paymongo: {
     secretKey: process.env.PAYMONGO_SECRET_KEY,
     webhookSecret: process.env.PAYMONGO_WEBHOOK_SECRET,

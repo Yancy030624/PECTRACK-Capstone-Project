@@ -80,11 +80,10 @@ describe('notification feed', () => {
     createdOrderIds.push(order.id)
     return order
   }
-  // A paid, confirmed delivery order assigned to the first driver.
+  // A paid delivery order (so in production) assigned to the first driver.
   const assignedDelivery = async () => {
     const order = await placeOrder({ orderType: 'DELIVERY' })
     assert.equal((await json('POST', '/api/payments', cashierCookie, { orderId: order.id, method: 'CASH', amount: order.totalAmount })).status, 201)
-    assert.equal((await json('PATCH', `/api/orders/${order.id}`, cashierCookie, { status: 'CONFIRMED' })).status, 200)
     const delivery = (await pool.query('SELECT delivery_id FROM deliveries WHERE order_id = $1', [order.id])).rows[0].delivery_id
     assert.equal((await json('PATCH', `/api/deliveries/${delivery}/assign`, cashierCookie, { deliveryPersonnelId: firstDriverId })).status, 200)
     return { order, delivery }

@@ -5,6 +5,8 @@ import { AddressForm } from '../../components/AddressForm.jsx'
 import { useCart } from '../../cart/CartContext.jsx'
 import { formatPeso } from '../../lib/format.js'
 import { isDeliverable } from '../../lib/bakery.js'
+import { NeededByFields } from '../../components/NeededByFields.jsx'
+import { checkPicked, toRequestedTime } from '../../lib/orderHours.js'
 
 const instructionsMaxLength = 500
 
@@ -24,7 +26,10 @@ export function CheckoutPage({ user }) {
   const [orderType, setOrderType] = useState('PICKUP')
   const [addressId, setAddressId] = useState(null)
   const [instructions, setInstructions] = useState('')
-  const [requestedFulfillmentTime, setRequestedFulfillmentTime] = useState('')
+  // When it is needed: a Manila date and time, both blank for "as soon as
+  // it's ready" (lib/orderHours.js).
+  const [neededDate, setNeededDate] = useState('')
+  const [neededTime, setNeededTime] = useState('')
 
   const [errors, setErrors] = useState({})
   const [message, setMessage] = useState('')
@@ -74,12 +79,17 @@ export function CheckoutPage({ user }) {
       setErrors({ addressId: 'Select a delivery address.' })
       return
     }
+    const timeError = checkPicked(neededDate, neededTime)
+    if (timeError) {
+      setErrors({ requestedFulfillmentTime: timeError })
+      return
+    }
 
     setSubmitting(true)
     try {
       const body = { orderType, items: validLines.map(({ line }) => ({ productId: line.productId, quantity: line.quantity })) }
       if (instructions.trim()) body.instructions = instructions.trim()
-      if (requestedFulfillmentTime) body.requestedFulfillmentTime = new Date(requestedFulfillmentTime).toISOString()
+      if (neededDate) body.requestedFulfillmentTime = toRequestedTime(neededDate, neededTime)
       if (orderType === 'DELIVERY') body.addressId = addressId
 
       const data = await apiPost('/api/orders', body)
@@ -186,9 +196,19 @@ export function CheckoutPage({ user }) {
           </div>
 
           <div className="rounded-2xl border border-cream-200 bg-white p-5">
-            <label htmlFor="checkout-needed-by" className="text-sm font-bold text-cocoa-900">When do you need it? (optional)</label>
-            <input id="checkout-needed-by" type="datetime-local" value={requestedFulfillmentTime} onChange={(event) => setRequestedFulfillmentTime(event.target.value)} className="mt-3 w-full rounded-xl border border-cream-300 px-3 py-2 text-xs outline-none focus:border-crust-500" />
-            <p className="mt-1 text-xs text-cocoa-500">Leave blank for as soon as it's ready. Orders can be placed up to 30 days ahead.</p>
+            <p className="text-sm font-bold text-cocoa-900">When do you need it?</p>
+            <div className="mt-3">
+              <NeededByFields
+                idPrefix="checkout-needed"
+                date={neededDate}
+                time={neededTime}
+                onDateChange={(value) => { setNeededDate(value); setErrors({}) }}
+                onTimeChange={(value) => { setNeededTime(value); setErrors({}) }}
+                inputClassName="w-full rounded-xl border border-cream-300 px-3 py-2 text-xs outline-none focus:border-crust-500"
+                labelClassName="mb-1 block text-xs font-semibold text-cocoa-700"
+                helpClassName="mt-2 text-xs text-cocoa-500"
+              />
+            </div>
             {errors.requestedFulfillmentTime && <p className="mt-2 text-xs font-medium text-red-700">{errors.requestedFulfillmentTime}</p>}
           </div>
 

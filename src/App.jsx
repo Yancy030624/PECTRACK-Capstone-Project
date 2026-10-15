@@ -17,6 +17,7 @@ import { PrivacyPage, TermsPage } from './pages/customer-storefront/LegalPages.j
 import { HomePage } from './pages/customer-storefront/HomePage.jsx'
 import { MenuPage } from './pages/customer-storefront/MenuPage.jsx'
 import { OrderPlacedPage } from './pages/customer-storefront/OrderPlacedPage.jsx'
+import { ReceiptPage } from './pages/customer-storefront/ReceiptPage.jsx'
 import { StorefrontLayout } from './pages/customer-storefront/StorefrontLayout.jsx'
 
 const staffRoles = new Set(['ADMIN', 'CASHIER', 'DELIVERY PERSONNEL'])
@@ -230,6 +231,7 @@ function AppRoutes() {
           <Route path="/cart" element={<RequireCustomer user={user} openAuth={openAuth}><CartPage /></RequireCustomer>} />
           <Route path="/checkout" element={<RequireCustomer user={user} openAuth={openAuth}><CheckoutPage user={user} /></RequireCustomer>} />
           <Route path="/order-placed/:orderId" element={<RequireCustomer user={user} openAuth={openAuth}><OrderPlacedPage /></RequireCustomer>} />
+          <Route path="/receipt/:orderId" element={<RequireCustomer user={user} openAuth={openAuth}><ReceiptPage user={user} /></RequireCustomer>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -24,6 +24,7 @@ import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { PaymongoApiError, PaymongoWebhookVerificationError, createCheckoutSession, paymongoMinimumAmountCentavos, retrieveCheckoutSession, verifyPaymongoWebhook } from '../lib/paymongo.js'
 import { orderLabel } from '../lib/orderNumber.js'
+import { startProductionIfPaid } from '../lib/orderStatus.js'
 import { dateRangeSql, parseDateRange } from '../lib/reporting.js'
 import { normalize, parseId } from '../lib/validation.js'
 
@@ -113,18 +114,38 @@ const paymentListSelectQuery = `SELECT p.payment_id, p.order_id, o.daily_number,
 // gateway_payment_id (migration 009) is the PayMongo Payment id, kept on
 // every paid row as the reference for that payment.
 //
-// NO order-row lock, unlike every other money-writing path in this file.
-// Nothing here needs one: the UPDATE targets exactly one payments row by its
-// unique gateway_reference and takes that row's lock itself. There is no
-// aggregate computed and no overpayment guard re-run (PHASE6.5_PLAN.md,
-// Decision 9).
+// The payment that settles a DELIVERY order also sends it to production
+// (lib/orderStatus.js), so this now takes the ORDER row's lock first, as
+// every other money path in this file does, and settles the payment and
+// moves the order in one transaction. The payment write itself is still
+// conditional on the row being open, so a second report (webhook after
+// confirm-on-return, or a retried webhook) matches nothing and moves
+// nothing. The status history names the customer who started the payment.
 async function markGatewayPaymentPaid(checkoutSessionId, paymongoPaymentId) {
-  await pool.query(
-    `UPDATE payments
-        SET status = 'PAID', payment_date = CURRENT_TIMESTAMP, gateway_payment_id = COALESCE($2, gateway_payment_id)
-      WHERE gateway_reference = $1 AND status IN ('PENDING', 'CANCELLED')`,
-    [checkoutSessionId, paymongoPaymentId],
-  )
+  const found = await pool.query('SELECT order_id FROM payments WHERE gateway_reference = $1', [checkoutSessionId])
+  const orderId = found.rows[0]?.order_id
+  if (!orderId) return
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query('SELECT order_id FROM orders WHERE order_id = $1 FOR UPDATE', [orderId])
+    const settled = await client.query(
+      `UPDATE payments
+          SET status = 'PAID', payment_date = CURRENT_TIMESTAMP, gateway_payment_id = COALESCE($2, gateway_payment_id)
+        WHERE gateway_reference = $1 AND status IN ('PENDING', 'CANCELLED')
+      RETURNING recorded_by`,
+      [checkoutSessionId, paymongoPaymentId],
+    )
+    if (settled.rowCount > 0 && settled.rows[0].recorded_by) {
+      await startProductionIfPaid(client, orderId, settled.rows[0].recorded_by)
+    }
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
 }
 
 async function markGatewayPaymentFailed(checkoutSessionId) {
@@ -456,6 +477,10 @@ router.post('/', requireRole('CASHIER', 'ADMIN'), async (request, response) => {
       return response.status(409).json({ message: 'That is more than this order still owes.', errors: { amount: 'That is more than this order still owes.' } })
     }
 
+    // The payment that settles a delivery order sends it to production,
+    // in this same transaction (lib/orderStatus.js).
+    await startProductionIfPaid(client, orderId, request.user.id)
+
     await client.query('COMMIT')
 
     const summary = await getBillingSummary(pool, orderId)
@@ -562,9 +587,14 @@ router.post('/intent', requireRole('CUSTOMER'), async (request, response) => {
     return response.status(422).json({ message: `The remaining balance is below PayMongo's ₱${(paymongoMinimumAmountCentavos / 100).toFixed(2)} minimum for an online payment — settle it by cash or a GCash reference at the counter instead.` })
   }
 
-  // Where PayMongo sends the payer afterwards: back to this order's receipt
-  // in My Payments, where POST /:id/confirm settles the payment at once.
-  // Built from CLIENT_ORIGIN, so it is right wherever the app is served.
+  // Where PayMongo sends the payer afterwards. Paid: straight to the
+  // order's receipt (src/pages/customer-storefront/ReceiptPage.jsx, the
+  // adviser 2026-10-16), which asks POST /:id/confirm to settle the
+  // payment and shows the receipt once the server says it is paid.
+  // Cancelled: back to My Payments with this order open, where the attempt
+  // can be retried or closed. Built from CLIENT_ORIGIN, so it is right
+  // wherever the app is served.
+  const successUrl = `${config.clientOrigin}/receipt/${orderId}`
   const returnUrl = `${config.clientOrigin}/account?tab=payments&order=${orderId}`
 
   // The order's customer, to fill in PayMongo's payer form. Only the fields
@@ -585,7 +615,7 @@ router.post('/intent', requireRole('CUSTOMER'), async (request, response) => {
       amountCentavos,
       referenceNumber: `order-${orderId}`,
       description: `Pecto's Bakery order ${orderLabel(preflight.rows[0].daily_number, preflight.rows[0].order_day)}`,
-      successUrl: returnUrl,
+      successUrl,
       cancelUrl: returnUrl,
       billing: payerDetails && Object.keys(payerDetails).length ? payerDetails : undefined,
     })

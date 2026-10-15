@@ -31,8 +31,19 @@ import bcrypt from 'bcrypt'
 import { bcryptRounds } from '../server/lib/accounts.js'
 import { createSession, sessionCookieName } from '../server/lib/auth.js'
 import { pool } from '../server/db.js'
+import { checkOrderTime, manilaClock } from '../server/lib/orderHours.js'
 
 const baseUrl = 'http://localhost:3001'
+
+// `when`, or 8:00 AM Manila the next morning when `when` falls outside the
+// 5:00 AM to 10:00 PM ordering hours, as an ISO time the API accepts.
+function openTime(when) {
+  if (checkOrderTime(when) == null) return when.toISOString()
+  const { day, seconds } = manilaClock(when)
+  const morning = new Date(`${day}T08:00:00+08:00`)
+  if (seconds >= 5 * 3600) morning.setUTCDate(morning.getUTCDate() + 1)
+  return morning.toISOString()
+}
 const manifestPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'demo-data-manifest.json')
 
 const orderIds = []
@@ -203,18 +214,32 @@ async function main() {
   // `orderType`/`addressId` follow COUNTER_ORDER_PLAN.md Decision 4's
   // legal shapes — DELIVERY is only ever used with customer1 here, since
   // a walk-in has no saved address.
+  //
+  // Orders are taken for 5:00 AM to 10:00 PM only (server/lib/orderHours.js).
+  // Seeded outside those hours, an order "for now" would be refused, so it
+  // is placed for the next open time instead and the time is cleared
+  // again afterwards: the demo's history orders never had one.
   async function placeOrder(cookie, { customerId, orderType = 'PICKUP', items, addressId, requestedFulfillmentTime } = {}) {
     const body = { orderType, items }
     if (customerId) body.customerId = customerId
     if (orderType === 'DELIVERY') body.addressId = addressId
+    const standIn = !requestedFulfillmentTime && checkOrderTime(null) != null
     if (requestedFulfillmentTime) body.requestedFulfillmentTime = requestedFulfillmentTime
+    else if (standIn) body.requestedFulfillmentTime = openTime(new Date(Date.now() + 60 * 60 * 1000))
     const result = await call('POST', '/api/orders', cookie, body)
     if (result.status !== 201) throw new Error(`Order placement failed: ${JSON.stringify(result.body)}`)
+    if (standIn) await pool.query('UPDATE orders SET requested_fulfillment_time = NULL WHERE order_id = $1', [result.body.order.id])
     orderIds.push(result.body.order.id)
     return result.body.order
   }
 
+  // Orders go into production on their own now (server/lib/orderStatus.js):
+  // a pickup order is IN_PRODUCTION when placed, a delivery order once it
+  // is paid. A step the order has already passed is skipped, not refused.
+  const statusRank = { PLACED: 0, CONFIRMED: 1, IN_PRODUCTION: 2, READY_FOR_PICKUP: 3, OUT_FOR_DELIVERY: 3, COMPLETED: 4 }
   async function advanceStatus(orderId, status) {
+    const current = (await pool.query('SELECT status FROM orders WHERE order_id = $1', [orderId])).rows[0].status
+    if (status !== 'CANCELLED' && statusRank[status] <= statusRank[current]) return
     const result = await call('PATCH', `/api/orders/${orderId}`, cashierCookie, { status })
     if (result.status !== 200) throw new Error(`Status update to ${status} failed for order ${orderId}: ${JSON.stringify(result.body)}`)
   }
@@ -341,7 +366,7 @@ async function main() {
   log('Seeding today\'s in-progress orders...')
   // Each due a few hours from now, so Production → Due today shows real
   // hours instead of only "as soon as possible".
-  const dueIn = (hours) => new Date(Date.now() + hours * 60 * 60 * 1000).toISOString()
+  const dueIn = (hours) => openTime(new Date(Date.now() + hours * 60 * 60 * 1000))
   const confirmedOrder = await placeOrder(cashierCookie, { items: randomItems(commonProducts), requestedFulfillmentTime: dueIn(5) })
   await advanceStatus(confirmedOrder.id, 'CONFIRMED')
 

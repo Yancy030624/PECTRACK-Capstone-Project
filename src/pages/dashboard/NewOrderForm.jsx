@@ -5,11 +5,13 @@ import { Alert } from '../../components/ui/Alert.jsx'
 import { Button } from '../../components/ui/Button.jsx'
 import { Card } from '../../components/ui/Card.jsx'
 import { Field } from '../../components/ui/Field.jsx'
-import { Input } from '../../components/ui/Input.jsx'
+import { FIELD_SHAPE, Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { Textarea } from '../../components/ui/Textarea.jsx'
 import { formatPeso } from '../../lib/format.js'
+import { NeededByFields } from '../../components/NeededByFields.jsx'
+import { checkPicked, toRequestedTime } from '../../lib/orderHours.js'
 
 const instructionsMaxLength = 500
 
@@ -38,10 +40,11 @@ export function NewOrderForm({ onCreated }) {
 
   const [lines, setLines] = useState([])
   const [instructions, setInstructions] = useState('')
-  // datetime-local value ('YYYY-MM-DDTHH:mm', local time); '' means "as
-  // soon as it's ready", which is the common case and what the server
-  // stores as NULL.
-  const [requestedFulfillmentTime, setRequestedFulfillmentTime] = useState('')
+  // A Manila date and time ('YYYY-MM-DD', 'HH:mm'); both blank means "as
+  // soon as it's ready", the common case, stored as NULL. Today or later,
+  // 5:00 AM to 10:00 PM (lib/orderHours.js).
+  const [neededDate, setNeededDate] = useState('')
+  const [neededTime, setNeededTime] = useState('')
 
   const [errors, setErrors] = useState({})
   const [message, setMessage] = useState('')
@@ -112,7 +115,8 @@ export function NewOrderForm({ onCreated }) {
   const resetDraft = () => {
     setLines([])
     setInstructions('')
-    setRequestedFulfillmentTime('')
+    setNeededDate('')
+    setNeededTime('')
     setCustomerId('')
     setCustomerSearch('')
     setOrderType('PICKUP')
@@ -131,6 +135,11 @@ export function NewOrderForm({ onCreated }) {
       setErrors({ addressId: 'Select a delivery address.' })
       return
     }
+    const timeError = checkPicked(neededDate, neededTime)
+    if (timeError) {
+      setErrors({ requestedFulfillmentTime: timeError })
+      return
+    }
 
     setSubmitting(true)
     try {
@@ -138,9 +147,7 @@ export function NewOrderForm({ onCreated }) {
       if (customerId) body.customerId = customerId
       if (orderType === 'DELIVERY') body.addressId = addressId
       if (instructions.trim()) body.instructions = instructions.trim()
-      // new Date() on a datetime-local value interprets it in the
-      // browser's own zone, which is the zone the cashier typed it in.
-      if (requestedFulfillmentTime) body.requestedFulfillmentTime = new Date(requestedFulfillmentTime).toISOString()
+      if (neededDate) body.requestedFulfillmentTime = toRequestedTime(neededDate, neededTime)
 
       const data = await apiPost('/api/orders', body)
       resetDraft()
@@ -320,10 +327,18 @@ export function NewOrderForm({ onCreated }) {
             {instructions.length}/{instructionsMaxLength}
           </p>
           <div className="mt-3">
-            <Field label="Needed by (optional)" error={errors.requestedFulfillmentTime}>
-              <Input type="datetime-local" value={requestedFulfillmentTime} onChange={(event) => setRequestedFulfillmentTime(event.target.value)} />
-            </Field>
-            <p className="mt-1 text-xs text-ink-500">Leave blank for as soon as it's ready. Up to 30 days ahead.</p>
+            <p className="mb-1 text-xs font-semibold text-ink-700">Needed by</p>
+            <NeededByFields
+              idPrefix="counter-needed"
+              date={neededDate}
+              time={neededTime}
+              onDateChange={(value) => { setNeededDate(value); setErrors({}) }}
+              onTimeChange={(value) => { setNeededTime(value); setErrors({}) }}
+              inputClassName={`h-9 ${FIELD_SHAPE}`}
+              labelClassName="mb-1 block text-xs text-ink-500"
+              helpClassName="mt-1 text-xs text-ink-500"
+            />
+            {errors.requestedFulfillmentTime && <p className="mt-1 text-xs text-red-700">{errors.requestedFulfillmentTime}</p>}
           </div>
         </Card>
       </div>
