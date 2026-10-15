@@ -3,7 +3,6 @@ import { apiPost } from '../api/client.js'
 import { Brand } from './Brand.jsx'
 import { PasswordToggle } from './PasswordToggle.jsx'
 import { passwordHint as describePassword, strongPasswordHint } from '../lib/password.js'
-import { PasswordInput } from './ui/PasswordInput.jsx'
 
 // The registration form itself, lifted out of the old RegistrationPage so
 // it can live inside the auth pop-up — the same move LoginForm already
@@ -107,20 +106,12 @@ export function RegisterForm({ onSwitchToLogin }) {
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label htmlFor="register-password" className="mb-1.5 block text-xs font-bold">Password</label>
-<<<<<<< HEAD
                 <div className="relative"><input id="register-password" type={showPassword ? 'text' : 'password'} value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" className={passwordFieldClass} /><PasswordToggle shown={showPassword} onToggle={() => setShowPassword(!showPassword)} /></div>
-=======
-                <PasswordInput id="register-password" value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" inputClassName={fieldClass} toggleClassName="text-crust-700" />
->>>>>>> 0b9724522cc1de39e707a8e38c9bbb734e9c6131
                 {errors.password && <p className="mt-1 text-xs font-medium text-red-700">{errors.password}</p>}
               </div>
               <div>
                 <label htmlFor="confirm-password" className="mb-1.5 block text-xs font-bold">Confirm password</label>
-<<<<<<< HEAD
                 <div className="relative"><input id="confirm-password" type={showConfirm ? 'text' : 'password'} value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} autoComplete="new-password" className={passwordFieldClass} /><PasswordToggle shown={showConfirm} onToggle={() => setShowConfirm(!showConfirm)} /></div>
-=======
-                <PasswordInput id="confirm-password" value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} autoComplete="new-password" inputClassName={fieldClass} toggleClassName="text-crust-700" />
->>>>>>> 0b9724522cc1de39e707a8e38c9bbb734e9c6131
                 {errors.confirmPassword && <p className="mt-1 text-xs font-medium text-red-700">{errors.confirmPassword}</p>}
               </div>
             </div>
