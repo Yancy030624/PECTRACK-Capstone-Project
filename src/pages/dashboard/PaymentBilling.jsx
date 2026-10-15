@@ -392,7 +392,7 @@ export function PaymentBilling({ user, params, onNavigate }) {
                       <button type="button" onClick={() => openOrder(order.id)} aria-label={`Open order ${orderLabel(order)}`} className={`w-full rounded-control px-3 py-3 text-left transition hover:bg-surface-sunk ${selectedOrderId === order.id ? 'bg-brand-50' : ''}`}>
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="text-sm font-semibold text-ink-900">
-                            Order {orderLabel(order)}
+                            Order {orderLabel(order, { numberOnly: true })}
                             {isStaff && <span className="font-normal text-ink-500"> · {order.customerName ?? 'Walk-in'}</span>}
                           </span>
                           <StatusBadge status={order.status} />
@@ -430,7 +430,7 @@ export function PaymentBilling({ user, params, onNavigate }) {
                               aria-label={`Open order ${orderLabel(order)}`}
                               className="-my-2 inline-flex min-h-9 items-center font-semibold text-ink-900 hover:underline focus-visible:underline"
                             >
-                              {orderLabel(order)}
+                              {orderLabel(order, { numberOnly: true })}
                             </button>
                           </Td>
                           {isStaff && <Td>{order.customerName ?? 'Walk-in'}</Td>}
