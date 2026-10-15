@@ -31,3 +31,9 @@ export const isDeliverable = (address) => address?.municipality?.trim().toLowerC
 export const bakeryAddress = `${bakery.street}, ${bakery.town}`
 export const bakeryMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${bakery.name}, ${bakeryAddress}`)}`
 export const telHref = (phone) => `tel:${phone.replace(/[^\d+]/g, '')}`
+// A text message with its first words already typed (NOTIFICATIONS_PLAN.md,
+// N6). `?body=` is understood by Android and by current iPhones.
+export const smsHref = (phone, body = '') => `sms:${phone.replace(/[^\d+]/g, '')}${body ? `?body=${encodeURIComponent(body)}` : ''}`
+// Two numbers written differently ("0917 123 4567", "09171234567") are the
+// same number when their digits match.
+export const samePhone = (first, second) => Boolean(first && second) && first.replace(/\D/g, '') === second.replace(/\D/g, '')

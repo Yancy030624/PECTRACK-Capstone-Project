@@ -10,6 +10,7 @@ import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
+import { telHref } from '../../lib/bakery.js'
 import { formatPeso } from '../../lib/format.js'
 import { orderLabel } from '../../lib/orderNumber.js'
 import { MyDeliveries } from './MyDeliveries.jsx'
@@ -191,7 +192,7 @@ function StaffDeliveryView({ user, params, onNavigate }) {
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <p className="font-semibold text-ink-900">Order {orderLabel(delivery)} · {delivery.customerName ?? 'Customer'} · <span className="tabular-nums">{formatPeso(delivery.totalAmount)}</span></p>
-                    <p className="mt-1 text-ink-500">{delivery.address.recipientName} · {delivery.address.contactNumber}</p>
+                    <p className="mt-1 text-ink-500">{delivery.address.recipientName} · {delivery.address.contactNumber && <a href={telHref(delivery.address.contactNumber)} className="font-medium text-brand-700 underline underline-offset-2">{delivery.address.contactNumber}</a>}</p>
                     <p className="mt-0.5 text-xs text-ink-500">
                       {delivery.address.addressLine1}{delivery.address.addressLine2 && `, ${delivery.address.addressLine2}`}
                       {delivery.address.barangay && `, ${delivery.address.barangay}`}, {delivery.address.municipality}, {delivery.address.province}

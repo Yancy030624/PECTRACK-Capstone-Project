@@ -398,6 +398,17 @@ describe('delivery management', () => {
     assert.ok(card.items[0].name, 'each item has its product name')
   })
 
+  // NOTIFICATIONS_PLAN.md, N6 — the account holder's number, for when the
+  // recipient does not answer. Never their email: that stays server-side.
+  test("a driver gets the account holder's number, not their email", async () => {
+    const { deliveryId } = await placeDeliveryOrder()
+    await assign(deliveryId, firstDriverId)
+    const mine = await (await fetch(`${baseUrl}/api/deliveries/mine`, { headers: { Cookie: firstDriverCookie } })).json()
+    const card = mine.deliveries.find((delivery) => delivery.id === deliveryId)
+    assert.equal(card.customerContactNumber, customer.contactNumber)
+    assert.ok(!JSON.stringify(card).includes(customer.email), 'no customer email in the API')
+  })
+
   // --- The workflow: ASSIGNED -> OUT_FOR_DELIVERY -> DELIVERED | FAILED --
 
   test('a driver cannot skip ahead — OUT_FOR_DELIVERY from PENDING_ASSIGNMENT (unassigned) is refused', async () => {
