@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiPost } from '../api/client.js'
 import { passwordHint as describePassword, strongPasswordHint } from '../lib/password.js'
+import { PasswordInput } from '../components/ui/PasswordInput.jsx'
 import { AuthShell, authButtonClass, authInputClass } from './AuthShell.jsx'
 
 // Step two of email password recovery — reached only from the link in the
@@ -78,12 +79,12 @@ export function ResetPasswordPage() {
         <form className="mt-6 space-y-3" onSubmit={handleSubmit} noValidate>
           <div>
             <label htmlFor="reset-password" className="mb-1.5 block text-xs font-bold">New password</label>
-            <input id="reset-password" type="password" value={form.newPassword} onChange={(event) => setForm({ ...form, newPassword: event.target.value })} autoComplete="new-password" className={authInputClass} aria-invalid={Boolean(errors.newPassword)} />
+            <PasswordInput id="reset-password" value={form.newPassword} onChange={(event) => setForm({ ...form, newPassword: event.target.value })} autoComplete="new-password" inputClassName={authInputClass} toggleClassName="text-green-800" aria-invalid={Boolean(errors.newPassword)} />
             {errors.newPassword && <p className="mt-1 text-xs font-medium text-red-700">{errors.newPassword}</p>}
           </div>
           <div>
             <label htmlFor="reset-confirm" className="mb-1.5 block text-xs font-bold">Confirm password</label>
-            <input id="reset-confirm" type="password" value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} autoComplete="new-password" className={authInputClass} aria-invalid={Boolean(errors.confirmPassword)} />
+            <PasswordInput id="reset-confirm" value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} autoComplete="new-password" inputClassName={authInputClass} toggleClassName="text-green-800" aria-invalid={Boolean(errors.confirmPassword)} />
             {errors.confirmPassword && <p className="mt-1 text-xs font-medium text-red-700">{errors.confirmPassword}</p>}
           </div>
           <p className={`text-xs ${form.newPassword && passwordHint === strongPasswordHint ? 'text-green-700' : 'text-stone-500'}`}>{passwordHint}</p>

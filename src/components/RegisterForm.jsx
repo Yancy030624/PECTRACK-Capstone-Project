@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { apiPost } from '../api/client.js'
 import { Brand } from './Brand.jsx'
 import { passwordHint as describePassword, strongPasswordHint } from '../lib/password.js'
+import { PasswordInput } from './ui/PasswordInput.jsx'
 
 // The registration form itself, lifted out of the old RegistrationPage so
 // it can live inside the auth pop-up — the same move LoginForm already
@@ -98,12 +99,12 @@ export function RegisterForm({ onSwitchToLogin }) {
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label htmlFor="register-password" className="mb-1.5 block text-xs font-bold">Password</label>
-                <input id="register-password" type="password" value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" className={fieldClass} />
+                <PasswordInput id="register-password" value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" inputClassName={fieldClass} toggleClassName="text-crust-700" />
                 {errors.password && <p className="mt-1 text-xs font-medium text-red-700">{errors.password}</p>}
               </div>
               <div>
                 <label htmlFor="confirm-password" className="mb-1.5 block text-xs font-bold">Confirm password</label>
-                <input id="confirm-password" type="password" value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} autoComplete="new-password" className={fieldClass} />
+                <PasswordInput id="confirm-password" value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} autoComplete="new-password" inputClassName={fieldClass} toggleClassName="text-crust-700" />
                 {errors.confirmPassword && <p className="mt-1 text-xs font-medium text-red-700">{errors.confirmPassword}</p>}
               </div>
             </div>
