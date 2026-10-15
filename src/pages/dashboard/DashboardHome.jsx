@@ -72,6 +72,7 @@ export function DashboardHome({ user, onNavigate }) {
   const tiles = loaded ? [
     {
       label: 'Low stock',
+      goodLabel: 'product stock',
       value: stockCounts.LOW,
       tone: stockCounts.LOW > 0 ? 'attention' : stockCounts.OKAY > 0 ? 'okay' : 'good',
       note: stockCounts.LOW > 0 ? 'At or under the minimum' : 'Well stocked',
@@ -79,6 +80,7 @@ export function DashboardHome({ user, onNavigate }) {
     },
     {
       label: 'Running low',
+      goodLabel: 'product stock',
       value: stockCounts.OKAY,
       tone: stockCounts.OKAY > 0 ? 'okay' : 'good',
       note: stockCounts.OKAY > 0 ? 'Close to the minimum' : 'Nothing close',
@@ -86,6 +88,7 @@ export function DashboardHome({ user, onNavigate }) {
     },
     {
       label: 'Ingredients running low',
+      goodLabel: 'ingredients',
       value: ingredientCounts.LOW + ingredientCounts.OKAY,
       tone: ingredientCounts.LOW > 0 ? 'attention' : ingredientCounts.OKAY > 0 ? 'okay' : 'good',
       note: ingredientCounts.LOW > 0 ? `${ingredientCounts.LOW} at or under the minimum` : ingredientCounts.OKAY > 0 ? 'Close to the minimum' : 'Well stocked',
@@ -93,6 +96,7 @@ export function DashboardHome({ user, onNavigate }) {
     },
     {
       label: 'Orders to prepare',
+      goodLabel: 'orders to prepare',
       value: summary.ordersToPrepare,
       tone: summary.ordersOverdue > 0 ? 'attention' : summary.ordersToPrepare > 0 ? 'okay' : 'good',
       note: summary.ordersOverdue > 0 ? `${summary.ordersOverdue} overdue` : summary.ordersToPrepare > 0 ? 'None overdue' : 'All caught up',
@@ -100,6 +104,7 @@ export function DashboardHome({ user, onNavigate }) {
     },
     {
       label: 'Deliveries to assign',
+      goodLabel: 'deliveries',
       value: summary.deliveriesNeedingAttention,
       tone: summary.deliveriesNeedingAttention > 0 ? 'attention' : 'good',
       note: summary.deliveriesNeedingAttention > 0 ? 'Waiting for a driver' : 'All assigned',
@@ -107,6 +112,7 @@ export function DashboardHome({ user, onNavigate }) {
     },
     isAdmin && {
       label: 'Bulk orders to approve',
+      goodLabel: 'bulk orders',
       value: summary.ordersAwaitingApproval,
       tone: summary.ordersAwaitingApproval > 0 ? 'attention' : 'good',
       note: summary.ordersAwaitingApproval > 0 ? 'Waiting for you' : 'Nothing waiting',
@@ -114,6 +120,7 @@ export function DashboardHome({ user, onNavigate }) {
     },
     {
       label: 'Unpaid balances',
+      goodLabel: 'payments',
       value: formatPeso(summary.outstanding),
       tone: Number(summary.outstanding) > 0 ? 'okay' : 'good',
       note: Number(summary.outstanding) > 0 ? 'Owed on open orders' : 'All paid',
@@ -121,6 +128,7 @@ export function DashboardHome({ user, onNavigate }) {
     },
     summary.likelySellOut && {
       label: 'Likely to sell out',
+      goodLabel: 'the sell-out forecast',
       value: summary.likelySellOut.count,
       tone: summary.likelySellOut.count > 0 ? 'okay' : 'good',
       note: summary.likelySellOut.assumed ? 'By tomorrow · assumed demand' : 'By tomorrow',
@@ -134,6 +142,9 @@ export function DashboardHome({ user, onNavigate }) {
   const toneOrder = { attention: 0, okay: 1 }
   const size = (tile) => (typeof tile.value === 'number' ? tile.value : 1)
   const actionTiles = tiles.filter((tile) => tile.tone !== 'good').sort((a, b) => toneOrder[a.tone] - toneOrder[b.tone] || size(b) - size(a))
+  // The green line names what is fine in a word or two ("ingredients"),
+  // not the tile's label, which reads as a problem ("Ingredients running
+  // low"). Low stock and Running low both mean "product stock".
   const goodTiles = tiles.filter((tile) => tile.tone === 'good')
 
   return (
@@ -178,7 +189,7 @@ export function DashboardHome({ user, onNavigate }) {
       {loaded && goodTiles.length > 0 && (
         <p className="mt-3 flex items-start gap-2 text-sm text-ink-500">
           <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${TONES.good.dot}`} aria-hidden="true" />
-          <span><span className="font-semibold text-ink-700">All good:</span> {goodTiles.map((tile) => tile.label.toLowerCase()).join(', ')}.</span>
+          <span><span className="font-semibold text-ink-700">All good:</span> {[...new Set(goodTiles.map((tile) => tile.goodLabel))].join(', ')}.</span>
         </p>
       )}
 
