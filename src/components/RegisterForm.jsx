@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { apiPost } from '../api/client.js'
 import { Brand } from './Brand.jsx'
+import { PasswordToggle } from './PasswordToggle.jsx'
 import { passwordHint as describePassword, strongPasswordHint } from '../lib/password.js'
 
 // The registration form itself, lifted out of the old RegistrationPage so
@@ -18,6 +19,9 @@ export function RegisterForm({ onSwitchToLogin }) {
   const [message, setMessage] = useState('')
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
+  // Each password field has its own eye button.
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
   // Set once the account exists, so the panel can replace the form with a
   // single obvious next step instead of leaving an empty form under a
   // success line the way the old page did.
@@ -51,6 +55,10 @@ export function RegisterForm({ onSwitchToLogin }) {
   }
 
   const fieldClass = 'w-full rounded-2xl border border-stone-200 bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition focus:border-crust-500 focus:ring-4 focus:ring-cream-200'
+  // Same field with room on the right for the eye button. pl-4 pr-11, not
+  // px-4 plus pr-11: two padding classes on one element are decided by
+  // stylesheet order, not by which is written last.
+  const passwordFieldClass = 'w-full rounded-2xl border border-stone-200 bg-white py-2.5 pl-4 pr-11 text-sm shadow-sm outline-none transition focus:border-crust-500 focus:ring-4 focus:ring-cream-200'
 
   return (
     <div className="bg-[#fffedc] p-5 sm:p-8 md:p-11">
@@ -98,12 +106,12 @@ export function RegisterForm({ onSwitchToLogin }) {
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label htmlFor="register-password" className="mb-1.5 block text-xs font-bold">Password</label>
-                <input id="register-password" type="password" value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" className={fieldClass} />
+                <div className="relative"><input id="register-password" type={showPassword ? 'text' : 'password'} value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" className={passwordFieldClass} /><PasswordToggle shown={showPassword} onToggle={() => setShowPassword(!showPassword)} /></div>
                 {errors.password && <p className="mt-1 text-xs font-medium text-red-700">{errors.password}</p>}
               </div>
               <div>
                 <label htmlFor="confirm-password" className="mb-1.5 block text-xs font-bold">Confirm password</label>
-                <input id="confirm-password" type="password" value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} autoComplete="new-password" className={fieldClass} />
+                <div className="relative"><input id="confirm-password" type={showConfirm ? 'text' : 'password'} value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} autoComplete="new-password" className={passwordFieldClass} /><PasswordToggle shown={showConfirm} onToggle={() => setShowConfirm(!showConfirm)} /></div>
                 {errors.confirmPassword && <p className="mt-1 text-xs font-medium text-red-700">{errors.confirmPassword}</p>}
               </div>
             </div>

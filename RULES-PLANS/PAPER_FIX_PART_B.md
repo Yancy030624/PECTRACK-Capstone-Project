@@ -472,6 +472,7 @@ section…" and ends "…before clicking the "Place Order" button."
 
 **Replace with:**
 > At checkout the customer chooses "Pickup at the bakery" or "Delivery". For delivery, a notice explains that the order is paid in full with GCash before baking starts, and the customer picks one of their saved addresses or adds another. The customer may add special instructions and a requested date and time. The order summary shows the items and the estimated total; there is no delivery fee.
+ITO YUNG LAST KONG PINALTAN(CV)
 
 ### p. 41 — Figure 15.1 description
 

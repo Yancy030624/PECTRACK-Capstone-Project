@@ -48,7 +48,7 @@ For each figure:
 | 13 | `fig-13-payments-cashier.png` | Figure 13. Payment & Billing — recording a payment (cashier) | B7 |
 | 14 | `fig-14-deliveries-admin.png` | Figure 14. Delivery Management (admin and cashier) | B7 |
 | 14.1 | — | **Remove** (proof of delivery is Figure 8) | B7 |
-| 15 | `fig-15-checkout-delivery.png` | Figure 15. Checkout — delivery order (customer) | B7 |
+| 15 | `fig-15-checkout-delivery.png` | Figure 15. Checkout — delivery order (customer) | B7 | 
 | 15.1 | `fig-15.1-checkout-pickup.png` | Figure 15.1 Checkout — pickup order (customer) | B7 |
 | 16 | `fig-16-reports-admin.png` | Figure 16. Reporting & Analytics — Sales (admin) | B9 |
 | 16.1 *(optional, new)* | `fig-16.1-forecast-admin.png` | Figure 16.1 Reporting & Analytics — Forecast | B9, optional |
@@ -69,39 +69,3 @@ The capture script lives outside the repo, in the session scratchpad
 (`browser/figures.mjs`). It signs in the demo accounts by inserting
 sessions directly in the database, so no sign-in codes are emailed. Ask
 Claude to rerun it after the demo data or the design changes.
-
-## Retake of 2026-10-15 (after the client's revisions)
-
-Every screenshot was taken again from the re-seeded demo data after
-revisions R1–R5 (`PAPER_FIX_REVISIONS.md`). Same sizes as before: 1440×900
-for desktop, 390×844 for the delivery personnel's phone.
-
-**Replace these in the paper** (Change Picture, as above). They changed
-because of the revisions:
-
-| Figure | Why it changed |
-|---|---|
-| 2, 2.1 | New Dashboard: "Needs action now", Recent orders, Ingredients tile (R3, R4, R5) |
-| 2.2 | Grouped "Assigned to you" / "To deliver now"; order items on the card (R1, R4) |
-| 5 | Daily order numbers (R4) |
-| 6, 7 | Daily order numbers (R4) |
-| 7.2 | Daily order numbers on Due today (R4) |
-| 8 | Order items on the card; "To deliver now" (R1, R4) |
-| 10.1 | Products / Ingredients tabs; no Expiry column (R3, R5) |
-| 11 | The cashier edits stock directly with a reason; no approval (R1, R3) — new caption above |
-| 12, 13 | Daily order numbers; no "Pay with GCash" for staff (R1, R4) |
-| 14 | Daily order numbers (R4) |
-| 16 | No Refunds card (R2) |
-| 17, 18 | Daily order numbers (R4) |
-
-**New figures** (add only if your team wants them): 2.3 new-order alert,
-11.1 Ingredients (recommended, since the paper now describes the
-ingredient stock), 16.2 the Inventory report with ingredients.
-
-**Unchanged in content:** 1, 1.1, 1.2, 3, 4, 5.1–5.3, 7.1, 9, 10, 15,
-15.1. Some of these files were rewritten with the new demo data (names,
-amounts), but they show nothing that the revisions changed, so the
-pictures already in the paper can stay.
-
-Remember to update the **List of Figures** for the new captions (11) and
-any new figures you add.

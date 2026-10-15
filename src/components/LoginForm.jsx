@@ -2,6 +2,17 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiPost } from '../api/client.js'
 import { Brand } from './Brand.jsx'
+import { PasswordToggle } from './PasswordToggle.jsx'
+
+// Each door wears its own colours, so nobody has to read a label to know
+// which one is open: customer is the storefront's warm crust, staff the
+// logo green. Staff uses leaf-*, not brand-*, because the storefront skin
+// re-points brand-* at crust — which is why the two doors used to look
+// the same.
+const doorTheme = {
+  customer: { panel: 'bg-[#fffedc]', badge: 'bg-butter-300 text-crust-700', heading: 'text-crust-700', link: 'text-crust-600', button: 'bg-crust-600 hover:bg-crust-700', focus: 'focus:border-crust-500 focus:ring-cream-200', accent: 'accent-crust-600' },
+  staff: { panel: 'bg-leaf-50', badge: 'bg-leaf-700 text-white', heading: 'text-leaf-700', link: 'text-leaf-700', button: 'bg-leaf-600 hover:bg-leaf-700', focus: 'focus:border-leaf-600 focus:ring-green-100', accent: 'accent-leaf-600' },
+}
 
 // The credential form itself, extracted so /login (a full page) and the
 // header's sign-in pop-up can share one copy — a bug fixed here is fixed
@@ -22,13 +33,14 @@ import { Brand } from './Brand.jsx'
 // typed still in the fields.
 // `onNavigateAway` lets the shell close itself when a link inside the form
 // leaves for a real page — the pop-up must not float over /forgot-password.
-export function LoginForm({ onLogin, onRegister, onNavigateAway = () => {}, initialMode = 'customer', notice }) {
+export function LoginForm({ mode = 'customer', onModeChange = () => {}, onLogin, onRegister, onNavigateAway = () => {}, notice }) {
   // Which door is open. Defaults to 'customer' — who lands on /login and
   // opens the header pop-up far more often — and /staff-login passes
   // 'staff' instead. Sent to the server as `audience`, which is what makes
-  // these two doors rather than two skins.
-  const [mode, setMode] = useState(initialMode === 'staff' ? 'staff' : 'customer')
+  // these two doors rather than two skins. Owned by AuthModal since
+  // 2026-10-16, so the welcome panel beside this form can match the door.
   const isStaffMode = mode === 'staff'
+  const theme = doorTheme[isStaffMode ? 'staff' : 'customer']
   // Set when the server says the credentials are valid but belong to the
   // other door. Holds the audience to switch to, so the error can carry a
   // button that gets there in one click.
@@ -112,44 +124,64 @@ export function LoginForm({ onLogin, onRegister, onNavigateAway = () => {}, init
   // meaning depends on the door. The stale error goes, because the reason
   // for it (wrong door) is exactly what this button fixes.
   const switchTo = (next) => {
-    setMode(next)
+    onModeChange(next)
     setWrongDoor(null)
     setError('')
   }
-  const toggleMode = () => switchTo(isStaffMode ? 'customer' : 'staff')
+
+  // No text-size class here: the code field is text-lg, and two size
+  // classes on one element are decided by stylesheet order, not by which
+  // is written last.
+  const fieldClass = `w-full rounded-2xl border border-stone-200 bg-white shadow-sm outline-none transition focus:ring-4 ${theme.focus}`
 
   return (
-    <div className="bg-[#fffedc] p-5 sm:p-8 md:min-h-142.5 md:p-12">
+    <div className={`${theme.panel} p-5 transition-colors sm:p-8 md:min-h-142.5 md:p-12`}>
       <div className="md:hidden"><Brand compact /></div>
       {pendingOtp ? (
         <>
-          <div className="mt-6 md:mt-8"><span className="rounded-full bg-butter-300 px-3 py-1.5 text-[10px] font-bold text-crust-700">Verification Required</span><h2 id="login-heading" className="mt-3 text-3xl font-extrabold leading-[1.05] text-crust-700">Enter your<br />code</h2><p className="mt-2 text-xs font-medium text-stone-500">We sent a 6-digit code to the email on file for {pendingOtp.username}. It expires in 5 minutes.</p></div>
+          <div className="mt-6 md:mt-8"><span className={`rounded-full px-3 py-1.5 text-[10px] font-bold ${theme.badge}`}>Verification Required</span><h2 id="login-heading" className={`mt-3 text-3xl font-extrabold leading-[1.05] ${theme.heading}`}>Enter your<br />code</h2><p className="mt-2 text-xs font-medium text-stone-500">We sent a 6-digit code to the email on file for {pendingOtp.username}. It expires in 5 minutes.</p></div>
           <form className="mt-6 space-y-3" onSubmit={handleOtpSubmit} noValidate>
-            <div><label htmlFor="otp-code" className="mb-1.5 block text-xs font-bold">Email verification code</label><input id="otp-code" value={otpCode} onChange={(event) => setOtpCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" placeholder="123456" maxLength={6} className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-2.5 text-center text-lg font-bold tracking-[0.4em] shadow-sm outline-none transition focus:border-crust-500 focus:ring-4 focus:ring-cream-200" /></div>
+            <div><label htmlFor="otp-code" className="mb-1.5 block text-xs font-bold">Email verification code</label><input id="otp-code" value={otpCode} onChange={(event) => setOtpCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" placeholder="123456" maxLength={6} className={`${fieldClass} px-4 py-2.5 text-center text-lg font-bold tracking-[0.4em]`} /></div>
             {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{error}</p>}
-            <button type="submit" className="mt-5 w-full rounded-2xl bg-crust-600 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-crust-700 ">Verify</button>
-            <button type="button" onClick={cancelOtp} className="w-full rounded-2xl bg-white py-2.5 py-2 text-xs font-bold text-crust-700 shadow-md ring-1 ring-stone-100 transition hover:bg-stone-50">Back to login</button>
+            <button type="submit" className={`mt-5 w-full rounded-2xl py-2.5 text-sm font-bold text-white shadow-md transition ${theme.button}`}>Verify</button>
+            <button type="button" onClick={cancelOtp} className={`w-full rounded-2xl bg-white py-2.5 text-xs font-bold shadow-md ring-1 ring-stone-100 transition hover:bg-stone-50 ${theme.heading}`}>Back to login</button>
           </form>
         </>
       ) : (
         <>
+          {/* The door switch, at the top, before anything is typed. It used
+              to be a full-width button under the form, but with both doors
+              in the same colours people still could not tell which one
+              they were at. Now it is a two-way switch showing both doors
+              with the open one filled in that door's colour, and the
+              whole form changes colour with it. */}
+          <div className="mt-6 grid grid-cols-2 gap-1 rounded-2xl bg-white p-1 shadow-sm ring-1 ring-stone-200 md:mt-0" role="group" aria-label="Who is signing in">
+            <button type="button" onClick={() => switchTo('customer')} aria-pressed={!isStaffMode} className={`flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold transition ${isStaffMode ? 'text-stone-500 hover:bg-cream-100 hover:text-crust-700' : 'bg-crust-600 text-white shadow-sm'}`}>
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 10.5 12 4l9 6.5" /><path d="M5 10v9h14v-9" /><path d="M10 19v-5h4v5" /></svg>
+              Customer
+            </button>
+            <button type="button" onClick={() => switchTo('staff')} aria-pressed={isStaffMode} className={`flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold transition ${isStaffMode ? 'bg-leaf-700 text-white shadow-sm' : 'text-stone-500 hover:bg-leaf-50 hover:text-leaf-700'}`}>
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="7" width="16" height="13" rx="2" /><path d="M9 7V5a3 3 0 0 1 6 0v2" /><path d="M9 13h6" /></svg>
+              Staff
+            </button>
+          </div>
           {/* The badge, heading and subtitle all name the door, because a
               door that turns the wrong account away has to say which
               accounts it is for BEFORE the password is typed. */}
-          <div className="mt-6 md:mt-8">
-            <span className={`rounded-full px-3 py-1.5 text-[10px] font-bold ${isStaffMode ? 'bg-brand-700 text-white' : 'bg-butter-300 text-crust-700'}`}>{isStaffMode ? 'Staff Login' : 'Customer Login'}</span>
-            <h2 id="login-heading" className="mt-3 text-3xl font-extrabold leading-[1.05] text-crust-700">{isStaffMode ? <>Staff sign in</> : <>Sign in to your<br />account</>}</h2>
+          <div className="mt-6">
+            <span className={`rounded-full px-3 py-1.5 text-[10px] font-bold ${theme.badge}`}>{isStaffMode ? 'Staff Login' : 'Customer Login'}</span>
+            <h2 id="login-heading" className={`mt-3 text-3xl font-extrabold leading-[1.05] ${theme.heading}`}>{isStaffMode ? <>Staff sign in</> : <>Sign in to your<br />account</>}</h2>
             <p className="mt-2 text-xs font-medium text-stone-500">{isStaffMode ? 'For admin, cashier, and delivery personnel accounts.' : 'For customer accounts. Use your username or email to continue.'}</p>
             {/* Why the pop-up opened on its own — PHASE10 B6. */}
             {notice && <p role="status" className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{notice}</p>}
           </div>
           <form className="mt-6 space-y-3" onSubmit={handleSubmit} noValidate>
-            <div><label htmlFor="username" className="mb-1.5 block text-xs font-bold">Username or Email</label><div className="relative"><svg viewBox="0 0 24 24" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="3" /><path d="M5.5 20c.8-3.3 2.9-5 6.5-5s5.7 1.7 6.5 5" /></svg><input id="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" placeholder="Email" className="w-full rounded-2xl border border-stone-200 bg-white py-2.5 pl-9 pr-3 text-sm shadow-sm outline-none transition focus:border-crust-500 focus:ring-4 focus:ring-cream-200" /></div></div>
-            <div><label htmlFor="password" className="mb-1.5 block text-xs font-bold">Password</label><div className="relative"><svg viewBox="0 0 24 24" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg><input id="password" type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" placeholder="Password" className="w-full rounded-2xl border border-stone-200 bg-white py-2.5 pl-9 pr-14 text-sm shadow-sm outline-none transition focus:border-crust-500 focus:ring-4 focus:ring-cream-200" /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 px-3 py-2 text-xs font-bold text-crust-700">{showPassword ? 'Hide' : 'Show'}</button></div></div>
+            <div><label htmlFor="username" className="mb-1.5 block text-xs font-bold">Username or Email</label><div className="relative"><svg viewBox="0 0 24 24" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="3" /><path d="M5.5 20c.8-3.3 2.9-5 6.5-5s5.7 1.7 6.5 5" /></svg><input id="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" placeholder="Email" className={`${fieldClass} py-2.5 pl-9 pr-3 text-sm`} /></div></div>
+            <div><label htmlFor="password" className="mb-1.5 block text-xs font-bold">Password</label><div className="relative"><svg viewBox="0 0 24 24" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg><input id="password" type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" placeholder="Password" className={`${fieldClass} py-2.5 pl-9 pr-11 text-sm`} /><PasswordToggle shown={showPassword} onToggle={() => setShowPassword(!showPassword)} /></div></div>
             {/* Email password recovery (routes/auth.js /forgot-password)
                 works for every role, so the link is the same in both
                 modes; staff can also still ask an admin. */}
-            <div className="flex items-center justify-between gap-2 py-2 text-xs font-bold"><label className="flex cursor-pointer items-center gap-1.5"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className="h-5 w-5 accent-crust-600" />Remember me</label><Link to="/forgot-password" onClick={onNavigateAway} className="inline-block py-2 text-crust-600 hover:underline">Forgot password?</Link></div>
+            <div className="flex items-center justify-between gap-2 py-2 text-xs font-bold"><label className="flex cursor-pointer items-center gap-1.5"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className={`h-5 w-5 ${theme.accent}`} />Remember me</label><Link to="/forgot-password" onClick={onNavigateAway} className={`inline-block py-2 hover:underline ${theme.link}`}>Forgot password?</Link></div>
             {error && (
               <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
                 {error}
@@ -162,7 +194,7 @@ export function LoginForm({ onLogin, onRegister, onNavigateAway = () => {}, init
                 )}
               </div>
             )}
-            <button type="submit" className="mt-5 w-full rounded-2xl bg-crust-600 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-crust-700 ">Log In</button>
+            <button type="submit" className={`mt-5 w-full rounded-2xl py-2.5 text-sm font-bold text-white shadow-md transition ${theme.button}`}>{isStaffMode ? 'Log In as Staff' : 'Log In'}</button>
             {/* Hidden in staff mode (Decision 2's table) — self-registration
                 only ever creates CUSTOMER accounts (auth.js hard-codes it),
                 so this button could never do anything useful for a cashier
@@ -171,34 +203,9 @@ export function LoginForm({ onLogin, onRegister, onNavigateAway = () => {}, init
               <button type="button" onClick={onRegister} className="w-full rounded-2xl bg-white py-2.5 py-2 text-xs font-bold text-crust-700 shadow-md ring-1 ring-stone-100 transition hover:bg-stone-50">Create account</button>
             )}
           </form>
-          {/* The door switch. It used to be a plain text link, which read
-              as fine print next to two solid buttons — and now that the
-              doors actually turn the wrong account away, a cashier who
-              cannot find it is stuck. It is a full-width control with its
-              own icon, label and sub-label, styled deliberately UNLIKE the
-              two buttons above it (outlined, not filled) so it reads as
-              "somewhere else to go", not as a third thing to submit. */}
-          <button
-            type="button"
-            onClick={toggleMode}
-            className="group mt-4 flex w-full items-center gap-3 rounded-2xl border-2 border-brand-600/30 bg-white/70 px-4 py-3 text-left transition hover:border-brand-600 hover:bg-white hover:shadow-md"
-          >
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-600/10 text-crust-700 transition group-hover:bg-brand-600 group-hover:text-white">
-              {isStaffMode ? (
-                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 10.5 12 4l9 6.5" /><path d="M5 10v9h14v-9" /><path d="M10 19v-5h4v5" /></svg>
-              ) : (
-                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="7" width="16" height="13" rx="2" /><path d="M9 7V5a3 3 0 0 1 6 0v2" /><path d="M9 13h6" /></svg>
-              )}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-extrabold text-crust-700">{isStaffMode ? 'Customer sign in' : 'Staff sign in'}</span>
-              <span className="block text-[11px] font-medium text-stone-500">{isStaffMode ? 'Shopping as a customer? Sign in here.' : 'Admin, cashier, and delivery personnel'}</span>
-            </span>
-            <span aria-hidden="true" className="shrink-0 text-lg font-bold text-brand-600 transition group-hover:translate-x-0.5">→</span>
-          </button>
         </>
       )}
-      <div className="mt-7 border-t border-stone-200 pt-4 text-center text-xs text-stone-500">Need help? Contact <a href="mailto:hello@pectrack.example" className="font-bold text-crust-600 hover:underline">Pectos Bakery Lucban Quezon</a></div>
+      <div className="mt-7 border-t border-stone-200 pt-4 text-center text-xs text-stone-500">Need help? Contact <a href="mailto:hello@pectrack.example" className={`font-bold hover:underline ${theme.link}`}>Pectos Bakery Lucban Quezon</a></div>
     </div>
   )
 }
