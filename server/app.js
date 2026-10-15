@@ -15,6 +15,7 @@ import forecastsRouter from './routes/forecasts.js'
 import settingsRouter from './routes/settings.js'
 import ingredientsRouter from './routes/ingredients.js'
 import inventoryRouter from './routes/inventory.js'
+import notificationsRouter from './routes/notifications.js'
 import ordersRouter from './routes/orders.js'
 import paymentsRouter from './routes/payments.js'
 import productionRouter from './routes/production.js'
@@ -107,6 +108,7 @@ app.use('/api/production', productionRouter)
 app.use('/api/orders', ordersRouter)
 app.use('/api/payments', paymentsRouter)
 app.use('/api/deliveries', deliveriesRouter)
+app.use('/api/notifications', notificationsRouter)
 app.use('/api/reports', reportsRouter)
 app.use('/api/forecasts', forecastsRouter)
 app.use('/api/settings', settingsRouter)

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNotificationRefresh } from '../../lib/useNotificationRefresh.js'
 import { apiGet, apiPatch, apiUpload } from '../../api/client.js'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Button } from '../../components/ui/Button.jsx'
@@ -51,8 +52,10 @@ export function MyDeliveries({ user }) {
   const [proofFiles, setProofFiles] = useState({})
   const [tab, setTab] = useState('Assigned')
 
-  const loadDeliveries = async () => {
-    setLoading(true)
+  // `quiet` reloads without the loading rows, for the refresh the bell
+  // asks for while the driver is looking at the list.
+  const loadDeliveries = async ({ quiet = false } = {}) => {
+    if (!quiet) setLoading(true)
     try {
       const data = await apiGet('/api/deliveries/mine')
       setDeliveries(data.deliveries)
@@ -67,6 +70,7 @@ export function MyDeliveries({ user }) {
   useEffect(() => {
     loadDeliveries()
   }, [])
+  useNotificationRefresh(() => loadDeliveries({ quiet: true }))
 
   const setStatus = async (deliveryId, status, note) => {
     // Failing a delivery is the one driver action that cannot be walked

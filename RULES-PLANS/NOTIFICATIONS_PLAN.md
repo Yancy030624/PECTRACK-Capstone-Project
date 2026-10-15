@@ -409,3 +409,22 @@ and the completed order appear together when you test N3. Run the full
 backend suite, lint, and build after each phase, then commit.
 After N6, test once on the live site with two phones (driver and
 customer), the way the classmate test was done.
+
+---
+
+## Implementation notes (2026-10-15, built by Opus)
+
+- **N3, wording on the client, not the server.** The plan had the server
+  build `title` and `body`. The feed returns the facts instead (order
+  number and day, customer, amounts, who acted, recipient, barangay, the
+  driver's latest note), and `NotificationBell.jsx` words them. Reason:
+  the screen's `orderLabel` shows "#7" today and "#7 · Oct 15" on other
+  days, and `formatPeso` formats money; doing that on the server would
+  have been a second copy of both.
+- **N3, a 7-day window.** Nothing older than 7 days is in the feed,
+  whatever `since` says, so the 20-second poll never reads the whole
+  history.
+- **N3, delivery failed because the order was cancelled** is left out of
+  the feed; the cancellation already says it.
+- **N3, a payment arriving for a cancelled order** says so in the bell
+  ("the order was cancelled; settle it with the customer").

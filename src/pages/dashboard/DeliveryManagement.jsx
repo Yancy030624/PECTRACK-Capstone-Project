@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNotificationRefresh } from '../../lib/useNotificationRefresh.js'
 import { apiGet, apiPatch } from '../../api/client.js'
 import { FocusHeader } from '../../components/ui/FocusHeader.jsx'
 import { Alert } from '../../components/ui/Alert.jsx'
@@ -60,8 +61,10 @@ function StaffDeliveryView({ user, params, onNavigate }) {
 
   const visibleDeliveries = toAssignOnly ? deliveries.filter(waitingForDriver) : deliveries
 
-  const loadDeliveries = async () => {
-    setLoading(true)
+  // `quiet` reloads without the loading rows, for the refresh the bell
+  // asks for when a delivery moves.
+  const loadDeliveries = async ({ quiet = false } = {}) => {
+    if (!quiet) setLoading(true)
     try {
       const data = await apiGet(`/api/deliveries${statusFilter ? `?status=${statusFilter}` : ''}`)
       setDeliveries(data.deliveries)
@@ -77,6 +80,7 @@ function StaffDeliveryView({ user, params, onNavigate }) {
     loadDeliveries()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter])
+  useNotificationRefresh(() => loadDeliveries({ quiet: true }))
 
   useEffect(() => {
     apiGet('/api/deliveries/personnel').then((data) => setPersonnel(data.personnel)).catch((error) => setMessage(error.message))
