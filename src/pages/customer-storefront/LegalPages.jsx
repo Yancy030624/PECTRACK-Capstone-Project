@@ -163,7 +163,6 @@ const termsSections = [
         'Prices are in Philippine pesos and are the prices shown when you place the order.',
         'An order is accepted only if the products are in stock and not past their date; the menu shows only what is available.',
         'You may ask for a date and time up to 30 days ahead. We bake to have it ready by then.',
-        'Large orders (above the number of items the bakery sets, currently 100) are reviewed by the bakery before they are confirmed. You can pay once the bakery approves the order.',
         'Once placed, the items in an order cannot be changed. An unpaid order can be cancelled and placed again.',
       ]} />
     ),

@@ -12,7 +12,6 @@ import categoriesRouter from './routes/categories.js'
 import customersRouter from './routes/customers.js'
 import deliveriesRouter from './routes/deliveries.js'
 import forecastsRouter from './routes/forecasts.js'
-import settingsRouter from './routes/settings.js'
 import ingredientsRouter from './routes/ingredients.js'
 import inventoryRouter from './routes/inventory.js'
 import notificationsRouter from './routes/notifications.js'
@@ -111,7 +110,6 @@ app.use('/api/deliveries', deliveriesRouter)
 app.use('/api/notifications', notificationsRouter)
 app.use('/api/reports', reportsRouter)
 app.use('/api/forecasts', forecastsRouter)
-app.use('/api/settings', settingsRouter)
 
 // An /api path no route answered: JSON, like every other API reply — not
 // Express's HTML error page, and never the website's index.html.

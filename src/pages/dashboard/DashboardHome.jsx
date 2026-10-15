@@ -63,7 +63,6 @@ export function DashboardHome({ user, onNavigate }) {
 
   // Only link to a module the signed-in role can open.
   const allowed = new Set(modules.filter((module) => module.roles.includes(user.role)).map((module) => module.name))
-  const isAdmin = user.role === 'ADMIN'
   const loaded = summary && inventory
 
   const stockCounts = { GOOD: 0, OKAY: 0, LOW: 0 }
@@ -116,14 +115,6 @@ export function DashboardHome({ user, onNavigate }) {
       tone: summary.deliveriesNeedingAttention > 0 ? 'attention' : 'good',
       note: summary.deliveriesNeedingAttention > 0 ? 'Waiting for a driver' : 'All assigned',
       to: ['Delivery Management', { focus: 'toAssign' }],
-    },
-    isAdmin && {
-      label: 'Bulk orders to approve',
-      goodLabel: 'bulk orders',
-      value: summary.ordersAwaitingApproval,
-      tone: summary.ordersAwaitingApproval > 0 ? 'attention' : 'good',
-      note: summary.ordersAwaitingApproval > 0 ? 'Waiting for you' : 'Nothing waiting',
-      to: ['Order Management'],
     },
     {
       label: 'Unpaid balances',

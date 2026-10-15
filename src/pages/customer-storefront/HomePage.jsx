@@ -130,7 +130,7 @@ export function HomePage() {
           <ServiceCard icon="pickup" title="Pickup" text={`Order online and collect at ${bakery.street} — ready when you said.`} />
           <ServiceCard icon="delivery" title="Delivery" text="We bring it to your door anywhere within Lucban." />
           <ServiceCard icon="clock" title="Order ahead" text="Pick a time up to 30 days ahead for breakfasts, meetings and merienda." />
-          <ServiceCard icon="bulk" title="Big orders" text="Fiestas, pasalubong and parties — large orders are reviewed and confirmed by the bakery." />
+          <ServiceCard icon="bulk" title="Big orders" text="Fiestas, pasalubong and parties — order ahead and choose the day and time you need it." />
         </div>
       </section>
 
@@ -162,7 +162,7 @@ export function HomePage() {
           <div className="max-w-xl px-6 py-14 sm:px-12 sm:py-20">
             <Eyebrow className="text-butter-300">Fiestas &amp; pasalubong</Eyebrow>
             <h2 className="mt-4 font-display text-4xl font-bold leading-tight sm:text-5xl">Planning a fiesta or a big merienda?</h2>
-            <p className="mt-4 text-lg leading-8 text-cream-200">Order by the tray or the gallon tin. Large orders are checked by the bakery first, so we can promise they will be ready on time.</p>
+            <p className="mt-4 text-lg leading-8 text-cream-200">Order by the tray or the gallon tin, up to 30 days ahead, and pick the day and time you need it ready.</p>
             <div className="mt-8 flex flex-wrap gap-3">
               {isCustomer
                 ? <Link to="/menu" className="inline-flex min-h-12 items-center rounded-full bg-butter-400 px-7 text-base font-bold text-cocoa-900 transition hover:bg-butter-300">Start an order</Link>

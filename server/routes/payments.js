@@ -28,8 +28,6 @@ import { dateRangeSql, parseDateRange } from '../lib/reporting.js'
 import { normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
-// PHASE10 D3 — a bulk order takes no payment until an admin approves it.
-const bulkAwaitingMessage = "This bulk order is waiting for an admin's approval — payment opens once it is approved."
 
 // Decision 4 — validated in code, not a new enum. payments.payment_method
 // is VARCHAR(50) in the approved thesis schema; a Set here guarantees the
@@ -403,17 +401,11 @@ router.post('/', requireRole('CASHIER', 'ADMIN'), async (request, response) => {
     // Without this, two cashiers recording payment for the same order at
     // the same moment could both read "nothing paid yet" and both insert,
     // together exceeding the total with no record of why.
-    const orderResult = await client.query('SELECT order_id, status, requires_admin_approval FROM orders WHERE order_id = $1 FOR UPDATE', [orderId])
+    const orderResult = await client.query('SELECT order_id, status FROM orders WHERE order_id = $1 FOR UPDATE', [orderId])
     const order = orderResult.rows[0]
     if (!order) {
       await client.query('ROLLBACK')
       return response.status(404).json({ message: 'Order not found.' })
-    }
-    // PHASE10 D3 — no money is taken for a bulk order the bakery has not
-    // agreed to make yet.
-    if (order.requires_admin_approval && order.status === 'PLACED') {
-      await client.query('ROLLBACK')
-      return response.status(409).json({ message: bulkAwaitingMessage })
     }
     // A cancelled order's balance_due is not necessarily zero — an order
     // cancelled while still unpaid keeps its full total_amount as
@@ -547,9 +539,8 @@ router.post('/intent', requireRole('CUSTOMER'), async (request, response) => {
   // pass exists to give a fast, specific error for the ordinary cases
   // WITHOUT paying for a checkout session first — not to be the authority
   // on any of them.
-  const preflight = await pool.query('SELECT status, requires_admin_approval, daily_number, order_day FROM orders WHERE order_id = $1', [orderId])
+  const preflight = await pool.query('SELECT status, daily_number, order_day FROM orders WHERE order_id = $1', [orderId])
   if (!preflight.rows[0]) return response.status(404).json({ message: 'Order not found.' })
-  if (preflight.rows[0].requires_admin_approval && preflight.rows[0].status === 'PLACED') return response.status(409).json({ message: bulkAwaitingMessage })
   if (preflight.rows[0].status === 'CANCELLED') {
     return response.status(409).json({ message: 'This order was cancelled — a payment cannot be recorded against it.' })
   }
@@ -616,17 +607,11 @@ router.post('/intent', requireRole('CUSTOMER'), async (request, response) => {
     // have cancelled the order, or another intent could have been created.
     // Phase 1 answers "is this worth trying"; this answers "is it still
     // true", and only this one holds the lock that makes the answer stick.
-    const orderResult = await client.query('SELECT order_id, status, requires_admin_approval FROM orders WHERE order_id = $1 FOR UPDATE', [orderId])
+    const orderResult = await client.query('SELECT order_id, status FROM orders WHERE order_id = $1 FOR UPDATE', [orderId])
     const order = orderResult.rows[0]
     if (!order) {
       await client.query('ROLLBACK')
       return response.status(404).json({ message: 'Order not found.' })
-    }
-    // PHASE10 D3 — no money is taken for a bulk order the bakery has not
-    // agreed to make yet.
-    if (order.requires_admin_approval && order.status === 'PLACED') {
-      await client.query('ROLLBACK')
-      return response.status(409).json({ message: bulkAwaitingMessage })
     }
     if (order.status === 'CANCELLED') {
       await client.query('ROLLBACK')

@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNotificationRefresh } from '../../lib/useNotificationRefresh.js'
 import { Link } from 'react-router-dom'
-import { apiGet, apiPatch, apiPost } from '../../api/client.js'
+import { apiGet, apiPatch } from '../../api/client.js'
 import { Modal } from '../../components/Modal.jsx'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Button } from '../../components/ui/Button.jsx'
@@ -39,17 +39,14 @@ const allStatuses = ['PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP',
 const openStatuses = new Set(['PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP', 'OUT_FOR_DELIVERY'])
 const customerCancelReasons = ['Ordered by mistake', 'Changed my mind', 'Need to change the items', 'Pickup or delivery time no longer works', 'Other reason']
 
-// PHASE10 D3 — a bulk order moves past PLACED only by an admin's
-// approval; anyone else can only cancel (reject) it.
 // NO_COD_PLAN — a delivery order moves forward only once fully paid; the
 // server refuses it anyway, this just doesn't offer what would fail.
 const awaitingDeliveryPayment = (order) => order.orderType === 'DELIVERY' && order.payment && !order.payment.isFullyPaid
 // No refunds (CLIENT_REVISIONS_PLAN.md, R2): an order with any payment
 // cannot be cancelled, so Cancel is not offered for one.
 const hasPaid = (order) => Number(order.payment?.amountPaid ?? 0) > 0
-function nextStatusOptions(order, role) {
+function nextStatusOptions(order) {
   const cancel = hasPaid(order) ? [] : ['CANCELLED']
-  if (order.awaitingApproval && role !== 'ADMIN') return cancel
   if (awaitingDeliveryPayment(order)) return cancel
   const forward = Object.keys(statusRank).filter((status) => statusRank[status] > statusRank[order.status])
   return forward
@@ -58,45 +55,6 @@ function nextStatusOptions(order, role) {
     .concat(cancel)
 }
 const humanize = (status) => status.replaceAll('_', ' ')
-const itemCount = (order) => order.items.reduce((sum, item) => sum + item.quantity, 0)
-
-function ApprovalPill() {
-  return <span className="rounded-full bg-status-wait-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-wait-fg">Needs approval</span>
-}
-
-// Admin only — the item count above which an order needs approval.
-function BulkThresholdSetting() {
-  const [value, setValue] = useState('')
-  const [saved, setSaved] = useState(null)
-  const [error, setError] = useState('')
-  const [saving, setSaving] = useState(false)
-  useEffect(() => {
-    apiGet('/api/settings').then((data) => { setValue(String(data.settings.bulkOrderThreshold)); setSaved(data.settings.bulkOrderThreshold) }).catch(() => {})
-  }, [])
-  const save = async (event) => {
-    event.preventDefault()
-    setSaving(true)
-    setError('')
-    try {
-      const data = await apiPatch('/api/settings', { bulkOrderThreshold: value })
-      setSaved(data.settings.bulkOrderThreshold)
-    } catch (caught) {
-      setError(caught.errors?.bulkOrderThreshold ?? caught.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-  if (saved == null) return null
-  return (
-    <form onSubmit={save} className="flex flex-wrap items-center gap-2 text-sm text-ink-700">
-      <span>Orders over</span>
-      <div className="w-24"><Input value={value} onChange={(event) => setValue(event.target.value)} inputMode="numeric" aria-label="Bulk order threshold, in items" /></div>
-      <span>items need an admin&apos;s approval.</span>
-      <Button type="submit" size="sm" variant="secondary" disabled={saving || value === String(saved)}>{saving ? 'Saving…' : 'Save'}</Button>
-      {error && <span className="w-full text-xs text-status-fail-fg">{error}</span>}
-    </form>
-  )
-}
 
 export function OrderManagement({ user, params, onNavigate }) {
   return user.role === 'ADMIN' || user.role === 'CASHIER' ? <StaffOrderManagement user={user} params={params} /> : <CustomerOrders user={user} onNavigate={onNavigate} />
@@ -132,7 +90,7 @@ function OrderCardList({ orders, selectedOrderId, onOpen, showCustomer }) {
                 Order {orderLabel(order, { numberOnly: true })}
                 {showCustomer && <span className="font-normal text-ink-500"> · {order.customerName ?? 'Walk-in'}</span>}
               </span>
-              <span className="flex items-center gap-1.5">{order.awaitingApproval && <ApprovalPill />}<StatusBadge status={order.status} /></span>
+              <StatusBadge status={order.status} />
             </div>
             <div className="mt-1 flex items-center justify-between text-xs text-ink-500">
               <span>
@@ -185,7 +143,6 @@ function DeliveryProgress({ delivery }) {
 // the Dashboard's Recent orders (CLIENT_REVISIONS_PLAN.md, R4).
 function StaffOrderManagement({ user, params }) {
   const isCashier = user.role === 'CASHIER'
-  const isAdmin = user.role === 'ADMIN'
   const [activeTab, setActiveTab] = useState('Orders')
 
   const [orders, setOrders] = useState([])
@@ -277,32 +234,6 @@ function StaffOrderManagement({ user, params }) {
       setStatusSubmitting(false)
     }
   }
-  // PHASE10 D3 — approving a bulk order is confirming it, by an admin.
-  // An unpaid DELIVERY order cannot be confirmed (NO_COD_PLAN), so for one
-  // the admin approves only: payment opens, and it is confirmed once paid.
-  const approveBulkOrder = async () => {
-    const approveOnly = awaitingDeliveryPayment(orderDetail)
-    if (!window.confirm(approveOnly
-      ? `Approve bulk order ${orderLabel(orderDetail)}? Payment opens; it is confirmed once fully paid.`
-      : `Approve bulk order ${orderLabel(orderDetail)}? It is confirmed and payment opens.`)) return
-    setStatusSubmitting(true)
-    setMessage('')
-    try {
-      if (approveOnly) {
-        const data = await apiPost(`/api/orders/${selectedOrderId}/approve`, {})
-        setNotice(data.message)
-      } else {
-        await apiPatch(`/api/orders/${selectedOrderId}`, { status: 'CONFIRMED', note: 'Bulk order approved.' })
-        setNotice(`Bulk order ${orderLabel(orderDetail)} approved and confirmed.`)
-      }
-      await openOrder(selectedOrderId)
-      await loadOrders()
-    } catch (error) {
-      setMessage(error.message)
-    } finally {
-      setStatusSubmitting(false)
-    }
-  }
   const handleOrderCreated = async (orderId) => {
     setActiveTab('Orders')
     setStatusFilter('OPEN')
@@ -337,19 +268,7 @@ function StaffOrderManagement({ user, params }) {
           </div>
           <DeliveryProgress delivery={orderDetail.delivery} />
 
-          {orderDetail.awaitingApproval && (
-            <div className="rounded-panel border border-line-200 bg-status-wait-bg p-3 text-sm">
-              <p className="font-semibold text-status-wait-fg">Bulk order — needs an admin&apos;s approval</p>
-              <p className="mt-1 text-xs text-ink-700">{itemCount(orderDetail)} items. It cannot be confirmed or paid until an admin approves it. To turn it down, cancel it with a reason; its stock goes back on the shelf.</p>
-              {isAdmin && (
-                <Button type="button" size="sm" className="mt-2" onClick={approveBulkOrder} disabled={statusSubmitting}>
-                  {statusSubmitting ? 'Approving…' : awaitingDeliveryPayment(orderDetail) ? 'Approve' : 'Approve and confirm'}
-                </Button>
-              )}
-            </div>
-          )}
-
-          {!orderDetail.awaitingApproval && orderDetail.status === 'PLACED' && awaitingDeliveryPayment(orderDetail) && (
+          {orderDetail.status === 'PLACED' && awaitingDeliveryPayment(orderDetail) && (
             <div className="rounded-panel border border-line-200 bg-status-wait-bg p-3 text-sm">
               <p className="font-semibold text-status-wait-fg">Not paid yet — don&apos;t bake it</p>
               <p className="mt-1 text-xs text-ink-700">Delivery orders are confirmed only once fully paid: the customer pays with GCash online, or pays at the counter in Payment &amp; Billing. There is no cash on delivery.</p>
@@ -376,7 +295,7 @@ function StaffOrderManagement({ user, params }) {
               <Field label="Update status" help={orderDetail.orderType === 'DELIVERY' ? 'Out for delivery is set from Delivery Management. Completed needs the delivery marked delivered and the order fully paid.' : undefined}>
                 <Select value={statusChoice} onChange={(event) => setStatusChoice(event.target.value)}>
                   <option value="">Select a new status</option>
-                  {nextStatusOptions(orderDetail, user.role).map((status) => (
+                  {nextStatusOptions(orderDetail).map((status) => (
                     <option key={status} value={status}>
                       {humanize(status)}
                     </option>
@@ -423,12 +342,6 @@ function StaffOrderManagement({ user, params }) {
             </Button>
           ))}
         </div>
-      )}
-
-      {isAdmin && (
-        <Card className="mt-6 px-5 py-3">
-          <BulkThresholdSetting />
-        </Card>
       )}
 
       {message && (
@@ -498,7 +411,7 @@ function StaffOrderManagement({ user, params }) {
                         <Td priority="xl">{order.requestedFulfillmentTime ? formatDateTime(order.requestedFulfillmentTime) : <span className="text-ink-500">—</span>}</Td>
                         <Td numeric>{formatPeso(order.totalAmount)}</Td>
                         <Td>
-                          <span className="flex flex-wrap items-center gap-1.5"><StatusBadge status={order.status} />{order.awaitingApproval && <ApprovalPill />}</span>
+                          <StatusBadge status={order.status} />
                         </Td>
                       </Tr>
                     ))}
@@ -604,14 +517,9 @@ function CustomerOrders({ user, onNavigate }) {
             <p className="text-xs text-ink-500">
               <strong className="text-ink-900">Order {orderLabel(orderDetail)}</strong> · {orderDetail.orderType} · placed {formatDate(orderDetail.orderDate)}
             </p>
-            <span className="flex items-center gap-1.5">{orderDetail.awaitingApproval && <ApprovalPill />}<StatusBadge status={orderDetail.status} /></span>
+            <StatusBadge status={orderDetail.status} />
           </div>
-          {orderDetail.awaitingApproval && (
-            <p className="rounded-panel bg-status-wait-bg p-3 text-xs text-status-wait-fg">
-              This is a large order ({itemCount(orderDetail)} items), so the bakery reviews it before confirming. You can pay once it is approved.
-            </p>
-          )}
-          {!orderDetail.awaitingApproval && orderDetail.status === 'PLACED' && awaitingDeliveryPayment(orderDetail) && (
+          {orderDetail.status === 'PLACED' && awaitingDeliveryPayment(orderDetail) && (
             <p className="rounded-panel bg-status-wait-bg p-3 text-xs text-status-wait-fg">
               Waiting for payment — we start baking your order once it is paid in full. Delivery orders are paid ahead; there is no cash on delivery.
             </p>
@@ -635,7 +543,7 @@ function CustomerOrders({ user, onNavigate }) {
               ) : (
                 <>
                   <span>Balance due: <span className="font-semibold text-ink-900">{formatPeso(orderDetail.payment.balanceDue)}</span></span>
-                  {onNavigate && !orderDetail.awaitingApproval && <Button type="button" size="sm" onClick={() => onNavigate('My Payments')}>Pay now</Button>}
+                  {onNavigate && <Button type="button" size="sm" onClick={() => onNavigate('My Payments')}>Pay now</Button>}
                 </>
               )}
             </div>

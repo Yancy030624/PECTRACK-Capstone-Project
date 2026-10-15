@@ -492,3 +492,53 @@ The adviser asked for the Create Account form to ask for a **first name and a la
 
 ### Figures to retake after A1
 1.1 (the registration page), 5.1 (My Profile, customer), and the ERD if it lists the CUSTOMER attributes.
+
+---
+
+## Adviser revision A2 — no admin approval for large orders (2026-10-16)
+
+The adviser asked to remove the "Orders over [100] items need an admin's approval" setting. It was the only thing that ever made an order wait for approval, so the whole bulk-order approval step is gone (migration 027): a large order is an ordinary order that staff confirm and that can be paid at once. The "Bulk orders to approve" Dashboard tile is gone too. The Background's interview passage about orders over 100 items describes the bakery's problem, not the system, and stays.
+
+### 1. Purpose and Description, Order Management Module
+
+**Find:**
+> The system supports advance ordering, bulk order requests requiring administrator approval, and order tracking to streamline bakery operations. A bulk order must first be approved by the administrator before it can be paid, and a bulk delivery order is confirmed only once it is paid in full.
+
+**Replace with:**
+> The system supports advance ordering, including large orders for fiestas and events, and order tracking to streamline bakery operations. A delivery order is confirmed only once it is paid in full.
+
+### 2. Figure 2 / 2.1 description, the Dashboard tiles (on top of R4 fix 3)
+
+**Find:**
+> Deliveries to assign, Bulk orders to approve (admin only), Unpaid balances,
+
+**Replace with:**
+> Deliveries to assign, Unpaid balances,
+
+### 3. Figure 6 description, Order Management (admin)
+
+**Find:**
+> At the top, the admin sets the item count above which an order counts as a bulk order and needs the admin's approval.
+
+**Delete this sentence.**
+
+### 4. Use case description, the Admin paragraph
+
+**Find** (the revised PDF's wording):
+> managing products, approving stock changes and bulk orders, generating reports,
+
+**Replace with:**
+> managing products, generating reports,
+
+(If your team already applied R1's wording "…managing products, approving bulk orders, generating reports…", replace that with the same text. The cashier now changes stock directly, R1.)
+
+### 5. Objectives / Scope
+
+If any objective or scope item still promises "bulk order requests requiring administrator approval", remove that phrase the same way as fix 1.
+
+### 6. Database chapter
+
+**No change** unless your ERD shows `RequiresAdminApproval` on ORDER or an APP_SETTINGS table; if it does, remove them.
+
+### Figures to retake after A2
+2 / 2.1 (if the Bulk orders tile shows), and 6 (Order Management, admin — the setting row is gone).
