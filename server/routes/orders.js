@@ -200,10 +200,11 @@ router.get('/:id', async (request, response) => {
   const payment = await getBillingSummary(pool, order.order_id)
 
   // PHASE 7, DECISION 2 — deliveries.status is where a delivery order's
-  // progress actually lives, and orders.status stops at OUT_FOR_DELIVERY
-  // (DELIVERED never syncs, Decision 4). Without this a customer's own
-  // order looked in transit until staff marked it COMPLETED, and the
-  // /api/deliveries router does not admit customers at all. Read-only,
+  // progress actually lives. DELIVERED completes a paid order
+  // (NOTIFICATIONS_PLAN.md, N2), but an unpaid one from old data stays
+  // OUT_FOR_DELIVERY, and a FAILED delivery never moves the order. The
+  // /api/deliveries router does not admit customers at all, so this is
+  // how they see it. Read-only,
   // and only the fields a customer or cashier needs to answer "where is
   // it": no address (they know it), no note (the driver's own log).
   const deliveryResult = order.order_type === 'DELIVERY'

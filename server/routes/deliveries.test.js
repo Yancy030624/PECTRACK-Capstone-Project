@@ -428,11 +428,10 @@ describe('delivery management', () => {
     assert.equal(rows[0].status, 'ASSIGNED', 'the wrong driver\'s attempt must not have moved it')
   })
 
-  // Pattern F — the only sync Phase 7 performs. Decision 4 — DELIVERED
-  // deliberately does NOT touch orders.status; this is the test that would
-  // look wrong without the plan open, so both directions are asserted
-  // explicitly in one place.
-  test('OUT_FOR_DELIVERY syncs orders.status; DELIVERED deliberately does not (Decision 4)', async () => {
+  // Pattern F — the order follows its delivery. OUT_FOR_DELIVERY always
+  // syncs; DELIVERED completes the order when it is fully paid
+  // (NOTIFICATIONS_PLAN.md, N2, replacing PHASE7 Decision 4 for DELIVERED).
+  test('OUT_FOR_DELIVERY syncs orders.status; DELIVERED completes a paid order', async () => {
     const { orderId, deliveryId } = await placeDeliveryOrder()
     await assign(deliveryId, firstDriverId)
 
@@ -448,9 +447,31 @@ describe('delivery management', () => {
     const deliveredBody = await delivered.json()
     assert.equal(deliveredBody.delivery.status, 'DELIVERED')
     assert.ok(deliveredBody.delivery.deliveredAt)
+    assert.equal(deliveredBody.delivery.orderStatus, 'COMPLETED')
 
     const afterDelivered = await pool.query('SELECT status FROM orders WHERE order_id = $1', [orderId])
-    assert.equal(afterDelivered.rows[0].status, 'OUT_FOR_DELIVERY', 'DELIVERED must NOT touch orders.status — Decision 4')
+    assert.equal(afterDelivered.rows[0].status, 'COMPLETED', 'a paid order is done once it is delivered')
+    const completedHistory = await pool.query(
+      `SELECT h.note FROM order_status_history h JOIN delivery_personnel dp ON dp.user_id = h.updated_by
+        WHERE h.order_id = $1 AND h.status = 'COMPLETED' AND dp.delivery_personnel_id = $2`,
+      [orderId, firstDriverId],
+    )
+    assert.equal(completedHistory.rows.length, 1, 'one COMPLETED history row, written by the driver')
+  })
+
+  test('DELIVERED leaves an unpaid order (old data) OUT_FOR_DELIVERY for staff to settle', async () => {
+    const { orderId, deliveryId } = await placeDeliveryOrder({ confirm: false })
+    // Assignment refuses an unpaid order, so put it on the road directly:
+    // the state only data from before NO_COD_PLAN can be in.
+    await pool.query(`UPDATE orders SET status = 'OUT_FOR_DELIVERY' WHERE order_id = $1`, [orderId])
+    await pool.query(
+      `UPDATE deliveries SET status = 'OUT_FOR_DELIVERY', delivery_personnel_id = $2, assigned_at = CURRENT_TIMESTAMP WHERE delivery_id = $1`,
+      [deliveryId, firstDriverId],
+    )
+
+    assert.equal((await setStatus(deliveryId, 'DELIVERED', firstDriverCookie)).status, 200)
+    const after = await pool.query('SELECT status FROM orders WHERE order_id = $1', [orderId])
+    assert.equal(after.rows[0].status, 'OUT_FOR_DELIVERY')
   })
 
   test('OUT_FOR_DELIVERY can also end in FAILED, and orders.status stays untouched by that transition too', async () => {

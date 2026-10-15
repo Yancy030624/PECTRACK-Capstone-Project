@@ -2,11 +2,10 @@
 // delivery — Phase 7 (see PHASE7_PLAN.md). Mounted at /api/deliveries.
 //
 // deliveries.status is the SOURCE OF TRUTH for a delivery order's progress
-// (Decision 2); orders.status is synced FROM it, one direction only, and
-// only for the OUT_FOR_DELIVERY transition (Pattern F) — never
-// independently written by anything in this file's sibling,
-// routes/orders.js. DELIVERED and FAILED deliberately do not touch
-// orders.status (Decision 4).
+// (Decision 2); orders.status is synced FROM it, one direction only
+// (Pattern F): OUT_FOR_DELIVERY, and DELIVERED on a fully paid order, which
+// completes it (NOTIFICATIONS_PLAN.md, N2 — this replaces Decision 4 for
+// DELIVERED). FAILED never touches orders.status.
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
@@ -448,12 +447,9 @@ router.patch('/:id/status', async (request, response) => {
       return response.status(409).json({ message: 'This delivery is no longer in a state that allows that change — reload it and try again.' })
     }
 
-    // PATTERN F — the only sync Phase 7 performs, one direction only, in
+    // PATTERN F — the order follows its delivery, one direction only, in
     // the SAME transaction as the delivery transition so the two can never
-    // disagree. DELIVERED and FAILED deliberately do NOT touch
-    // orders.status — PHASE7_PLAN.md, Decision 4. "Delivered" and
-    // "settled" are different facts; staff mark the order COMPLETED
-    // separately, once billing says it is fully paid.
+    // disagree. FAILED does not touch orders.status.
     if (status === 'OUT_FOR_DELIVERY') {
       await client.query(
         `UPDATE orders SET status = 'OUT_FOR_DELIVERY' WHERE order_id = $1 AND status NOT IN ('COMPLETED', 'CANCELLED')`,
@@ -463,6 +459,30 @@ router.patch('/:id/status', async (request, response) => {
         'INSERT INTO order_status_history (order_id, updated_by, status, note) VALUES ($1, $2, $3, $4)',
         [orderId, request.user.id, 'OUT_FOR_DELIVERY', note],
       )
+    }
+
+    // DELIVERED completes the order (NOTIFICATIONS_PLAN.md, N2). PHASE7
+    // Decision 4 kept them apart because a cash-on-delivery order was still
+    // unpaid at the door. There is no cash on delivery any more: an order
+    // is assigned only once fully paid, and a paid order can't be
+    // cancelled. Billing is still asked, under the order lock taken above,
+    // so an unpaid order from old data stays OUT_FOR_DELIVERY for staff to
+    // settle and complete by hand (PATCH /api/orders/:id, which checks the
+    // same two things).
+    if (status === 'DELIVERED') {
+      const billing = await getBillingSummary(client, orderId)
+      if (billing.isFullyPaid) {
+        const completed = await client.query(
+          `UPDATE orders SET status = 'COMPLETED' WHERE order_id = $1 AND status NOT IN ('COMPLETED', 'CANCELLED')`,
+          [orderId],
+        )
+        if (completed.rowCount) {
+          await client.query(
+            'INSERT INTO order_status_history (order_id, updated_by, status, note) VALUES ($1, $2, $3, $4)',
+            [orderId, request.user.id, 'COMPLETED', 'Completed on delivery.'],
+          )
+        }
+      }
     }
 
     await client.query('COMMIT')
