@@ -9,6 +9,7 @@
 // the same card list the customer view already used, so Status is never
 // hidden behind a horizontal scroller.
 import { useEffect, useMemo, useState } from 'react'
+import { useNotificationRefresh } from '../../lib/useNotificationRefresh.js'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost } from '../../api/client.js'
 import { Modal } from '../../components/Modal.jsx'
@@ -219,6 +220,7 @@ function StaffOrderManagement({ user, params }) {
     loadOrders()
     if (params?.orderId) openOrder(params.orderId)
   }, [])
+  useNotificationRefresh(() => loadOrders())
 
   // Filtering is client-side: the list is already fully loaded (GET
   // /api/orders returns everything for staff), so a status pick or a

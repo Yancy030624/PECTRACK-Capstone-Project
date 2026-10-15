@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNotificationRefresh } from '../../lib/useNotificationRefresh.js'
 import { apiGet, apiPatch, apiUpload } from '../../api/client.js'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Button } from '../../components/ui/Button.jsx'
@@ -7,6 +8,7 @@ import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
+import { bakery, samePhone, smsHref, telHref } from '../../lib/bakery.js'
 import { formatDateTime, formatPeso } from '../../lib/format.js'
 import { orderLabel } from '../../lib/orderNumber.js'
 import { DeliveryHistory } from './DeliveryHistory.jsx'
@@ -41,6 +43,62 @@ const deliveryGroups = (deliveries) => [
   { title: 'Assigned to you', items: deliveries.filter((delivery) => delivery.status !== 'OUT_FOR_DELIVERY') },
 ].filter((group) => group.items.length > 0)
 
+// Call and Text (NOTIFICATIONS_PLAN.md, N6): links, not buttons, because
+// they hand over to the phone's own dialer and messages app. No in-app
+// chat — the phone already does this, and does it better.
+const contactLinkClass = 'inline-flex h-11 items-center justify-center gap-2 rounded-control border border-line-200 bg-surface px-4 text-sm font-semibold text-brand-700 transition hover:bg-surface-sunk'
+const greeting = (delivery) => `Hi, this is the ${bakery.name} rider with your order ${orderLabel(delivery, { numberOnly: true })}. `
+
+function PhoneIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z" />
+    </svg>
+  )
+}
+
+function MessageIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  )
+}
+
+// The recipient first: they are the one at the door. The account holder
+// is offered too when their number is different, for when the recipient
+// does not answer; and the bakery, for anything the customer can't settle.
+function ContactCustomer({ delivery }) {
+  const recipientNumber = delivery.address.contactNumber
+  const holderNumber = delivery.customerContactNumber
+  const showHolder = holderNumber && !samePhone(holderNumber, recipientNumber)
+  return (
+    <div className="mt-3">
+      {recipientNumber && (
+        <div className="grid grid-cols-2 gap-2">
+          <a href={telHref(recipientNumber)} className={contactLinkClass} aria-label={`Call ${delivery.address.recipientName ?? 'the recipient'} at ${recipientNumber}`}>
+            <PhoneIcon /> Call
+          </a>
+          <a href={smsHref(recipientNumber, greeting(delivery))} className={contactLinkClass} aria-label={`Text ${delivery.address.recipientName ?? 'the recipient'} at ${recipientNumber}`}>
+            <MessageIcon /> Text
+          </a>
+        </div>
+      )}
+      {showHolder && (
+        <p className="mt-2 text-xs text-ink-500">
+          Account holder: {delivery.customerName ?? 'Customer'} ·{' '}
+          <a href={telHref(holderNumber)} className="inline-block py-1 font-semibold text-brand-700 underline underline-offset-2">Call</a> ·{' '}
+          <a href={smsHref(holderNumber, greeting(delivery))} className="inline-block py-1 font-semibold text-brand-700 underline underline-offset-2">Text</a>
+        </p>
+      )}
+      <p className="mt-1 text-xs text-ink-500">
+        Problem with the order?{' '}
+        <a href={telHref(bakery.phones[0])} className="inline-block py-1 font-semibold text-brand-700 underline underline-offset-2">Call the bakery</a>
+      </p>
+    </div>
+  )
+}
+
 export function MyDeliveries({ user }) {
   const [deliveries, setDeliveries] = useState([])
   const [loading, setLoading] = useState(true)
@@ -51,8 +109,10 @@ export function MyDeliveries({ user }) {
   const [proofFiles, setProofFiles] = useState({})
   const [tab, setTab] = useState('Assigned')
 
-  const loadDeliveries = async () => {
-    setLoading(true)
+  // `quiet` reloads without the loading rows, for the refresh the bell
+  // asks for while the driver is looking at the list.
+  const loadDeliveries = async ({ quiet = false } = {}) => {
+    if (!quiet) setLoading(true)
     try {
       const data = await apiGet('/api/deliveries/mine')
       setDeliveries(data.deliveries)
@@ -67,6 +127,7 @@ export function MyDeliveries({ user }) {
   useEffect(() => {
     loadDeliveries()
   }, [])
+  useNotificationRefresh(() => loadDeliveries({ quiet: true }))
 
   const setStatus = async (deliveryId, status, note) => {
     // Failing a delivery is the one driver action that cannot be walked
@@ -153,17 +214,10 @@ export function MyDeliveries({ user }) {
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <p className="font-semibold text-ink-900">Order {orderLabel(delivery)} · {delivery.customerName ?? 'Customer'}</p>
-                    {/* The number is a tel: link because this screen is
-                        used on a phone, at the door — a driver who needs
-                        to say "I'm outside" should not have to memorise
-                        eleven digits and retype them in another app. The
-                        storefront footer already links the bakery's own
-                        number the same way. */}
+                    {/* The number stays readable here; the Call and Text
+                        buttons below the items do the dialling. */}
                     <p className="mt-1 text-ink-500">
-                      {delivery.address.recipientName} ·{' '}
-                      <a href={`tel:${delivery.address.contactNumber}`} className="font-medium text-brand-700 underline underline-offset-2">
-                        {delivery.address.contactNumber}
-                      </a>
+                      {delivery.address.recipientName} · <span className="tabular-nums">{delivery.address.contactNumber}</span>
                     </p>
                     <p className="mt-0.5 text-xs text-ink-500">
                       {delivery.address.addressLine1}{delivery.address.addressLine2 && `, ${delivery.address.addressLine2}`}
@@ -197,6 +251,8 @@ export function MyDeliveries({ user }) {
                     </ul>
                   </div>
                 )}
+
+                <ContactCustomer delivery={delivery} />
 
                 {delivery.status === 'ASSIGNED' && (
                   <div className="mt-4 border-t border-line-100 pt-4">

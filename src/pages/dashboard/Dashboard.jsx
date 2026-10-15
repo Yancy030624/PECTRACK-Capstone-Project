@@ -61,12 +61,14 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
     setActiveModule(name)
     setModuleParams(params)
   }
-  // The bell (CLIENT_REVISIONS_PLAN.md, R4): an order opens in Order
-  // Management, a delivery in My Deliveries. `at` makes a second click on
-  // the same order open it again.
-  const openNotified = (kind, item) => {
-    if (kind === 'order') openModule('Order Management', { orderId: item.id, at: Date.now() })
-    else openModule('My Deliveries')
+  // The bell (NOTIFICATIONS_PLAN.md, N3): order news opens the order in
+  // Order Management, delivery news opens Delivery Management, and a
+  // driver's new assignment opens My Deliveries. `at` makes a second click
+  // on the same order open it again.
+  const openNotified = (item) => {
+    if (item.type === 'assigned') openModule('My Deliveries')
+    else if (['out_for_delivery', 'delivered', 'delivery_failed'].includes(item.type)) openModule('Delivery Management')
+    else openModule('Order Management', { orderId: item.orderId, at: Date.now() })
   }
   // Calculate the navigation items for the signed-in role.
   const allowedModules = modules.filter((module) => module.roles.includes(user.role))

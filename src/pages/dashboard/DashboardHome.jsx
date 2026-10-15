@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNotificationRefresh } from '../../lib/useNotificationRefresh.js'
 import { apiGet } from '../../api/client.js'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Card } from '../../components/ui/Card.jsx'
@@ -36,23 +37,29 @@ export function DashboardHome({ user, onNavigate }) {
   const [recentOrders, setRecentOrders] = useState(null)
   const [error, setError] = useState('')
 
+  const loadTiles = () => Promise.all([apiGet('/api/reports/summary'), apiGet('/api/inventory'), apiGet('/api/ingredients')])
+    .then(([summaryData, inventoryData, ingredientData]) => {
+      setSummary(summaryData)
+      setInventory(inventoryData.inventory)
+      setIngredients(ingredientData.ingredients)
+    })
+    .catch((fetchError) => setError(fetchError.message))
+  const loadRecentOrders = () => apiGet('/api/orders/recent').then((data) => setRecentOrders(data.orders)).catch(() => {})
+
   useEffect(() => {
-    Promise.all([apiGet('/api/reports/summary'), apiGet('/api/inventory'), apiGet('/api/ingredients')])
-      .then(([summaryData, inventoryData, ingredientData]) => {
-        setSummary(summaryData)
-        setInventory(inventoryData.inventory)
-        setIngredients(ingredientData.ingredients)
-      })
-      .catch((fetchError) => setError(fetchError.message))
+    loadTiles()
   }, [])
 
   // The newest orders, refreshed on their own while the page is open.
   useEffect(() => {
-    const load = () => apiGet('/api/orders/recent').then((data) => setRecentOrders(data.orders)).catch(() => {})
-    load()
-    const timer = window.setInterval(load, recentRefreshMs)
+    loadRecentOrders()
+    const timer = window.setInterval(loadRecentOrders, recentRefreshMs)
     return () => window.clearInterval(timer)
   }, [])
+
+  // Something new from the bell (an order, a payment, a delivery) changes
+  // the tiles and the list, so both reload at once.
+  useNotificationRefresh(() => { loadTiles(); loadRecentOrders() })
 
   // Only link to a module the signed-in role can open.
   const allowed = new Set(modules.filter((module) => module.roles.includes(user.role)).map((module) => module.name))

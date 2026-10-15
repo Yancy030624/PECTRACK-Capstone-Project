@@ -366,3 +366,78 @@ Add both to the ERD: INGREDIENT 1 — many INGREDIENT_MOVEMENT, and USER 1 — m
 
 ### Figures to retake after R5
 2, 2.1 (the new tile), 10 / 10.1 and 11 (the Products and Ingredients tabs), the new 11.1, and the Reporting Inventory tab if your team shows it.
+
+---
+
+## Notifications (N1–N6) — after the classmate test, 2026-10-15
+
+From `NOTIFICATIONS_PLAN.md`. Staff and delivery personnel are now told about more than new orders; delivery personnel and customers are also told by email; marking a paid order delivered completes it; and delivery personnel can call or text the customer from the delivery card. Password fields gained a Show/Hide button, which needs no paper change.
+
+The **Find** texts below are quoted from the revised PDF. Where an R4 replacement is named instead, apply this change on top of it.
+
+### 1. Purpose and Description, the Delivery Personnel paragraph (Order Management Module)
+
+**Find:**
+> Additionally, they can review their delivery history and completed transactions.
+
+**Replace with:**
+> Additionally, they can review their delivery history and completed transactions. Delivery personnel are told of each newly assigned delivery through the notification bell and by email, and they can call or text the recipient straight from the delivery card. Once they mark a paid order as delivered, the order is completed automatically, and the customer receives an email saying when and where it was delivered, so a delivery made to the wrong house is reported the same day.
+
+### 2. Purpose and Description, Order Management Module (on top of R4 fix 1)
+
+**Find** (the sentence R4 added):
+> The administrator and cashiers are alerted as soon as a new order is placed, through a notification bell, a pop-up message, and an optional sound, even while they are working in another part of the system.
+
+**Replace with:**
+> The administrator and cashiers are alerted through a notification bell, a pop-up message, and an optional sound, even while they are working in another part of the system, when a new order is placed, an online payment arrives, an order is cancelled, and a delivery leaves the bakery, is delivered, or fails. Customers are emailed when their pickup order is ready and when their delivery is on the way, delivered, or could not be delivered.
+
+### 3. Figure 2 / 2.1 description, the bell (on top of R4 fix 3)
+
+**Find** (the last sentence of the R4 description):
+> The bell at the top of every staff screen counts the new orders not yet seen, and a pop-up appears for each new order.
+
+**Replace with:**
+> The bell at the top of every staff screen counts the notifications not yet seen — new orders, online payments, cancellations, and deliveries leaving, arriving, or failing — and a pop-up appears for each one. Clicking a notification opens the order or the delivery it is about.
+
+### 4. Figure 2.2 description, delivery personnel (on top of R4 fix 4)
+
+**Find:**
+> and the bell announces each newly assigned delivery.
+
+**Replace with:**
+> and the bell announces each newly assigned delivery, which is also sent to them by email.
+
+### 5. Figure 8 description, Delivery in progress
+
+**Find:**
+> accepts up to five JPEG or PNG photos, a "Mark delivered" button, and a "Mark failed" button with a field for the reason.
+
+**Replace with:**
+> accepts up to five JPEG or PNG photos, a "Mark delivered" button, and a "Mark failed" button with a field for the reason. Call and Text buttons open the phone's dialer or messages app for the recipient; when the account holder's number is different, it is offered too, with a link to call the bakery. Marking a paid order delivered also completes the order.
+
+### 6. Use case description, the Delivery Personnel paragraph
+
+**Find:**
+> Delivery orders are paid before they leave the bakery, so delivery personnel do not collect payments.
+
+**Replace with:**
+> Delivery orders are paid before they leave the bakery, so delivery personnel do not collect payments. They are notified of each new assignment in the system and by email, can call or text the customer from the delivery card, and complete the order by marking it delivered.
+
+### 7. Use case description, the Customer paragraph
+
+**Find:**
+> They can also cancel orders.
+
+**Replace with:**
+> They can also cancel orders, and they are emailed when a pickup order is ready and when a delivery is on the way, delivered, or could not be delivered.
+
+### 8. Limitations (new item, after item 2, Internet Dependency)
+
+> **Notifications.** Notifications inside the system appear only while it is open in a browser; the system does not send push notifications to phones. For this reason, delivery personnel are also notified of new assignments by email, and customers are emailed about their orders. A delivery that the administrator takes back from a driver simply leaves that driver's list; the driver is not separately notified.
+
+### 9. Database chapter
+
+**No change.** Notifications are built from records the system already keeps (order times, payment times, delivery times, and the order status history); no table was added.
+
+### Figures to retake after the notifications changes
+8 (the Call and Text buttons), and 2 / 2.1 if the bell panel is shown open.

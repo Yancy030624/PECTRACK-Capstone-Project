@@ -6,6 +6,7 @@ import { Card } from '../../components/ui/Card.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Field } from '../../components/ui/Field.jsx'
 import { Input } from '../../components/ui/Input.jsx'
+import { PasswordInput } from '../../components/ui/PasswordInput.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
@@ -229,10 +230,10 @@ export function StaffManagement() {
           </Field>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Password" error={errors.password}>
-              <Input type="password" value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" placeholder="Set an initial password" />
+              <PasswordInput value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" placeholder="Set an initial password" />
             </Field>
             <Field label="Confirm password" error={errors.confirmPassword}>
-              <Input type="password" value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} autoComplete="new-password" placeholder="Repeat password" />
+              <PasswordInput value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} autoComplete="new-password" placeholder="Repeat password" />
             </Field>
           </div>
           {message && <Alert variant={messageFailed ? 'error' : 'success'}>{message}</Alert>}
@@ -310,7 +311,7 @@ export function StaffManagement() {
                           <form onSubmit={(event) => submitReset(event, person)} className="flex flex-col items-start gap-2">
                             <div className="w-44">
                               <Field label={`New password for ${person.name}`} error={resetErrors.password}>
-                                <Input type="password" value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} autoComplete="new-password" placeholder="New password" className="h-8 text-xs" />
+                                <PasswordInput value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} autoComplete="new-password" placeholder="New password" className="h-8 text-xs" />
                               </Field>
                             </div>
                             <div className="flex gap-2">

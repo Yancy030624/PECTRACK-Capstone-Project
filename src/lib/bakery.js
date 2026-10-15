@@ -2,6 +2,9 @@
 // Visit Us, Home, Our Story) reads them from here, so a change to the
 // hours or a phone number is one edit, not five.
 //
+// server/lib/bakery.js holds a copy of the address, hours and phone
+// numbers for the emails the server sends. Change it with this file.
+//
 // HOURS — from the bakery's own About page ("Daily 5:00 AM – 8:00 PM,
 // fresh batches at 5 AM and 3 PM"), adopted by the team on 2026-10-13.
 // Change the values below and every page follows.
@@ -28,3 +31,9 @@ export const isDeliverable = (address) => address?.municipality?.trim().toLowerC
 export const bakeryAddress = `${bakery.street}, ${bakery.town}`
 export const bakeryMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${bakery.name}, ${bakeryAddress}`)}`
 export const telHref = (phone) => `tel:${phone.replace(/[^\d+]/g, '')}`
+// A text message with its first words already typed (NOTIFICATIONS_PLAN.md,
+// N6). `?body=` is understood by Android and by current iPhones.
+export const smsHref = (phone, body = '') => `sms:${phone.replace(/[^\d+]/g, '')}${body ? `?body=${encodeURIComponent(body)}` : ''}`
+// Two numbers written differently ("0917 123 4567", "09171234567") are the
+// same number when their digits match.
+export const samePhone = (first, second) => Boolean(first && second) && first.replace(/\D/g, '') === second.replace(/\D/g, '')

@@ -2,16 +2,16 @@
 // delivery — Phase 7 (see PHASE7_PLAN.md). Mounted at /api/deliveries.
 //
 // deliveries.status is the SOURCE OF TRUTH for a delivery order's progress
-// (Decision 2); orders.status is synced FROM it, one direction only, and
-// only for the OUT_FOR_DELIVERY transition (Pattern F) — never
-// independently written by anything in this file's sibling,
-// routes/orders.js. DELIVERED and FAILED deliberately do not touch
-// orders.status (Decision 4).
+// (Decision 2); orders.status is synced FROM it, one direction only
+// (Pattern F): OUT_FOR_DELIVERY, and DELIVERED on a fully paid order, which
+// completes it (NOTIFICATIONS_PLAN.md, N2 — this replaces Decision 4 for
+// DELIVERED). FAILED never touches orders.status.
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { billingListSql, getBillingSummary, mapBillingColumns } from '../lib/billing.js'
 import { deleteFile, filePath, saveFile } from '../lib/storage.js'
+import { sendDeliveredEmail, sendDeliveryAssignedEmail, sendDeliveryFailedEmail, sendInBackground, sendOutForDeliveryEmail } from '../lib/notices.js'
 import { dateRangeSql, parseDateRange } from '../lib/reporting.js'
 import { normalize, parseId } from '../lib/validation.js'
 
@@ -74,6 +74,10 @@ const mapDeliveryRow = (row) => ({
   orderStatus: row.order_status,
   totalAmount: row.total_amount,
   customerName: row.customer_name,
+  // The account holder's own number, for when the recipient named on the
+  // address does not answer (NOTIFICATIONS_PLAN.md, N6). The emails stay
+  // server-side: the notices below read them from the row, never the API.
+  customerContactNumber: row.customer_contact_num,
   deliveryPersonnelId: row.delivery_personnel_id,
   deliveryPersonnelName: row.delivery_personnel_name,
   status: row.status,
@@ -137,6 +141,7 @@ const mapProofRow = (row) => ({
 const deliverySelectQuery = `SELECT d.delivery_id, d.order_id, d.delivery_personnel_id, dp.name AS delivery_personnel_name,
             d.status, d.assigned_at, d.delivered_at, d.failed_at, d.note,
             o.status AS order_status, o.daily_number, o.order_day, o.total_amount, o.instructions, o.requested_fulfillment_time, c.name AS customer_name,
+            c.contact_num AS customer_contact_num, c.email AS customer_email, c.email_verified_at AS customer_email_verified_at, dp.email AS delivery_personnel_email,
             a.label, a.recipient_name, a.contact_num, a.address_line_1, a.address_line_2,
             a.barangay, a.municipality, a.province, a.postal_code, a.delivery_notes,
             (SELECT COUNT(*) FROM delivery_proofs dpf WHERE dpf.delivery_id = d.delivery_id) AS proof_count,
@@ -327,8 +332,35 @@ router.patch('/:id/assign', requireRole('ADMIN', 'CASHIER'), async (request, res
   }
 
   const updated = await pool.query(`${deliverySelectQuery} WHERE d.delivery_id = $1`, [deliveryId])
-  return response.json({ delivery: (await withItems(updated.rows))[0] })
+  const delivery = (await withItems(updated.rows))[0]
+
+  // Tell the driver by email too (NOTIFICATIONS_PLAN.md, N4): the bell
+  // only reaches a phone with PECTRACK open in front.
+  const row = updated.rows[0]
+  if (row.delivery_personnel_email) {
+    sendInBackground('delivery assignment', () => sendDeliveryAssignedEmail({
+      to: row.delivery_personnel_email,
+      driverName: delivery.deliveryPersonnelName,
+      order: delivery,
+      customerName: delivery.customerName,
+      address: delivery.address,
+      items: delivery.items,
+      requestedFulfillmentTime: delivery.requestedFulfillmentTime,
+      instructions: delivery.instructions,
+    }))
+  }
+  return response.json({ delivery })
 })
+
+// The customer's email for a delivery that moved (NOTIFICATIONS_PLAN.md,
+// N5): on the way, delivered, or failed. Back to the queue says nothing;
+// the customer hears again when it leaves. Only to a confirmed email, and
+// never about a cancelled order (an admin tidying up its delivery).
+const customerNoticeFor = {
+  OUT_FOR_DELIVERY: ['on-the-way', (row, delivery) => sendOutForDeliveryEmail({ to: row.customer_email, name: delivery.customerName, order: delivery, driverName: delivery.deliveryPersonnelName, address: delivery.address, items: delivery.items })],
+  DELIVERED: ['delivered', (row, delivery) => sendDeliveredEmail({ to: row.customer_email, name: delivery.customerName, order: delivery, deliveredAt: delivery.deliveredAt, address: delivery.address })],
+  FAILED: ['delivery failed', (row, delivery) => sendDeliveryFailedEmail({ to: row.customer_email, name: delivery.customerName, order: delivery })],
+}
 
 // PATCH /api/deliveries/:id/status — two very different callers share this
 // one route. An ADMIN may retry a FAILED delivery back to
@@ -448,12 +480,9 @@ router.patch('/:id/status', async (request, response) => {
       return response.status(409).json({ message: 'This delivery is no longer in a state that allows that change — reload it and try again.' })
     }
 
-    // PATTERN F — the only sync Phase 7 performs, one direction only, in
+    // PATTERN F — the order follows its delivery, one direction only, in
     // the SAME transaction as the delivery transition so the two can never
-    // disagree. DELIVERED and FAILED deliberately do NOT touch
-    // orders.status — PHASE7_PLAN.md, Decision 4. "Delivered" and
-    // "settled" are different facts; staff mark the order COMPLETED
-    // separately, once billing says it is fully paid.
+    // disagree. FAILED does not touch orders.status.
     if (status === 'OUT_FOR_DELIVERY') {
       await client.query(
         `UPDATE orders SET status = 'OUT_FOR_DELIVERY' WHERE order_id = $1 AND status NOT IN ('COMPLETED', 'CANCELLED')`,
@@ -465,6 +494,30 @@ router.patch('/:id/status', async (request, response) => {
       )
     }
 
+    // DELIVERED completes the order (NOTIFICATIONS_PLAN.md, N2). PHASE7
+    // Decision 4 kept them apart because a cash-on-delivery order was still
+    // unpaid at the door. There is no cash on delivery any more: an order
+    // is assigned only once fully paid, and a paid order can't be
+    // cancelled. Billing is still asked, under the order lock taken above,
+    // so an unpaid order from old data stays OUT_FOR_DELIVERY for staff to
+    // settle and complete by hand (PATCH /api/orders/:id, which checks the
+    // same two things).
+    if (status === 'DELIVERED') {
+      const billing = await getBillingSummary(client, orderId)
+      if (billing.isFullyPaid) {
+        const completed = await client.query(
+          `UPDATE orders SET status = 'COMPLETED' WHERE order_id = $1 AND status NOT IN ('COMPLETED', 'CANCELLED')`,
+          [orderId],
+        )
+        if (completed.rowCount) {
+          await client.query(
+            'INSERT INTO order_status_history (order_id, updated_by, status, note) VALUES ($1, $2, $3, $4)',
+            [orderId, request.user.id, 'COMPLETED', 'Completed on delivery.'],
+          )
+        }
+      }
+    }
+
     await client.query('COMMIT')
   } catch (error) {
     await client.query('ROLLBACK')
@@ -474,7 +527,15 @@ router.patch('/:id/status', async (request, response) => {
   }
 
   const updated = await pool.query(`${deliverySelectQuery} WHERE d.delivery_id = $1`, [deliveryId])
-  return response.json({ delivery: (await withItems(updated.rows))[0] })
+  const delivery = (await withItems(updated.rows))[0]
+
+  const row = updated.rows[0]
+  const notice = customerNoticeFor[status]
+  if (notice && row.customer_email && row.customer_email_verified_at && row.order_status !== 'CANCELLED') {
+    const [what, send] = notice
+    sendInBackground(what, () => send(row, delivery))
+  }
+  return response.json({ delivery })
 })
 
 // POST /api/deliveries/:id/proof — PHASE 7, DECISION 8. Raw image bytes,

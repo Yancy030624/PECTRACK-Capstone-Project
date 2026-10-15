@@ -7,6 +7,7 @@ import { Card } from '../../components/ui/Card.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Field } from '../../components/ui/Field.jsx'
 import { Input } from '../../components/ui/Input.jsx'
+import { PasswordInput } from '../../components/ui/PasswordInput.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 
 const emptyPasswordForm = { currentPassword: '', newPassword: '', confirmPassword: '' }
@@ -108,7 +109,7 @@ function ProfileTab({ user, onUserUpdated }) {
         </Field>
         {emailChanging && (
           <Field label="Current password" error={errors.currentPassword} help="Needed to change your email. Your old address will be told about the change.">
-            <Input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} autoComplete="current-password" />
+            <PasswordInput value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} autoComplete="current-password" />
           </Field>
         )}
         {message && <Alert variant={messageFailed ? 'error' : 'success'}>{message}</Alert>}
@@ -155,13 +156,13 @@ function PasswordTab() {
       <Card className="mt-4 max-w-lg p-6">
         <form className="space-y-3" onSubmit={handlePasswordSubmit} noValidate>
           <Field label="Current password" error={passwordErrors.currentPassword}>
-            <Input type="password" value={passwordForm.currentPassword} onChange={(event) => updatePasswordField('currentPassword', event.target.value)} autoComplete="current-password" />
+            <PasswordInput value={passwordForm.currentPassword} onChange={(event) => updatePasswordField('currentPassword', event.target.value)} autoComplete="current-password" />
           </Field>
           <Field label="New password" error={passwordErrors.newPassword}>
-            <Input type="password" value={passwordForm.newPassword} onChange={(event) => updatePasswordField('newPassword', event.target.value)} autoComplete="new-password" />
+            <PasswordInput value={passwordForm.newPassword} onChange={(event) => updatePasswordField('newPassword', event.target.value)} autoComplete="new-password" />
           </Field>
           <Field label="Confirm new password" error={passwordErrors.confirmPassword}>
-            <Input type="password" value={passwordForm.confirmPassword} onChange={(event) => updatePasswordField('confirmPassword', event.target.value)} autoComplete="new-password" />
+            <PasswordInput value={passwordForm.confirmPassword} onChange={(event) => updatePasswordField('confirmPassword', event.target.value)} autoComplete="new-password" />
           </Field>
           <p className="text-xs text-ink-500">At least 12 characters, with an uppercase letter, a lowercase letter, a number, and a symbol.</p>
           {passwordMessage && <Alert variant={passwordFailed ? 'error' : 'success'}>{passwordMessage}</Alert>}

@@ -1,14 +1,17 @@
-// New-order notifications for the staff header (CLIENT_REVISIONS_PLAN.md,
-// R4). The admin and cashier hear about every new order; a driver hears
-// about every delivery newly assigned to them.
+// Notifications for the staff header (CLIENT_REVISIONS_PLAN.md R4, widened
+// by NOTIFICATIONS_PLAN.md N3). The admin and cashier hear about new
+// orders, online payments, cancellations, and deliveries leaving, arriving
+// or failing; a driver hears about every delivery assigned to them. The
+// events come from GET /api/notifications, one feed for every role.
 //
-// No server push: the screen asks every 20 seconds. "New" means placed (or
-// assigned) after the last time this person opened the bell ON THIS DEVICE,
-// kept in localStorage — nothing is stored in the database for it.
+// No server push: the screen asks every 20 seconds. "New" means after the
+// last time this person opened the bell ON THIS DEVICE, kept in
+// localStorage — nothing is stored in the database for it.
 //
 // For each new item: a toast, an optional soft sound (muted per device),
-// and a browser notification when the tab is in the background and the
-// person allowed them once.
+// a browser notification when the tab is in the background and the person
+// allowed them once, and a `pectrack:notifications` window event so the
+// open screen reloads its own list.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiGet } from '../api/client.js'
 import { formatDateTime, formatPeso } from '../lib/format.js'
@@ -28,25 +31,26 @@ const storage = {
   set: (key, value) => { try { window.localStorage.setItem(key, value) } catch { /* private mode: in memory only */ } },
 }
 
-// What each role is told about. `time` is what "new" is measured by.
-function sourceFor(user) {
-  if (user.role === 'DELIVERY PERSONNEL') {
-    return {
-      kind: 'delivery',
-      fetch: async () => (await apiGet('/api/deliveries/mine')).deliveries,
-      time: (delivery) => delivery.assignedAt,
-      title: (delivery) => `New delivery ${orderLabel(delivery)}`,
-      text: (delivery) => [delivery.customerName ?? 'Customer', delivery.address?.barangay].filter(Boolean).join(', '),
-    }
-  }
-  return {
-    kind: 'order',
-    fetch: async (since) => (await apiGet(`/api/orders/recent${since ? `?${new URLSearchParams({ since })}` : ''}`)).orders,
-    time: (order) => order.orderDate,
-    title: (order) => `New order ${orderLabel(order)}`,
-    text: (order) => `${order.customerName ?? 'Walk-in'}, ${order.orderType === 'DELIVERY' ? 'delivery' : 'pickup'}, ${formatPeso(order.totalAmount)}`,
-  }
+const fetchFeed = async (since) => (await apiGet(`/api/notifications${since ? `?${new URLSearchParams({ since })}` : ''}`)).notifications
+const itemTime = (item) => item.at
+
+// How each kind of event reads, in the bell, the toast, and the browser
+// notification alike.
+const wording = {
+  order_placed: (item) => [`New order ${orderLabel(item)}`, `${item.customerName ?? 'Walk-in'}, ${item.orderType === 'DELIVERY' ? 'delivery' : 'pickup'}, ${formatPeso(item.totalAmount)}`],
+  payment_received: (item) => [
+    `Payment received for ${orderLabel(item)}`,
+    `GCash ${formatPeso(item.amount)}${item.orderStatus === 'CANCELLED' ? ' — the order was cancelled; settle it with the customer' : ''}`,
+  ],
+  order_cancelled: (item) => [`Order ${orderLabel(item)} cancelled`, item.actorIsCustomer ? 'By the customer' : `By ${item.actorName ?? 'staff'}`],
+  out_for_delivery: (item) => [`Order ${orderLabel(item)} is on the way`, `With ${item.actorName ?? 'the driver'}`],
+  delivered: (item) => [`Order ${orderLabel(item)} delivered`, [`By ${item.actorName ?? 'the driver'}`, [item.recipientName, item.barangay].filter(Boolean).join(', ')].filter(Boolean).join(' · ')],
+  delivery_failed: (item) => [`Delivery failed for ${orderLabel(item)}`, item.note || `By ${item.actorName ?? 'the driver'}`],
+  assigned: (item) => [`New delivery ${orderLabel(item)}`, [item.customerName ?? 'Customer', item.barangay].filter(Boolean).join(', ')],
 }
+const describe = (item) => (wording[item.type] ?? ((other) => [`Order ${orderLabel(other)} updated`, '']))(item)
+const titleOf = (item) => describe(item)[0]
+const textOf = (item) => describe(item)[1]
 
 // A short two-note chime, made on the spot — no sound file to ship.
 function chime() {
@@ -75,7 +79,6 @@ function chime() {
 const isNewer = (time, than) => than == null || new Date(time) > new Date(than)
 
 export function NotificationBell({ user, onOpen }) {
-  const source = useRef(sourceFor(user)).current
   const seenKey = `pectrack.notifications.seen.${user.id}`
   const mutedKey = 'pectrack.notifications.muted'
 
@@ -91,22 +94,23 @@ export function NotificationBell({ user, onOpen }) {
   const panelRef = useRef(null)
 
   const announce = useCallback((fresh) => {
-    setToasts((current) => [...fresh.map((item) => ({ key: `${item.id}-${Date.now()}`, item })), ...current].slice(0, 4))
+    setToasts((current) => [...fresh.map((item) => ({ key: `${item.key}-${Date.now()}`, item })), ...current].slice(0, 4))
     for (const item of fresh) {
-      window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.item.id !== item.id)), toastMs)
+      window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.item.key !== item.key)), toastMs)
     }
     if (!mutedRef.current) chime()
     if (document.hidden && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       for (const item of fresh) {
         try {
-          const notice = new Notification(source.title(item), { body: source.text(item), tag: `${source.kind}-${item.id}` })
-          notice.onclick = () => { window.focus(); onOpen(source.kind, item) }
+          const notice = new Notification(titleOf(item), { body: textOf(item), tag: item.key })
+          notice.onclick = () => { window.focus(); onOpen(item) }
         } catch {
           // Some mobile browsers only notify through a service worker.
         }
       }
     }
-  }, [source, onOpen])
+    window.dispatchEvent(new CustomEvent('pectrack:notifications', { detail: fresh }))
+  }, [onOpen])
 
   useEffect(() => {
     let stopped = false
@@ -114,33 +118,27 @@ export function NotificationBell({ user, onOpen }) {
       try {
         const since = known.current
           ? (() => {
-              const times = [...known.current.values()].map((item) => new Date(source.time(item)).getTime()).filter(Number.isFinite)
+              const times = [...known.current.values()].map((item) => new Date(itemTime(item)).getTime()).filter(Number.isFinite)
               return times.length ? new Date(Math.max(...times) - overlapMs).toISOString() : null
             })()
           : storage.get(seenKey)
-        const fetched = (await source.fetch(since)) ?? []
+        const fetched = (await fetchFeed(since)) ?? []
         if (stopped) return
         if (!known.current) {
-          known.current = new Map(fetched.map((item) => [item.id, item]))
+          known.current = new Map(fetched.map((item) => [item.key, item]))
           // First visit on this device: nothing counts as new yet.
           if (storage.get(seenKey) == null) {
-            const newestTime = fetched.map(source.time).filter(Boolean).sort().at(-1) ?? new Date().toISOString()
+            const newestTime = fetched.map(itemTime).filter(Boolean).sort().at(-1) ?? new Date().toISOString()
             storage.set(seenKey, newestTime)
             setLastSeen(newestTime)
           }
         } else {
-          const fresh = fetched.filter((item) => !known.current.has(item.id))
-          for (const item of fetched) known.current.set(item.id, item)
+          const fresh = fetched.filter((item) => !known.current.has(item.key))
+          for (const item of fetched) known.current.set(item.key, item)
           if (fresh.length) announce(fresh)
         }
-        // Drivers: a delivery that left the list (delivered, recalled) is
-        // no longer news.
-        if (source.kind === 'delivery') {
-          const current = new Set(fetched.map((item) => item.id))
-          for (const id of known.current.keys()) if (!current.has(id)) known.current.delete(id)
-        }
         setItems([...known.current.values()]
-          .sort((a, b) => new Date(source.time(b)) - new Date(source.time(a)))
+          .sort((a, b) => new Date(itemTime(b)) - new Date(itemTime(a)))
           .slice(0, keepItems))
       } catch {
         // A missed poll is retried on the next one; nothing to show.
@@ -163,14 +161,14 @@ export function NotificationBell({ user, onOpen }) {
     return () => { document.removeEventListener('mousedown', onPointer); document.removeEventListener('keydown', onKey) }
   }, [open])
 
-  const unseen = items.filter((item) => source.time(item) && isNewer(source.time(item), lastSeen))
+  const unseen = items.filter((item) => itemTime(item) && isNewer(itemTime(item), lastSeen))
   // What was new as the panel opened, kept highlighted while it is open.
   const [openedUnseen, setOpenedUnseen] = useState(new Set())
   const toggle = () => {
-    if (!open) setOpenedUnseen(new Set(unseen.map((item) => item.id)))
+    if (!open) setOpenedUnseen(new Set(unseen.map((item) => item.key)))
     if (!open && items.length) {
       // Opening the bell is "seeing" what is in it.
-      const newestTime = items.map(source.time).filter(Boolean).sort().at(-1)
+      const newestTime = items.map(itemTime).filter(Boolean).sort().at(-1)
       if (newestTime && isNewer(newestTime, lastSeen)) {
         storage.set(seenKey, newestTime)
         setLastSeen(newestTime)
@@ -180,8 +178,8 @@ export function NotificationBell({ user, onOpen }) {
   }
   const choose = (item) => {
     setOpen(false)
-    setToasts((current) => current.filter((toast) => toast.item.id !== item.id))
-    onOpen(source.kind, item)
+    setToasts((current) => current.filter((toast) => toast.item.key !== item.key))
+    onOpen(item)
   }
   const toggleMuted = () => {
     storage.set(mutedKey, muted ? '0' : '1')
@@ -191,7 +189,7 @@ export function NotificationBell({ user, onOpen }) {
   const askPermission = async () => {
     try { setPermission(await Notification.requestPermission()) } catch { /* unsupported */ }
   }
-  const noun = (count) => (source.kind === 'delivery' ? (count === 1 ? 'delivery' : 'deliveries') : (count === 1 ? 'order' : 'orders'))
+  const noun = (count) => (count === 1 ? 'notification' : 'notifications')
 
   return (
     <div ref={panelRef} className="relative">
@@ -216,7 +214,7 @@ export function NotificationBell({ user, onOpen }) {
       {open && (
         <div className="absolute right-0 z-40 mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-panel border border-line-200 bg-surface shadow-raised">
           <div className="flex items-center justify-between gap-2 border-b border-line-100 px-4 py-3">
-            <p className="text-sm font-semibold text-ink-900">{source.kind === 'delivery' ? 'Your deliveries' : 'Latest orders'}</p>
+            <p className="text-sm font-semibold text-ink-900">Notifications</p>
             <button type="button" onClick={toggleMuted} className="text-xs font-semibold text-brand-700 hover:underline">
               {muted ? 'Sound off' : 'Sound on'}
             </button>
@@ -226,13 +224,13 @@ export function NotificationBell({ user, onOpen }) {
           ) : (
             <ul className="max-h-80 divide-y divide-line-100 overflow-y-auto">
               {items.map((item) => (
-                <li key={item.id}>
-                  <button type="button" onClick={() => choose(item)} className={`w-full px-4 py-2.5 text-left transition hover:bg-surface-sunk ${openedUnseen.has(item.id) ? 'bg-brand-50' : ''}`}>
+                <li key={item.key}>
+                  <button type="button" onClick={() => choose(item)} className={`w-full px-4 py-2.5 text-left transition hover:bg-surface-sunk ${openedUnseen.has(item.key) ? 'bg-brand-50' : ''}`}>
                     <span className="flex items-center justify-between gap-2 text-sm font-semibold text-ink-900">
-                      {source.title(item).replace(/^New (order|delivery) /, '')}
-                      {openedUnseen.has(item.id) && <span className="rounded-full bg-red-600 px-1.5 text-[10px] font-bold uppercase text-white">New</span>}
+                      {titleOf(item)}
+                      {openedUnseen.has(item.key) && <span className="rounded-full bg-red-600 px-1.5 text-[10px] font-bold uppercase text-white">New</span>}
                     </span>
-                    <span className="block text-xs text-ink-500">{source.text(item)} · {formatDateTime(source.time(item))}</span>
+                    <span className="block text-xs text-ink-500">{[textOf(item), formatDateTime(itemTime(item))].filter(Boolean).join(' · ')}</span>
                   </button>
                 </li>
               ))}
@@ -257,8 +255,8 @@ export function NotificationBell({ user, onOpen }) {
             onClick={() => choose(item)}
             className="pointer-events-auto rounded-panel border border-line-200 border-l-4 border-l-brand-600 bg-surface px-4 py-3 text-left shadow-raised transition hover:bg-surface-sunk"
           >
-            <span className="block text-sm font-semibold text-ink-900">{source.title(item)}</span>
-            <span className="block text-xs text-ink-500">{source.text(item)}</span>
+            <span className="block text-sm font-semibold text-ink-900">{titleOf(item)}</span>
+            <span className="block text-xs text-ink-500">{textOf(item)}</span>
           </button>
         ))}
       </div>
