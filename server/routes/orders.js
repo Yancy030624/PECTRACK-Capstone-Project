@@ -17,6 +17,7 @@ import { billingListSql, getBillingSummary, mapBillingColumns } from '../lib/bil
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { syncStockAlert } from '../lib/inventory.js'
 import { orderLabel } from '../lib/orderNumber.js'
+import { sendInBackground, sendOrderReadyEmail } from '../lib/notices.js'
 import { getBulkOrderThreshold } from '../lib/settings.js'
 import { parseId } from '../lib/validation.js'
 
@@ -795,6 +796,35 @@ router.patch('/:id', async (request, response) => {
     throw error
   } finally {
     client.release()
+  }
+
+  // A pickup order that is ready: tell the customer by email
+  // (NOTIFICATIONS_PLAN.md, N5). After the commit, in the background, and
+  // only to a confirmed email — a walk-in order has no customer at all.
+  if (status === 'READY_FOR_PICKUP') {
+    const ready = await pool.query(
+      `SELECT o.daily_number, o.order_day, c.name, c.email, c.email_verified_at
+         FROM orders o JOIN customers c ON c.customer_id = o.customer_id
+        WHERE o.order_id = $1`,
+      [orderId],
+    )
+    const customer = ready.rows[0]
+    if (customer?.email && customer.email_verified_at) {
+      sendInBackground('order ready', async () => {
+        const lines = await pool.query(
+          `SELECT p.product_name AS name, p.variant, od.quantity
+             FROM order_details od JOIN products p ON p.product_id = od.product_id
+            WHERE od.order_id = $1 ORDER BY p.product_name, p.variant NULLS FIRST`,
+          [orderId],
+        )
+        return sendOrderReadyEmail({
+          to: customer.email,
+          name: customer.name,
+          order: { orderNumber: customer.daily_number, orderDay: customer.order_day },
+          items: lines.rows,
+        })
+      })
+    }
   }
 
   return response.json({ message: 'Order updated.', order: { id: Number(orderId), status } })

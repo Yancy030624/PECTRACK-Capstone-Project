@@ -1,6 +1,9 @@
-// Integration tests for the notification feed (NOTIFICATIONS_PLAN.md, N3).
-// Same approach as the other route tests: real Express app on an ephemeral
-// port, real database. Run with: npm test
+// Integration tests for the notification feed (NOTIFICATIONS_PLAN.md, N3)
+// and the emails sent when an order moves (N4, N5). Same approach as the
+// other route tests: real Express app on an ephemeral port, real database.
+// Google is never called: the email tests turn the Gmail API path on and
+// replace globalThis.fetch for its two endpoints only, as lib/mail.test.js
+// does, and read each message back. Run with: npm test
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import { after, before, beforeEach, describe, test } from 'node:test'
@@ -8,8 +11,28 @@ import bcrypt from 'bcrypt'
 import app from '../app.js'
 import { resetRateLimits } from '../lib/security.js'
 import { pool } from '../db.js'
+import { config } from '../config.js'
 
 const runId = crypto.randomUUID().slice(0, 8)
+
+// The Gmail stand-in. `gmailFails` makes every send answer 500.
+const sentMail = []
+let gmailFails = false
+const originalFetch = globalThis.fetch
+globalThis.fetch = async (url, options) => {
+  const href = String(url)
+  if (href === 'https://oauth2.googleapis.com/token') return { ok: true, json: async () => ({ access_token: 'ya29.test', expires_in: 3600 }) }
+  if (href === 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send') {
+    if (gmailFails) return { ok: false, status: 500, json: async () => ({ error: { message: 'test failure' } }) }
+    const raw = Buffer.from(JSON.parse(options.body).raw, 'base64url').toString('utf8')
+    const [head, body] = raw.split('\r\n\r\n')
+    const header = (name) => head.split('\r\n').find((line) => line.startsWith(`${name}: `))?.slice(name.length + 2) ?? ''
+    const subject = header('Subject').replace(/^=\?UTF-8\?B\?(.*)\?=$/, (_, encoded) => Buffer.from(encoded, 'base64').toString('utf8'))
+    sentMail.push({ to: header('To'), subject, text: Buffer.from(body.replace(/\r\n/g, ''), 'base64').toString('utf8') })
+    return { ok: true, json: async () => ({ id: 'msg' }) }
+  }
+  return originalFetch(url, options)
+}
 const randomContactNumber = () => `09${Math.floor(100000000 + Math.random() * 899999999)}`
 
 describe('notification feed', () => {
@@ -213,6 +236,97 @@ describe('notification feed', () => {
     assert.equal(eventsFor((await feed(adminCookie)).body, cash.id).filter((event) => event.type === 'payment_received').length, 0)
   })
 
+  // --- Emails (N4, N5) -------------------------------------------------
+  // The routes send in the background, after answering, so the tests wait
+  // a little for the message rather than expecting it on the response.
+  const mailTo = (to, subjectPart) => sentMail.filter((mail) => mail.to === to && mail.subject.includes(subjectPart))
+  const waitForMail = async (to, subjectPart) => {
+    for (let tries = 0; tries < 100; tries += 1) {
+      const found = mailTo(to, subjectPart)
+      if (found.length) return found
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+    return []
+  }
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 300))
+  const withGmail = async (run) => {
+    const original = config.mail.gmail
+    config.mail.gmail = { clientId: 'id', clientSecret: 'secret', refreshToken: 'refresh' }
+    try { await run() } finally { config.mail.gmail = original; gmailFails = false }
+  }
+
+  test('assigning a delivery emails the driver, with the address and items', () => withGmail(async () => {
+    const { order } = await assignedDelivery()
+    const [mail] = await waitForMail(firstDriver.email, `New delivery #${order.orderNumber}`)
+    assert.ok(mail, 'the driver got the email')
+    assert.match(mail.text, /1 Bell St/)
+    assert.match(mail.text, /Notif Recipient/)
+    assert.match(mail.text, new RegExp(`Notif Test Bread ${runId} × 1`))
+  }))
+
+  test('the customer is emailed when the delivery leaves, arrives, or fails', () => withGmail(async () => {
+    const delivered = await assignedDelivery()
+    await setStatus(delivered.delivery, 'OUT_FOR_DELIVERY', firstDriverCookie)
+    const [onTheWay] = await waitForMail(customer.email, `Your order #${delivered.order.orderNumber} is on the way`)
+    assert.ok(onTheWay)
+    assert.match(onTheWay.text, /Notif/, "names the rider")
+    await setStatus(delivered.delivery, 'DELIVERED', firstDriverCookie)
+    const [arrived] = await waitForMail(customer.email, `Your order #${delivered.order.orderNumber} was delivered`)
+    assert.ok(arrived)
+    assert.match(arrived.text, /If you did not receive this order, call us today/)
+    assert.match(arrived.text, /1 Bell St/, 'says where it went')
+
+    const failed = await assignedDelivery()
+    await setStatus(failed.delivery, 'OUT_FOR_DELIVERY', firstDriverCookie)
+    await setStatus(failed.delivery, 'FAILED', firstDriverCookie, 'Dog at the gate')
+    const [failure] = await waitForMail(customer.email, `We could not deliver order #${failed.order.orderNumber}`)
+    assert.ok(failure)
+    assert.doesNotMatch(failure.text, /Dog at the gate/, "the driver's note stays internal")
+  }))
+
+  test('a ready pickup order emails its customer; a walk-in order emails no one', () => withGmail(async () => {
+    const online = await placeOrder()
+    assert.equal((await json('POST', '/api/payments', cashierCookie, { orderId: online.id, method: 'CASH', amount: online.totalAmount })).status, 201)
+    assert.equal((await json('PATCH', `/api/orders/${online.id}`, cashierCookie, { status: 'READY_FOR_PICKUP' })).status, 200)
+    const [ready] = await waitForMail(customer.email, `Your order #${online.orderNumber} is ready for pickup`)
+    assert.ok(ready)
+    assert.match(ready.text, /93 Quezon Avenue/)
+
+    const before = sentMail.length
+    const walkIn = await placeOrder({ cookie: cashierCookie })
+    assert.equal((await json('PATCH', `/api/orders/${walkIn.id}`, cashierCookie, { status: 'READY_FOR_PICKUP' })).status, 200)
+    await settle()
+    assert.equal(sentMail.length, before, 'no customer, no email')
+  }))
+
+  test('no email to an unconfirmed address, and none for a refused change', () => withGmail(async () => {
+    const { order, delivery } = await assignedDelivery()
+    await pool.query('UPDATE customers SET email_verified_at = NULL WHERE email = $1', [customer.email])
+    try {
+      assert.equal((await setStatus(delivery, 'OUT_FOR_DELIVERY', firstDriverCookie)).status, 200)
+      await settle()
+      assert.equal(mailTo(customer.email, `#${order.orderNumber} is on the way`).length, 0)
+    } finally {
+      await pool.query('UPDATE customers SET email_verified_at = CURRENT_TIMESTAMP WHERE email = $1', [customer.email])
+    }
+
+    // OUT_FOR_DELIVERY again: the wrong source state, refused with 409.
+    const before = mailTo(customer.email, `#${order.orderNumber}`).length
+    assert.equal((await setStatus(delivery, 'OUT_FOR_DELIVERY', firstDriverCookie)).status, 409)
+    await settle()
+    assert.equal(mailTo(customer.email, `#${order.orderNumber}`).length, before)
+  }))
+
+  test('an email that fails to send does not fail the change', () => withGmail(async () => {
+    gmailFails = true
+    const { order, delivery } = await assignedDelivery()
+    const response = await setStatus(delivery, 'OUT_FOR_DELIVERY', firstDriverCookie)
+    assert.equal(response.status, 200)
+    const state = await pool.query('SELECT status FROM orders WHERE order_id = $1', [order.id])
+    assert.equal(state.rows[0].status, 'OUT_FOR_DELIVERY')
+    await settle()
+  }))
+
   test('a driver hears only about deliveries assigned to them', async () => {
     const { order } = await assignedDelivery()
     const mine = await feed(firstDriverCookie)
@@ -228,5 +342,6 @@ describe('notification feed', () => {
 })
 
 after(async () => {
+  globalThis.fetch = originalFetch
   await pool.end()
 })

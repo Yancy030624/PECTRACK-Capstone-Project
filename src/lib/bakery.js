@@ -2,6 +2,9 @@
 // Visit Us, Home, Our Story) reads them from here, so a change to the
 // hours or a phone number is one edit, not five.
 //
+// server/lib/bakery.js holds a copy of the address, hours and phone
+// numbers for the emails the server sends. Change it with this file.
+//
 // HOURS — from the bakery's own About page ("Daily 5:00 AM – 8:00 PM,
 // fresh batches at 5 AM and 3 PM"), adopted by the team on 2026-10-13.
 // Change the values below and every page follows.
