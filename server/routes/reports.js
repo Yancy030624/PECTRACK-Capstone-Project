@@ -338,7 +338,7 @@ router.get('/summary', async (_request, response) => {
     // Waiting for a driver only — the Dashboard tile is "Deliveries to
     // assign" and opens exactly this list. An ASSIGNED delivery already
     // has one; it is the driver's to move, not the counter's.
-    pool.query(`SELECT COUNT(*)::int AS n FROM deliveries d JOIN orders o ON o.order_id = d.order_id WHERE d.status = 'PENDING_ASSIGNMENT' AND o.status NOT IN ('COMPLETED', 'CANCELLED')`),
+    pool.query(`SELECT COUNT(*)::int AS n FROM deliveries d JOIN orders o ON o.order_id = d.order_id WHERE d.status = 'PENDING_ASSIGNMENT' AND o.status NOT IN ('COMPLETED', 'CANCELLED') AND o.data_source <> 'ASSUMED'`),
     // PHASE10 B1 — products the latest forecast says run out by tomorrow.
     likelySellOutSummary(),
     // Orders to prepare (payment first, the adviser 2026-10-16): paid

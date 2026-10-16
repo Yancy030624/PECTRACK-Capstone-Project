@@ -185,9 +185,12 @@ router.get('/', requireRole('ADMIN', 'CASHIER'), async (request, response) => {
   const orderClause = `ORDER BY CASE d.status
       WHEN 'PENDING_ASSIGNMENT' THEN 0 WHEN 'ASSIGNED' THEN 1 WHEN 'OUT_FOR_DELIVERY' THEN 2
       WHEN 'DELIVERED' THEN 3 WHEN 'FAILED' THEN 4 END, d.delivery_id`
+  // The assumed (synthetic) sales history behind the forecast is not real
+  // work, so its deliveries are never listed (the user, 2026-10-16).
+  const real = "o.data_source <> 'ASSUMED'"
   const result = status
-    ? await pool.query(`${deliverySelectQuery} WHERE d.status = $1 ${orderClause}`, [status])
-    : await pool.query(`${deliverySelectQuery} ${orderClause}`)
+    ? await pool.query(`${deliverySelectQuery} WHERE d.status = $1 AND ${real} ${orderClause}`, [status])
+    : await pool.query(`${deliverySelectQuery} WHERE ${real} ${orderClause}`)
   return response.json({ deliveries: await withItems(result.rows) })
 })
 
