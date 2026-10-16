@@ -333,7 +333,7 @@ function StaffOrderManagement({ user, params }) {
             <div className="rounded-panel border border-line-200 p-3">
               <p className="text-xs font-semibold text-ink-700">Assign rider</p>
               {riders.length === 0 ? (
-                <p className="mt-1 text-xs text-ink-500">No active riders. Add one in Staff Management.</p>
+                <p className="mt-1 text-xs text-ink-500">No active riders. Add one in User Management, Staff.</p>
               ) : (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <div className="min-w-40 flex-1">

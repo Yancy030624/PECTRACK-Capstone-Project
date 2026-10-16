@@ -795,3 +795,10 @@ Figures 2 / 2.1 (Dashboard) and 10 / 11 (Inventory) descriptions follow these.
 - Customer storefront: the cart badge counts products, not pieces (3 pandesal + 1 ensaymada = 2).
 
 Figures for Delivery Management, the driver's My Deliveries, Order Management detail, Dashboard and the storefront header follow these. Drop "Failed" from any delivery status list or diagram in the paper; keep "failed attempt" only as a note on the delivery.
+
+### Modules merged (2026-10-16)
+
+- **User Management** replaces Customer Management and Staff Management in the main menu. It has two tabs: **Customers** (admin and cashier; the cashier can only search and view, as before) and **Staff** (admin only).
+- **Product Management** is no longer a separate module. It is now the **Edit Products** tab of Inventory Management (tabs: Products, Ingredients, Edit Products; Edit Products is admin only). The screen is simpler: a search box, **Categories** and **Add product** buttons, category filter buttons, and one row per product (photo, name, size or pack, category, price, an **On sale** switch, Edit). Add and Edit open the same form (photo, name, price, category, size or pack, description, on sale); Delete is inside the form.
+
+The admin main menu is now: Dashboard, Order Management, Inventory Management, Payment & Billing, Delivery Management, Reporting & Analytics, User Management, My Profile. Update the module list, the system architecture / module diagrams, the use-case diagram, and the figures for Product, Customer and Staff Management to match.

@@ -12,6 +12,7 @@ import { Select } from '../../components/ui/Select.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { IngredientsPanel } from './IngredientsPanel.jsx'
+import { ProductManagement } from './ProductManagement.jsx'
 
 const emptyEditForm = { stockQuantity: '', minStockLevel: '', reason: '', note: '' }
 // Matches server/routes/inventory.js's manualMovementReasons exactly
@@ -54,23 +55,27 @@ const matchesFilter = (item, filter) => {
 // sale, and Ingredients, what they are baked from. `params.tab` picks one
 // and `params.stockFilter` opens it already filtered — the Dashboard's Low
 // stock tile sends 'LOW', so it shows only what is low.
-const tabs = ['Products', 'Ingredients']
+//
+// A third tab, Edit Products (the user, 2026-10-16), is what used to be
+// the Product Management module: adding products, prices, photos,
+// categories, on sale or not. Admin only, as that module was.
 export function InventoryManagement({ user, params }) {
+  const tabs = user.role === 'ADMIN' ? ['Products', 'Ingredients', 'Edit Products'] : ['Products', 'Ingredients']
   const [tab, setTab] = useState(tabs.includes(params?.tab) ? params.tab : 'Products')
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
       <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
       <h1 className="mt-1 text-2xl font-semibold text-ink-900">Inventory Management</h1>
-      <div className="mt-4 flex gap-2" role="tablist">
+      <div className="mt-4 flex flex-wrap gap-2" role="tablist">
         {tabs.map((name) => (
           <Button key={name} type="button" size="sm" role="tab" aria-selected={tab === name} variant={tab === name ? 'primary' : 'secondary'} onClick={() => setTab(name)}>
             {name}
           </Button>
         ))}
       </div>
-      {tab === 'Products'
-        ? <ProductStock user={user} params={params} />
-        : <IngredientsPanel user={user} initialFilter={params?.tab === 'Ingredients' ? params.stockFilter : undefined} />}
+      {tab === 'Products' && <ProductStock user={user} params={params} />}
+      {tab === 'Ingredients' && <IngredientsPanel user={user} initialFilter={params?.tab === 'Ingredients' ? params.stockFilter : undefined} />}
+      {tab === 'Edit Products' && <ProductManagement />}
     </section>
   )
 }

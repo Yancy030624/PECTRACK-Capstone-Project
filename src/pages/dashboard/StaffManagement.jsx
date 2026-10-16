@@ -27,7 +27,7 @@ const roleLabels = { CASHIER: 'Cashier', DELIVERY_PERSONNEL: 'Delivery Personnel
 // Backed by GET/POST/PATCH /api/staff (requireAuth + requireRole('ADMIN')).
 // None of handleSubmit's, saveEdit's, or toggleActive's request bodies
 // changed — this is presentation only.
-export function StaffManagement() {
+export function StaffManagement({ embedded = false } = {}) {
   // Hold the staff list fetched from the server.
   const [staff, setStaff] = useState([])
   // Track whether the initial list is still loading.
@@ -198,10 +198,15 @@ export function StaffManagement() {
   }
 
   return (
-    <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">ADMIN PORTAL</p>
-      <h1 className="mt-1 text-2xl font-semibold text-ink-900">Staff Management</h1>
-      <p className="mt-2 text-sm text-ink-500">Create and review cashier and delivery-personnel accounts.</p>
+    // Shown as the Staff tab of User Management (UserManagement.jsx).
+    <section className={embedded ? 'min-w-0' : 'min-w-0 flex-1 px-4 pb-10 sm:px-7'}>
+      {!embedded && (
+        <>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">ADMIN PORTAL</p>
+          <h1 className="mt-1 text-2xl font-semibold text-ink-900">Staff Management</h1>
+        </>
+      )}
+      <p className={`${embedded ? 'mt-4' : 'mt-2'} text-sm text-ink-500`}>Create and review cashier and delivery-personnel accounts.</p>
 
       <Card className="mt-6 p-6">
         <h2 className="text-lg font-semibold text-ink-900">New staff account</h2>

@@ -20,7 +20,7 @@ import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 // replaced by a shared primitive, which is why several small visual
 // details (button colours, badge tokens, input height) now differ
 // slightly from before — that's the point of the conversion, not a bug.
-export function CustomerManagement({ user }) {
+export function CustomerManagement({ user, embedded = false }) {
   const isAdmin = user.role === 'ADMIN'
 
   const [customers, setCustomers] = useState([])
@@ -95,14 +95,16 @@ export function CustomerManagement({ user }) {
   }
 
   return (
-    <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      {/* Top padding is no longer needed here — Stage 2's shell fix (H6)
-          moved that spacing into Dashboard.jsx's <main>, which now owns
-          it for every module page instead of each one repeating a magic
-          offset. See Dashboard.jsx's layout comment. */}
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
-      <h1 className="mt-1 text-2xl font-semibold text-ink-900">Customer Management</h1>
-      <p className="mt-2 text-sm text-ink-500">{isAdmin ? 'Search and manage customer records.' : 'Search customer records.'}</p>
+    // Shown as the Customers tab of User Management (UserManagement.jsx),
+    // which owns the page title; `embedded` leaves this screen's own off.
+    <section className={embedded ? 'min-w-0' : 'min-w-0 flex-1 px-4 pb-10 sm:px-7'}>
+      {!embedded && (
+        <>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
+          <h1 className="mt-1 text-2xl font-semibold text-ink-900">Customer Management</h1>
+        </>
+      )}
+      <p className={`${embedded ? 'mt-4' : 'mt-2'} text-sm text-ink-500`}>{isAdmin ? 'Search and manage customer records.' : 'Search customer records.'}</p>
 
       {message && <div className="mt-4"><Alert variant="error">{message}</Alert></div>}
 

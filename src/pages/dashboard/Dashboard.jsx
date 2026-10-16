@@ -4,7 +4,6 @@ import { Brand } from '../../components/Brand.jsx'
 import { NotificationBell } from '../../components/NotificationBell.jsx'
 import { Button } from '../../components/ui/Button.jsx'
 import { ModuleIcon } from '../../components/ui/ModuleIcon.jsx'
-import { CustomerManagement } from './CustomerManagement.jsx'
 import { DashboardHome } from './DashboardHome.jsx'
 import { DeliveryManagement } from './DeliveryManagement.jsx'
 import { InventoryManagement } from './InventoryManagement.jsx'
@@ -12,16 +11,13 @@ import { modules } from './modules.js'
 import { MyProfile } from './MyProfile.jsx'
 import { OrderManagement } from './OrderManagement.jsx'
 import { PaymentBilling } from './PaymentBilling.jsx'
-import { ProductManagement } from './ProductManagement.jsx'
 import { ReportingAnalytics } from './ReportingAnalytics.jsx'
-import { StaffManagement } from './StaffManagement.jsx'
+import { UserManagement } from './UserManagement.jsx'
 
 const moduleComponents = {
   ...Object.fromEntries(modules.map((module) => [module.name, DashboardHome])),
-  'Staff Management': StaffManagement,
-  'Product Management': ProductManagement,
   'Inventory Management': InventoryManagement,
-  'Customer Management': CustomerManagement,
+  'User Management': UserManagement,
   'My Profile': MyProfile,
   'Order Management': OrderManagement,
   'Payment & Billing': PaymentBilling,

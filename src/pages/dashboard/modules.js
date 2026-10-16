@@ -26,11 +26,11 @@
 //   4. Inventory Management — is there stock to sell
 //   5. Payment & Billing    — getting paid
 //   6. Delivery Management  — getting orders out the door
-//   7. Product Management   — the catalogue; changes now and then
-//   8. Customer Management  — looking a customer up
-//   9. Reporting & Analytics — looking back, planning ahead
-//  10. Staff Management     — accounts; rarely touched
-//  11. My Profile           — your own account
+//   7. Reporting & Analytics — looking back, planning ahead
+//   8. User Management      — customers and staff accounts
+//   9. My Profile           — your own account
+// (2026-10-16: Product Management moved into Inventory Management as its
+// Edit Products tab; Customer and Staff Management became User Management.)
 // Each role sees only its own entries, in this same relative order.
 export const modules = [
   // ADMIN/CASHIER only. A customer's own landing screen is 'My Orders'
@@ -70,20 +70,12 @@ export const modules = [
   // The driver's screen has always titled itself "My Deliveries"; the nav
   // said "Delivery Management". One name, the driver's own.
   { name: 'My Deliveries', icon: 'deliveries', roles: ['DELIVERY PERSONNEL'] },
-  // ADMIN only — every write in products.js is already admin-gated, so a
-  // cashier opening this screen previously saw a catalogue where every
-  // button failed. They already see products (with prices) inside the
-  // order screen and stock levels in Inventory Management, so the screen
-  // was redundant for them, not merely restricted. See
-  // UI_REVISIONS_PLAN.md Decision 13.
-  { name: 'Product Management', icon: 'products', roles: ['ADMIN'] },
-  // Read-only for CASHIER (CustomerManagement.jsx hides Edit/Deactivate
-  // for anyone but ADMIN, and customers.js:53's PATCH route backs that up
-  // server-side) — a cashier still needs to look a customer up to attach
-  // one to a delivery order, but only ADMIN may change a customer's
-  // record. See UI_REVISIONS_PLAN.md Decision 12.
-  { name: 'Customer Management', icon: 'customers', roles: ['ADMIN', 'CASHIER'] },
+  // Product Management is now the Edit Products tab of Inventory
+  // Management (the user, 2026-10-16), admin only there as before.
   { name: 'Reporting & Analytics', icon: 'reports', roles: ['ADMIN', 'CASHIER'] },
-  { name: 'Staff Management', icon: 'staff', roles: ['ADMIN'] },
+  // Customer Management and Staff Management in one module (the user,
+  // 2026-10-16): a Customers tab, read-only for a cashier as before
+  // (customers.js backs that up), and a Staff tab for the admin only.
+  { name: 'User Management', icon: 'staff', roles: ['ADMIN', 'CASHIER'] },
   { name: 'My Profile', icon: 'profile', roles: ['ADMIN', 'CASHIER', 'DELIVERY PERSONNEL'] },
 ]
