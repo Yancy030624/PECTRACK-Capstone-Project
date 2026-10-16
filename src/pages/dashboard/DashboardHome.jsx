@@ -101,8 +101,8 @@ export function DashboardHome({ user, onNavigate }) {
       to: ['Inventory Management', { tab: 'Ingredients', stockFilter: ingredientCounts.LOW > 0 ? 'LOW' : 'OKAY' }],
     },
     {
-      label: 'Orders to prepare',
-      goodLabel: 'orders to prepare',
+      label: 'Orders',
+      goodLabel: 'orders',
       value: summary.ordersToPrepare,
       tone: summary.ordersOverdue > 0 ? 'attention' : summary.ordersToPrepare > 0 ? 'okay' : 'good',
       note: summary.ordersOverdue > 0 ? `${summary.ordersOverdue} overdue` : summary.ordersToPrepare > 0 ? 'None overdue' : 'All caught up',

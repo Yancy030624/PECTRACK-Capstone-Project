@@ -357,17 +357,6 @@ function StaffOrderManagement({ user, params }) {
             </div>
           )}
 
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Status history</p>
-            <ul className="mt-1.5 space-y-1 text-sm text-ink-500">
-              {orderDetail.statusHistory.map((entry, index) => (
-                <li key={index}>
-                  <span className="font-semibold text-ink-900">{humanize(entry.status)}</span> by {entry.updatedByName} — {formatDateTime(entry.updatedAt)}
-                  {entry.note && <span className="block text-ink-500">"{entry.note}"</span>}
-                </li>
-              ))}
-            </ul>
-          </div>
         </div>
       ) : null}
     </Card>

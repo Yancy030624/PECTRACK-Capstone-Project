@@ -227,7 +227,7 @@ export function CheckoutPage({ user }) {
             </p>
           )}
           <p className="text-center text-xs text-cocoa-500">You pay with GCash right away. Your order is placed once it is paid; an unpaid order is let go after 15 minutes.</p>
-          <button type="button" onClick={handleSubmit} disabled={submitting || needsVerification} className="w-full rounded-2xl bg-crust-600 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-crust-700 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Opening GCash…' : needsVerification ? 'Confirm your email first' : 'Place order and pay with GCash'}</button>
+          <button type="button" onClick={handleSubmit} disabled={submitting || needsVerification} className="w-full rounded-2xl bg-crust-600 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-crust-700 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Opening GCash…' : needsVerification ? 'Confirm your email first' : 'Place Order'}</button>
         </div>
 
         {/* order-first below lg: on a phone the summary used to render

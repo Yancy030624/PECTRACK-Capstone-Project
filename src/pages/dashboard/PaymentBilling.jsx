@@ -42,14 +42,14 @@ function DetailPanel({ open, onClose, labelledBy, children }) {
   )
 }
 
-// One cell's worth of "what this order still owes": a PAID badge, a red
-// figure, or a dash for a cancelled order. Shared by the table and the
-// card list so the two can never phrase it differently.
-function OwedCell({ order }) {
-  if (order.status === 'CANCELLED') return <span className="text-ink-500">—</span>
-  if (order.isFullyPaid) return <StatusBadge status="PAID" label="Paid" />
-  return <span className="font-semibold text-status-fail-fg tabular-nums">{formatPeso(order.balanceDue)}</span>
-}
+// The Billing tab's filter (the user, 2026-10-16): every order is paid
+// first, so there is nothing owed to show — the list is the orders waiting
+// to be picked up, or the ones already completed. No status column and no
+// cancelled orders.
+const billingFilters = [
+  { key: 'READY_FOR_PICKUP', label: 'Ready for pickup' },
+  { key: 'COMPLETED', label: 'Completed' },
+]
 
 export function PaymentBilling({ user }) {
   const isStaff = user.role === 'ADMIN' || user.role === 'CASHIER'
@@ -93,11 +93,11 @@ export function PaymentBilling({ user }) {
     if (Number.isInteger(returnedOrderId) && returnedOrderId > 0) openOrder(returnedOrderId)
   }, [])
 
-  // "Still owes" is the question this screen exists to answer, so it is
-  // the default view; everything else is one toggle away.
+  const [billingFilter, setBillingFilter] = useState('READY_FOR_PICKUP')
+  const showNeededBy = billingFilter === 'READY_FOR_PICKUP'
   const visibleOrders = useMemo(
-    () => orders,
-    [orders],
+    () => orders.filter((order) => order.status === billingFilter),
+    [orders, billingFilter],
   )
 
   const openOrder = async (orderId) => {
@@ -328,11 +328,18 @@ export function PaymentBilling({ user }) {
           <Card className="min-w-0 p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-ink-900">{isStaff ? 'Orders' : 'Your orders'}</h2>
+              <div role="group" aria-label="Filter orders" className="flex flex-wrap gap-2">
+                {billingFilters.map((filter) => (
+                  <Button key={filter.key} type="button" size="sm" variant={billingFilter === filter.key ? 'primary' : 'secondary'} aria-pressed={billingFilter === filter.key} onClick={() => setBillingFilter(filter.key)}>
+                    {filter.label} <span className="tabular-nums opacity-70">{orders.filter((order) => order.status === filter.key).length}</span>
+                  </Button>
+                ))}
+              </div>
             </div>
             {loading ? (
               <LoadingRows className="mt-4" />
             ) : visibleOrders.length === 0 ? (
-              <EmptyState title="No orders yet" />
+              <EmptyState title={billingFilter === 'READY_FOR_PICKUP' ? 'Nothing waiting to be picked up' : 'No completed orders yet'} />
             ) : (
               <>
                 <ul className="mt-4 divide-y divide-line-100 md:hidden">
@@ -344,11 +351,12 @@ export function PaymentBilling({ user }) {
                             Order {orderLabel(order, { numberOnly: true })}
                             {isStaff && <span className="font-normal text-ink-500"> · {order.customerName ?? 'Walk-in'}</span>}
                           </span>
-                          <StatusBadge status={order.status} />
+                          <span className="text-sm font-medium text-ink-900 tabular-nums">{formatPeso(order.totalAmount)}</span>
                         </div>
-                        <div className="mt-1 flex items-center justify-between text-xs text-ink-500">
-                          <span>{formatDate(order.orderDate)} · total {formatPeso(order.totalAmount)}</span>
-                          <OwedCell order={order} />
+                        <div className="mt-1 text-xs text-ink-500">
+                          {showNeededBy
+                            ? <>Needed by {order.requestedFulfillmentTime ? formatDateTime(order.requestedFulfillmentTime) : 'as soon as ready'}</>
+                            : <>Placed {formatDate(order.orderDate)}</>}
                         </div>
                       </button>
                     </li>
@@ -361,9 +369,8 @@ export function PaymentBilling({ user }) {
                         <Th>Order</Th>
                         {isStaff && <Th>Customer</Th>}
                         <Th priority="xl">Placed</Th>
-                        <Th align="right" priority="xl">Total</Th>
-                        <Th align="right">Owed</Th>
-                        <Th>Status</Th>
+                        {showNeededBy && <Th>Needed by</Th>}
+                        <Th align="right">Total</Th>
                       </Tr>
                     </Thead>
                     <Tbody>
@@ -384,11 +391,8 @@ export function PaymentBilling({ user }) {
                           </Td>
                           {isStaff && <Td>{order.customerName ?? 'Walk-in'}</Td>}
                           <Td priority="xl">{formatDate(order.orderDate)}</Td>
-                          <Td numeric priority="xl">{formatPeso(order.totalAmount)}</Td>
-                          <Td numeric><OwedCell order={order} /></Td>
-                          <Td>
-                            <StatusBadge status={order.status} />
-                          </Td>
+                          {showNeededBy && <Td>{order.requestedFulfillmentTime ? formatDateTime(order.requestedFulfillmentTime) : <span className="text-ink-500">As soon as ready</span>}</Td>}
+                          <Td numeric>{formatPeso(order.totalAmount)}</Td>
                         </Tr>
                       ))}
                     </Tbody>

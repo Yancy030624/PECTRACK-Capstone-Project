@@ -763,3 +763,13 @@ Remove "Unpaid balances" from the tile list. "Orders to prepare" counts today's 
 - Past test orders were deleted from the live and local databases on 2026-10-16 (`scripts/delete-past-test-orders.sql`, after a full backup).
 
 In fix 2 of A11–A17, replace "Today, Upcoming, Past" with "Today and Upcoming, or one chosen date".
+
+### Screen fixes after review (2026-10-16)
+
+- Dashboard: the tile "Orders to prepare" is now **Orders**.
+- Order Management (staff): the order detail no longer lists the status history.
+- Checkout: the button is **Place Order** (it still opens GCash at once).
+- Payment & Billing, Billing tab: **Ready for pickup** / **Completed** filter buttons; Ready for pickup shows when each order is needed by. No Status or Owed column, no cancelled orders.
+- Payment & Billing, Payment log: paid payments only; no Status filter or column.
+
+Figure 13 (Payment & Billing) and Figure 15 (Checkout button) descriptions follow these.

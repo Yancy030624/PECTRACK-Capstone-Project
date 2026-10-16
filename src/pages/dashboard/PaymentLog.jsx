@@ -13,14 +13,13 @@ import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Field } from '../../components/ui/Field.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
-import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDateTime, formatPeso } from '../../lib/format.js'
 import { orderLabel } from '../../lib/orderNumber.js'
 
 const pageSize = 25
-const emptyFilters = { from: '', to: '', method: '', status: '' }
+const emptyFilters = { from: '', to: '', method: '' }
 
 export function PaymentLog({ user }) {
   const [filters, setFilters] = useState(emptyFilters)
@@ -39,7 +38,9 @@ export function PaymentLog({ user }) {
       if (applied.from) params.set('from', applied.from)
       if (applied.to) params.set('to', applied.to)
       if (applied.method) params.set('method', applied.method)
-      if (applied.status) params.set('status', applied.status)
+      // Payment first (the user, 2026-10-16): the log lists money received
+      // — PAID payments only, never pending, failed, cancelled or refunded.
+      params.set('status', 'PAID')
       try {
         setResult(await apiGet(`/api/payments?${params.toString()}`))
         setErrors({})
@@ -73,7 +74,7 @@ export function PaymentLog({ user }) {
     <Card className="mt-6 p-6">
       <h2 className="text-lg font-semibold text-ink-900">{caption}</h2>
 
-      <form className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_auto] lg:items-end" onSubmit={applyFilters} noValidate>
+      <form className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-end" onSubmit={applyFilters} noValidate>
         <Field label="From" error={errors.from}>
           <Input type="date" value={filters.from} onChange={(event) => setFilters({ ...filters, from: event.target.value })} />
         </Field>
@@ -85,12 +86,6 @@ export function PaymentLog({ user }) {
             <option value="">Any</option>
             <option value="CASH">Cash</option>
             <option value="GCASH">GCash</option>
-          </Select>
-        </Field>
-        <Field label="Status" error={errors.status}>
-          <Select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}>
-            <option value="">Any</option>
-            {['PAID', 'PENDING', 'FAILED', 'CANCELLED', 'REFUNDED'].map((status) => <option key={status} value={status}>{status}</option>)}
           </Select>
         </Field>
         <div className="flex gap-2">
@@ -119,7 +114,6 @@ export function PaymentLog({ user }) {
                   <Th>Method</Th>
                   <Th align="right">Amount</Th>
                   <Th priority="xl">Reference</Th>
-                  <Th>Status</Th>
                   <Th priority="lg">Recorded by</Th>
                   <Th priority="md">When</Th>
                 </Tr>
@@ -132,12 +126,8 @@ export function PaymentLog({ user }) {
                     <Td>{payment.method}</Td>
                     <Td numeric>{formatPeso(payment.amount)}</Td>
                     <Td priority="xl" className="text-ink-500">{payment.gatewayReference ?? '—'}</Td>
-                    <Td>
-                      <StatusBadge status={payment.status} />
-                      {payment.status === 'REFUNDED' && payment.refundReason && <p className="mt-1 text-xs text-ink-500">"{payment.refundReason}"</p>}
-                    </Td>
-                    <Td priority="lg">{payment.status === 'REFUNDED' ? payment.refundedByName : payment.recordedByName}</Td>
-                    <Td priority="md" className="whitespace-nowrap text-ink-500">{formatDateTime(payment.status === 'REFUNDED' ? payment.refundedAt : (payment.paymentDate ?? payment.createdAt))}</Td>
+                    <Td priority="lg">{payment.recordedByName ?? (payment.gatewayReference ? 'Online (GCash)' : '—')}</Td>
+                    <Td priority="md" className="whitespace-nowrap text-ink-500">{formatDateTime(payment.paymentDate ?? payment.createdAt)}</Td>
                   </Tr>
                 ))}
               </Tbody>
