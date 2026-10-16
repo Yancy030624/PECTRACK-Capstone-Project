@@ -51,7 +51,7 @@ const maxPaymentsLimit = 200
 const mapPaymentListRow = (row) => ({
   id: row.payment_id,
   orderId: row.order_id,
-  orderNumber: row.daily_number,
+  orderNumber: row.order_id,
   orderDay: row.order_day,
   orderStatus: row.order_status,
   customerName: row.customer_name,
@@ -614,7 +614,7 @@ router.post('/intent', requireRole('CUSTOMER'), async (request, response) => {
       secretKey: config.paymongo.secretKey,
       amountCentavos,
       referenceNumber: `order-${orderId}`,
-      description: `Pecto's Bakery order ${orderLabel(preflight.rows[0].daily_number, preflight.rows[0].order_day)}`,
+      description: `Pecto's Bakery order ${orderLabel(orderId)}`,
       successUrl,
       cancelUrl: returnUrl,
       billing: payerDetails && Object.keys(payerDetails).length ? payerDetails : undefined,

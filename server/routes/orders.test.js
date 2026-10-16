@@ -1002,9 +1002,10 @@ describe('order management', () => {
     assert.equal((await fetch(`${baseUrl}/api/settings`, { headers: { Cookie: adminCookie } })).status, 404)
   })
 
-  // CLIENT_REVISIONS_PLAN.md, R4 — orders are numbered #1, #2… per Manila
-  // day, by the orders_daily_number trigger (migration 024).
-  test('two simultaneous orders get different daily numbers, and both carry the day', async () => {
+  // The order number shown is the order's permanent id again (the adviser,
+  // 2026-10-16). The daily number of CLIENT_REVISIONS_PLAN.md R4 is still
+  // kept by its trigger (the next test), just no longer shown.
+  test('two simultaneous orders get different, permanent order numbers, and both carry the day', async () => {
     const place = () => fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 1 }] }) })
     const responses = await Promise.all([place(), place()])
     const orders = []
@@ -1014,7 +1015,7 @@ describe('order management', () => {
       createdOrderIds.push(order.id)
       orders.push(order)
     }
-    assert.ok(Number.isInteger(orders[0].orderNumber) && orders[0].orderNumber > 0)
+    assert.equal(String(orders[0].orderNumber), String(orders[0].id), 'the number is the order id')
     assert.notEqual(orders[0].orderNumber, orders[1].orderNumber)
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())
     assert.equal(orders[0].orderDay, today)

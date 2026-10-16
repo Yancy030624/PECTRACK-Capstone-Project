@@ -628,3 +628,64 @@ The bakery's opening hours on the storefront (5:00 AM – 8:00 PM) are a separat
 
 ### Figures to retake after A3–A6
 6 / 7 (Order Management: status choices without Confirmed), 15 and 15.1 (Checkout: the new date and time pickers), the new 15.2 (receipt), and the Order placed page if shown.
+
+---
+
+## Adviser revisions A7–A10 — fewer clicks: order numbers, status buttons, old orders, Walk-in page (2026-10-16)
+
+The adviser's aim: users should not have to click through extra buttons or pages, and statuses should move on their own.
+
+- **A7 — order numbers:** orders show their permanent number again (#21170), unique for good. This **reverses R4's daily numbers** (#1, #2… each day) on screen, in emails and on PayMongo; the daily number is still kept in the database but no longer shown.
+- **A8 — status buttons:** in Order Management the status filter is a row of buttons (Open, Waiting for payment, In production, Ready for pickup, Out for delivery, Completed, Cancelled, All) with counts, and "Confirmed" is gone. The status dropdown in an order's detail is replaced by the one or two actions still done by hand: **Ready for pickup**, **Picked up — complete**, and **Cancel order** (unpaid orders only, with a reason). Everything else moves on its own.
+- **A9 — old orders close themselves:** an order whose day has passed (the day it was needed, or the day it was placed) and that is still open is closed by the system within 15 minutes: **completed** if paid in full, **cancelled** if nothing was paid. A cancelled order that was never baked returns its stock; one already baked does not. Part-paid orders and orders out for delivery are left for staff. The status history shows these changes as made by "System" (migration 028).
+- **A10 — Walk-in page:** the cashier's "New order" tab is now **Walk-in**. It asks only for the items and, if it is for later, the date and time. No customer account, no pickup/delivery choice, no special instructions: every order placed there is a walk-in pickup.
+
+### 1. Undo R4's daily order numbers (R4 fixes 1, 2, 5 and 8)
+
+- **R4 fix 1 / 2:** remove the sentences "Each order receives a daily order number (#1, #2, #3…) that starts again at #1 every day, so staff and customers can call out an order easily." and "Each order is given a daily order number that starts again at #1 every day."
+- **R4 fix 5 (Figure 6):** "lists the orders by their daily order number" → "lists the orders by their order number".
+- **R4 fix 8 (Database, ORDER table):** leave OrderDay and DailyNumber in the attribute list only if your ERD lists every column; replace the sentence about them with:
+  > DailyNumber and OrderDay are kept for the bakery's records; the order number shown to people is the OrderID.
+
+### 2. Scope, Order Management Module (on top of A3–A6 fix 1)
+
+**Add after the stages sentence:**
+> Staff filter the orders with one-click buttons by stage. The only status changes done by hand are marking a pickup order ready and picked up, and cancelling an unpaid order; an order whose day has passed and that is still open is closed automatically, completed if paid and cancelled if not.
+
+### 3. Figure 6 description, Order Management (admin)
+
+**Find:**
+> and can be searched and filtered by status.
+
+**Replace with:**
+> and can be searched by order number or customer and filtered with one-click status buttons, each showing how many orders it holds.
+
+**Find:**
+> A status can only move forward; cancelling requires a reason.
+
+**Replace with:**
+> Instead of choosing a status from a list, staff press the one action left to do — Ready for pickup, Picked up, or Cancel order (unpaid orders only, with a reason); every other step happens on its own.
+
+### 4. Figure 7 description, Order Management (cashier)
+
+**Find:**
+> The cashier's Order Management page has two tabs: Orders, the same searchable order list and detail as the admin's, and New order, for orders taken at the counter.
+
+**Replace with:**
+> The cashier's Order Management page has two tabs: Orders, the same searchable order list and detail as the admin's, and Walk-in, for customers at the counter. Walk-in asks only for the items and, if the order is for later, the date and time; every walk-in order is a pickup with no customer account.
+
+### 5. Order Management flowchart, the Cashier paragraph
+
+**Find:**
+> The Cashier selects the customer record and adds products to the order.
+
+**Replace with:**
+> The Cashier adds the products the walk-in customer wants to the order.
+
+### 6. Database chapter
+
+- **ORDER_STATUS_HISTORY:** "UpdatedBy is empty when the system made the change, such as closing an order whose day has passed."
+- **INVENTORY_MOVEMENT:** the same note for ChangedBy.
+
+### Figures to retake after A7–A10
+6 and 7 (status buttons, action buttons, the Walk-in tab), and every figure that shows an order number (it is #21170-style again).

@@ -1,7 +1,7 @@
 import { closingTime, dateLimits, openForNow, timeLimits } from '../lib/orderHours.js'
 
 // "When do you need it?" — a date and a time, used by the storefront
-// checkout and the counter's New order form (the adviser, 2026-10-16).
+// checkout and the cashier's Walk-in page (the adviser, 2026-10-16).
 // The date picker starts at today (tomorrow after 10:00 PM) and the time
 // picker runs from 5:00 AM to 10:00 PM, from the next minute when the day
 // is today. Both blank means "as soon as it's ready", which is only taken

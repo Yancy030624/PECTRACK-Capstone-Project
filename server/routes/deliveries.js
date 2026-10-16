@@ -69,7 +69,7 @@ const mapDeliveryRow = (row) => ({
   id: row.delivery_id,
   orderId: row.order_id,
   // The daily order number people see (CLIENT_REVISIONS_PLAN.md, R4).
-  orderNumber: row.daily_number,
+  orderNumber: row.order_id,
   orderDay: row.order_day,
   orderStatus: row.order_status,
   totalAmount: row.total_amount,

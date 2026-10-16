@@ -18,6 +18,7 @@ import { requireAuth, requireRole } from '../lib/auth.js'
 import { syncStockAlert } from '../lib/inventory.js'
 import { config } from '../config.js'
 import { checkOrderTime } from '../lib/orderHours.js'
+import { applyCancellationEffects } from '../lib/orderStatus.js'
 import { sendInBackground, sendOrderReadyEmail } from '../lib/notices.js'
 import { parseId } from '../lib/validation.js'
 
@@ -75,7 +76,7 @@ const mapOrderSummary = (row) => ({
   id: row.order_id,
   // What people see (CLIENT_REVISIONS_PLAN.md, R4): #orderNumber, which
   // starts again at 1 each Manila day. `id` stays the key for every request.
-  orderNumber: row.daily_number,
+  orderNumber: row.order_id,
   orderDay: row.order_day,
   customerId: row.customer_id,
   customerName: row.customer_name,
@@ -183,9 +184,9 @@ router.get('/:id', async (request, response) => {
     [order.order_id],
   )
   const historyResult = await pool.query(
-    `SELECT h.status, h.note, h.updated_at, COALESCE(a.name, ca.name, c.name, d.name) AS updated_by_name
+    `SELECT h.status, h.note, h.updated_at, COALESCE(a.name, ca.name, c.name, d.name, 'System') AS updated_by_name
      FROM order_status_history h
-     JOIN users u ON u.user_id = h.updated_by
+     LEFT JOIN users u ON u.user_id = h.updated_by
      LEFT JOIN admins a ON a.user_id = u.user_id
      LEFT JOIN cashiers ca ON ca.user_id = u.user_id
      LEFT JOIN customers c ON c.user_id = u.user_id
@@ -225,7 +226,7 @@ router.get('/:id', async (request, response) => {
   return response.json({
     order: {
       id: order.order_id,
-      orderNumber: order.daily_number,
+      orderNumber: order.order_id,
       orderDay: order.order_day,
       customerId: order.customer_id,
       customerName: order.customer_name,
@@ -394,8 +395,10 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
       [customerId, processedBy, orderType, addressId, instructions, fulfillment.value, initialStatus],
     )
     const orderId = orderResult.rows[0].order_id
-    // Given by the orders_daily_number trigger (migration 024).
-    const { daily_number: orderNumber, order_day: orderDay } = orderResult.rows[0]
+    // The order number people see is the order's own permanent id (the
+    // adviser, 2026-10-16). orders.daily_number (migration 024) is still
+    // filled in by its trigger but no longer shown.
+    const { order_id: orderNumber, order_day: orderDay } = orderResult.rows[0]
 
     // PHASE 7, DECISION 3 — the deliveries row is created WITH the order,
     // in the same transaction, not lazily on first assignment. status
@@ -681,61 +684,11 @@ router.patch('/:id', async (request, response) => {
     }
 
     // Restoring stock is triggered by the TRANSITION into CANCELLED, not
-    // by the resulting state. The claim above guarantees this block runs
-    // at most once per order — a second cancel can never get past it —
-    // which is exactly what makes it safe to restore unconditionally
-    // rather than needing to check whether a restore already happened.
-    if (status === 'CANCELLED') {
-      // ORDER BY product_id for the same deadlock-avoidance reason the
-      // deduction loop in POST / sorts its items — a restore and a
-      // simultaneous placement touching overlapping products should
-      // always take their row locks in the same order.
-      const items = await client.query('SELECT product_id, quantity FROM order_details WHERE order_id = $1 ORDER BY product_id', [orderId])
-      for (const item of items.rows) {
-        // A plain increment is safe here with no conditional guard,
-        // unlike the deduction in POST / — adding stock back can never
-        // violate CHECK (stock_quantity >= 0), so there's no failure mode
-        // to detect.
-        const restored = await client.query(
-          'UPDATE inventory SET stock_quantity = stock_quantity + $2, last_updated = CURRENT_TIMESTAMP WHERE product_id = $1 RETURNING inventory_id, stock_quantity, min_stock_level',
-          [item.product_id, item.quantity],
-        )
-        await client.query(
-          'INSERT INTO inventory_movements (inventory_id, order_id, changed_by, quantity_change, reason) VALUES ($1, $2, $3, $4, $5)',
-          [restored.rows[0].inventory_id, orderId, request.user.id, item.quantity, 'ORDER_CANCELLED'],
-        )
-        // Closes a low-stock alert if restoring this order's stock brought
-        // the product back above its minimum. See lib/inventory.js.
-        await syncStockAlert(client, { inventoryId: restored.rows[0].inventory_id, stockQuantity: restored.rows[0].stock_quantity, minStockLevel: restored.rows[0].min_stock_level })
-      }
-
-      // A PENDING gateway intent (routes/payments.js POST /intent) is not
-      // money in hand, so it does not block the cancel above — but left
-      // PENDING it is a live checkout link for an order nobody will fill.
-      // Closing it here marks a payment that still arrives as one made
-      // AFTER the cancel (see POST /webhook: it is recorded as PAID and the
-      // order is flagged for staff to settle). Runs regardless of role: a
-      // customer cancelling their own PLACED order can hold an open intent.
-      await client.query(
-        `UPDATE payments SET status = 'CANCELLED' WHERE order_id = $1 AND status = 'PENDING'`,
-        [orderId],
-      )
-
-      // PHASE 7, DECISION 6 — cancelling an order must resolve its
-      // delivery row, in this same transaction. Without this, cancelling
-      // an order that's ASSIGNED or OUT_FOR_DELIVERY leaves that row
-      // pointing at a cancelled order forever — it stays on some driver's
-      // "my deliveries" list, and the assignment queue slowly fills with
-      // work nobody should do. NOT IN ('DELIVERED', 'FAILED') so an
-      // already-terminal delivery (the goods already arrived, or a prior
-      // failure) is left alone — this only touches a delivery that was
-      // still genuinely in progress when the order was cancelled.
-      await client.query(
-        `UPDATE deliveries SET status = 'FAILED', failed_at = CURRENT_TIMESTAMP
-          WHERE order_id = $1 AND status NOT IN ('DELIVERED', 'FAILED')`,
-        [orderId],
-      )
-    }
+    // by the resulting state. The claim above guarantees this runs at most
+    // once per order. What a cancellation undoes — stock back on the shelf,
+    // an open GCash link closed, the delivery resolved — lives in
+    // lib/orderStatus.js, shared with the automatic closing of old orders.
+    if (status === 'CANCELLED') await applyCancellationEffects(client, orderId, request.user.id)
 
     // orders.status was already written by the claim at the top of this
     // transaction; only the history row is left to record.
@@ -770,7 +723,7 @@ router.patch('/:id', async (request, response) => {
         return sendOrderReadyEmail({
           to: customer.email,
           name: customer.name,
-          order: { orderNumber: customer.daily_number, orderDay: customer.order_day },
+          order: { orderNumber: orderId, orderDay: customer.order_day },
           items: lines.rows,
         })
       })

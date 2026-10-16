@@ -126,7 +126,7 @@ function mapEvent(type, row) {
     type,
     at: at.toISOString(),
     orderId: row.order_id,
-    orderNumber: row.daily_number,
+    orderNumber: row.order_id,
     orderDay: row.order_day,
     orderType: row.order_type,
     orderStatus: row.order_status,

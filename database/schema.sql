@@ -447,8 +447,9 @@ CREATE TABLE inventory_movements (
   data_source data_source NOT NULL DEFAULT 'RECORDED',
   -- users(user_id), not a role table: a movement can be caused by a customer
   -- placing an order, a cashier, or an admin — the same reasoning as
-  -- order_status_history.updated_by.
-  changed_by BIGINT NOT NULL REFERENCES users(user_id),
+  -- order_status_history.updated_by. Migration 028: NULL when the system
+  -- made the change.
+  changed_by BIGINT REFERENCES users(user_id),
   -- Signed: negative removes stock, positive adds it. One signed column
   -- rather than a magnitude plus a direction flag, because CORRECTION goes
   -- either way and SUM() here must equal the net change to stock_quantity.
@@ -525,7 +526,9 @@ CREATE TABLE security_events (
 CREATE TABLE order_status_history (
   history_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   order_id BIGINT NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,
-  updated_by BIGINT NOT NULL REFERENCES users(user_id),
+  -- Migration 028: NULL when the system made the change (an order closed
+  -- automatically after its day, server/lib/staleOrders.js).
+  updated_by BIGINT REFERENCES users(user_id),
   status order_status NOT NULL,
   note TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP

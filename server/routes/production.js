@@ -102,7 +102,7 @@ router.get('/schedule', async (request, response) => {
     if (!slots.has(row.slot)) slots.set(row.slot, [])
     slots.get(row.slot).push({
       id: row.order_id,
-      orderNumber: row.daily_number,
+      orderNumber: row.order_id,
       orderDay: row.order_day,
       status: row.status,
       orderType: row.order_type,

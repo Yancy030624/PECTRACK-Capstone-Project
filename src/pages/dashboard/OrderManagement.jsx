@@ -17,7 +17,6 @@ import { Alert } from '../../components/ui/Alert.jsx'
 import { Button } from '../../components/ui/Button.jsx'
 import { Card } from '../../components/ui/Card.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
-import { Field } from '../../components/ui/Field.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
@@ -26,7 +25,7 @@ import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
 import { matchesOrderSearch, orderLabel } from '../../lib/orderNumber.js'
 import { useIsLargeScreen } from '../../lib/useMediaQuery.js'
-import { NewOrderForm } from './NewOrderForm.jsx'
+import { WalkInOrderForm } from './WalkInOrderForm.jsx'
 
 // Mirrors routes/orders.js's statusRank: a status change may only move
 // FORWARD, READY_FOR_PICKUP belongs to PICKUP orders and OUT_FOR_DELIVERY
@@ -35,7 +34,28 @@ import { NewOrderForm } from './NewOrderForm.jsx'
 // the server would accept, so a cashier is never handed a list where most
 // choices are a guaranteed 409.
 const statusRank = { PLACED: 0, CONFIRMED: 1, IN_PRODUCTION: 2, READY_FOR_PICKUP: 3, OUT_FOR_DELIVERY: 3, COMPLETED: 4 }
-const allStatuses = ['PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP', 'OUT_FOR_DELIVERY', 'COMPLETED', 'CANCELLED']
+// The status filter, as buttons (the adviser, 2026-10-16): one click, no
+// dropdown. "Confirmed" is gone — orders go into production on their own —
+// and "Placed" is shown for what it now means: a delivery order waiting
+// for its payment.
+const statusFilters = [
+  { key: 'OPEN', label: 'Open' },
+  { key: 'PLACED', label: 'Waiting for payment' },
+  { key: 'IN_PRODUCTION', label: 'In production' },
+  { key: 'READY_FOR_PICKUP', label: 'Ready for pickup' },
+  { key: 'OUT_FOR_DELIVERY', label: 'Out for delivery' },
+  { key: 'COMPLETED', label: 'Completed' },
+  { key: 'CANCELLED', label: 'Cancelled' },
+  { key: 'ALL', label: 'All' },
+]
+const matchesFilter = (order, filter) => {
+  if (filter === 'ALL') return true
+  if (filter === 'OPEN') return openStatuses.has(order.status)
+  // An order from before automatic production may still say CONFIRMED;
+  // it belongs with the ones being made.
+  if (filter === 'IN_PRODUCTION') return order.status === 'IN_PRODUCTION' || order.status === 'CONFIRMED'
+  return order.status === filter
+}
 const openStatuses = new Set(['PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP', 'OUT_FOR_DELIVERY'])
 const customerCancelReasons = ['Ordered by mistake', 'Changed my mind', 'Need to change the items', 'Pickup or delivery time no longer works', 'Other reason']
 
@@ -45,17 +65,26 @@ const awaitingDeliveryPayment = (order) => order.orderType === 'DELIVERY' && ord
 // No refunds (CLIENT_REVISIONS_PLAN.md, R2): an order with any payment
 // cannot be cancelled, so Cancel is not offered for one.
 const hasPaid = (order) => Number(order.payment?.amountPaid ?? 0) > 0
-function nextStatusOptions(order) {
-  const cancel = hasPaid(order) ? [] : ['CANCELLED']
-  if (awaitingDeliveryPayment(order)) return cancel
-  const forward = Object.keys(statusRank).filter((status) => statusRank[status] > statusRank[order.status])
-  return forward
-    // No "Confirmed" step any more: orders go into production on their own
-    // (server/lib/orderStatus.js). The status stays only for older orders.
-    .filter((status) => status !== 'CONFIRMED')
-    .filter((status) => status !== 'OUT_FOR_DELIVERY')
-    .filter((status) => status !== 'READY_FOR_PICKUP' || order.orderType === 'PICKUP')
-    .concat(cancel)
+// The one or two things staff still do by hand, as buttons (the adviser,
+// 2026-10-16). Everything else moves on its own: production starts when a
+// pickup order is placed or a delivery order is paid, a delivery goes out
+// and is delivered from the driver's phone, and delivered completes it.
+// What is left: a pickup order is ready, then picked up; and an unpaid
+// order can be cancelled.
+function statusActions(order) {
+  if (order.status === 'COMPLETED' || order.status === 'CANCELLED') return []
+  const actions = []
+  if (order.orderType === 'PICKUP') {
+    if (statusRank[order.status] < statusRank.READY_FOR_PICKUP) {
+      actions.push({ status: 'READY_FOR_PICKUP', label: 'Ready for pickup' })
+      // A paid walk-in is often handed over on the spot: one click to finish.
+      if (order.payment?.isFullyPaid) actions.push({ status: 'COMPLETED', label: 'Picked up — complete' })
+    } else if (order.status === 'READY_FOR_PICKUP') {
+      actions.push({ status: 'COMPLETED', label: 'Picked up — complete', needsPayment: !order.payment?.isFullyPaid })
+    }
+  }
+  if (!hasPaid(order)) actions.push({ status: 'CANCELLED', label: 'Cancel order' })
+  return actions
 }
 const humanize = (status) => status.replaceAll('_', ' ')
 
@@ -161,7 +190,8 @@ function StaffOrderManagement({ user, params }) {
   const [selectedOrderId, setSelectedOrderId] = useState(null)
   const [orderDetail, setOrderDetail] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
-  const [statusChoice, setStatusChoice] = useState('')
+  // Cancelling asks for a reason first; every other action is one click.
+  const [cancelling, setCancelling] = useState(false)
   const [statusNote, setStatusNote] = useState('')
   const [statusSubmitting, setStatusSubmitting] = useState(false)
 
@@ -189,8 +219,7 @@ function StaffOrderManagement({ user, params }) {
   const visibleOrders = useMemo(() => {
     const term = search.trim().toLowerCase()
     return orders.filter((order) => {
-      if (statusFilter === 'OPEN' && !openStatuses.has(order.status)) return false
-      if (statusFilter !== 'OPEN' && statusFilter !== 'ALL' && order.status !== statusFilter) return false
+      if (!matchesFilter(order, statusFilter)) return false
       if (!term) return true
       return matchesOrderSearch(order, term) || (order.customerName ?? 'walk-in').toLowerCase().includes(term)
     })
@@ -204,7 +233,7 @@ function StaffOrderManagement({ user, params }) {
     try {
       const data = await apiGet(`/api/orders/${orderId}`)
       setOrderDetail(data.order)
-      setStatusChoice('')
+      setCancelling(false)
       setStatusNote('')
     } catch (error) {
       setMessage(error.message)
@@ -217,20 +246,14 @@ function StaffOrderManagement({ user, params }) {
     setOrderDetail(null)
   }
 
-  const handleStatusSubmit = async (event) => {
-    event.preventDefault()
-    if (!statusChoice) return
-    // Cancelling restores stock — which cannot be
-    // which can be undone. The customer's own cancel button already asks;
-    // the staff path, with broader powers, asked nothing.
-    if (statusChoice === 'CANCELLED' && !window.confirm(`Cancel order ${orderLabel(orderDetail)}? Its stock goes back on the shelf. This cannot be undone.`)) return
+  const changeStatus = async (status) => {
     setStatusSubmitting(true)
     setMessage('')
     try {
-      const data = await apiPatch(`/api/orders/${selectedOrderId}`, { status: statusChoice, note: statusNote || null })
+      await apiPatch(`/api/orders/${selectedOrderId}`, { status, note: status === 'CANCELLED' ? statusNote.trim() : null })
       await openOrder(selectedOrderId)
       await loadOrders()
-      setNotice(data.message ?? `Order ${orderLabel(orderDetail)} is now ${humanize(statusChoice).toLowerCase()}.`)
+      setNotice(`Order ${orderLabel(orderDetail)} is now ${humanize(status).toLowerCase()}.`)
     } catch (error) {
       setMessage(error.message)
     } finally {
@@ -294,24 +317,43 @@ function StaffOrderManagement({ user, params }) {
           {orderDetail.status === 'CANCELLED' || orderDetail.status === 'COMPLETED' ? (
             <p className="border-t border-line-100 pt-3 text-sm text-ink-500">This order is {orderDetail.status.toLowerCase()} and can no longer be changed.</p>
           ) : (
-            <form className="space-y-3 border-t border-line-100 pt-3" onSubmit={handleStatusSubmit}>
-              <Field label="Update status" help={orderDetail.orderType === 'DELIVERY' ? 'Out for delivery is set from Delivery Management. Completed needs the delivery marked delivered and the order fully paid.' : undefined}>
-                <Select value={statusChoice} onChange={(event) => setStatusChoice(event.target.value)}>
-                  <option value="">Select a new status</option>
-                  {nextStatusOptions(orderDetail).map((status) => (
-                    <option key={status} value={status}>
-                      {humanize(status)}
-                    </option>
+            <div className="space-y-3 border-t border-line-100 pt-3">
+              {statusActions(orderDetail).length === 0 ? (
+                <p className="text-xs text-ink-500">
+                  {orderDetail.orderType === 'DELIVERY'
+                    ? 'Nothing to do by hand: it goes into production once paid, the driver marks it out for delivery and delivered, and delivered completes it.'
+                    : 'Paid orders cannot be cancelled. Nothing else to do by hand.'}
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {statusActions(orderDetail).filter((action) => action.status !== 'CANCELLED').map((action) => (
+                    <Button key={action.status} type="button" size="sm" onClick={() => changeStatus(action.status)} disabled={statusSubmitting || action.needsPayment}>
+                      {statusSubmitting ? 'Saving…' : action.label}
+                    </Button>
                   ))}
-                </Select>
-              </Field>
-              {/* A cancellation needs a reason (PHASE10 B7); it is kept in
-                  the status history below. */}
-              <Input value={statusNote} onChange={(event) => setStatusNote(event.target.value)} placeholder={statusChoice === 'CANCELLED' ? 'Reason for cancelling (required)' : 'Optional note'} aria-label={statusChoice === 'CANCELLED' ? 'Reason for cancelling' : 'Status note'} required={statusChoice === 'CANCELLED'} minLength={statusChoice === 'CANCELLED' ? 5 : undefined} />
-              <Button type="submit" size="sm" disabled={statusSubmitting || !statusChoice || (statusChoice === 'CANCELLED' && statusNote.trim().length < 5)}>
-                {statusSubmitting ? 'Saving…' : 'Save status'}
-              </Button>
-            </form>
+                  {statusActions(orderDetail).some((action) => action.status === 'CANCELLED') && !cancelling && (
+                    <Button type="button" size="sm" variant="destructive" onClick={() => setCancelling(true)} disabled={statusSubmitting}>Cancel order</Button>
+                  )}
+                </div>
+              )}
+              {statusActions(orderDetail).some((action) => action.needsPayment) && (
+                <p className="text-xs text-status-fail-fg">Record the payment in Payment &amp; Billing first — an order is completed only once fully paid.</p>
+              )}
+              {cancelling && (
+                // A cancellation needs a reason (PHASE10 B7); it is kept in
+                // the status history below. Unpaid orders only: the
+                // bakery gives no refunds.
+                <div className="space-y-2 rounded-panel border border-line-200 p-3">
+                  <Input value={statusNote} onChange={(event) => setStatusNote(event.target.value)} placeholder="Reason for cancelling (required)" aria-label="Reason for cancelling" />
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" variant="destructive" onClick={() => changeStatus('CANCELLED')} disabled={statusSubmitting || statusNote.trim().length < 5}>
+                      {statusSubmitting ? 'Cancelling…' : 'Confirm cancel'}
+                    </Button>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => { setCancelling(false); setStatusNote('') }}>Keep the order</Button>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           <div>
@@ -335,11 +377,11 @@ function StaffOrderManagement({ user, params }) {
       {/* The account page already says whose it is; the portal label is for staff. */}
       {user.role !== 'CUSTOMER' && <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>}
       <h1 className="mt-1 text-2xl font-semibold text-ink-900">Order Management</h1>
-      <p className="mt-2 text-sm text-ink-500">{isCashier ? 'Take an order at the counter, or manage every order already placed.' : 'Every order placed, pickup and delivery.'}</p>
+      <p className="mt-2 text-sm text-ink-500">{isCashier ? 'Ring up a walk-in customer, or manage every order already placed.' : 'Every order placed, pickup and delivery.'}</p>
 
       {isCashier && (
         <div className="mt-6 flex gap-2">
-          {['Orders', 'New order'].map((tab) => (
+          {['Orders', 'Walk-in'].map((tab) => (
             <Button type="button" key={tab} size="sm" variant={activeTab === tab ? 'primary' : 'secondary'} onClick={() => setActiveTab(tab)}>
               {tab}
             </Button>
@@ -362,12 +404,17 @@ function StaffOrderManagement({ user, params }) {
             <h2 className="text-lg font-semibold text-ink-900">Orders</h2>
             <div className="flex flex-wrap gap-2">
               <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Order # or customer" aria-label="Search orders" className="w-44" />
-              <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter by status" className="w-40">
-                <option value="OPEN">Open orders</option>
-                <option value="ALL">All orders</option>
-                {allStatuses.map((status) => <option key={status} value={status}>{humanize(status)}</option>)}
-              </Select>
             </div>
+          </div>
+          <div role="group" aria-label="Filter by status" className="mt-3 flex flex-wrap gap-1.5">
+            {statusFilters.map((filter) => {
+              const count = filter.key === 'ALL' ? orders.length : orders.filter((order) => matchesFilter(order, filter.key)).length
+              return (
+                <Button key={filter.key} type="button" size="sm" variant={statusFilter === filter.key ? 'primary' : 'secondary'} aria-pressed={statusFilter === filter.key} onClick={() => setStatusFilter(filter.key)}>
+                  {filter.label} <span className="tabular-nums opacity-70">{count}</span>
+                </Button>
+              )
+            })}
           </div>
           {loading ? (
             <LoadingRows className="mt-4" />
@@ -431,8 +478,8 @@ function StaffOrderManagement({ user, params }) {
       </div>
 
       {isCashier && (
-        <div hidden={activeTab !== 'New order'}>
-          <NewOrderForm onCreated={handleOrderCreated} />
+        <div hidden={activeTab !== 'Walk-in'}>
+          <WalkInOrderForm onCreated={handleOrderCreated} />
         </div>
       )}
     </section>

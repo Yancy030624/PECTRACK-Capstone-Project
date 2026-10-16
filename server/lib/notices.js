@@ -34,10 +34,9 @@ const formatAddress = (address) => [
 
 const itemLines = (items = []) => items.map((item) => `  - ${item.name}${item.variant ? ` (${item.variant})` : ''} × ${item.quantity}`)
 
-// The order as people read it: "#7" in the subject, "#7 (Oct 15)" in the
-// body, where the email may be read on another day.
+// The order as people read it: its permanent number, "#21170".
 const subjectNumber = (order) => `#${order.orderNumber}`
-const bodyLabel = (order) => orderLabel(order.orderNumber, order.orderDay)
+const bodyLabel = (order) => orderLabel(order.orderNumber)
 
 const accountLink = () => `${config.clientOrigin}/account`
 const signOff = [`— ${bakery.name}`, `${bakeryAddress} · ${bakeryPhones}`]
