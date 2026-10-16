@@ -18,13 +18,13 @@ import { requireAuth, requireRole } from '../lib/auth.js'
 import { syncStockAlert } from '../lib/inventory.js'
 import { config } from '../config.js'
 import { checkOrderTime } from '../lib/orderHours.js'
-import { applyCancellationEffects } from '../lib/orderStatus.js'
-import { sendInBackground, sendOrderReadyEmail } from '../lib/notices.js'
-import { parseId } from '../lib/validation.js'
+import { applyCancellationEffects, readyIfPaid } from '../lib/orderStatus.js'
+import { sendInBackground, sendOrderReadyEmailFor } from '../lib/notices.js'
+import { normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
 
-const validStatuses = new Set(['PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP', 'OUT_FOR_DELIVERY', 'COMPLETED', 'CANCELLED'])
+const validStatuses = new Set(['AWAITING_PAYMENT', 'PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP', 'READY_FOR_DELIVERY', 'OUT_FOR_DELIVERY', 'COMPLETED', 'CANCELLED'])
 // Terminal: nothing moves OUT of these, for any role. See PHASE5_PLAN.md,
 // Pattern C — this is what makes the stock restore on cancellation safe to
 // run without checking whether a restore already happened.
@@ -36,7 +36,10 @@ const deliveryMunicipality = 'Lucban'
 // hasn't started on. Derived from validStatuses rather than written out
 // again, so a new status can never be added to one list but not the other.
 const nonTerminalStatuses = [...validStatuses].filter((status) => !terminalStatuses.has(status))
-const customerClaimableStatuses = ['PLACED']
+// Payment first: a customer cancels only their own unpaid checkout hold
+// (or an unpaid order from before payment first). A paid order cannot be
+// cancelled by anyone (R2, no refunds).
+const customerClaimableStatuses = ['AWAITING_PAYMENT', 'PLACED']
 // Where each status sits on the order's forward path. A transition must
 // move to a HIGHER rank (CANCELLED is the one exception: reachable from
 // any non-terminal state). Skipping ahead is allowed — a walk-in that is
@@ -45,7 +48,9 @@ const customerClaimableStatuses = ['PLACED']
 // not: neither describes anything that happened, and both used to write
 // a history row claiming it did. READY_FOR_PICKUP and OUT_FOR_DELIVERY
 // share a rank because they are the same stage for the two order types.
-const statusRank = { PLACED: 0, CONFIRMED: 1, IN_PRODUCTION: 2, READY_FOR_PICKUP: 3, OUT_FOR_DELIVERY: 3, COMPLETED: 4 }
+// READY_FOR_DELIVERY waits for a driver, so it sits just below
+// OUT_FOR_DELIVERY (payment first, migration 029).
+const statusRank = { AWAITING_PAYMENT: -1, PLACED: 0, CONFIRMED: 1, IN_PRODUCTION: 2, READY_FOR_PICKUP: 3, READY_FOR_DELIVERY: 3, OUT_FOR_DELIVERY: 3.5, COMPLETED: 4 }
 const instructionsMaxLength = 500
 // Largest value order_details.quantity (INTEGER) can hold.
 const maxItemQuantity = 2147483647
@@ -111,15 +116,22 @@ const orderSummarySelectQuery = `SELECT o.order_id, o.daily_number, o.order_day,
 // doesn't admit that role yet rather than pretending to support it.
 router.use(requireAuth, requireRole('CUSTOMER', 'CASHIER', 'ADMIN'))
 
+// Payment first (RULES-PLANS/PAYMENT_FIRST_PLAN.md): only real, paid
+// orders are listed. An online checkout still being paid (AWAITING_PAYMENT)
+// is hidden, and so is a cancelled one nothing was paid for — an unpaid
+// hold that ran out, or an unpaid order from before. A cancelled order
+// that money still arrived for stays visible, for staff to settle.
+const visibleOrderSql = `o.status <> 'AWAITING_PAYMENT' AND (o.status <> 'CANCELLED' OR COALESCE(paid.amount, 0) > 0)`
+
 router.get('/', async (request, response) => {
   if (request.user.role === 'CUSTOMER') {
     const customerResult = await pool.query('SELECT customer_id FROM customers WHERE user_id = $1', [request.user.id])
     const customerId = customerResult.rows[0]?.customer_id
-    const result = await pool.query(`${orderSummarySelectQuery} WHERE o.customer_id = $1 ORDER BY o.order_date DESC`, [customerId])
+    const result = await pool.query(`${orderSummarySelectQuery} WHERE o.customer_id = $1 AND ${visibleOrderSql} ORDER BY o.order_date DESC`, [customerId])
     return response.json({ orders: result.rows.map(mapOrderSummary) })
   }
   // Cashier and admin see every order.
-  const result = await pool.query(`${orderSummarySelectQuery} ORDER BY o.order_date DESC`)
+  const result = await pool.query(`${orderSummarySelectQuery} WHERE ${visibleOrderSql} ORDER BY o.order_date DESC`)
   return response.json({ orders: result.rows.map(mapOrderSummary) })
 })
 
@@ -135,7 +147,7 @@ const newOrdersLimit = 20
 router.get('/recent', requireRole('ADMIN', 'CASHIER'), async (request, response) => {
   const since = request.query.since
   if (since == null || since === '') {
-    const result = await pool.query(`${orderSummarySelectQuery} ORDER BY o.order_date DESC, o.order_id DESC LIMIT $1`, [recentOrdersLimit])
+    const result = await pool.query(`${orderSummarySelectQuery} WHERE ${visibleOrderSql} ORDER BY o.order_date DESC, o.order_id DESC LIMIT $1`, [recentOrdersLimit])
     return response.json({ orders: result.rows.map(mapOrderSummary) })
   }
   const sinceDate = new Date(String(since))
@@ -144,7 +156,7 @@ router.get('/recent', requireRole('ADMIN', 'CASHIER'), async (request, response)
     // Compared at millisecond precision: the time the caller sends back
     // came from JSON, which drops Postgres's microseconds, so the order it
     // came from would otherwise count as newer than itself.
-    `${orderSummarySelectQuery} WHERE date_trunc('milliseconds', o.order_date) > $1 ORDER BY o.order_date DESC, o.order_id DESC LIMIT $2`,
+    `${orderSummarySelectQuery} WHERE ${visibleOrderSql} AND date_trunc('milliseconds', o.order_date) > $1 ORDER BY o.order_date DESC, o.order_id DESC LIMIT $2`,
     [sinceDate, newOrdersLimit],
   )
   return response.json({ orders: result.rows.map(mapOrderSummary) })
@@ -329,6 +341,23 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     // Otherwise customerId stays null — a walk-in order with no account.
   }
 
+  // Payment first (RULES-PLANS/PAYMENT_FIRST_PLAN.md): an order placed by
+  // staff — a walk-in at the counter — is paid as it is placed, cash or
+  // GCash by its reference number, for the order's full total. Without a
+  // payment it is refused; there is no unpaid order any more.
+  let staffPayment = null
+  if (request.user.role !== 'CUSTOMER') {
+    const method = normalize(request.body.payment?.method).toUpperCase()
+    if (method !== 'CASH' && method !== 'GCASH') return response.status(422).json({ message: 'Take the payment first: choose cash or GCash.', errors: { payment: 'Choose cash or GCash.' } })
+    let gatewayReference = null
+    if (method === 'GCASH') {
+      gatewayReference = normalize(request.body.payment?.gatewayReference)
+      if (!gatewayReference) return response.status(422).json({ message: 'Enter the GCash reference number from the receipt.', errors: { gatewayReference: 'Enter the GCash reference number from the receipt.' } })
+      if (gatewayReference.length > 255) return response.status(422).json({ message: 'A GCash reference cannot be longer than 255 characters.', errors: { gatewayReference: 'A GCash reference cannot be longer than 255 characters.' } })
+    }
+    staffPayment = { method, gatewayReference }
+  }
+
   // PHASE 7, DECISION 7 — a DELIVERY order needs somewhere to send it, and
   // addresses hang off customers: a walk-in order has customerId null (the
   // guest-order design), so it has no addresses to choose from and cannot
@@ -385,9 +414,13 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     // approval because of its size any more (the adviser, 2026-10-16;
     // migration 027 removed the bulk-order threshold).
     //
-    // A pickup order goes straight into production; a delivery order waits
-    // as PLACED until it is paid in full (lib/orderStatus.js).
-    const initialStatus = orderType === 'PICKUP' ? 'IN_PRODUCTION' : 'PLACED'
+    // Every order starts as AWAITING_PAYMENT and becomes Ready for pickup /
+    // Ready for delivery the moment it is paid (lib/orderStatus.js). A
+    // walk-in is paid below, in this same transaction. An online checkout
+    // is a hold: hidden from staff and reports, its stock set aside, and
+    // cancelled by the system if not paid with GCash within 15 minutes
+    // (lib/staleOrders.js).
+    const initialStatus = 'AWAITING_PAYMENT'
     const orderResult = await client.query(
       `INSERT INTO orders (customer_id, processed_by, order_type, address_id, instructions, requested_fulfillment_time, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -400,15 +433,10 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     // filled in by its trigger but no longer shown.
     const { order_id: orderNumber, order_day: orderDay } = orderResult.rows[0]
 
-    // PHASE 7, DECISION 3 — the deliveries row is created WITH the order,
-    // in the same transaction, not lazily on first assignment. status
-    // defaults to PENDING_ASSIGNMENT, which is exactly right: nothing has
-    // assigned this yet. Creating it lazily would mean a delivery order
-    // that exists but is invisible to the assignment queue until someone
-    // remembers it.
-    if (orderType === 'DELIVERY') {
-      await client.query('INSERT INTO deliveries (order_id) VALUES ($1)', [orderId])
-    }
+    // PHASE 7, DECISION 3, revised for payment first: the deliveries row is
+    // created when the order is paid (lib/orderStatus.js readyIfPaid), in
+    // that transaction, so the assignment queue only ever holds paid
+    // orders and a hold that is never paid leaves nothing behind there.
 
     for (const item of parsedItems) {
       const product = productsById.get(item.productId)
@@ -476,15 +504,31 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     // same '136.50' shape the old toFixed(2) produced.
     const totalAmount = totalResult.rows[0].total_amount
 
-    await client.query('INSERT INTO order_status_history (order_id, updated_by, status, note) VALUES ($1, $2, $3, $4)', [orderId, request.user.id, 'PLACED', null])
-    if (initialStatus === 'IN_PRODUCTION') {
-      await client.query('INSERT INTO order_status_history (order_id, updated_by, status, note) VALUES ($1, $2, $3, $4)', [orderId, request.user.id, 'IN_PRODUCTION', 'Sent to production automatically.'])
+    // The walk-in's payment, for the total just summed, and the order is
+    // ready at once. gateway_reference is UNIQUE: the same GCash receipt
+    // recorded twice would credit money that arrived once.
+    let status = initialStatus
+    if (staffPayment) {
+      try {
+        await client.query(
+          `INSERT INTO payments (order_id, recorded_by, payment_method, amount, status, gateway_reference, payment_date)
+           VALUES ($1, $2, $3, $4, 'PAID', $5, CURRENT_TIMESTAMP)`,
+          [orderId, request.user.id, staffPayment.method, totalAmount, staffPayment.gatewayReference],
+        )
+      } catch (error) {
+        if (error.code === '23505' && error.constraint === 'payments_gateway_reference_key') {
+          await client.query('ROLLBACK')
+          return response.status(409).json({ message: 'That GCash reference has already been recorded.', errors: { gatewayReference: 'That GCash reference has already been recorded.' } })
+        }
+        throw error
+      }
+      status = await readyIfPaid(client, orderId, request.user.id)
     }
 
     await client.query('COMMIT')
     return response.status(201).json({
-      message: 'Order placed.',
-      order: { id: orderId, orderNumber, orderDay, status: initialStatus, totalAmount },
+      message: staffPayment ? 'Order placed and paid.' : 'Order saved. Pay with GCash within 15 minutes to place it.',
+      order: { id: orderId, orderNumber, orderDay, status, totalAmount, orderType },
     })
   } catch (error) {
     await client.query('ROLLBACK')
@@ -513,7 +557,7 @@ router.patch('/:id', async (request, response) => {
     // cancellation is blocked (staff can still cancel it via their own
     // broader status permissions below).
     if (status !== 'CANCELLED') return response.status(403).json({ message: 'You can only cancel your own order.' })
-    if (order.status !== 'PLACED') return response.status(409).json({ message: 'This order can no longer be cancelled — it is already being processed.' })
+    if (!customerClaimableStatuses.includes(order.status)) return response.status(409).json({ message: 'This order has been paid, so it can no longer be cancelled. For any problem with it, please contact the bakery.' })
   }
 
   // A friendly pre-check for the terminal case. It is NOT what enforces
@@ -556,16 +600,16 @@ router.patch('/:id', async (request, response) => {
       await client.query('ROLLBACK')
       return response.status(409).json({ message: `This order is already ${status.toLowerCase().replaceAll('_', ' ')}.` })
     }
-    if (status !== 'CANCELLED' && statusRank[status] <= statusRank[lockedOrder.status]) {
-      await client.query('ROLLBACK')
-      return response.status(409).json({ message: `An order cannot move back from ${lockedOrder.status.toLowerCase().replaceAll('_', ' ')} to ${status.toLowerCase().replaceAll('_', ' ')}.` })
-    }
     // The two "ready" stages belong to one order type each. A DELIVERY
     // order is never ready for pickup, and a PICKUP order is never out for
     // delivery — the status is not merely unusual there, it is untrue.
     if (status === 'READY_FOR_PICKUP' && lockedOrder.order_type !== 'PICKUP') {
       await client.query('ROLLBACK')
       return response.status(409).json({ message: 'A delivery order cannot be marked ready for pickup.' })
+    }
+    if (status === 'READY_FOR_DELIVERY' && lockedOrder.order_type !== 'DELIVERY') {
+      await client.query('ROLLBACK')
+      return response.status(409).json({ message: 'A pickup order cannot be marked ready for delivery.' })
     }
     // OUT_FOR_DELIVERY is never written by this route at all. For a
     // PICKUP order it is untrue; for a DELIVERY order it belongs to the
@@ -581,6 +625,14 @@ router.patch('/:id', async (request, response) => {
           ? 'A pickup order cannot be marked out for delivery.'
           : "This order's delivery status is managed through Delivery Management, not here.",
       })
+    }
+
+    // The order's direction, checked after what the order type allows, so a
+    // status that is wrong for the type says so rather than "cannot move
+    // back" (READY_FOR_PICKUP and READY_FOR_DELIVERY share a rank).
+    if (status !== 'CANCELLED' && statusRank[status] <= statusRank[lockedOrder.status]) {
+      await client.query('ROLLBACK')
+      return response.status(409).json({ message: `An order cannot move back from ${lockedOrder.status.toLowerCase().replaceAll('_', ' ')} to ${status.toLowerCase().replaceAll('_', ' ')}.` })
     }
 
     // CLAIM THE TRANSITION FIRST, atomically, before restoring anything.
@@ -704,31 +756,7 @@ router.patch('/:id', async (request, response) => {
   // A pickup order that is ready: tell the customer by email
   // (NOTIFICATIONS_PLAN.md, N5). After the commit, in the background, and
   // only to a confirmed email — a walk-in order has no customer at all.
-  if (status === 'READY_FOR_PICKUP') {
-    const ready = await pool.query(
-      `SELECT o.daily_number, o.order_day, c.name, c.email, c.email_verified_at
-         FROM orders o JOIN customers c ON c.customer_id = o.customer_id
-        WHERE o.order_id = $1`,
-      [orderId],
-    )
-    const customer = ready.rows[0]
-    if (customer?.email && customer.email_verified_at) {
-      sendInBackground('order ready', async () => {
-        const lines = await pool.query(
-          `SELECT p.product_name AS name, p.variant, od.quantity
-             FROM order_details od JOIN products p ON p.product_id = od.product_id
-            WHERE od.order_id = $1 ORDER BY p.product_name, p.variant NULLS FIRST`,
-          [orderId],
-        )
-        return sendOrderReadyEmail({
-          to: customer.email,
-          name: customer.name,
-          order: { orderNumber: orderId, orderDay: customer.order_day },
-          items: lines.rows,
-        })
-      })
-    }
-  }
+  if (status === 'READY_FOR_PICKUP') sendInBackground('order ready', () => sendOrderReadyEmailFor(orderId))
 
   return response.json({ message: 'Order updated.', order: { id: Number(orderId), status } })
 })

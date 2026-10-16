@@ -17,12 +17,14 @@ import { checkPicked, toRequestedTime } from '../../lib/orderHours.js'
 // customer account, pickup or delivery, and special instructions; online
 // customers order those themselves on the storefront.
 //
-// Every order placed here is a walk-in pickup, sent exactly as the counter
-// always sent one: orderType PICKUP and no customerId (routes/orders.js
-// treats a missing customerId as a walk-in), and no instructions (an
-// optional field the server already accepts left out). The API is
-// unchanged. The order still appears in the Orders list as Walk-in /
-// pickup, and goes into production on its own.
+// Every order placed here is a walk-in pickup: orderType PICKUP and no
+// customerId (routes/orders.js treats a missing customerId as a walk-in),
+// and no instructions. It appears in the Orders list as Walk-in / pickup.
+//
+// Payment first (RULES-PLANS/PAYMENT_FIRST_PLAN.md): the cashier takes the
+// money here, before Place order — cash (the amount received, with the
+// change shown) or GCash (the reference number). The server saves the
+// order and its payment for the full total together, Ready for pickup.
 export function WalkInOrderForm({ onCreated }) {
   const [products, setProducts] = useState(null)
 
@@ -32,6 +34,11 @@ export function WalkInOrderForm({ onCreated }) {
   // 5:00 AM to 10:00 PM (lib/orderHours.js).
   const [neededDate, setNeededDate] = useState('')
   const [neededTime, setNeededTime] = useState('')
+
+  // Payment, taken before the order is saved.
+  const [method, setMethod] = useState('CASH')
+  const [cashReceived, setCashReceived] = useState('')
+  const [gcashReference, setGcashReference] = useState('')
 
   const [errors, setErrors] = useState({})
   const [message, setMessage] = useState('')
@@ -73,8 +80,14 @@ export function WalkInOrderForm({ onCreated }) {
     return total + (product ? Number(product.price) * line.quantity : 0)
   }, 0)
 
+  const received = Number(cashReceived)
+  const change = method === 'CASH' && cashReceived !== '' && Number.isFinite(received) ? received - subtotal : null
+
   const resetDraft = () => {
     setLines([])
+    setMethod('CASH')
+    setCashReceived('')
+    setGcashReference('')
     setNeededDate('')
     setNeededTime('')
     setErrors({})
@@ -93,10 +106,22 @@ export function WalkInOrderForm({ onCreated }) {
       setErrors({ requestedFulfillmentTime: timeError })
       return
     }
+    if (method === 'CASH' && (!Number.isFinite(received) || received < subtotal)) {
+      setErrors({ cashReceived: `Enter the cash received — at least ${formatPeso(subtotal)}.` })
+      return
+    }
+    if (method === 'GCASH' && !gcashReference.trim()) {
+      setErrors({ gatewayReference: 'Enter the GCash reference number from the receipt.' })
+      return
+    }
 
     setSubmitting(true)
     try {
-      const body = { orderType: 'PICKUP', items: lines.map(({ productId, quantity }) => ({ productId, quantity })) }
+      const body = {
+        orderType: 'PICKUP',
+        items: lines.map(({ productId, quantity }) => ({ productId, quantity })),
+        payment: method === 'GCASH' ? { method, gatewayReference: gcashReference.trim() } : { method },
+      }
       if (neededDate) body.requestedFulfillmentTime = toRequestedTime(neededDate, neededTime)
 
       const data = await apiPost('/api/orders', body)
@@ -215,13 +240,36 @@ export function WalkInOrderForm({ onCreated }) {
               })}
             </div>
             <div className="mt-3 flex items-center justify-between border-t border-brand-100 pt-3 text-sm font-semibold text-brand-700">
-              <span>Provisional total</span>
+              <span>Total</span>
               <span className="tabular-nums">{formatPeso(subtotal)}</span>
+            </div>
+
+            <div className="mt-4 border-t border-brand-100 pt-4">
+              <p className="text-xs font-semibold text-ink-700">Payment</p>
+              <div role="group" aria-label="Payment method" className="mt-2 grid grid-cols-2 gap-2">
+                {[['CASH', 'Cash'], ['GCASH', 'GCash']].map(([key, label]) => (
+                  <Button key={key} type="button" size="sm" variant={method === key ? 'primary' : 'secondary'} aria-pressed={method === key} onClick={() => { setMethod(key); setErrors({}) }}>{label}</Button>
+                ))}
+              </div>
+              {method === 'CASH' ? (
+                <div className="mt-3">
+                  <Field label="Cash received" error={errors.cashReceived}>
+                    <Input value={cashReceived} onChange={(event) => setCashReceived(event.target.value)} inputMode="decimal" placeholder={subtotal.toFixed(2)} />
+                  </Field>
+                  {change != null && change >= 0 && <p className="mt-1 text-sm font-semibold text-ink-900">Change: <span className="tabular-nums">{formatPeso(change)}</span></p>}
+                </div>
+              ) : (
+                <div className="mt-3">
+                  <Field label="GCash reference number" error={errors.gatewayReference}>
+                    <Input value={gcashReference} onChange={(event) => setGcashReference(event.target.value)} placeholder="From the customer's GCash receipt" />
+                  </Field>
+                </div>
+              )}
             </div>
           </>
         )}
         <Button type="button" size="touch" className="mt-4 w-full" onClick={handleSubmit} disabled={submitting || lines.length === 0}>
-          {submitting ? 'Placing order…' : 'Place order'}
+          {submitting ? 'Placing order…' : 'Place paid order'}
         </Button>
       </div>
     </div>

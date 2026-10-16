@@ -49,33 +49,38 @@ const orderColumns = `o.order_id, o.daily_number, o.order_day, o.order_type, o.t
 const staffQueries = {
   // Orders placed by anyone but the viewer (a cashier knows about the
   // walk-in order they just rang up). Synthetic history (data_source
-  // ASSUMED) never counts as news.
+  // ASSUMED) never counts as news. Payment first: an order counts once it
+  // is paid — an online checkout's placed time becomes the time it was
+  // paid — so a checkout still being paid, or one let go unpaid, is not.
   order_placed: `
     SELECT ${orderColumns}, o.order_id AS source_id, o.order_date AS at
       FROM orders o
       LEFT JOIN customers c ON c.customer_id = o.customer_id
       LEFT JOIN cashiers pc ON pc.cashier_id = o.processed_by
      WHERE ${after('o.order_date')} AND o.data_source = 'RECORDED' AND pc.user_id IS DISTINCT FROM $2::bigint
+       AND o.status NOT IN ('AWAITING_PAYMENT', 'CANCELLED')
      ORDER BY at DESC LIMIT $3`,
-  // Online (GCash) payments only: a cash or reference-number payment was
-  // recorded by the staff member at the counter, who already knows.
+  // A GCash payment that arrived for an order already cancelled (a
+  // checkout let go before its payment landed): staff must settle it. A
+  // normal online payment is the new order itself, announced above.
   payment_received: `
     SELECT ${orderColumns}, p.payment_id AS source_id, p.payment_date AS at, p.amount, p.payment_method
       FROM payments p
       JOIN orders o ON o.order_id = p.order_id
       LEFT JOIN customers c ON c.customer_id = o.customer_id
      WHERE p.status = 'PAID' AND p.gateway_reference IS NOT NULL AND p.payment_date IS NOT NULL
+       AND o.status = 'CANCELLED'
        AND ${after('p.payment_date')} AND p.recorded_by IS DISTINCT FROM $2::bigint
      ORDER BY at DESC LIMIT $3`,
-  // Leaving the bakery and cancellations, from the order's own history.
-  // Not the viewer's own changes.
+  // Leaving the bakery, from the order's own history. Not the viewer's own
+  // changes. (Paid orders cannot be cancelled, so there is no cancel news.)
   order_history: `
     SELECT ${orderColumns}, h.history_id AS source_id, h.updated_at AS at, h.status AS history_status, h.note, ${actorColumns}
       FROM order_status_history h
       JOIN orders o ON o.order_id = h.order_id
       LEFT JOIN customers c ON c.customer_id = o.customer_id
       ${actorJoin('h.updated_by')}
-     WHERE h.status IN ('OUT_FOR_DELIVERY', 'CANCELLED') AND ${after('h.updated_at')} AND h.updated_by <> $2::bigint
+     WHERE h.status = 'OUT_FOR_DELIVERY' AND ${after('h.updated_at')} AND h.updated_by <> $2::bigint
      ORDER BY at DESC LIMIT $3`,
   delivered: `
     SELECT ${orderColumns}, d.delivery_id AS source_id, d.delivered_at AS at,

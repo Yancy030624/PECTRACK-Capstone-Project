@@ -162,8 +162,8 @@ const termsSections = [
       <List items={[
         'Prices are in Philippine pesos and are the prices shown when you place the order.',
         'An order is accepted only if the products are in stock and not past their date; the menu shows only what is available.',
-        'You may ask for a date and time from today up to 30 days ahead, between 5:00 AM and 10:00 PM. We bake to have it ready by then. An order for right now can be placed between 5:00 AM and 10:00 PM.',
-        'A pickup order goes into production as soon as it is placed. A delivery order goes into production as soon as it is paid in full.',
+        'You may ask for a date and time from today up to 30 days ahead, between 5:00 AM and 10:00 PM. An order for right now can be placed between 5:00 AM and 10:00 PM.',
+        'Every order is paid first. An order is placed only once it is paid; it is then ready for pickup, or ready to be delivered, on the day you chose.',
         'Once placed, the items in an order cannot be changed.',
       ]} />
     ),
@@ -173,9 +173,8 @@ const termsSections = [
     title: 'Payment',
     body: (
       <List items={[
-        'Pay online with GCash through PayMongo, or at the bakery\'s counter in cash or GCash.',
-        'Delivery orders must be paid in full before we start preparing them. We do not offer cash on delivery.',
-        'Pickup orders can be paid online beforehand or at the counter when you collect them.',
+        'Online orders are paid with GCash through PayMongo when you place them. At the counter, walk-in orders are paid in cash or GCash before they are rung up.',
+        'If you do not finish paying, the order is held for 15 minutes and then let go; nothing is charged. We do not offer cash on delivery.',
         'Online payments are processed by PayMongo, and PayMongo\'s own terms apply to them.',
       ]} />
     ),
@@ -196,9 +195,8 @@ const termsSections = [
     title: 'Cancellations',
     body: (
       <List items={[
-        'You can cancel your own delivery order, with a reason, while it is still "Placed", that is, before it is paid. A pickup order goes into production when it is placed, so to change or cancel one, contact the bakery.',
+        'Before you pay, you can cancel the order from the payment page; nothing is charged.',
         'The bakery does not give refunds. Once an order has been paid, it can no longer be cancelled; for any problem with a paid order, please contact the bakery.',
-        'The bakery may cancel an unpaid order, for example if a product is no longer available, and will give the reason.',
       ]} />
     ),
   },

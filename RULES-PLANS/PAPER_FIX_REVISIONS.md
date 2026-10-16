@@ -689,3 +689,68 @@ The adviser's aim: users should not have to click through extra buttons or pages
 
 ### Figures to retake after A7–A10
 6 and 7 (status buttons, action buttons, the Walk-in tab), and every figure that shows an order number (it is #21170-style again).
+
+---
+
+## Adviser revisions A11–A17 — payment first, no production (2026-10-16)
+
+Plan and decisions: `RULES-PLANS/PAYMENT_FIRST_PLAN.md`. The bakery bakes its day's stock before opening and is paid before it hands anything over, for walk-in, pickup and delivery alike.
+
+- **A11:** the Production module (the "Due today" schedule) is removed.
+- **A12:** no "In production" status anywhere.
+- **A13:** the Dashboard's "Orders to prepare" tile opens Order Management on Today.
+- **A14/A17:** no unpaid orders. A paid order starts as **Ready for pickup** (pickup and walk-in) or **Ready for delivery**; then Completed (picked up), or Out for delivery and Completed (delivered). "Placed", "Waiting for payment", "In production" and "Cancelled" are no longer shown. A paid order cannot be cancelled. Online, "Place order" goes straight to GCash; the order is held for 15 minutes, hidden from staff, and let go if not paid — the customer can also cancel it from the payment page. At the counter, the Walk-in page takes cash (with change shown) or a GCash reference before the order is saved.
+- **A15:** the "Unpaid balances" tile and Payment & Billing's "Still owed" view are removed.
+- **A16:** Order Management has Today / Upcoming / Past buttons, by the day the order is picked up or delivered (a reserved order shows under Upcoming until its day).
+- Storefront hours are 5:00 AM – 10:00 PM.
+
+### 1. Purpose and Description, Order Management Module
+
+**Replace the stages and the production/bulk sentences with:**
+> Every order is paid first. An online order is placed when the customer pays with GCash; an unpaid checkout is held for 15 minutes and then released. Walk-in orders are paid in cash or GCash at the counter as they are rung up. A paid order is immediately Ready for pickup or Ready for delivery, since the bakery bakes its stock before opening, and it is then Completed when picked up, or Out for delivery and Completed when delivered.
+
+### 2. Scope, Order Management Module (the stages)
+
+**Find** the stages list ("Order Placed, … In Production, … Completed").
+**Replace with:**
+> …progressing through the stages of Ready for Pickup or Ready for Delivery, Out for Delivery, and Completed. Staff filter orders by day (Today, Upcoming, Past — by the day the order is picked up or delivered) and by stage with one-click buttons.
+
+Remove any sentence about orders being confirmed, entering production, or being cancelled by staff.
+
+### 3. Production module / Due today
+
+Remove every mention of a Production module, the "Due today" production schedule, and its figure, from the module list, the scope, the use cases and the figures. The Forecast in Reporting & Analytics stays ("how much of each product to bake" is a planning aid for the morning bake, not a production module).
+
+### 4. Payment and Billing Module
+
+**Find:**
+> Walk-in transactions are handled by the cashier, who records cash or GCash payments directly within the system. For pick-up orders, customers have the option to pay either through cash or online payment, with the transaction processed once the order is finalized in the system.
+
+**Replace with:**
+> Every transaction is paid first. Walk-in orders are paid at the counter, in cash (the system shows the change) or GCash by its reference number, as the order is rung up. Online pickup and delivery orders are paid with GCash through PayMongo when they are placed; an order is only placed once it is paid.
+
+Remove "and an order cannot be marked as completed until it is fully paid" if it reads as though unpaid orders exist, and any mention of "unpaid balances" or "outstanding" amounts.
+
+### 5. Figure 2 / 2.1 (Dashboard)
+
+Remove "Unpaid balances" from the tile list. "Orders to prepare" counts today's paid orders still to hand over or send out, red when one is past its requested time, and opens Order Management on Today.
+
+### 6. Figures 6, 7 (Order Management), 13 (Payment & Billing), 15 (Checkout)
+
+- Figure 6: Today / Upcoming / Past and status buttons; the only hand action is "Picked up — complete".
+- Figure 7: the Walk-in tab takes the payment (Cash with change, or GCash reference) before "Place paid order".
+- Figure 13: no "Still owed" view; the list of orders with their receipts, and the payment log.
+- Figure 15: the button is "Place order and pay with GCash"; there is no pay-at-pickup option online.
+
+### 7. Use case and flowcharts
+
+- Customer: places an order and pays with GCash in one step; can cancel only before paying.
+- Cashier: rings up a walk-in order and takes its payment in the same step; marks pickup orders picked up.
+- Payment flowchart: payment happens before the order exists as a placed order; a failed or abandoned online payment releases the order after 15 minutes.
+
+### 8. Database chapter
+
+- ORDER: Status values are now Ready for pickup, Ready for delivery, Out for delivery, Completed (plus Awaiting payment for a checkout being paid; older rows may still hold Placed, Confirmed, In production, Cancelled).
+
+### Figures to retake after A11–A17
+2 / 2.1 (Dashboard tiles), 6 and 7 (Order Management, Walk-in with payment), 13 (Payment & Billing), 15 / 15.1 (Checkout), 15.2 (receipt and the pay-or-cancel page), and remove the Production figure.

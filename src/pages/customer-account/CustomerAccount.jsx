@@ -55,7 +55,7 @@ const tabs = [
 ]
 
 // Orders a customer might still act on. Everything else is history.
-const openStatuses = new Set(['PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP', 'OUT_FOR_DELIVERY'])
+const openStatuses = new Set(['PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP', 'READY_FOR_DELIVERY', 'OUT_FOR_DELIVERY'])
 
 export function CustomerAccount({ user, onLogout, onUserUpdated }) {
   // ?tab=orders / ?tab=payments — the order-placed page links straight to

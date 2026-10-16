@@ -191,7 +191,7 @@ describe('order management', () => {
   })
 
   test('POST /api/orders rejects admin — order-taking is a cashier/customer concern', async () => {
-    const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 1 }] }) })
+    const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ payment: { method: 'CASH' }, items: [{ productId: availableProductId, quantity: 1 }] }) })
     assert.equal(response.status, 403)
   })
 
@@ -283,10 +283,18 @@ describe('order management', () => {
   })
 
   let deliveryOrderId
+  // Payment first: a customer's order is a hold until it is paid; paying it
+  // in full (here at the counter, in cash) makes it ready.
+  const payInFull = async (orderId) => {
+    const total = (await pool.query('SELECT total_amount FROM orders WHERE order_id = $1', [orderId])).rows[0].total_amount
+    const paid = await fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ orderId, method: 'CASH', amount: total }) })
+    assert.equal(paid.status, 201)
+  }
 
-  // Decision 3 — the deliveries row is created WITH the order, in the same
-  // transaction, at PENDING_ASSIGNMENT. Not lazily on first assignment.
-  test('POST /api/orders creates exactly one deliveries row at PENDING_ASSIGNMENT for a DELIVERY order', async () => {
+  // Decision 3, payment first — the deliveries row is created when the
+  // order is paid, in that transaction, at PENDING_ASSIGNMENT. An unpaid
+  // checkout has none, so the assignment queue only holds paid orders.
+  test('a DELIVERY order gets exactly one deliveries row at PENDING_ASSIGNMENT once it is paid', async () => {
     const response = await fetch(`${baseUrl}/api/orders`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: customerCookie },
@@ -297,9 +305,14 @@ describe('order management', () => {
     deliveryOrderId = body.order.id
     createdOrderIds.push(deliveryOrderId)
 
+    assert.equal(body.order.status, 'AWAITING_PAYMENT')
     const detail = await fetch(`${baseUrl}/api/orders/${deliveryOrderId}`, { headers: { Cookie: customerCookie } }).then((r) => r.json())
     assert.equal(detail.order.orderType, 'DELIVERY')
+    const unpaid = await pool.query('SELECT COUNT(*)::int AS n FROM deliveries WHERE order_id = $1', [deliveryOrderId])
+    assert.equal(unpaid.rows[0].n, 0, 'no delivery row while unpaid')
 
+    await payInFull(deliveryOrderId)
+    assert.equal((await pool.query('SELECT status FROM orders WHERE order_id = $1', [deliveryOrderId])).rows[0].status, 'READY_FOR_DELIVERY')
     const { rows } = await pool.query('SELECT status, delivery_personnel_id, assigned_at FROM deliveries WHERE order_id = $1', [deliveryOrderId])
     assert.equal(rows.length, 1, 'exactly one deliveries row')
     assert.equal(rows[0].status, 'PENDING_ASSIGNMENT')
@@ -332,13 +345,13 @@ describe('order management', () => {
   // the two could disagree with nothing able to say which is true.
   test('PATCH /api/orders/:id refuses a manual OUT_FOR_DELIVERY on an order that has a delivery row', async () => {
     const before = await pool.query('SELECT status FROM orders WHERE order_id = $1', [deliveryOrderId])
-    assert.equal(before.rows[0].status, 'PLACED')
+    assert.equal(before.rows[0].status, 'READY_FOR_DELIVERY')
 
     const response = await fetch(`${baseUrl}/api/orders/${deliveryOrderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'OUT_FOR_DELIVERY' }) })
     assert.equal(response.status, 409)
 
     const after = await pool.query('SELECT status FROM orders WHERE order_id = $1', [deliveryOrderId])
-    assert.equal(after.rows[0].status, 'PLACED', 'a refused transition must leave the order status untouched')
+    assert.equal(after.rows[0].status, 'READY_FOR_DELIVERY', 'a refused transition must leave the order status untouched')
 
     const history = await pool.query(`SELECT COUNT(*)::int AS n FROM order_status_history WHERE order_id = $1 AND status = 'OUT_FOR_DELIVERY'`, [deliveryOrderId])
     assert.equal(history.rows[0].n, 0, 'a refused transition must not leave a history row claiming it happened')
@@ -347,18 +360,20 @@ describe('order management', () => {
   const patchStatus = (orderId, status, cookie = cashierCookie) =>
     fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ status, note: status === 'CANCELLED' ? 'Test cancellation' : undefined }) })
 
+  // A customer's pickup order, paid, so Ready for pickup.
   const placePickupOrder = async () => {
     const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 1 }] }) })
     const orderId = (await response.json()).order.id
     createdOrderIds.push(orderId)
+    await payInFull(orderId)
     return orderId
   }
-  // An unpaid DELIVERY order is the one kind that still waits as PLACED: a
-  // pickup order goes straight into production (lib/orderStatus.js).
+  // An unpaid checkout: the one kind of unpaid order left (payment first),
+  // held as AWAITING_PAYMENT.
   const placeUnpaidDeliveryOrder = async (productId = availableProductId, quantity = 1) => {
     const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ orderType: 'DELIVERY', addressId: customerAddressId, items: [{ productId, quantity }] }) })
     const body = await response.json()
-    assert.equal(body.order.status, 'PLACED')
+    assert.equal(body.order.status, 'AWAITING_PAYMENT')
     createdOrderIds.push(body.order.id)
     return body.order.id
   }
@@ -368,18 +383,18 @@ describe('order management', () => {
   // transition that never happened.
   test('PATCH /api/orders/:id refuses the same status and a backward move, and writes no history row for either', async () => {
     const orderId = await placePickupOrder()
-    const same = await patchStatus(orderId, 'IN_PRODUCTION')
+    const same = await patchStatus(orderId, 'READY_FOR_PICKUP')
     assert.equal(same.status, 409)
-    assert.match((await same.json()).message, /already in production/)
+    assert.match((await same.json()).message, /already ready for pickup/)
 
-    const forward = await patchStatus(orderId, 'READY_FOR_PICKUP')
-    assert.equal(forward.status, 200)
     const backward = await patchStatus(orderId, 'IN_PRODUCTION')
     assert.equal(backward.status, 409)
     assert.match((await backward.json()).message, /cannot move back/)
+    const forward = await patchStatus(orderId, 'COMPLETED')
+    assert.equal(forward.status, 200)
 
     const history = await pool.query('SELECT status FROM order_status_history WHERE order_id = $1 ORDER BY history_id', [orderId])
-    assert.deepEqual(history.rows.map((row) => row.status), ['PLACED', 'IN_PRODUCTION', 'READY_FOR_PICKUP'])
+    assert.deepEqual(history.rows.map((row) => row.status), ['READY_FOR_PICKUP', 'COMPLETED'])
   })
 
   test('PATCH /api/orders/:id refuses OUT_FOR_DELIVERY on a PICKUP order and READY_FOR_PICKUP on a DELIVERY order', async () => {
@@ -411,7 +426,7 @@ describe('order management', () => {
     assert.equal(tooEarly.status, 409)
     assert.match((await tooEarly.json()).message, /marked delivered/)
     const untouched = await pool.query('SELECT status FROM orders WHERE order_id = $1', [orderId])
-    assert.equal(untouched.rows[0].status, 'IN_PRODUCTION', 'paid in full, so in production; the refused COMPLETED rolled its own claim back')
+    assert.equal(untouched.rows[0].status, 'READY_FOR_DELIVERY', 'paid in full, so ready; the refused COMPLETED rolled its own claim back')
 
     await pool.query(`UPDATE deliveries SET status = 'DELIVERED', delivered_at = CURRENT_TIMESTAMP WHERE order_id = $1`, [orderId])
     const completed = await patchStatus(orderId, 'COMPLETED')
@@ -443,7 +458,7 @@ describe('order management', () => {
   const placeWithTime = (requestedFulfillmentTime, { cookie = customerCookie, delivery = false } = {}) => fetch(`${baseUrl}/api/orders`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Cookie: cookie },
-    body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 1 }], requestedFulfillmentTime, ...(delivery && { orderType: 'DELIVERY', addressId: customerAddressId }) }),
+    body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 1 }], requestedFulfillmentTime, ...(delivery && { orderType: 'DELIVERY', addressId: customerAddressId }), ...(cookie === cashierCookie && { payment: { method: 'CASH' } }) }),
   })
 
   test('POST /api/orders stores an optional requestedFulfillmentTime, and refuses one in the past or too far ahead', async () => {
@@ -452,6 +467,7 @@ describe('order management', () => {
     assert.equal(created.status, 201)
     const orderId = (await created.json()).order.id
     createdOrderIds.push(orderId)
+    await payInFull(orderId)
     const detail = await (await fetch(`${baseUrl}/api/orders/${orderId}`, { headers: { Cookie: customerCookie } })).json()
     assert.equal(new Date(detail.order.requestedFulfillmentTime).toISOString(), soon)
     const listed = await (await fetch(`${baseUrl}/api/orders`, { headers: { Cookie: customerCookie } })).json()
@@ -515,7 +531,7 @@ describe('order management', () => {
   })
 
   test('POST /api/orders rejects a non-numeric customerId and an out-of-range quantity with 422, never 500', async () => {
-    const badCustomer = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ customerId: 'abc', items: [{ productId: availableProductId, quantity: 1 }] }) })
+    const badCustomer = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ payment: { method: 'CASH' }, customerId: 'abc', items: [{ productId: availableProductId, quantity: 1 }] }) })
     assert.equal(badCustomer.status, 422)
     const hugeQuantity = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 1e12 }] }) })
     assert.equal(hugeQuantity.status, 422)
@@ -529,12 +545,16 @@ describe('order management', () => {
     // ASSIGNED directly, the same state a real assignment would leave it
     // in — routes/deliveries.js's own assignment flow is covered by
     // deliveries.test.js, this only needs the resulting state.
-    await pool.query(`UPDATE deliveries SET status = 'ASSIGNED', assigned_at = CURRENT_TIMESTAMP WHERE order_id = $1`, [deliveryOrderId])
+    // Payment first: only an unpaid order can be cancelled, and an unpaid
+    // order has no delivery row any more — so the row is put there in SQL,
+    // the state an order from before payment first can still be in.
+    const unpaidId = await placeUnpaidDeliveryOrder()
+    await pool.query(`INSERT INTO deliveries (order_id, status, assigned_at) VALUES ($1, 'ASSIGNED', CURRENT_TIMESTAMP)`, [unpaidId])
 
-    const response = await fetch(`${baseUrl}/api/orders/${deliveryOrderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
+    const response = await fetch(`${baseUrl}/api/orders/${unpaidId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(response.status, 200)
 
-    const { rows } = await pool.query('SELECT status FROM deliveries WHERE order_id = $1', [deliveryOrderId])
+    const { rows } = await pool.query('SELECT status FROM deliveries WHERE order_id = $1', [unpaidId])
     assert.equal(rows[0].status, 'FAILED', 'an ASSIGNED delivery must be marked FAILED when its order is cancelled')
 
     // A second delivery order, already DELIVERED before its order is
@@ -547,7 +567,7 @@ describe('order management', () => {
       body: JSON.stringify({ orderType: 'DELIVERY', addressId: customerAddressId, items: [{ productId: availableProductId, quantity: 1 }] }),
     }).then((r) => r.json())
     createdOrderIds.push(secondDelivery.order.id)
-    await pool.query(`UPDATE deliveries SET status = 'DELIVERED', delivered_at = CURRENT_TIMESTAMP WHERE order_id = $1`, [secondDelivery.order.id])
+    await pool.query(`INSERT INTO deliveries (order_id, status, delivered_at) VALUES ($1, 'DELIVERED', CURRENT_TIMESTAMP)`, [secondDelivery.order.id])
 
     const cancelDelivered = await fetch(`${baseUrl}/api/orders/${secondDelivery.order.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(cancelDelivered.status, 200)
@@ -624,9 +644,13 @@ describe('order management', () => {
     assert.equal(response.status, 201)
     const body = await response.json()
     assert.equal(body.order.totalAmount, '136.50') // 45.50 * 3
-    assert.equal(body.order.status, 'IN_PRODUCTION', 'a pickup order goes straight into production')
+    assert.equal(body.order.status, 'AWAITING_PAYMENT', 'an online order is held until it is paid')
     customerOrderId = body.order.id
     createdOrderIds.push(customerOrderId)
+    // Held orders are hidden from every list until paid.
+    const staffList = await (await fetch(`${baseUrl}/api/orders`, { headers: { Cookie: cashierCookie } })).json()
+    assert.ok(!staffList.orders.some((order) => order.id === customerOrderId), 'not shown to staff while unpaid')
+    await payInFull(customerOrderId)
   })
 
   test('GET /api/orders/:id returns the full detail with items and status history', async () => {
@@ -636,7 +660,8 @@ describe('order management', () => {
     assert.equal(body.order.items.length, 1)
     assert.equal(body.order.items[0].quantity, 3)
     assert.equal(body.order.items[0].unitPrice, '45.50')
-    assert.deepEqual(body.order.statusHistory.map((entry) => entry.status), ['PLACED', 'IN_PRODUCTION'])
+    assert.equal(body.order.status, 'READY_FOR_PICKUP')
+    assert.deepEqual(body.order.statusHistory.map((entry) => entry.status), ['READY_FOR_PICKUP'])
   })
 
   test('GET /api/orders/:id hides another customer\'s order (404, not 403)', async () => {
@@ -659,7 +684,7 @@ describe('order management', () => {
   })
 
   test('POST /api/orders lets a cashier create a walk-in order with no customer attached', async () => {
-    const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 1 }] }) })
+    const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ payment: { method: 'CASH' }, items: [{ productId: availableProductId, quantity: 1 }] }) })
     assert.equal(response.status, 201)
     const orderId = (await response.json()).order.id
     createdOrderIds.push(orderId)
@@ -671,7 +696,7 @@ describe('order management', () => {
   })
 
   test('POST /api/orders lets a cashier create an order on behalf of a known customer', async () => {
-    const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 1 }], customerId: secondCustomerId }) })
+    const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ payment: { method: 'CASH' }, items: [{ productId: availableProductId, quantity: 1 }], customerId: secondCustomerId }) })
     assert.equal(response.status, 201)
     const orderId = (await response.json()).order.id
     createdOrderIds.push(orderId)
@@ -681,7 +706,7 @@ describe('order management', () => {
     assert.equal(body.order.customerId, secondCustomerId)
   })
 
-  test('PATCH /api/orders/:id lets a customer cancel their own PLACED order — with a reason, which is logged', async () => {
+  test('PATCH /api/orders/:id lets a customer cancel their own unpaid checkout — with a reason, which is logged', async () => {
     const placedOrderId = await placeUnpaidDeliveryOrder()
     const cancel = (note) => fetch(`${baseUrl}/api/orders/${placedOrderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED', note }) })
     // PHASE10 B7 — no reason, or a token one, is refused before anything moves.
@@ -703,9 +728,10 @@ describe('order management', () => {
     const orderId = (await createResponse.json()).order.id
     createdOrderIds.push(orderId)
 
-    // A pickup order is already in production when it is placed.
+    // Paid, so ready — and no longer the customer's to cancel.
+    await payInFull(orderId)
     const placed = await pool.query('SELECT status FROM orders WHERE order_id = $1', [orderId])
-    assert.equal(placed.rows[0].status, 'IN_PRODUCTION')
+    assert.equal(placed.rows[0].status, 'READY_FOR_PICKUP')
 
     const cancelAttempt = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(cancelAttempt.status, 409)
@@ -860,7 +886,7 @@ describe('order management', () => {
     assert.match((await completeResponse.json()).message, /still owes/)
 
     const orderDetail = await fetch(`${baseUrl}/api/orders/${orderId}`, { headers: { Cookie: cashierCookie } }).then((response) => response.json())
-    assert.equal(orderDetail.order.status, 'IN_PRODUCTION', 'a refused COMPLETED must not leave the order half-transitioned')
+    assert.equal(orderDetail.order.status, 'AWAITING_PAYMENT', 'a refused COMPLETED must not leave the order half-transitioned')
     assert.equal(orderDetail.order.payment.balanceDue, '25.00')
 
     const history = await pool.query(`SELECT COUNT(*)::int AS n FROM order_status_history WHERE order_id = $1 AND status = 'COMPLETED'`, [orderId])
@@ -893,7 +919,7 @@ describe('order management', () => {
     }
 
     const order = (await fetch(`${baseUrl}/api/orders/${orderId}`, { headers: { Cookie: adminCookie } }).then((response) => response.json())).order
-    assert.equal(order.status, 'PLACED')
+    assert.equal(order.status, 'AWAITING_PAYMENT', 'part paid, still held')
     assert.equal(order.payment.payments[0].status, 'PAID', 'nothing was refunded')
     assert.equal((await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [stockTestProductId])).rows[0].stock_quantity, stockBefore, 'no stock was restored')
   })
@@ -984,21 +1010,14 @@ describe('order management', () => {
   // The adviser (2026-10-16, migration 027) removed the bulk-order
   // approval: a large order is an ordinary order. A cashier confirms it and
   // takes its payment, and the approval and settings routes are gone.
-  test('a large order is not held for an admin: it goes into production and takes payment at once', async () => {
-    const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 150 }] }) })
+  test('a large order is not held for an admin: paid at the counter, it is ready at once', async () => {
+    const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ payment: { method: 'CASH' }, items: [{ productId: availableProductId, quantity: 150 }] }) })
     assert.equal(response.status, 201)
     const body = await response.json()
     createdOrderIds.push(body.order.id)
-    assert.equal(body.message, 'Order placed.')
+    assert.equal(body.order.status, 'READY_FOR_PICKUP')
     assert.ok(!('awaitingApproval' in body.order), 'no approval flag any more')
-
-    const orderId = body.order.id
-    const paid = await fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ orderId, method: 'CASH', amount: 1 }) })
-    assert.equal(paid.status, 201, 'payment is open at once')
-    const state = await pool.query('SELECT status FROM orders WHERE order_id = $1', [orderId])
-    assert.equal(state.rows[0].status, 'IN_PRODUCTION', 'straight into production, no admin needed')
-
-    assert.equal((await fetch(`${baseUrl}/api/orders/${orderId}/approve`, { method: 'POST', headers: { Cookie: adminCookie } })).status, 404)
+    assert.equal((await fetch(`${baseUrl}/api/orders/${body.order.id}/approve`, { method: 'POST', headers: { Cookie: adminCookie } })).status, 404)
     assert.equal((await fetch(`${baseUrl}/api/settings`, { headers: { Cookie: adminCookie } })).status, 404)
   })
 
@@ -1006,7 +1025,7 @@ describe('order management', () => {
   // 2026-10-16). The daily number of CLIENT_REVISIONS_PLAN.md R4 is still
   // kept by its trigger (the next test), just no longer shown.
   test('two simultaneous orders get different, permanent order numbers, and both carry the day', async () => {
-    const place = () => fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 1 }] }) })
+    const place = () => fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ payment: { method: 'CASH' }, items: [{ productId: availableProductId, quantity: 1 }] }) })
     const responses = await Promise.all([place(), place()])
     const orders = []
     for (const response of responses) {
@@ -1058,7 +1077,7 @@ describe('order management', () => {
     assert.ok(recent.orders.length > 0 && recent.orders.length <= 8)
     const since = recent.orders[0].orderDate
 
-    const placed = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 1 }] }) })
+    const placed = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ payment: { method: 'CASH' }, items: [{ productId: availableProductId, quantity: 1 }] }) })
     const { order } = await placed.json()
     createdOrderIds.push(order.id)
 

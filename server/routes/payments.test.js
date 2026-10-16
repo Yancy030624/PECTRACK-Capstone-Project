@@ -361,7 +361,7 @@ describe('payment & billing', () => {
   // counter — and never moves an order that is already further along.
   // (A delivery order is the one kind that waits as PLACED; here a pickup
   // order is put back to PLACED in SQL, as one from before the change.)
-  test('an online payment that settles a PLACED order sends it to production, once, even if reported twice', async () => {
+  test('an online payment that settles an unpaid order makes it ready, once, even if reported twice', async () => {
     const { orderId } = await createOrder(1)
     await pool.query(`UPDATE orders SET status = 'PLACED' WHERE order_id = $1`, [orderId])
     const { paymentId } = await (await createIntent(orderId)).json()
@@ -371,21 +371,20 @@ describe('payment & billing', () => {
     assert.equal((await sendWebhook(eventBody, signWebhook(eventBody))).status, 200, 'a redelivered event is fine')
 
     const order = await getOrder(orderId)
-    assert.equal(order.status, 'IN_PRODUCTION')
-    // The placement wrote its own IN_PRODUCTION row before the SQL reset;
-    // the payment adds exactly one more, saying why.
-    assert.equal(order.statusHistory.filter((entry) => entry.status === 'IN_PRODUCTION' && entry.note?.startsWith('Paid in full')).length, 1, 'moved once')
+    assert.equal(order.status, 'READY_FOR_PICKUP')
+    // Payment first: the payment that settles it makes it ready, and says so.
+    assert.equal(order.statusHistory.filter((entry) => entry.status === 'READY_FOR_PICKUP' && entry.note?.startsWith('Paid — ready')).length, 1, 'moved once')
   })
 
-  test('a payment never moves an order back to production from a later status', async () => {
+  test('a payment never moves an order back from a later status', async () => {
     const { orderId } = await createOrder(1)
-    await pool.query(`UPDATE orders SET status = 'READY_FOR_PICKUP' WHERE order_id = $1`, [orderId])
+    await pool.query(`UPDATE orders SET status = 'OUT_FOR_DELIVERY' WHERE order_id = $1`, [orderId])
     const { paymentId } = await (await createIntent(orderId)).json()
     const eventBody = buildPaymentEvent('payment.paid', await gatewayReferenceFor(paymentId))
     assert.equal((await sendWebhook(eventBody, signWebhook(eventBody))).status, 200)
     const order = await getOrder(orderId)
     assert.equal(order.payment.isFullyPaid, true)
-    assert.equal(order.status, 'READY_FOR_PICKUP')
+    assert.equal(order.status, 'OUT_FOR_DELIVERY')
   })
 
   // The MEANINGFUL idempotency test — not the exact same event redelivered
@@ -951,6 +950,9 @@ describe('payment & billing', () => {
   // '0' where the detail reports '0.00'.
   test('the order LIST carries the same balance figures as the order detail', async () => {
     const { orderId } = await createOrder(4) // total 400
+    // Payment first hides an unpaid checkout from the list; put this one in
+    // a placed state, as an order from before payment first can be.
+    await pool.query(`UPDATE orders SET status = 'READY_FOR_PICKUP' WHERE order_id = $1`, [orderId])
     await recordPayment({ orderId, method: 'CASH', amount: 150 })
 
     const list = await (await fetch(`${baseUrl}/api/orders`, { headers: { Cookie: cashierCookie } })).json()
@@ -968,6 +970,7 @@ describe('payment & billing', () => {
 
   test('an unpaid order in the LIST reports amountPaid as "0.00", not "0"', async () => {
     const { orderId } = await createOrder(1)
+    await pool.query(`UPDATE orders SET status = 'READY_FOR_PICKUP' WHERE order_id = $1`, [orderId])
     const list = await (await fetch(`${baseUrl}/api/orders`, { headers: { Cookie: cashierCookie } })).json()
     const listed = list.orders.find((order) => order.id === orderId)
     assert.equal(listed.amountPaid, '0.00', 'the list must carry the same NUMERIC(12,2) formatting the detail does')
@@ -1152,7 +1155,7 @@ describe('payment & billing', () => {
   const confirmPayment = (paymentId, cookie = customerCookie) =>
     fetch(`${baseUrl}/api/payments/${paymentId}/confirm`, { method: 'POST', headers: { Cookie: cookie } })
 
-  test('a paying customer is sent straight to the receipt (cancelling, back to My Payments), and confirm settles a paid session', async () => {
+  test('a paying customer is sent straight to the receipt (backing out, to the pay-or-cancel page), and confirm settles a paid session', async () => {
     const { orderId } = await createOrder(2) // total 200
     const intent = await createIntent(orderId, customerCookie)
     assert.equal(intent.status, 201)
@@ -1160,7 +1163,7 @@ describe('payment & billing', () => {
     const sessionId = await gatewayReferenceFor(paymentId)
     // The adviser (2026-10-16): no extra click to see the receipt.
     assert.match(checkoutSessions.get(sessionId).successUrl, new RegExp(`/receipt/${orderId}$`))
-    assert.match(checkoutSessions.get(sessionId).cancelUrl, new RegExp(`/account\\?tab=payments&order=${orderId}$`))
+    assert.match(checkoutSessions.get(sessionId).cancelUrl, new RegExp(`/receipt/${orderId}\\?cancelled=1$`))
 
     // Not paid yet: the attempt stays pending.
     const early = await confirmPayment(paymentId)

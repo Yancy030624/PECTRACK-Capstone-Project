@@ -1,7 +1,7 @@
 import { config } from './config.js'
 import app from './app.js'
 import { pruneExpiredAuthRows } from './lib/auth.js'
-import { closeStaleOrders } from './lib/staleOrders.js'
+import { cancelUnpaidOrders, closeStaleOrders } from './lib/staleOrders.js'
 
 // Expired sessions and old OTP codes are already ignored wherever they're
 // read, so this is housekeeping rather than a correctness fix — but neither
@@ -20,16 +20,20 @@ async function pruneExpiredRows() {
   }
 }
 
-// Orders whose day has passed and that are still open are closed on their
-// own (lib/staleOrders.js, the adviser 2026-10-16): at start-up, then every
-// quarter of an hour, so a day's leftovers are closed soon after midnight.
-const staleOrdersIntervalMs = 15 * 60 * 1000
+// Order housekeeping (lib/staleOrders.js, the adviser 2026-10-16), at
+// start-up and then every minute:
+// - orders whose day has passed and that are still open are closed;
+// - online checkouts not paid within 15 minutes are released, and unpaid
+//   orders from before payment first are cancelled.
+const staleOrdersIntervalMs = 60 * 1000
 
 async function closeStaleOrdersQuietly() {
   try {
     const closed = await closeStaleOrders()
     if (closed.completed || closed.cancelled) console.log(`Closed old orders: ${closed.completed} completed, ${closed.cancelled} cancelled.`)
     if (closed.partPaid) console.log(`${closed.partPaid} old order(s) are part paid and stay open for staff.`)
+    const released = await cancelUnpaidOrders()
+    if (released.cancelled) console.log(`Released ${released.cancelled} unpaid order(s).`)
   } catch (error) {
     // Like the pruning above: a failed run is retried on the next one and
     // never takes the API down.

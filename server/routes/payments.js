@@ -24,7 +24,9 @@ import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { PaymongoApiError, PaymongoWebhookVerificationError, createCheckoutSession, paymongoMinimumAmountCentavos, retrieveCheckoutSession, verifyPaymongoWebhook } from '../lib/paymongo.js'
 import { orderLabel } from '../lib/orderNumber.js'
-import { startProductionIfPaid } from '../lib/orderStatus.js'
+import { readyIfPaid } from '../lib/orderStatus.js'
+import { markGatewayPaymentFailed, markGatewayPaymentPaid } from '../lib/gatewayPayments.js'
+import { sendInBackground, sendOrderReadyEmailFor } from '../lib/notices.js'
 import { dateRangeSql, parseDateRange } from '../lib/reporting.js'
 import { normalize, parseId } from '../lib/validation.js'
 
@@ -94,63 +96,9 @@ const paymentListSelectQuery = `SELECT p.payment_id, p.order_id, o.daily_number,
        LEFT JOIN delivery_personnel rd ON rd.user_id = p.recorded_by
        LEFT JOIN admins fa ON fa.user_id = p.refunded_by`
 
-// ============================================================================
-// Settling a gateway payment — shared by POST /webhook (PayMongo tells us)
-// and POST /:id/confirm (we ask PayMongo when the customer comes back).
-// Both can report the same payment, in either order and more than once, so
-// each write is conditional on the row still being open: the first report
-// settles it and every later one matches no row.
-// ============================================================================
-
-// A CANCELLED intent can still be paid: the checkout link was live in the
-// customer's browser when it was closed — by an order cancel, or by staff
-// clearing an abandoned attempt (PATCH /:id below) — and by the time PayMongo
-// reports it their money has moved. Ignoring it would leave collected money
-// with no record at all, so it is always recorded as PAID. The bakery gives
-// no refunds (CLIENT_REVISIONS_PLAN.md, R2): if the order was cancelled in
-// the meantime, the order shows as "paid after cancellation" for staff to
-// settle with the customer — nothing is sent back automatically.
-//
-// gateway_payment_id (migration 009) is the PayMongo Payment id, kept on
-// every paid row as the reference for that payment.
-//
-// The payment that settles a DELIVERY order also sends it to production
-// (lib/orderStatus.js), so this now takes the ORDER row's lock first, as
-// every other money path in this file does, and settles the payment and
-// moves the order in one transaction. The payment write itself is still
-// conditional on the row being open, so a second report (webhook after
-// confirm-on-return, or a retried webhook) matches nothing and moves
-// nothing. The status history names the customer who started the payment.
-async function markGatewayPaymentPaid(checkoutSessionId, paymongoPaymentId) {
-  const found = await pool.query('SELECT order_id FROM payments WHERE gateway_reference = $1', [checkoutSessionId])
-  const orderId = found.rows[0]?.order_id
-  if (!orderId) return
-  const client = await pool.connect()
-  try {
-    await client.query('BEGIN')
-    await client.query('SELECT order_id FROM orders WHERE order_id = $1 FOR UPDATE', [orderId])
-    const settled = await client.query(
-      `UPDATE payments
-          SET status = 'PAID', payment_date = CURRENT_TIMESTAMP, gateway_payment_id = COALESCE($2, gateway_payment_id)
-        WHERE gateway_reference = $1 AND status IN ('PENDING', 'CANCELLED')
-      RETURNING recorded_by`,
-      [checkoutSessionId, paymongoPaymentId],
-    )
-    if (settled.rowCount > 0 && settled.rows[0].recorded_by) {
-      await startProductionIfPaid(client, orderId, settled.rows[0].recorded_by)
-    }
-    await client.query('COMMIT')
-  } catch (error) {
-    await client.query('ROLLBACK')
-    throw error
-  } finally {
-    client.release()
-  }
-}
-
-async function markGatewayPaymentFailed(checkoutSessionId) {
-  await pool.query(`UPDATE payments SET status = 'FAILED' WHERE gateway_reference = $1 AND status = 'PENDING'`, [checkoutSessionId])
-}
+// Settling a gateway payment (webhook and confirm-on-return) lives in
+// lib/gatewayPayments.js, shared with the job that releases unpaid
+// checkout holds (lib/staleOrders.js).
 
 // ============================================================================
 // POST /api/payments/webhook — PayMongo's server, not a signed-in user.
@@ -477,11 +425,14 @@ router.post('/', requireRole('CASHIER', 'ADMIN'), async (request, response) => {
       return response.status(409).json({ message: 'That is more than this order still owes.', errors: { amount: 'That is more than this order still owes.' } })
     }
 
-    // The payment that settles a delivery order sends it to production,
-    // in this same transaction (lib/orderStatus.js).
-    await startProductionIfPaid(client, orderId, request.user.id)
+    // The payment that settles an order makes it ready, in this same
+    // transaction (lib/orderStatus.js).
+    const ready = await readyIfPaid(client, orderId, request.user.id)
 
     await client.query('COMMIT')
+    // A customer's order now ready for pickup: tell them, after the commit
+    // and in the background (a walk-in has no customer and gets nothing).
+    if (ready === 'READY_FOR_PICKUP') sendInBackground('order ready', () => sendOrderReadyEmailFor(orderId))
 
     const summary = await getBillingSummary(pool, orderId)
     const paymentRow = summary.payments.find((row) => row.id === recorded.rows[0].payment_id)
@@ -591,11 +542,11 @@ router.post('/intent', requireRole('CUSTOMER'), async (request, response) => {
   // order's receipt (src/pages/customer-storefront/ReceiptPage.jsx, the
   // adviser 2026-10-16), which asks POST /:id/confirm to settle the
   // payment and shows the receipt once the server says it is paid.
-  // Cancelled: back to My Payments with this order open, where the attempt
-  // can be retried or closed. Built from CLIENT_ORIGIN, so it is right
-  // wherever the app is served.
+  // Built from CLIENT_ORIGIN, so it is right wherever the app is served.
   const successUrl = `${config.clientOrigin}/receipt/${orderId}`
-  const returnUrl = `${config.clientOrigin}/account?tab=payments&order=${orderId}`
+  // Payment first: a customer who backs out of GCash comes back to the same
+  // page, which offers to pay again or cancel the order.
+  const returnUrl = `${config.clientOrigin}/receipt/${orderId}?cancelled=1`
 
   // The order's customer, to fill in PayMongo's payer form. Only the fields
   // on file are sent; a walk-in order sends none.

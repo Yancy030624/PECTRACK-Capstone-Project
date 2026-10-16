@@ -5,9 +5,9 @@
 // server/lib/bakery.js holds a copy of the address, hours and phone
 // numbers for the emails the server sends. Change it with this file.
 //
-// HOURS — from the bakery's own About page ("Daily 5:00 AM – 8:00 PM,
-// fresh batches at 5 AM and 3 PM"), adopted by the team on 2026-10-13.
-// Change the values below and every page follows.
+// HOURS — 5:00 AM to 10:00 PM, the same as the ordering hours
+// (lib/orderHours.js); the user confirmed them on 2026-10-16. Change the
+// values below and every page follows.
 export const bakery = {
   name: "Pecto's Bakery",
   tagline: "Lucban's Best Delicacies",
@@ -16,7 +16,7 @@ export const bakery = {
   town: 'Lucban, Quezon',
   hours: {
     days: 'Daily',
-    time: '5:00 AM – 8:00 PM',
+    time: '5:00 AM – 10:00 PM',
     opens: '5 AM',
     note: 'Fresh batches at 5 AM and 3 PM',
   },

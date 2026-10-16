@@ -303,7 +303,7 @@ router.patch('/:id/assign', requireRole('ADMIN', 'CASHIER'), async (request, res
       await client.query('ROLLBACK')
       return response.status(409).json({ message: `This order is already ${orderStatus.toLowerCase()} — its delivery cannot be assigned.` })
     }
-    if (orderStatus === 'PLACED') {
+    if (orderStatus === 'PLACED' || orderStatus === 'AWAITING_PAYMENT') {
       await client.query('ROLLBACK')
       return response.status(409).json({ message: 'This order is not paid yet — a delivery order goes into production, and can be assigned, once it is paid in full.' })
     }

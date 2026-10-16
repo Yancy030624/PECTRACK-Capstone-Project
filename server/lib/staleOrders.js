@@ -26,12 +26,15 @@
 // which the screens show as "System".
 import { pool } from '../db.js'
 import { getBillingSummary } from './billing.js'
+import { config } from '../config.js'
+import { markGatewayPaymentPaid } from './gatewayPayments.js'
 import { applyCancellationEffects } from './orderStatus.js'
+import { retrieveCheckoutSession } from './paymongo.js'
 
 export const completedNote = 'Closed automatically after its day: paid in full.'
 export const cancelledNote = 'Cancelled automatically: not paid or collected by its day.'
 
-const closableStatuses = ['PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP']
+const closableStatuses = ['PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP', 'READY_FOR_DELIVERY']
 
 const staleOrdersQuery = `
   SELECT order_id FROM orders
@@ -97,7 +100,101 @@ export async function closeStaleOrders({ onlyOrderIds = null } = {}) {
   const stale = await pool.query(staleOrdersQuery, [closableStatuses, onlyOrderIds])
   const result = { completed: 0, cancelled: 0, partPaid: 0 }
   for (const { order_id: orderId } of stale.rows) {
-    const outcome = await closeOne(orderId)
+    // One order that cannot be closed is logged and skipped, never allowed
+    // to stop the rest of the run.
+    const outcome = await closeOne(orderId).catch((error) => { console.error(`Could not close order ${orderId}:`, error); return 'failed' })
+    if (outcome in result) result[outcome] += 1
+  }
+  return result
+}
+
+// ============================================================================
+// Unpaid orders (payment first, RULES-PLANS/PAYMENT_FIRST_PLAN.md).
+//
+// - An online checkout held as AWAITING_PAYMENT for more than 15 minutes is
+//   let go: CANCELLED by the system, its stock back on the shelf, its open
+//   GCash attempt closed. It was never shown to staff and stays hidden.
+//   Before letting it go, each open GCash attempt is checked with PayMongo:
+//   one paid just now makes the order ready instead. If PayMongo cannot be
+//   reached the hold is kept and asked about again on the next run.
+// - An order from before payment first that is still open and has no
+//   payment at all is cancelled the same way: there are no unpaid orders
+//   any more. (One whose day has passed is closed by closeStaleOrders
+//   above instead, without returning baked stock.)
+// ============================================================================
+export const holdMinutes = 15
+export const releasedNote = `Checkout not paid within ${holdMinutes} minutes — released.`
+export const unpaidNote = 'Cancelled automatically: no payment (payment first).'
+
+const unpaidOrdersQuery = `
+  SELECT o.order_id, o.status FROM orders o
+   WHERE o.data_source = 'RECORDED'
+     AND (
+       (o.status = 'AWAITING_PAYMENT' AND o.order_date < CURRENT_TIMESTAMP - make_interval(mins => $1::int))
+       OR (o.status IN ('PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP', 'READY_FOR_DELIVERY')
+           AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.order_id AND p.status IN ('PAID', 'PENDING')))
+     )
+     AND ($2::bigint[] IS NULL OR o.order_id = ANY($2::bigint[]))
+   ORDER BY o.order_id`
+
+// true when the hold must be kept: paid after all (now ready), or PayMongo
+// could not be asked.
+async function paidAfterAll(orderId) {
+  const pending = await pool.query(`SELECT gateway_reference FROM payments WHERE order_id = $1 AND status = 'PENDING' AND gateway_reference IS NOT NULL`, [orderId])
+  if (pending.rows.length === 0 || !config.paymongo.secretKey) return false
+  for (const { gateway_reference: sessionId } of pending.rows) {
+    try {
+      const session = await retrieveCheckoutSession({ secretKey: config.paymongo.secretKey, checkoutSessionId: sessionId })
+      if (session.paidPaymentId) {
+        await markGatewayPaymentPaid(sessionId, session.paidPaymentId)
+        return true
+      }
+    } catch {
+      return true
+    }
+  }
+  return false
+}
+
+async function cancelUnpaidOne(orderId, wasHold) {
+  if (wasHold && (await paidAfterAll(orderId))) return 'kept'
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const locked = await client.query('SELECT status FROM orders WHERE order_id = $1 FOR UPDATE SKIP LOCKED', [orderId])
+    const status = locked.rows[0]?.status
+    if (!status || status === 'COMPLETED' || status === 'CANCELLED' || status === 'OUT_FOR_DELIVERY') {
+      await client.query('ROLLBACK')
+      return 'skipped'
+    }
+    const billing = await getBillingSummary(client, orderId)
+    if (Number(billing.amountPaid) > 0) {
+      await client.query('ROLLBACK')
+      return 'skipped'
+    }
+    await client.query(`UPDATE orders SET status = 'CANCELLED' WHERE order_id = $1`, [orderId])
+    await applyCancellationEffects(client, orderId, null)
+    await client.query(
+      'INSERT INTO order_status_history (order_id, updated_by, status, note) VALUES ($1, NULL, $2, $3)',
+      [orderId, 'CANCELLED', wasHold ? releasedNote : unpaidNote],
+    )
+    await client.query('COMMIT')
+    return 'cancelled'
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+// Returns how many holds/unpaid orders were cancelled, and how many holds
+// were kept (paid after all, or PayMongo unreachable).
+export async function cancelUnpaidOrders({ onlyOrderIds = null } = {}) {
+  const unpaid = await pool.query(unpaidOrdersQuery, [holdMinutes, onlyOrderIds])
+  const result = { cancelled: 0, kept: 0 }
+  for (const { order_id: orderId, status } of unpaid.rows) {
+    const outcome = await cancelUnpaidOne(orderId, status === 'AWAITING_PAYMENT').catch((error) => { console.error(`Could not release order ${orderId}:`, error); return 'failed' })
     if (outcome in result) result[outcome] += 1
   }
   return result

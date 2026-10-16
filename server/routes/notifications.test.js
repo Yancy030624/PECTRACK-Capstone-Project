@@ -69,21 +69,28 @@ describe('notification feed', () => {
   }
   const login = async (username, password) => (await json('POST', '/api/auth/login', '', { identifier: username, password })).headers.get('set-cookie').split(';')[0]
 
-  const placeOrder = async ({ orderType = 'PICKUP', cookie = customerCookie } = {}) => {
+  // Payment first: a customer's order is a hidden hold until it is paid; by
+  // default it is paid at once (here at the counter), so it is a real,
+  // announced order. { paid: false } leaves the hold. A cashier's walk-in is
+  // paid as it is placed.
+  const placeOrder = async ({ orderType = 'PICKUP', cookie = customerCookie, paid = true } = {}) => {
     const response = await json('POST', '/api/orders', cookie, {
       orderType,
       ...(orderType === 'DELIVERY' && { addressId }),
+      ...(cookie === cashierCookie && { payment: { method: 'CASH' } }),
       items: [{ productId, quantity: 1 }],
     })
     assert.equal(response.status, 201)
     const order = (await response.json()).order
     createdOrderIds.push(order.id)
+    if (paid && cookie !== cashierCookie) {
+      assert.equal((await json('POST', '/api/payments', cashierCookie, { orderId: order.id, method: 'CASH', amount: order.totalAmount })).status, 201)
+    }
     return order
   }
-  // A paid delivery order (so in production) assigned to the first driver.
+  // A paid delivery order (so ready for delivery) assigned to the first driver.
   const assignedDelivery = async () => {
     const order = await placeOrder({ orderType: 'DELIVERY' })
-    assert.equal((await json('POST', '/api/payments', cashierCookie, { orderId: order.id, method: 'CASH', amount: order.totalAmount })).status, 201)
     const delivery = (await pool.query('SELECT delivery_id FROM deliveries WHERE order_id = $1', [order.id])).rows[0].delivery_id
     assert.equal((await json('PATCH', `/api/deliveries/${delivery}/assign`, cashierCookie, { deliveryPersonnelId: firstDriverId })).status, 200)
     return { order, delivery }
@@ -204,14 +211,13 @@ describe('notification feed', () => {
     }
   })
 
-  test('a cashier is not told about the cancel they made; the admin is', async () => {
-    const order = await placeOrder()
-    assert.equal((await json('PATCH', `/api/orders/${order.id}`, cashierCookie, { status: 'CANCELLED', note: 'Customer changed their mind' })).status, 200)
-    assert.equal(eventsFor((await feed(cashierCookie)).body, order.id).filter((event) => event.type === 'order_cancelled').length, 0)
-    const cancel = eventsFor((await feed(adminCookie)).body, order.id).find((event) => event.type === 'order_cancelled')
-    assert.ok(cancel)
-    assert.equal(cancel.actorName, cashier.name)
-    assert.equal(cancel.actorIsCustomer, false)
+  // Payment first: a checkout still being paid is not an order yet, and one
+  // let go unpaid never was — neither is news to anyone.
+  test('an unpaid checkout, and one cancelled unpaid, are never news', async () => {
+    const held = await placeOrder({ paid: false })
+    assert.equal(eventsFor((await feed(adminCookie)).body, held.id).length, 0)
+    assert.equal((await json('PATCH', `/api/orders/${held.id}`, customerCookie, { status: 'CANCELLED', note: 'Checkout cancelled by the customer.' })).status, 200)
+    assert.equal(eventsFor((await feed(adminCookie)).body, held.id).length, 0)
   })
 
   test('a walk-in order the cashier rang up is not news to that cashier', async () => {
@@ -220,8 +226,12 @@ describe('notification feed', () => {
     assert.ok(eventsFor((await feed(adminCookie)).body, order.id).some((event) => event.type === 'order_placed'))
   })
 
-  test('an online payment is news; a cash payment at the counter is not', async () => {
-    const online = await placeOrder({ orderType: 'DELIVERY' })
+  // A normal online payment IS the new order (above). The one payment that
+  // is news on its own: GCash money that arrived for a checkout already let
+  // go — staff must settle it.
+  test('a payment for an order already let go is news; an ordinary payment is not', async () => {
+    const online = await placeOrder({ orderType: 'DELIVERY', paid: false })
+    assert.equal((await json('PATCH', `/api/orders/${online.id}`, customerCookie, { status: 'CANCELLED', note: 'Checkout cancelled by the customer.' })).status, 200)
     await pool.query(
       `INSERT INTO payments (order_id, payment_method, amount, status, gateway_reference, payment_date) VALUES ($1, 'GCASH', $2, 'PAID', $3, CURRENT_TIMESTAMP)`,
       [online.id, online.totalAmount, `notif_test_${runId}`],
@@ -231,7 +241,6 @@ describe('notification feed', () => {
     assert.equal(Number(paid.amount), Number(online.totalAmount))
 
     const cash = await placeOrder()
-    assert.equal((await json('POST', '/api/payments', cashierCookie, { orderId: cash.id, method: 'CASH', amount: cash.totalAmount })).status, 201)
     assert.equal(eventsFor((await feed(adminCookie)).body, cash.id).filter((event) => event.type === 'payment_received').length, 0)
   })
 
@@ -284,16 +293,16 @@ describe('notification feed', () => {
   }))
 
   test('a ready pickup order emails its customer; a walk-in order emails no one', () => withGmail(async () => {
-    const online = await placeOrder()
+    // Payment first: the payment that places the order makes it ready, and
+    // that is when the customer is told.
+    const online = await placeOrder({ paid: false })
     assert.equal((await json('POST', '/api/payments', cashierCookie, { orderId: online.id, method: 'CASH', amount: online.totalAmount })).status, 201)
-    assert.equal((await json('PATCH', `/api/orders/${online.id}`, cashierCookie, { status: 'READY_FOR_PICKUP' })).status, 200)
     const [ready] = await waitForMail(customer.email, `Your order #${online.orderNumber} is ready for pickup`)
     assert.ok(ready)
     assert.match(ready.text, /93 Quezon Avenue/)
 
     const before = sentMail.length
-    const walkIn = await placeOrder({ cookie: cashierCookie })
-    assert.equal((await json('PATCH', `/api/orders/${walkIn.id}`, cashierCookie, { status: 'READY_FOR_PICKUP' })).status, 200)
+    await placeOrder({ cookie: cashierCookie })
     await settle()
     assert.equal(sentMail.length, before, 'no customer, no email')
   }))

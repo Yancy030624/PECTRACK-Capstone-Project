@@ -92,9 +92,18 @@ export function CheckoutPage({ user }) {
       if (neededDate) body.requestedFulfillmentTime = toRequestedTime(neededDate, neededTime)
       if (orderType === 'DELIVERY') body.addressId = addressId
 
+      // Payment first (RULES-PLANS/PAYMENT_FIRST_PLAN.md): the order is held
+      // for 15 minutes, hidden from the bakery, while the customer pays with
+      // GCash; PayMongo brings them back to the receipt. If GCash cannot be
+      // opened, the receipt page offers to try again or cancel.
       const data = await apiPost('/api/orders', body)
       clear()
-      navigate(`/order-placed/${data.order.id}`)
+      try {
+        const intent = await apiPost('/api/payments/intent', { orderId: data.order.id })
+        window.location.href = intent.checkoutUrl
+      } catch {
+        navigate(`/receipt/${data.order.id}?cancelled=1`)
+      }
     } catch (error) {
       if (error.status === 409 || (error.status === 422 && error.errors?.items)) {
         setMessage('Some items in your cart are no longer available, or do not have enough stock right now. Please review the quantities below and try again.')
@@ -149,7 +158,7 @@ export function CheckoutPage({ user }) {
             <div className="rounded-2xl border border-cream-200 bg-white p-5">
               {/* NO_COD_PLAN — the bakery bakes a delivery order only once it
                   is paid; say so before the customer commits to it. */}
-              <p className="mb-4 rounded-xl bg-butter-100 p-3 text-xs font-semibold text-cocoa-700">Delivery orders are paid in full with GCash before we start baking — there is no cash on delivery. You can pay right after you place the order.</p>
+              <p className="mb-4 rounded-xl bg-butter-100 p-3 text-xs font-semibold text-cocoa-700">Every order is paid first with GCash — there is no cash on delivery.</p>
               <h2 className="text-sm font-bold text-cocoa-900">Delivery address</h2>
               {addresses.length === 0 && !addingAddress && (
                 <div className="mt-3">
@@ -217,7 +226,8 @@ export function CheckoutPage({ user }) {
               <span className="font-bold">Confirm your email to place this order.</span> Open the link we sent to {user.email} — your cart is kept, and this page updates when you come back.
             </p>
           )}
-          <button type="button" onClick={handleSubmit} disabled={submitting || needsVerification} className="w-full rounded-2xl bg-crust-600 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-crust-700 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Placing your order…' : needsVerification ? 'Confirm your email first' : 'Place order'}</button>
+          <p className="text-center text-xs text-cocoa-500">You pay with GCash right away. Your order is placed once it is paid; an unpaid order is let go after 15 minutes.</p>
+          <button type="button" onClick={handleSubmit} disabled={submitting || needsVerification} className="w-full rounded-2xl bg-crust-600 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-crust-700 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Opening GCash…' : needsVerification ? 'Confirm your email first' : 'Place order and pay with GCash'}</button>
         </div>
 
         {/* order-first below lg: on a phone the summary used to render

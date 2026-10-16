@@ -106,7 +106,9 @@ export function DashboardHome({ user, onNavigate }) {
       value: summary.ordersToPrepare,
       tone: summary.ordersOverdue > 0 ? 'attention' : summary.ordersToPrepare > 0 ? 'okay' : 'good',
       note: summary.ordersOverdue > 0 ? `${summary.ordersOverdue} overdue` : summary.ordersToPrepare > 0 ? 'None overdue' : 'All caught up',
-      to: ['Production'],
+      // No Production module any more: today's orders are in Order
+      // Management, which opens on Today (payment first, the adviser).
+      to: ['Order Management', { day: 'TODAY', status: 'OPEN' }],
     },
     {
       label: 'Deliveries to assign',
@@ -115,14 +117,6 @@ export function DashboardHome({ user, onNavigate }) {
       tone: summary.deliveriesNeedingAttention > 0 ? 'attention' : 'good',
       note: summary.deliveriesNeedingAttention > 0 ? 'Waiting for a driver' : 'All assigned',
       to: ['Delivery Management', { focus: 'toAssign' }],
-    },
-    {
-      label: 'Unpaid balances',
-      goodLabel: 'payments',
-      value: formatPeso(summary.outstanding),
-      tone: Number(summary.outstanding) > 0 ? 'okay' : 'good',
-      note: Number(summary.outstanding) > 0 ? 'Owed on open orders' : 'All paid',
-      to: ['Payment & Billing', { focus: 'unpaid' }],
     },
     summary.likelySellOut && {
       label: 'Likely to sell out',

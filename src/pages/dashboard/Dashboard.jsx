@@ -13,7 +13,6 @@ import { MyProfile } from './MyProfile.jsx'
 import { OrderManagement } from './OrderManagement.jsx'
 import { PaymentBilling } from './PaymentBilling.jsx'
 import { ProductManagement } from './ProductManagement.jsx'
-import { ProductionManagement } from './ProductionManagement.jsx'
 import { ReportingAnalytics } from './ReportingAnalytics.jsx'
 import { StaffManagement } from './StaffManagement.jsx'
 
@@ -22,7 +21,6 @@ const moduleComponents = {
   'Staff Management': StaffManagement,
   'Product Management': ProductManagement,
   'Inventory Management': InventoryManagement,
-  Production: ProductionManagement,
   'Customer Management': CustomerManagement,
   'My Profile': MyProfile,
   'Order Management': OrderManagement,

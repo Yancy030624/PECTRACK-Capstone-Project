@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { pool } from '../db.js'
-import { cancelledNote, closeStaleOrders, completedNote } from './staleOrders.js'
+import { cancelledNote, cancelUnpaidOrders, closeStaleOrders, completedNote, releasedNote } from './staleOrders.js'
 
 const runId = crypto.randomUUID().slice(0, 8)
 
@@ -89,6 +89,31 @@ describe('closing old orders', () => {
     const result = await closeStaleOrders({ onlyOrderIds: orderIds })
     assert.ok(result.partPaid >= 1)
     for (const orderId of [partPaid, neededLater, today, assumed]) assert.equal(await orderStatus(orderId), 'IN_PRODUCTION', `order ${orderId}`)
+  })
+
+  // Payment first: an online checkout held as AWAITING_PAYMENT is let go
+  // after 15 minutes (stock back, hidden); a younger one is kept. An order
+  // from before payment first, still open with no payment, is cancelled.
+  test('an unpaid checkout is released after 15 minutes, and its stock comes back; a younger one is kept', async () => {
+    const old = await oldOrder({ status: 'AWAITING_PAYMENT', daysAgo: 0 })
+    await pool.query(`UPDATE orders SET order_date = CURRENT_TIMESTAMP - INTERVAL '20 minutes' WHERE order_id = $1`, [old])
+    const young = await oldOrder({ status: 'AWAITING_PAYMENT', daysAgo: 0 })
+    const result = await cancelUnpaidOrders({ onlyOrderIds: [old, young] })
+    assert.equal(result.cancelled, 1)
+    assert.equal(await orderStatus(old), 'CANCELLED')
+    assert.equal(await orderStatus(young), 'AWAITING_PAYMENT', 'still within its 15 minutes')
+    const returned = await pool.query(`SELECT changed_by, quantity_change FROM inventory_movements WHERE order_id = $1 AND reason = 'ORDER_CANCELLED'`, [old])
+    assert.deepEqual(returned.rows, [{ changed_by: null, quantity_change: 3 }], 'its stock came back')
+    const note = (await pool.query(`SELECT updated_by, note FROM order_status_history WHERE order_id = $1`, [old])).rows[0]
+    assert.deepEqual(note, { updated_by: null, note: releasedNote })
+  })
+
+  test('an open order from before payment first with no payment is cancelled; a paid one is left', async () => {
+    const unpaid = await oldOrder({ status: 'READY_FOR_PICKUP', daysAgo: 0 })
+    const paid = await oldOrder({ status: 'READY_FOR_PICKUP', daysAgo: 0, paid: 30 })
+    await cancelUnpaidOrders({ onlyOrderIds: [unpaid, paid] })
+    assert.equal(await orderStatus(unpaid), 'CANCELLED')
+    assert.equal(await orderStatus(paid), 'READY_FOR_PICKUP')
   })
 
   test('running twice changes nothing the second time', async () => {

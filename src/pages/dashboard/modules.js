@@ -57,11 +57,9 @@ export const modules = [
   // internally — the exact shape Delivery Management already established
   // for ADMIN/CASHIER vs DELIVERY PERSONNEL below.
   { name: 'Order Management', icon: 'orders', roles: ['ADMIN', 'CASHIER'] },
-  // Production is the Due today schedule: open orders by the hour they
-  // are due. Ingredients, recipes and production batches were removed as
-  // out of the paper's scope (migration 022) — the system inventories
-  // finished products only.
-  { name: 'Production', icon: 'production', roles: ['ADMIN', 'CASHIER'] },
+  // No Production module (the adviser, 2026-10-16): the bakery bakes its
+  // day's stock before opening, not per order. Today's orders are in Order
+  // Management, under Today.
   { name: 'Inventory Management', icon: 'inventory', roles: ['ADMIN', 'CASHIER'] },
   { name: 'Payment & Billing', icon: 'payments', roles: ['ADMIN', 'CASHIER'] },
   // Phase 7 (see PHASE7_PLAN.md) — one nav entry shared by three roles.

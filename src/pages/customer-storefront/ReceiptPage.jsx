@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { apiGet, apiPost } from '../../api/client.js'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { apiGet, apiPatch, apiPost } from '../../api/client.js'
 import { PrintThisButton } from '../../components/PrintReport.jsx'
 import { bakery, bakeryAddress } from '../../lib/bakery.js'
 import { formatDateTime, formatPeso } from '../../lib/format.js'
@@ -22,6 +22,12 @@ import { orderLabel } from '../../lib/orderNumber.js'
 // The order is read through GET /api/orders/:id, which answers 404 for an
 // order that is not this customer's own, so a receipt can only ever show
 // the signed-in customer's order.
+//
+// Payment first (RULES-PLANS/PAYMENT_FIRST_PLAN.md): checkout saves the
+// order as a 15-minute hold and opens GCash at once. Back here unpaid (the
+// customer backed out of GCash: ?cancelled=1, or the payment failed), the
+// page offers the two ways forward — Pay with GCash again, or Cancel order.
+// A hold not paid in time is let go by the system; the page says so.
 const pollEveryMs = 3000
 const pollTries = 10
 
@@ -33,8 +39,13 @@ const latestOnlineAttempt = (order) => [...order.payment.payments].reverse().fin
 
 export function ReceiptPage({ user }) {
   const { orderId } = useParams()
+  const [searchParams] = useSearchParams()
+  // Came back from GCash without paying: check once, then ask what next.
+  const backedOut = searchParams.get('cancelled') === '1'
   const [order, setOrder] = useState(null)
-  const [phase, setPhase] = useState('verifying') // verifying | paid | pending | failed | error
+  const [phase, setPhase] = useState('verifying') // verifying | paid | pending | unpaid | released | lateTaken | error
+  const [busy, setBusy] = useState(false)
+  const [actionError, setActionError] = useState('')
   const [message, setMessage] = useState('')
   const tries = useRef(0)
   const timer = useRef(null)
@@ -52,9 +63,12 @@ export function ReceiptPage({ user }) {
       }
       const current = data.order
       setOrder(current)
+      // Paid after the hold was let go: recorded, flagged for the bakery.
+      if (current.status === 'CANCELLED' && current.payment.isFullyPaid) return setPhase('lateTaken')
       if (current.payment.isFullyPaid) return setPhase('paid')
+      if (current.status === 'CANCELLED') return setPhase('released')
       const stillPending = current.payment.payments.some((payment) => payment.status === 'PENDING')
-      if (stillPending && current.status !== 'CANCELLED') {
+      if (stillPending && !backedOut) {
         // Keep the spinner up while there are tries left; after that,
         // say so and let the customer ask again.
         tries.current += 1
@@ -66,19 +80,17 @@ export function ReceiptPage({ user }) {
         }
         return undefined
       }
-      setPhase('failed')
+      setPhase('unpaid')
       const attempt = latestOnlineAttempt(current)
-      setMessage(current.status === 'CANCELLED'
-        ? 'This order was cancelled.'
-        : attempt?.status === 'FAILED'
-          ? 'Your GCash payment did not go through. No money was taken for it. You can try again.'
-          : 'This order has not been paid yet.')
+      setMessage(attempt?.status === 'FAILED'
+        ? 'Your GCash payment did not go through. No money was taken for it.'
+        : 'Your order is not paid yet.')
     } catch (error) {
       setPhase('error')
       setMessage(error.status === 404 ? 'We could not find that order on your account.' : error.message)
     }
     return undefined
-  }, [orderId])
+  }, [orderId, backedOut])
 
   useEffect(() => {
     tries.current = 0
@@ -90,6 +102,39 @@ export function ReceiptPage({ user }) {
     tries.current = 0
     setPhase('verifying')
     verify()
+  }
+
+  // Pay again: an open GCash attempt blocks a new one, so it is closed
+  // first (a payment that still lands on it is recorded all the same).
+  const payAgain = async () => {
+    setBusy(true)
+    setActionError('')
+    try {
+      for (const payment of order.payment.payments.filter((entry) => entry.status === 'PENDING')) {
+        await apiPatch(`/api/payments/${payment.id}`, { status: 'CANCELLED' })
+      }
+      const intent = await apiPost('/api/payments/intent', { orderId: order.id })
+      window.location.href = intent.checkoutUrl
+    } catch (error) {
+      setActionError(error.message)
+      setBusy(false)
+    }
+  }
+
+  // Cancel the unpaid order: its stock goes back; nothing was charged.
+  const cancelOrder = async () => {
+    if (!window.confirm(`Cancel order ${orderLabel(order)}? Nothing has been charged.`)) return
+    setBusy(true)
+    setActionError('')
+    try {
+      await apiPatch(`/api/orders/${order.id}`, { status: 'CANCELLED', note: 'Checkout cancelled by the customer.' })
+      setPhase('released')
+      setOrder({ ...order, status: 'CANCELLED' })
+    } catch (error) {
+      setActionError(error.message)
+    } finally {
+      setBusy(false)
+    }
   }
 
   if (phase === 'verifying' || (!order && phase !== 'error')) {
@@ -118,20 +163,43 @@ export function ReceiptPage({ user }) {
     )
   }
 
-  if (phase === 'pending' || phase === 'failed') {
+  if (phase === 'released' || phase === 'lateTaken') {
     return (
       <section className="mx-auto max-w-2xl px-4 py-14 text-center sm:px-7">
         <div className="rounded-2xl border border-cream-200 bg-white p-8">
-          <h1 className="text-xl font-extrabold text-cocoa-900">{phase === 'pending' ? 'Still waiting for GCash' : 'Payment not completed'}</h1>
-          <p className={`mt-3 text-sm ${phase === 'failed' ? 'font-semibold text-red-700' : 'text-cocoa-500'}`}>
-            {phase === 'pending'
-              ? `GCash has not confirmed the payment for order ${orderLabel(order, { withDay: true })} yet. If you finished paying, it will show here in a moment.`
-              : message}
+          <h1 className="text-xl font-extrabold text-cocoa-900">{phase === 'released' ? 'Order not placed' : 'Payment received late'}</h1>
+          <p className="mt-3 text-sm text-cocoa-500">
+            {phase === 'released'
+              ? `Order ${orderLabel(order)} was not paid, so it was cancelled. Nothing was charged.`
+              : `Your payment for order ${orderLabel(order)} arrived after the order was let go. Please call the bakery at ${bakery.phones[0]} so we can sort it out.`}
           </p>
           <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
+            <Link to="/menu" className="rounded-full bg-crust-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-crust-700">Back to the menu</Link>
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  if (phase === 'pending' || phase === 'unpaid') {
+    return (
+      <section className="mx-auto max-w-2xl px-4 py-14 text-center sm:px-7">
+        <div className="rounded-2xl border border-cream-200 bg-white p-8">
+          <h1 className="text-xl font-extrabold text-cocoa-900">{phase === 'pending' ? 'Still waiting for GCash' : 'Finish paying to place your order'}</h1>
+          <p className="mt-3 text-sm text-cocoa-500">
+            {phase === 'pending'
+              ? `GCash has not confirmed the payment for order ${orderLabel(order)} yet. If you finished paying, it will show here in a moment.`
+              : `${message} We hold order ${orderLabel(order)} (${formatPeso(order.payment.totalAmount)}) for 15 minutes — pay with GCash to place it, or cancel it.`}
+          </p>
+          {actionError && <p role="alert" className="mt-2 text-xs font-semibold text-red-700">{actionError}</p>}
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
             {phase === 'pending' && <button type="button" onClick={checkAgain} className="rounded-full bg-crust-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-crust-700">Check again</button>}
-            {phase === 'failed' && order.status !== 'CANCELLED' && <Link to={`/account?tab=payments&order=${order.id}`} className="rounded-full bg-crust-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-crust-700">Try paying again</Link>}
-            <Link to="/account?tab=orders" className="rounded-full border border-crust-600 px-5 py-2.5 text-xs font-bold text-crust-700 transition hover:bg-cream-100">View My Orders</Link>
+            {phase === 'unpaid' && (
+              <>
+                <button type="button" onClick={payAgain} disabled={busy} className="rounded-full bg-crust-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-crust-700 disabled:opacity-60">{busy ? 'Please wait…' : 'Pay with GCash'}</button>
+                <button type="button" onClick={cancelOrder} disabled={busy} className="rounded-full border border-red-300 px-5 py-2.5 text-xs font-bold text-red-700 transition hover:bg-red-50 disabled:opacity-60">Cancel order</button>
+              </>
+            )}
           </div>
         </div>
       </section>

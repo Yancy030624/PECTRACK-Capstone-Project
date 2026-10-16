@@ -17,7 +17,6 @@ import inventoryRouter from './routes/inventory.js'
 import notificationsRouter from './routes/notifications.js'
 import ordersRouter from './routes/orders.js'
 import paymentsRouter from './routes/payments.js'
-import productionRouter from './routes/production.js'
 import productsRouter from './routes/products.js'
 import reportsRouter from './routes/reports.js'
 import staffRouter from './routes/staff.js'
@@ -103,7 +102,6 @@ app.use('/api/products', productsRouter)
 app.use('/api/customers', customersRouter)
 app.use('/api/inventory', inventoryRouter)
 app.use('/api/ingredients', ingredientsRouter)
-app.use('/api/production', productionRouter)
 app.use('/api/orders', ordersRouter)
 app.use('/api/payments', paymentsRouter)
 app.use('/api/deliveries', deliveriesRouter)

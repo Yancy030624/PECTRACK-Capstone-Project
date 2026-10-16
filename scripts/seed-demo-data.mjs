@@ -219,8 +219,13 @@ async function main() {
   // Seeded outside those hours, an order "for now" would be refused, so it
   // is placed for the next open time instead and the time is cleared
   // again afterwards: the demo's history orders never had one.
-  async function placeOrder(cookie, { customerId, orderType = 'PICKUP', items, addressId, requestedFulfillmentTime } = {}) {
+  //
+  // Payment first (RULES-PLANS/PAYMENT_FIRST_PLAN.md): an order placed by
+  // the cashier is paid as it is placed (`payWith`, cash by default); one
+  // placed by the customer is an online checkout hold until it is paid.
+  async function placeOrder(cookie, { customerId, orderType = 'PICKUP', items, addressId, requestedFulfillmentTime, payWith = 'CASH' } = {}) {
     const body = { orderType, items }
+    if (cookie === cashierCookie) body.payment = payWith === 'GCASH' ? { method: 'GCASH', gatewayReference: String(Math.floor(1e12 + Math.random() * 9e12)) } : { method: 'CASH' }
     if (customerId) body.customerId = customerId
     if (orderType === 'DELIVERY') body.addressId = addressId
     const standIn = !requestedFulfillmentTime && checkOrderTime(null) != null
@@ -257,7 +262,17 @@ async function main() {
     }
   }
 
+  // Returns the order's payment id. An order already paid in full (every
+  // order the cashier places, payment first) returns its existing payment.
   async function recordPayment(orderId, amount, method = 'CASH') {
+    const existing = await pool.query(
+      `SELECT p.payment_id FROM payments p JOIN orders o ON o.order_id = p.order_id
+        WHERE p.order_id = $1 AND p.status = 'PAID'
+          AND o.total_amount <= (SELECT SUM(amount) FROM payments WHERE order_id = $1 AND status = 'PAID')
+        ORDER BY p.payment_id LIMIT 1`,
+      [orderId],
+    )
+    if (existing.rows[0]) return existing.rows[0].payment_id
     const body = { orderId, method, amount }
     // A plausible 13-digit GCash reference, NOT a "SEED-" prefix.
     // payments.gateway_reference is rendered verbatim — as a whole
@@ -299,12 +314,10 @@ async function main() {
       orderType: isDelivery ? 'DELIVERY' : 'PICKUP',
       addressId: isDelivery ? address.id : undefined,
       items: randomItems(commonProducts),
+      payWith: Math.random() < (isDelivery ? 0.8 : 0.2) ? 'GCASH' : 'CASH',
     })
-    // No cash on delivery (NO_COD_PLAN): a delivery order is paid in full
-    // before it is confirmed, so it is paid up front — mostly GCash, the
-    // way a customer pays online. A pickup order is paid at the counter
-    // when collected.
-    const useGcash = Math.random() < (isDelivery ? 0.8 : 0.2)
+    // Paid as placed (payment first): these return that payment.
+    const useGcash = false
     const paymentId = isDelivery ? await recordPayment(order.id, order.totalAmount, useGcash ? 'GCASH' : 'CASH') : null
     await advanceStatus(order.id, 'CONFIRMED')
     await advanceStatus(order.id, 'IN_PRODUCTION')
@@ -322,45 +335,25 @@ async function main() {
   }
   log(`  ${completedCount} completed orders seeded.\n`)
 
-  // ============ 2. A few CANCELLED, unpaid — proves reports exclude them ============
-  log('Seeding cancelled orders...')
+  // ============ 2. A few checkouts never paid — proves reports exclude them ============
+  // Payment first: only an online checkout can go unpaid, and it is let go
+  // (cancelled, hidden). The customer cancels these from the payment page.
+  log('Seeding unpaid checkouts, cancelled...')
   for (let i = 0; i < 4; i++) {
-    const order = await placeOrder(i % 2 === 0 ? cashierCookie : customerCookie, {
-      customerId: i % 2 === 0 ? undefined : customer1.customerId,
-      items: randomItems(commonProducts),
-    })
-    // A cancellation needs a logged reason (PHASE10 B7).
-    const reasons = ['Customer changed their mind', 'Cancelled by customer: Ordered by mistake', 'Customer did not pick up', 'Cancelled by customer: Pickup or delivery time no longer works']
-    const cancelResult = await call('PATCH', `/api/orders/${order.id}`, i % 2 === 0 ? cashierCookie : customerCookie, { status: 'CANCELLED', note: reasons[i % reasons.length] })
+    const order = await placeOrder(customerCookie, { items: randomItems(commonProducts) })
+    const cancelResult = await call('PATCH', `/api/orders/${order.id}`, customerCookie, { status: 'CANCELLED', note: 'Checkout cancelled by the customer.' })
     if (cancelResult.status !== 200) throw new Error(`Cancel failed: ${JSON.stringify(cancelResult.body)}`)
     await backdateOrder(order.id, randomPastInstant(90))
   }
-  log('  4 cancelled orders seeded.\n')
+  log('  4 cancelled checkouts seeded.\n')
 
   // ============ 3. (removed) No refunds ============
   // The bakery gives no refunds (CLIENT_REVISIONS_PLAN.md, R2): a paid
   // order can no longer be cancelled, so the old "paid, then
   // admin-cancelled and refunded" demo order is gone.
 
-  // ============ 4. A few unpaid, open orders — outstanding > 0 ============
-  log('Seeding unpaid open orders...')
-  for (let i = 0; i < 3; i++) {
-    const order = await placeOrder(cashierCookie, { items: randomItems(commonProducts) })
-    await backdateOrder(order.id, randomPastInstant(10, 1))
-  }
-  log('  3 unpaid open orders seeded.\n')
-
-  // ============ 5. A couple of part-paid orders ============
-  log('Seeding part-paid orders...')
-  for (let i = 0; i < 2; i++) {
-    const order = await placeOrder(cashierCookie, { items: randomItems(commonProducts.concat(rareProducts)) })
-    const half = (Math.round(Number(order.totalAmount) / 2 * 100) / 100).toFixed(2)
-    const paymentId = await recordPayment(order.id, half)
-    const instant = randomPastInstant(14, 1)
-    await backdateOrder(order.id, instant)
-    await backdatePayment(paymentId, instant)
-  }
-  log('  2 part-paid orders seeded.\n')
+  // ============ 4–5. (removed) No unpaid or part-paid orders ============
+  // Payment first: every order is paid before it is placed.
 
   // ============ 6. Live mid-status board — dated TODAY, not backdated ============
   log('Seeding today\'s in-progress orders...')
@@ -378,7 +371,7 @@ async function main() {
   await advanceStatus(readyOrder.id, 'CONFIRMED')
   await advanceStatus(readyOrder.id, 'IN_PRODUCTION')
   await advanceStatus(readyOrder.id, 'READY_FOR_PICKUP')
-  log('  3 live orders seeded (CONFIRMED, IN_PRODUCTION, READY_FOR_PICKUP).\n')
+  log('  3 live orders seeded, ready for pickup today.\n')
 
   // ============ 7. One delivery ASSIGNED to delivery1, not yet delivered ============
   // The single highest-value row in this whole seed — without it, My
@@ -400,18 +393,7 @@ async function main() {
   if (assignResult.status !== 200) throw new Error(`Delivery assignment failed: ${JSON.stringify(assignResult.body)}`)
   log(`  Delivery for order #${deliveryOrder.id} assigned to ${driver.name}.\n`)
 
-  // ============ 7b. One delivery order waiting for payment ============
-  // Shows the no-cash-on-delivery rule in the demo: Order Management says
-  // "Not paid yet — don't bake it", Due today tags it, and the customer's
-  // My Orders says it is waiting for payment.
-  log('Seeding one unpaid delivery order...')
-  const unpaidDelivery = await placeOrder(customerCookie, {
-    orderType: 'DELIVERY',
-    addressId: address.id,
-    items: randomItems(commonProducts),
-    requestedFulfillmentTime: dueIn(4),
-  })
-  log(`  Order #${unpaidDelivery.id} placed for delivery, not yet paid.\n`)
+  // ============ 7b. (removed) No delivery waits for payment any more ============
 
   // ============ 8. Push three products under their minimum through real volume ============
   // One large order per product, sized against its OWN current stock

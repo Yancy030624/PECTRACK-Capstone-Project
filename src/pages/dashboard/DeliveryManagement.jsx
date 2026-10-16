@@ -206,12 +206,11 @@ function StaffDeliveryView({ user, params, onNavigate }) {
                   <StatusBadge status={delivery.status} />
                 </div>
 
-                {/* routes/deliveries.js refuses assignment while the order is
-                    still PLACED — a delivery order waits there until it is
-                    paid in full, then goes into production by itself. Say so
-                    here instead of offering a button that can only 409. */}
+                {/* Payment first: a delivery appears here only once its order is
+                    paid (lib/orderStatus.js). An older one still PLACED
+                    cannot be assigned; the system cancels it if unpaid. */}
                 {delivery.status === 'PENDING_ASSIGNMENT' && delivery.orderStatus === 'PLACED' && (
-                  <p className="mt-3 border-t border-line-100 pt-3 text-xs text-ink-500">Waiting for payment ({formatPeso(delivery.balanceDue)} owed). It goes into production, and can be assigned, once paid in full.</p>
+                  <p className="mt-3 border-t border-line-100 pt-3 text-xs text-ink-500">Not paid — it cannot be assigned.</p>
                 )}
                 {delivery.status === 'PENDING_ASSIGNMENT' && (delivery.orderStatus === 'COMPLETED' || delivery.orderStatus === 'CANCELLED') && (
                   <p className="mt-3 border-t border-line-100 pt-3 text-xs text-ink-500">This order is already {delivery.orderStatus.toLowerCase()} — nothing left to deliver.</p>

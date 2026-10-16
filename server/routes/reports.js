@@ -132,7 +132,7 @@ router.get('/sales', async (request, response) => {
               COUNT(*)::int AS orders_placed,
               COALESCE(SUM(o.total_amount), 0)::numeric(12,2) AS ordered
          FROM orders o
-        WHERE o.status <> 'CANCELLED' AND ${orderedRange}
+        WHERE o.status NOT IN ('CANCELLED', 'AWAITING_PAYMENT') AND ${orderedRange}
         GROUP BY 1
      ),
      collected_buckets AS (
@@ -191,7 +191,7 @@ router.get('/sales', async (request, response) => {
     `WITH ordered_totals AS (
        SELECT COUNT(*)::int AS orders_placed, COALESCE(SUM(o.total_amount), 0)::numeric(12,2) AS ordered
          FROM orders o
-        WHERE o.status <> 'CANCELLED' AND ${orderedRange}
+        WHERE o.status NOT IN ('CANCELLED', 'AWAITING_PAYMENT') AND ${orderedRange}
      ),
      collected_totals AS (
        SELECT COUNT(*)::int AS paid_count, COALESCE(SUM(p.amount), 0)::numeric(12,2) AS collected
@@ -312,7 +312,7 @@ router.get('/summary', async (_request, response) => {
       today_orders AS (
         SELECT COUNT(*)::int AS orders_placed, COALESCE(SUM(o.total_amount), 0)::numeric(12,2) AS ordered
           FROM orders o, today_range tr
-         WHERE o.status <> 'CANCELLED' AND o.order_date >= tr.starts_at AND o.order_date < tr.ends_at
+         WHERE o.status NOT IN ('CANCELLED', 'AWAITING_PAYMENT') AND o.order_date >= tr.starts_at AND o.order_date < tr.ends_at
       ),
       today_payments AS (
         SELECT COALESCE(SUM(p.amount), 0)::numeric(12,2) AS collected
@@ -330,7 +330,7 @@ router.get('/summary', async (_request, response) => {
       SELECT COALESCE(SUM(o.total_amount - COALESCE(paid.amount, 0)), 0)::numeric(12,2) AS outstanding
         FROM orders o
         ${billingListSql.join}
-       WHERE o.status <> 'CANCELLED' AND (o.total_amount - COALESCE(paid.amount, 0)) > 0
+       WHERE o.status NOT IN ('CANCELLED', 'AWAITING_PAYMENT') AND (o.total_amount - COALESCE(paid.amount, 0)) > 0
     `),
     // Only deliveries someone can still act on: a row whose order is
     // already COMPLETED or CANCELLED cannot be assigned (routes/deliveries.js
@@ -341,11 +341,17 @@ router.get('/summary', async (_request, response) => {
     pool.query(`SELECT COUNT(*)::int AS n FROM deliveries d JOIN orders o ON o.order_id = d.order_id WHERE d.status = 'PENDING_ASSIGNMENT' AND o.status NOT IN ('COMPLETED', 'CANCELLED')`),
     // PHASE10 B1 — products the latest forecast says run out by tomorrow.
     likelySellOutSummary(),
-    // The kitchen's queue: orders not ready yet, and those already past
-    // the time the customer asked for (the Due today schedule's "overdue").
+    // Orders to prepare (payment first, the adviser 2026-10-16): paid
+    // orders still to hand over or send out whose day is today (or came
+    // earlier), and those already past the time the customer asked for.
+    // The tile opens Order Management on Today; there is no production
+    // step any more, the bread is baked before opening.
     pool.query(`SELECT COUNT(*)::int AS to_prepare,
                        COUNT(*) FILTER (WHERE requested_fulfillment_time < CURRENT_TIMESTAMP)::int AS overdue
-                  FROM orders WHERE status IN ('PLACED', 'CONFIRMED', 'IN_PRODUCTION')`),
+                  FROM orders
+                 WHERE status IN ('READY_FOR_PICKUP', 'READY_FOR_DELIVERY')
+                   AND (COALESCE(requested_fulfillment_time, order_date) AT TIME ZONE 'Asia/Manila')::date
+                       <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date`),
   ])
   const todayRow = todayResult.rows[0]
 
@@ -391,7 +397,7 @@ router.get('/products', async (request, response) => {
        FROM order_details od
        JOIN orders o ON o.order_id = od.order_id
        JOIN products p ON p.product_id = od.product_id
-      WHERE o.status <> 'CANCELLED' AND ${dateRangeSql('o.order_date')}
+      WHERE o.status NOT IN ('CANCELLED', 'AWAITING_PAYMENT') AND ${dateRangeSql('o.order_date')}
       GROUP BY p.product_id, p.product_name, p.variant
       ORDER BY revenue DESC, quantity_sold DESC
       LIMIT $3`,
@@ -536,7 +542,7 @@ router.get('/peak', async (request, response) => {
             o.data_source,
             COUNT(*)::int AS orders
        FROM orders o
-      WHERE o.status <> 'CANCELLED' AND ${dateRangeSql('o.order_date')}
+      WHERE o.status NOT IN ('CANCELLED', 'AWAITING_PAYMENT') AND ${dateRangeSql('o.order_date')}
         ${includeAssumed ? '' : "AND o.data_source <> 'ASSUMED'"}
       GROUP BY 1, 2, 3`,
     [from, to],

@@ -16,6 +16,7 @@
 // than a new colour decision.
 const STATUS_TOKEN = {
   // wait — needs someone to act
+  AWAITING_PAYMENT: 'wait',
   PLACED: 'wait',
   PENDING: 'wait',
   PENDING_ASSIGNMENT: 'wait',
@@ -25,6 +26,7 @@ const STATUS_TOKEN = {
   IN_PRODUCTION: 'active',
   // transit — moving to the customer
   READY_FOR_PICKUP: 'transit',
+  READY_FOR_DELIVERY: 'transit',
   OUT_FOR_DELIVERY: 'transit',
   // done — finished, money in
   COMPLETED: 'done',

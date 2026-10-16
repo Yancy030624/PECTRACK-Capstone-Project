@@ -7,7 +7,7 @@ export const bakery = {
   name: "Pecto's Bakery",
   street: '93 Quezon Avenue',
   town: 'Lucban, Quezon',
-  hours: 'Daily 5:00 AM – 8:00 PM',
+  hours: 'Daily 5:00 AM – 10:00 PM',
   phones: ['(042) 540-4366', '(042) 540-8838'],
 }
 

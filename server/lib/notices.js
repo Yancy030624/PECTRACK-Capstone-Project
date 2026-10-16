@@ -14,6 +14,7 @@
 // `sendInBackground` never lets an email failure fail or slow the request,
 // and the change itself is never undone because mail did not go out.
 import { config } from '../config.js'
+import { pool } from '../db.js'
 import { bakery, bakeryAddress, bakeryPhones } from './bakery.js'
 import { sendMail } from './mail.js'
 import { orderLabel } from './orderNumber.js'
@@ -78,14 +79,14 @@ export function sendDeliveryAssignedEmail({ to, driverName, order, customerName,
 }
 
 // N5 — to the customer, when their pickup order is ready.
-export function sendOrderReadyEmail({ to, name, order, items }) {
+export function sendOrderReadyEmail({ to, name, order, items, requestedTime }) {
   return sendMail({
     to,
     subject: `Your order ${subjectNumber(order)} is ready for pickup`,
     text: [
       `Hello ${firstName(name)},`,
       '',
-      `Your order ${bodyLabel(order)} is ready. Pick it up at ${bakery.name}, ${bakeryAddress}.`,
+      `Your order ${bodyLabel(order)} is paid and ready. Pick it up at ${bakery.name}, ${bakeryAddress}${requestedTime ? `, from ${formatTime(requestedTime)}` : ''}.`,
       `We are open ${bakery.hours}.`,
       '',
       'Your order:',
@@ -96,6 +97,28 @@ export function sendOrderReadyEmail({ to, name, order, items }) {
       ...signOff,
     ].join('\n'),
   })
+}
+
+// The "ready for pickup" email for one order, looked up by id: to its
+// customer, only at a confirmed email. A walk-in order has no customer and
+// gets nothing. Used once the order is paid and ready (payment first,
+// lib/gatewayPayments.js) and when staff mark an older order ready.
+export async function sendOrderReadyEmailFor(orderId) {
+  const found = await pool.query(
+    `SELECT o.requested_fulfillment_time, c.name, c.email, c.email_verified_at
+       FROM orders o JOIN customers c ON c.customer_id = o.customer_id
+      WHERE o.order_id = $1`,
+    [orderId],
+  )
+  const customer = found.rows[0]
+  if (!customer?.email || !customer.email_verified_at) return
+  const lines = await pool.query(
+    `SELECT p.product_name AS name, p.variant, od.quantity
+       FROM order_details od JOIN products p ON p.product_id = od.product_id
+      WHERE od.order_id = $1 ORDER BY p.product_name, p.variant NULLS FIRST`,
+    [orderId],
+  )
+  await sendOrderReadyEmail({ to: customer.email, name: customer.name, order: { orderNumber: orderId }, items: lines.rows, requestedTime: customer.requested_fulfillment_time })
 }
 
 // N5 — to the customer, when the driver leaves with their order.

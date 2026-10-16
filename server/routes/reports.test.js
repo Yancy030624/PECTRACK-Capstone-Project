@@ -70,7 +70,12 @@ describe('reporting & analytics', () => {
     const body = await response.json()
     assert.equal(response.status, 201, `order placement must succeed: ${JSON.stringify(body)}`)
     createdOrderIds.push(body.order.id)
-    await pool.query('UPDATE orders SET order_date = $1 WHERE order_id = $2', [instant, body.order.id])
+    // Payment first: an online order is a hidden hold until it is paid, and
+    // reports leave holds out. These tests are about the money columns — an
+    // order that is ordered but paid late, in parts, or not at all — so the
+    // order is put straight into a placed state, as an order from before
+    // payment first could be.
+    await pool.query(`UPDATE orders SET order_date = $1, status = 'READY_FOR_PICKUP' WHERE order_id = $2`, [instant, body.order.id])
     return body.order.id
   }
 
@@ -404,7 +409,7 @@ describe('reporting & analytics', () => {
     const orderResponse = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: dangerousProductId, quantity: 1 }] }) })
     const orderBody = await orderResponse.json()
     createdOrderIds.push(orderBody.order.id)
-    await pool.query('UPDATE orders SET order_date = $1 WHERE order_id = $2', ['2021-04-10 10:00:00+08', orderBody.order.id])
+    await pool.query(`UPDATE orders SET order_date = $1, status = 'READY_FOR_PICKUP' WHERE order_id = $2`, ['2021-04-10 10:00:00+08', orderBody.order.id])
 
     const response = await fetch(`${baseUrl}/api/reports/products?${new URLSearchParams({ from: '2021-04-10', to: '2021-04-10' })}`, { headers: { Cookie: adminCookie } })
     const body = await response.json()
@@ -514,6 +519,9 @@ describe('reporting & analytics', () => {
           const orderBody = await orderResponse.json()
           assert.equal(orderResponse.status, 201)
           createdOrderIds.push(orderBody.order.id)
+          // Payment first: a held checkout is not an order and owes nothing.
+          // An unpaid order from before payment first still does.
+          await pool.query(`UPDATE orders SET status = 'READY_FOR_PICKUP' WHERE order_id = $1`, [orderBody.order.id])
 
           const after = await (await fetch(`${baseUrl}/api/reports/summary`, { headers: { Cookie: adminCookie } })).json()
           assert.ok(Number(after.outstanding) >= Number(before.outstanding) + 100, 'an unpaid ₱100 order must be reflected in outstanding')
@@ -573,6 +581,9 @@ describe('reporting & analytics', () => {
           const orderBody = await orderResponse.json()
           assert.equal(orderResponse.status, 201, `delivery order placement must succeed: ${JSON.stringify(orderBody)}`)
           createdOrderIds.push(orderBody.order.id)
+          // Payment first: the delivery joins the queue once it is paid.
+          const paid = await fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ orderId: orderBody.order.id, method: 'CASH', amount: orderBody.order.totalAmount }) })
+          assert.equal(paid.status, 201)
 
           const after = await (await fetch(`${baseUrl}/api/reports/summary`, { headers: { Cookie: adminCookie } })).json()
           assert.ok(after.deliveriesNeedingAttention >= before.deliveriesNeedingAttention + 1)

@@ -12,7 +12,6 @@
 // an omitted optional field fails validation even though the field itself
 // is fine to leave out).
 import { useEffect, useMemo, useState } from 'react'
-import { FocusHeader } from '../../components/ui/FocusHeader.jsx'
 import { apiGet, apiPatch, apiPost } from '../../api/client.js'
 import { Modal } from '../../components/Modal.jsx'
 import { Alert } from '../../components/ui/Alert.jsx'
@@ -52,12 +51,12 @@ function OwedCell({ order }) {
   return <span className="font-semibold text-status-fail-fg tabular-nums">{formatPeso(order.balanceDue)}</span>
 }
 
-export function PaymentBilling({ user, params, onNavigate }) {
+export function PaymentBilling({ user }) {
   const isStaff = user.role === 'ADMIN' || user.role === 'CASHIER'
-  // Opened from the Dashboard's "Unpaid balances" tile: only the orders
-  // that still owe money — the same rule as the tile's total — without
-  // the payment log or the All toggle around them.
-  const unpaidOnly = isStaff && params?.focus === 'unpaid'
+  // Payment first (RULES-PLANS/PAYMENT_FIRST_PLAN.md, the adviser
+  // 2026-10-16): every order is paid before it is placed, so there are no
+  // unpaid balances to chase and no "Still owed" view. This screen is the
+  // receipts and the payment log.
 
   const [activeTab, setActiveTab] = useState('billing')
 
@@ -65,7 +64,6 @@ export function PaymentBilling({ user, params, onNavigate }) {
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
   const [notice, setNotice] = useState('')
-  const [owedOnly, setOwedOnly] = useState(true)
 
   const [selectedOrderId, setSelectedOrderId] = useState(null)
   const [orderDetail, setOrderDetail] = useState(null)
@@ -98,8 +96,8 @@ export function PaymentBilling({ user, params, onNavigate }) {
   // "Still owes" is the question this screen exists to answer, so it is
   // the default view; everything else is one toggle away.
   const visibleOrders = useMemo(
-    () => (owedOnly ? orders.filter((order) => order.status !== 'CANCELLED' && !order.isFullyPaid) : orders),
-    [orders, owedOnly],
+    () => orders,
+    [orders],
   )
 
   const openOrder = async (orderId) => {
@@ -137,18 +135,6 @@ export function PaymentBilling({ user, params, onNavigate }) {
     setOrderDetail(null)
   }
 
-  const [gcashSubmitting, setGcashSubmitting] = useState(false)
-  const handlePayWithGCash = async () => {
-    setGcashSubmitting(true)
-    setMessage('')
-    try {
-      const data = await apiPost('/api/payments/intent', { orderId: selectedOrderId })
-      window.location.href = data.checkoutUrl
-    } catch (error) {
-      setMessage(error.message)
-      setGcashSubmitting(false)
-    }
-  }
 
   // An abandoned GCash attempt blocks every new one for the order until
   // it is closed (PATCH /api/payments/:id). Staff may close any; the
@@ -189,7 +175,6 @@ export function PaymentBilling({ user, params, onNavigate }) {
   const canRecordPayment = isStaff && orderDetail && orderDetail.status !== 'CANCELLED' && !orderDetail.payment.isFullyPaid
   // Customers only (CLIENT_REVISIONS_PLAN.md, R1); staff record payments
   // taken at the counter with the form below.
-  const canPayOnline = Boolean(orderDetail) && orderDetail.status !== 'CANCELLED' && !orderDetail.payment.isFullyPaid && user.role === 'CUSTOMER'
 
   const tabs = [
     { key: 'billing', label: 'Billing' },
@@ -288,24 +273,6 @@ export function PaymentBilling({ user, params, onNavigate }) {
             </div>
           )}
 
-          {canPayOnline && (
-            <div className="border-t border-line-100 pt-3 print:hidden">
-              {/* GCash's own brand blue, not one of the four Button
-                  variants — kept as a plain button on our tokens rather
-                  than forcing a fifth colour into the primitive for one
-                  call site. */}
-              <button
-                type="button"
-                onClick={handlePayWithGCash}
-                disabled={gcashSubmitting}
-                className="h-11 w-full rounded-control bg-[#0074E4] px-4 text-sm font-medium text-white transition hover:bg-[#005bb5] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {gcashSubmitting ? 'Redirecting to GCash…' : 'Pay with GCash'}
-              </button>
-              <p className="mt-1.5 text-xs text-ink-500">You'll be taken to PayMongo's secure checkout page, then brought back here, where the payment is confirmed.</p>
-            </div>
-          )}
-
           {canRecordPayment && (
             <form className="space-y-3 border-t border-line-100 pt-3 print:hidden" onSubmit={handlePaymentSubmit}>
               <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Record a payment</p>
@@ -336,23 +303,9 @@ export function PaymentBilling({ user, params, onNavigate }) {
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
       {/* The account page already says whose it is; the portal label is for staff. */}
-      {unpaidOnly ? (
-        <FocusHeader
-          title="Unpaid balances"
-          count={loading ? null : visibleOrders.length}
-          tone={visibleOrders.length > 0 ? 'okay' : 'good'}
-          description={loading ? 'Open orders that still owe money.' : `${formatPeso(visibleOrders.reduce((sum, order) => sum + Number(order.balanceDue ?? 0), 0))} still owed across open orders. Select an order to record a payment.`}
-          onBack={() => onNavigate?.('Dashboard')}
-          onShowAll={() => onNavigate?.('Payment & Billing')}
-          showAllLabel="Show all of Payment & Billing"
-        />
-      ) : (
-        <>
-          {user.role !== 'CUSTOMER' && <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>}
-          <h1 className="mt-1 text-2xl font-semibold text-ink-900">{isStaff ? 'Payment & Billing' : 'My Payments'}</h1>
-          <p className="mt-2 text-sm text-ink-500">{isStaff ? 'Record payments and review what each order still owes.' : "Your orders, what you've paid, and what you still owe."}</p>
-        </>
-      )}
+      {user.role !== 'CUSTOMER' && <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>}
+      <h1 className="mt-1 text-2xl font-semibold text-ink-900">{isStaff ? 'Payment & Billing' : 'My Payments'}</h1>
+      <p className="mt-2 text-sm text-ink-500">{isStaff ? 'Every payment is taken when the order is placed. Receipts and the payment log.' : 'Your orders and their receipts.'}</p>
 
       {message && (
         <div className="mt-4">
@@ -360,7 +313,7 @@ export function PaymentBilling({ user, params, onNavigate }) {
         </div>
       )}
 
-      <div className={`mt-6 gap-2 ${unpaidOnly ? 'hidden' : 'flex'}`}>
+      <div className="mt-6 flex gap-2">
         {tabs.map((tab) => (
           <Button type="button" key={tab.key} size="sm" variant={activeTab === tab.key ? 'primary' : 'secondary'} onClick={() => setActiveTab(tab.key)}>
             {tab.label}
@@ -374,16 +327,12 @@ export function PaymentBilling({ user, params, onNavigate }) {
         <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
           <Card className="min-w-0 p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold text-ink-900">{unpaidOnly ? 'Orders still owing' : isStaff ? 'Orders' : 'Your orders'}</h2>
-              <div className={`gap-2 ${unpaidOnly ? 'hidden' : 'flex'}`}>
-                <Button type="button" size="sm" variant={owedOnly ? 'primary' : 'secondary'} onClick={() => setOwedOnly(true)}>Still owed</Button>
-                <Button type="button" size="sm" variant={owedOnly ? 'secondary' : 'primary'} onClick={() => setOwedOnly(false)}>All</Button>
-              </div>
+              <h2 className="text-lg font-semibold text-ink-900">{isStaff ? 'Orders' : 'Your orders'}</h2>
             </div>
             {loading ? (
               <LoadingRows className="mt-4" />
             ) : visibleOrders.length === 0 ? (
-              <EmptyState title={orders.length === 0 ? 'No orders yet' : 'Nothing is owed right now'} description={orders.length === 0 || !owedOnly ? undefined : 'Switch to All to see paid and cancelled orders.'} />
+              <EmptyState title="No orders yet" />
             ) : (
               <>
                 <ul className="mt-4 divide-y divide-line-100 md:hidden">

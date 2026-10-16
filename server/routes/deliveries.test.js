@@ -49,12 +49,18 @@ describe('delivery management', () => {
   // to start from.
   const recordPayment = (orderId, amount, cookie = cashierCookie) =>
     fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ orderId, method: 'CASH', amount }) })
-  // Staff trying to move an order into production by hand.
+  // Staff trying to mark an order ready for delivery by hand.
   const startProduction = (orderId) =>
-    fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'IN_PRODUCTION' }) })
+    fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'READY_FOR_DELIVERY' }) })
   const orderStatus = async (orderId) => (await pool.query('SELECT status FROM orders WHERE order_id = $1', [orderId])).rows[0].status
 
-  const placeDeliveryOrder = async ({ pay = true } = {}) => {
+  // Payment first: a customer's delivery order is a hold (AWAITING_PAYMENT)
+  // with no delivery row until it is paid in full; the payment makes it
+  // Ready for delivery and creates the row (lib/orderStatus.js). Every
+  // delivery this helper hands back is paid and assignable unless
+  // { pay: false }; { legacyRow: true } then adds a delivery row in SQL,
+  // the state an unpaid order from before payment first can still be in.
+  const placeDeliveryOrder = async ({ pay = true, legacyRow = false } = {}) => {
     const response = await fetch(`${baseUrl}/api/orders`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: customerCookie },
@@ -62,17 +68,14 @@ describe('delivery management', () => {
     })
     const body = await response.json()
     createdOrderIds.push(body.order.id)
-    // A delivery order waits as PLACED until it is paid in full (no cash on
-    // delivery — NO_COD_PLAN), and the payment that settles it sends it to
-    // production on its own (lib/orderStatus.js), which is what makes it
-    // assignable. So every delivery this helper hands back is paid and
-    // assignable; the tests about an unpaid order pass { pay: false }.
     if (pay) {
       assert.equal((await recordPayment(body.order.id, body.order.totalAmount)).status, 201)
-      assert.equal(await orderStatus(body.order.id), 'IN_PRODUCTION')
+      assert.equal(await orderStatus(body.order.id), 'READY_FOR_DELIVERY')
+    } else if (legacyRow) {
+      await pool.query('INSERT INTO deliveries (order_id) VALUES ($1)', [body.order.id])
     }
     const delivery = await pool.query('SELECT delivery_id FROM deliveries WHERE order_id = $1', [body.order.id])
-    return { orderId: body.order.id, deliveryId: delivery.rows[0].delivery_id }
+    return { orderId: body.order.id, deliveryId: delivery.rows[0]?.delivery_id ?? null }
   }
 
   const assign = (deliveryId, deliveryPersonnelId, cookie = cashierCookie) =>
@@ -273,8 +276,8 @@ describe('delivery management', () => {
     assert.equal(rows[0].status, 'PENDING_ASSIGNMENT')
   })
 
-  test('PATCH /api/deliveries/:id/assign refuses a delivery whose order is still PLACED', async () => {
-    const { deliveryId } = await placeDeliveryOrder({ pay: false })
+  test('PATCH /api/deliveries/:id/assign refuses a delivery whose order is not paid', async () => {
+    const { deliveryId } = await placeDeliveryOrder({ pay: false, legacyRow: true })
     const response = await assign(deliveryId, firstDriverId)
     assert.equal(response.status, 409)
     assert.match((await response.json()).message, /not paid yet/)
@@ -285,42 +288,49 @@ describe('delivery management', () => {
   // NO_COD_PLAN — the client does not allow cash on delivery: a delivery
   // order is paid in full before it is confirmed, and assigned only when
   // paid; the driver never records money.
-  test('an unpaid delivery order waits as PLACED; part-paid it still waits; paid in full it goes into production by itself', async () => {
-    const { orderId } = await placeDeliveryOrder({ pay: false })
+  // Payment first: an unpaid delivery checkout waits (hidden) with no
+  // delivery row; part paid it still waits; the payment that settles it
+  // makes it Ready for delivery and puts it in the assignment queue.
+  test('an unpaid delivery checkout waits; part-paid it still waits; paid in full it is ready for delivery by itself', async () => {
+    const { orderId, deliveryId } = await placeDeliveryOrder({ pay: false })
+    assert.equal(deliveryId, null, 'no delivery row while unpaid')
     const unpaid = await startProduction(orderId)
-    assert.equal(unpaid.status, 409, 'staff cannot start baking it unpaid either')
+    assert.equal(unpaid.status, 409, 'staff cannot move it on unpaid either')
     assert.match((await unpaid.json()).message, /paid in full/)
-    assert.equal(await orderStatus(orderId), 'PLACED')
+    assert.equal(await orderStatus(orderId), 'AWAITING_PAYMENT')
 
     assert.equal((await recordPayment(orderId, 20)).status, 201)
-    assert.equal(await orderStatus(orderId), 'PLACED', 'a part payment does not start it')
+    assert.equal(await orderStatus(orderId), 'AWAITING_PAYMENT', 'a part payment does not place it')
     const partPaid = await startProduction(orderId)
     assert.equal(partPaid.status, 409)
     assert.match((await partPaid.json()).message, /Balance: ₱25\.50/)
 
     assert.equal((await recordPayment(orderId, 25.5)).status, 201)
-    assert.equal(await orderStatus(orderId), 'IN_PRODUCTION', 'the payment that settles it sends it to production')
-    const history = await pool.query(`SELECT note FROM order_status_history WHERE order_id = $1 AND status = 'IN_PRODUCTION'`, [orderId])
+    assert.equal(await orderStatus(orderId), 'READY_FOR_DELIVERY', 'the payment that settles it makes it ready')
+    const history = await pool.query(`SELECT note FROM order_status_history WHERE order_id = $1 AND status = 'READY_FOR_DELIVERY'`, [orderId])
     assert.equal(history.rows.length, 1)
-    assert.match(history.rows[0].note, /automatically/)
+    assert.match(history.rows[0].note, /ready for delivery/)
+    const row = await pool.query(`SELECT status FROM deliveries WHERE order_id = $1`, [orderId])
+    assert.equal(row.rows[0].status, 'PENDING_ASSIGNMENT')
 
     const cancelled = await placeDeliveryOrder({ pay: false })
     const cancel = await fetch(`${baseUrl}/api/orders/${cancelled.orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Changed my mind' }) })
-    assert.equal(cancel.status, 200, 'an unpaid delivery order can still be cancelled')
+    assert.equal(cancel.status, 200, 'an unpaid checkout can still be cancelled')
   })
 
-  test('an unpaid PICKUP order goes straight into production — it is paid at the counter', async () => {
+  test('an online PICKUP order also waits for its payment — payment first', async () => {
     const response = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ orderType: 'PICKUP', items: [{ productId: availableProductId, quantity: 1 }] }) })
     const { order } = await response.json()
     createdOrderIds.push(order.id)
-    assert.equal(order.status, 'IN_PRODUCTION')
-    assert.equal(await orderStatus(order.id), 'IN_PRODUCTION')
+    assert.equal(order.status, 'AWAITING_PAYMENT')
+    assert.equal((await recordPayment(order.id, order.totalAmount)).status, 201)
+    assert.equal(await orderStatus(order.id), 'READY_FOR_PICKUP')
   })
 
   test('PATCH /api/deliveries/:id/assign refuses an order that is not fully paid', async () => {
     // Old data: an order confirmed unpaid before the rule existed, forced
     // here in SQL because the route itself no longer allows it.
-    const { orderId, deliveryId } = await placeDeliveryOrder({ pay: false })
+    const { orderId, deliveryId } = await placeDeliveryOrder({ pay: false, legacyRow: true })
     await pool.query(`UPDATE orders SET status = 'CONFIRMED' WHERE order_id = $1`, [orderId])
     const refused = await assign(deliveryId, firstDriverId)
     assert.equal(refused.status, 409)
@@ -345,20 +355,20 @@ describe('delivery management', () => {
     assert.equal(mine.deliveries.find((delivery) => delivery.id === deliveryId).isFullyPaid, true)
   })
 
-  test('a payment and a hand move to production racing on one delivery order: in production once, and only when paid', async () => {
+  test('a payment and a hand move to ready racing on one delivery order: ready once, and only when paid', async () => {
     for (let round = 0; round < 5; round++) {
       const { orderId } = await placeDeliveryOrder({ pay: false })
       const [paid, moved] = await Promise.all([recordPayment(orderId, 45.5), startProduction(orderId)])
       assert.equal(paid.status, 201)
-      assert.equal(moved.status, 409, 'either unpaid, or already in production by the payment')
+      assert.equal(moved.status, 409, 'either unpaid, or already ready by the payment')
       const state = await pool.query(
         `SELECT o.status, o.total_amount - COALESCE((SELECT SUM(amount) FROM payments WHERE order_id = o.order_id AND status = 'PAID'), 0) AS balance
            FROM orders o WHERE o.order_id = $1`,
         [orderId],
       )
-      assert.equal(state.rows[0].status, 'IN_PRODUCTION')
+      assert.equal(state.rows[0].status, 'READY_FOR_DELIVERY')
       assert.equal(Number(state.rows[0].balance), 0)
-      const history = await pool.query(`SELECT COUNT(*)::int AS n FROM order_status_history WHERE order_id = $1 AND status = 'IN_PRODUCTION'`, [orderId])
+      const history = await pool.query(`SELECT COUNT(*)::int AS n FROM order_status_history WHERE order_id = $1 AND status = 'READY_FOR_DELIVERY'`, [orderId])
       assert.equal(history.rows[0].n, 1)
     }
   })
@@ -478,7 +488,7 @@ describe('delivery management', () => {
   })
 
   test('DELIVERED leaves an unpaid order (old data) OUT_FOR_DELIVERY for staff to settle', async () => {
-    const { orderId, deliveryId } = await placeDeliveryOrder({ pay: false })
+    const { orderId, deliveryId } = await placeDeliveryOrder({ pay: false, legacyRow: true })
     // Assignment refuses an unpaid order, so put it on the road directly:
     // the state only data from before NO_COD_PLAN can be in.
     await pool.query(`UPDATE orders SET status = 'OUT_FOR_DELIVERY' WHERE order_id = $1`, [orderId])
