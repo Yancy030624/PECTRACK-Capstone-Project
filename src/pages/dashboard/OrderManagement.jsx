@@ -18,6 +18,7 @@ import { Button } from '../../components/ui/Button.jsx'
 import { Card } from '../../components/ui/Card.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Input } from '../../components/ui/Input.jsx'
+import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
@@ -201,6 +202,15 @@ function StaffOrderManagement({ user, params }) {
   const [statusNote, setStatusNote] = useState('')
   const [statusSubmitting, setStatusSubmitting] = useState(false)
 
+  // Assign rider (the user, 2026-10-16): a delivery order waiting for a
+  // driver is assigned right here, the same call Delivery Management makes.
+  const [riders, setRiders] = useState([])
+  const [riderChoice, setRiderChoice] = useState('')
+  const [assigning, setAssigning] = useState(false)
+  useEffect(() => {
+    apiGet('/api/deliveries/personnel').then((data) => setRiders(data.personnel)).catch(() => setRiders([]))
+  }, [])
+
   const loadOrders = async () => {
     try {
       const data = await apiGet('/api/orders')
@@ -253,6 +263,24 @@ function StaffOrderManagement({ user, params }) {
     setOrderDetail(null)
   }
 
+  const assignRider = async () => {
+    if (!riderChoice || !orderDetail?.delivery?.id) return
+    setAssigning(true)
+    setMessage('')
+    try {
+      await apiPatch(`/api/deliveries/${orderDetail.delivery.id}/assign`, { deliveryPersonnelId: riderChoice })
+      const rider = riders.find((person) => String(person.id) === String(riderChoice))
+      setRiderChoice('')
+      await openOrder(selectedOrderId)
+      await loadOrders()
+      setNotice(`Order ${orderLabel(orderDetail)} assigned to ${rider?.name ?? 'the rider'}.`)
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setAssigning(false)
+    }
+  }
+
   const changeStatus = async (status) => {
     setStatusSubmitting(true)
     setMessage('')
@@ -301,6 +329,24 @@ function StaffOrderManagement({ user, params }) {
             {orderDetail.requestedFulfillmentTime && <p className="mt-1 font-semibold text-ink-900">Needed by: {formatDateTime(orderDetail.requestedFulfillmentTime)}</p>}
           </div>
           <DeliveryProgress delivery={orderDetail.delivery} />
+          {orderDetail.orderType === 'DELIVERY' && orderDetail.delivery?.id && orderDetail.delivery.status === 'PENDING_ASSIGNMENT' && orderDetail.status === 'READY_FOR_DELIVERY' && (
+            <div className="rounded-panel border border-line-200 p-3">
+              <p className="text-xs font-semibold text-ink-700">Assign rider</p>
+              {riders.length === 0 ? (
+                <p className="mt-1 text-xs text-ink-500">No active riders. Add one in Staff Management.</p>
+              ) : (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <div className="min-w-40 flex-1">
+                    <Select value={riderChoice} onChange={(event) => setRiderChoice(event.target.value)} aria-label={`Rider for order ${orderLabel(orderDetail)}`}>
+                      <option value="">Select a rider…</option>
+                      {riders.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
+                    </Select>
+                  </div>
+                  <Button type="button" size="sm" onClick={assignRider} disabled={assigning || !riderChoice}>{assigning ? 'Assigning…' : 'Assign rider'}</Button>
+                </div>
+              )}
+            </div>
+          )}
 
           <OrderItems order={orderDetail} />
 

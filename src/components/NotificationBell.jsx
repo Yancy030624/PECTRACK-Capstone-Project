@@ -47,6 +47,10 @@ const wording = {
   delivered: (item) => [`Order ${orderLabel(item)} delivered`, [`By ${item.actorName ?? 'the driver'}`, [item.recipientName, item.barangay].filter(Boolean).join(', ')].filter(Boolean).join(' · ')],
   delivery_failed: (item) => [`Delivery failed for ${orderLabel(item)}`, item.note || `By ${item.actorName ?? 'the driver'}`],
   assigned: (item) => [`New delivery ${orderLabel(item)}`, [item.customerName ?? 'Customer', item.barangay].filter(Boolean).join(', ')],
+  due_soon: (item) => [
+    `Order ${orderLabel(item)} is due within the hour`,
+    `${item.orderType === 'DELIVERY' ? 'Delivery' : 'Pickup'} · needed by ${new Intl.DateTimeFormat('en-PH', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' }).format(new Date(item.neededAt))} · ${item.customerName ?? 'Walk-in'}`,
+  ],
 }
 const describe = (item) => (wording[item.type] ?? ((other) => [`Order ${orderLabel(other)} updated`, '']))(item)
 const titleOf = (item) => describe(item)[0]

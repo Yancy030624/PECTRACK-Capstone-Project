@@ -62,7 +62,9 @@ export function CartProvider({ user, children }) {
 
   const clear = () => setLines([])
 
-  const itemCount = lines.reduce((total, line) => total + line.quantity, 0)
+  // The cart badge counts products, not units (the user, 2026-10-16): three
+  // pandesal and one ensaymada read as 2, the number of lines in the cart.
+  const itemCount = lines.filter((line) => line.quantity > 0).length
 
   return <CartContext.Provider value={{ lines, addItem, setQuantity, removeItem, clear, itemCount }}>{children}</CartContext.Provider>
 }

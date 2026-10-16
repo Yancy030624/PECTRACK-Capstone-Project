@@ -784,3 +784,14 @@ Figures 2 / 2.1 (Dashboard) and 10 / 11 (Inventory) descriptions follow these.
 - Customer My Orders: the order detail no longer lists the status history either. (2026-10-16)
 - Delivery: a failed delivery puts its paid order back to **Ready for delivery**, so it can be assigned again (it used to stay "Out for delivery"). (2026-10-16)
 - Reporting & Analytics, Transactions tab: paid payments only, no Status filter or column; Sales "Collected" reads "Money received in this range". In the Figure 17 description, drop "and status" from the filters. (2026-10-16)
+
+### Delivery, Order Management, Dashboard and cart (2026-10-16)
+
+- Delivery: there is no **Failed** status on screen any more. When a driver taps **Couldn't deliver** (with a reason), the delivery goes straight back to **To assign** with no driver, and its order goes back to **Ready for delivery**. The reason and the time it failed are kept on the delivery, and the customer still gets the "could not deliver" email. An admin can **Take back from driver** (with a reason) with the same effect. Migration 031 moves older failed deliveries back to the queue.
+- Delivery Management: status filter **buttons** like Inventory's (To assign, Assigned, Out for delivery, Delivered, All, with counts) instead of a drop-down. Each delivery is one compact row: order, customer, total, recipient and phone, place, needed by, driver, and one action (assign a driver, or take back).
+- Order Management (staff): a delivery order that is Ready for delivery and has no driver shows **Assign rider** (choose a rider, then Assign) in its detail.
+- Dashboard, Needed by: each order has a pill: **Needs attention** (one hour or less, or late), **Okay** (five hours or less), **Good** (later).
+- Notifications: staff get "Order … is due within the hour" one hour before an order's pickup or delivery time; it opens the order in Payment & Billing.
+- Customer storefront: the cart badge counts products, not pieces (3 pandesal + 1 ensaymada = 2).
+
+Figures for Delivery Management, the driver's My Deliveries, Order Management detail, Dashboard and the storefront header follow these. Drop "Failed" from any delivery status list or diagram in the paper; keep "failed attempt" only as a note on the delivery.

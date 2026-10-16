@@ -335,6 +335,20 @@ describe('notification feed', () => {
     await settle()
   }))
 
+  // The user, 2026-10-16: staff are told when a ready order is due within
+  // the hour — once, from one hour before its time.
+  test('a ready order due within the hour is announced; one due later is not yet', async () => {
+    const soon = await placeOrder()
+    const later = await placeOrder()
+    await pool.query(`UPDATE orders SET requested_fulfillment_time = CURRENT_TIMESTAMP + INTERVAL '1 hour' WHERE order_id = $1`, [soon.id])
+    await pool.query(`UPDATE orders SET requested_fulfillment_time = CURRENT_TIMESTAMP + INTERVAL '3 hours' WHERE order_id = $1`, [later.id])
+    const { body } = await feed(cashierCookie)
+    const due = eventsFor(body, soon.id).find((event) => event.type === 'due_soon')
+    assert.ok(due, 'due within the hour')
+    assert.ok(due.neededAt)
+    assert.equal(eventsFor(body, later.id).filter((event) => event.type === 'due_soon').length, 0, 'not yet')
+  })
+
   test('a driver hears only about deliveries assigned to them', async () => {
     const { order } = await assignedDelivery()
     const mine = await feed(firstDriverCookie)

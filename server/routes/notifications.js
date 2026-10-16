@@ -101,8 +101,22 @@ const staffQueries = {
       JOIN orders o ON o.order_id = d.order_id
       LEFT JOIN customers c ON c.customer_id = o.customer_id
       LEFT JOIN delivery_personnel dp ON dp.delivery_personnel_id = d.delivery_personnel_id
-     WHERE d.status = 'FAILED' AND d.failed_at IS NOT NULL AND o.status <> 'CANCELLED' AND ${after('d.failed_at')}
+     WHERE d.failed_at IS NOT NULL AND o.status <> 'CANCELLED' AND ${after('d.failed_at')}
        AND dp.user_id IS DISTINCT FROM $2::bigint
+     ORDER BY at DESC LIMIT $3`,
+  // Due within the hour (the user, 2026-10-16): a paid order still to be
+  // picked up or delivered whose requested time is an hour away or less.
+  // The event's time is one hour before it is needed, so it is announced
+  // once, when that moment comes. $2 is not used here; it is cast so the
+  // query keeps the same three parameters as the others.
+  due_soon: `
+    SELECT ${orderColumns}, o.order_id AS source_id, o.requested_fulfillment_time - INTERVAL '1 hour' AS at,
+           o.requested_fulfillment_time AS needed_at
+      FROM orders o
+      LEFT JOIN customers c ON c.customer_id = o.customer_id
+     WHERE o.status IN ('READY_FOR_PICKUP', 'READY_FOR_DELIVERY') AND o.requested_fulfillment_time IS NOT NULL
+       AND o.requested_fulfillment_time - INTERVAL '1 hour' <= CURRENT_TIMESTAMP
+       AND ${after("o.requested_fulfillment_time - INTERVAL '1 hour'")} AND $2::bigint IS NOT NULL
      ORDER BY at DESC LIMIT $3`,
 }
 
@@ -141,6 +155,7 @@ function mapEvent(type, row) {
     ...(row.actor_name !== undefined && { actorName: row.actor_name, actorIsCustomer: row.actor_type === 'CUSTOMER' }),
     ...(row.recipient_name !== undefined && { recipientName: row.recipient_name, barangay: row.barangay }),
     ...(row.note !== undefined && { note: type === 'delivery_failed' ? lastLine(row.note) : row.note }),
+    ...(row.needed_at !== undefined && { neededAt: new Date(row.needed_at).toISOString() }),
   }
 }
 

@@ -227,7 +227,7 @@ router.get('/:id', async (request, response) => {
   // it": no address (they know it), no note (the driver's own log).
   const deliveryResult = order.order_type === 'DELIVERY'
     ? await pool.query(
-      `SELECT d.status, d.assigned_at, d.delivered_at, dp.name AS delivery_personnel_name
+      `SELECT d.delivery_id, d.status, d.assigned_at, d.delivered_at, dp.name AS delivery_personnel_name
          FROM deliveries d LEFT JOIN delivery_personnel dp ON dp.delivery_personnel_id = d.delivery_personnel_id
         WHERE d.order_id = $1`,
       [order.order_id],
@@ -235,7 +235,15 @@ router.get('/:id', async (request, response) => {
     : null
   const deliveryRow = deliveryResult?.rows[0]
   const delivery = deliveryRow
-    ? { status: deliveryRow.status, deliveryPersonnelName: deliveryRow.delivery_personnel_name, assignedAt: deliveryRow.assigned_at, deliveredAt: deliveryRow.delivered_at }
+    ? {
+        status: deliveryRow.status,
+        deliveryPersonnelName: deliveryRow.delivery_personnel_name,
+        assignedAt: deliveryRow.assigned_at,
+        deliveredAt: deliveryRow.delivered_at,
+        // Staff only: the id Order Management's "Assign rider" sends to
+        // PATCH /api/deliveries/:id/assign. A customer gets where it stands.
+        ...(request.user.role !== 'CUSTOMER' && { id: deliveryRow.delivery_id }),
+      }
     : null
 
   return response.json({

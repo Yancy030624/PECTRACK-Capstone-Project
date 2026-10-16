@@ -5,8 +5,10 @@
 // (Decision 2); orders.status is synced FROM it, one direction only
 // (Pattern F): OUT_FOR_DELIVERY, and DELIVERED on a fully paid order, which
 // completes it (NOTIFICATIONS_PLAN.md, N2 — this replaces Decision 4 for
-// DELIVERED). FAILED puts an order that was out for delivery back to
-// READY_FOR_DELIVERY, so it can be assigned again (the user, 2026-10-16).
+// DELIVERED). FAILED — the driver could not hand it over, or an admin took
+// it back — returns the delivery straight to the assignment queue and its
+// order to READY_FOR_DELIVERY, so it can be assigned again; staff never see
+// a "Failed" delivery to deal with (the user, 2026-10-16).
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
@@ -502,6 +504,16 @@ router.patch('/:id/status', async (request, response) => {
     // Without this it stayed "Out for delivery" for good (the user,
     // 2026-10-16). A cancelled or completed order is left alone.
     if (status === 'FAILED') {
+      // Back in the queue at once, without a driver. failed_at and the note
+      // stay: they are the record that this attempt failed, and why (the
+      // staff bell announces it from failed_at). A cancelled or completed
+      // order's delivery stays FAILED — there is nothing to deliver.
+      if (!terminalOrderStatuses.has(orderStatus)) {
+        await client.query(
+          `UPDATE deliveries SET status = 'PENDING_ASSIGNMENT', delivery_personnel_id = NULL, assigned_at = NULL WHERE delivery_id = $1`,
+          [deliveryId],
+        )
+      }
       const back = await client.query(
         `UPDATE orders SET status = 'READY_FOR_DELIVERY' WHERE order_id = $1 AND status = 'OUT_FOR_DELIVERY' RETURNING order_id`,
         [orderId],

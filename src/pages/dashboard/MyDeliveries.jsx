@@ -132,12 +132,12 @@ export function MyDeliveries({ user }) {
   const setStatus = async (deliveryId, status, note) => {
     // Failing a delivery is the one driver action that cannot be walked
     // back by the driver; the other destructive actions in the app ask.
-    if (status === 'FAILED' && !window.confirm('Mark this delivery as failed? An admin will have to send it back to the queue.')) return
+    if (status === 'FAILED' && !window.confirm('Could not deliver this order? It goes back to the bakery to be assigned again.')) return
     setBusyId(deliveryId)
     setMessage('')
     try {
       await apiPatch(`/api/deliveries/${deliveryId}/status`, { status, note: note || null })
-      setMessage(status === 'DELIVERED' ? 'Delivery marked as delivered.' : status === 'FAILED' ? 'Delivery marked as failed.' : 'Delivery is now out for delivery.')
+      setMessage(status === 'DELIVERED' ? 'Delivery marked as delivered.' : status === 'FAILED' ? 'Returned to the bakery — it will be assigned again.' : 'Delivery is now out for delivery.')
       setMessageFailed(false)
       await loadDeliveries()
     } catch (error) {
@@ -295,7 +295,7 @@ export function MyDeliveries({ user }) {
                       <Input
                         value={failNotes[delivery.id] ?? ''}
                         onChange={(event) => setFailNotes({ ...failNotes, [delivery.id]: event.target.value })}
-                        placeholder="Reason, if it failed"
+                        placeholder="Why could it not be delivered?"
                         aria-label={`Reason order ${orderLabel(delivery)}'s delivery failed`}
                       />
                       <Button
@@ -306,7 +306,7 @@ export function MyDeliveries({ user }) {
                         onClick={() => setStatus(delivery.id, 'FAILED', failNotes[delivery.id])}
                         disabled={busyId === delivery.id}
                       >
-                        Mark failed
+                        Couldn't deliver
                       </Button>
                     </div>
                   </div>

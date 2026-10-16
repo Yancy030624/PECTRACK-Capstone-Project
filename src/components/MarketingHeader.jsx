@@ -56,7 +56,7 @@ export function MarketingHeader({ user, onOpenLogin = () => {}, onOpenRegister =
                 <button type="button" onClick={onOpenLogin} className="hidden min-h-10 items-center rounded-full px-4 text-sm font-bold text-cocoa-700 transition hover:bg-cream-100 hover:text-crust-600 sm:inline-flex">Sign in</button>
               </>
             )}
-            {isCustomer && <HeaderIcon type="cart" onClick={() => navigate('/cart')} badge={itemCount} label={`Cart, ${itemCount} item${itemCount === 1 ? '' : 's'}`} />}
+            {isCustomer && <HeaderIcon type="cart" onClick={() => navigate('/cart')} badge={itemCount} label={`Cart, ${itemCount} product${itemCount === 1 ? '' : 's'}`} />}
             {!user && (
               <button type="button" onClick={onOpenRegister} className="inline-flex min-h-10 items-center rounded-full bg-crust-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-crust-700 sm:px-5">
                 <span className="sm:hidden">Join</span><span className="hidden sm:inline">Create account</span>

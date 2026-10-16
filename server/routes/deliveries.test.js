@@ -505,7 +505,7 @@ describe('delivery management', () => {
   // The user, 2026-10-16: a failed delivery puts its paid order back to
   // Ready for delivery, so it can be assigned again — it used to stay
   // "Out for delivery" for good.
-  test('OUT_FOR_DELIVERY can also end in FAILED, which puts the order back to READY_FOR_DELIVERY', async () => {
+  test('OUT_FOR_DELIVERY can also end in FAILED, which sends the delivery back to the queue and the order to READY_FOR_DELIVERY', async () => {
     const { orderId, deliveryId } = await placeDeliveryOrder()
     await assign(deliveryId, firstDriverId)
     await setStatus(deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)
@@ -513,26 +513,29 @@ describe('delivery management', () => {
 
     const failed = await setStatus(deliveryId, 'FAILED', firstDriverCookie, 'Customer not home')
     assert.equal(failed.status, 200)
-    assert.equal((await failed.json()).delivery.status, 'FAILED')
+    const back = (await failed.json()).delivery
+    assert.equal(back.status, 'PENDING_ASSIGNMENT', 'straight back in the queue')
+    assert.equal(back.deliveryPersonnelId, null)
+    assert.ok(back.failedAt, 'the failed attempt is still on record')
+    assert.match(back.note, /Customer not home/)
 
     const afterFail = await pool.query('SELECT status FROM orders WHERE order_id = $1', [orderId])
     assert.equal(afterFail.rows[0].status, 'READY_FOR_DELIVERY')
     const history = await pool.query(`SELECT note FROM order_status_history WHERE order_id = $1 AND status = 'READY_FOR_DELIVERY' ORDER BY history_id DESC LIMIT 1`, [orderId])
     assert.equal(history.rows[0].note, 'Delivery failed: Customer not home')
 
-    // An admin sends it back to the queue, and it can be assigned again.
-    const requeued = await setStatus(deliveryId, 'PENDING_ASSIGNMENT', adminCookie, 'Try again tomorrow')
-    assert.equal(requeued.status, 200)
+    // Nothing for staff to clear first: it can be assigned again at once.
     assert.equal((await assign(deliveryId, secondDriverId)).status, 200)
   })
 
   // Decision 5's one deliberate exception — only an ADMIN may retry a
-  // FAILED delivery back to PENDING_ASSIGNMENT, and must say why.
+  // FAILED delivery back to PENDING_ASSIGNMENT, and must say why. A failed
+  // delivery goes back to the queue by itself now; a FAILED row is left only
+  // by older data, put here in SQL.
   test('an admin can retry a FAILED delivery back to PENDING_ASSIGNMENT; a cashier and a driver cannot', async () => {
     const { deliveryId } = await placeDeliveryOrder()
     await assign(deliveryId, firstDriverId)
-    await setStatus(deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)
-    await setStatus(deliveryId, 'FAILED', firstDriverCookie, 'Nobody answered')
+    await pool.query(`UPDATE deliveries SET status = 'FAILED', failed_at = CURRENT_TIMESTAMP, note = 'Nobody answered' WHERE delivery_id = $1`, [deliveryId])
 
     const cashierAttempt = await setStatus(deliveryId, 'PENDING_ASSIGNMENT', cashierCookie, 'retry')
     assert.equal(cashierAttempt.status, 403)
@@ -651,15 +654,12 @@ describe('delivery management', () => {
       const cashierAttempt = await setStatus(deliveryId, 'FAILED', cashierCookie, 'driver unreachable')
       assert.equal(cashierAttempt.status, 403, 'this is an admin-only override, not a cashier one')
 
-      const recalled = await setStatus(deliveryId, 'FAILED', adminCookie, 'Driver account disabled mid-run')
-      assert.equal(recalled.status, 200)
-      assert.equal((await recalled.json()).delivery.status, 'FAILED')
-
-      const noNote = await setStatus(deliveryId, 'PENDING_ASSIGNMENT', adminCookie)
+      const noNote = await setStatus(deliveryId, 'FAILED', adminCookie)
       assert.equal(noNote.status, 422, 'the override must say why')
 
-      const requeued = await setStatus(deliveryId, 'PENDING_ASSIGNMENT', adminCookie, 'Reassigning to another driver')
-      assert.equal(requeued.status, 200)
+      const recalled = await setStatus(deliveryId, 'FAILED', adminCookie, 'Driver account disabled mid-run')
+      assert.equal(recalled.status, 200)
+      assert.equal((await recalled.json()).delivery.status, 'PENDING_ASSIGNMENT', 'taken back, it is in the queue again')
 
       const reassign = await assign(deliveryId, secondDriverId)
       assert.equal(reassign.status, 200, 'and it can now genuinely go to someone else')
@@ -672,16 +672,18 @@ describe('delivery management', () => {
   // there is deliberately no delivery_status_history table. Overwriting
   // it on retry destroys the single most useful thing to know when
   // deciding whether the retry was even a good idea.
-  test('retrying keeps the driver\'s failure reason instead of overwriting it', async () => {
+  test('a failed delivery keeps the driver\'s reason when it goes out again', async () => {
     const { deliveryId } = await placeDeliveryOrder()
     await assign(deliveryId, firstDriverId)
     await setStatus(deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)
     await setStatus(deliveryId, 'FAILED', firstDriverCookie, 'Customer refused — wrong flavour')
-    await setStatus(deliveryId, 'PENDING_ASSIGNMENT', adminCookie, 'Re-baking, retry tomorrow')
+    assert.equal((await assign(deliveryId, secondDriverId)).status, 200)
+    await setStatus(deliveryId, 'OUT_FOR_DELIVERY', secondDriverCookie)
+    await setStatus(deliveryId, 'FAILED', secondDriverCookie, 'Gate locked')
 
     const note = (await pool.query('SELECT note FROM deliveries WHERE delivery_id = $1', [deliveryId])).rows[0].note
-    assert.match(note, /wrong flavour/, 'the original failure reason must survive')
-    assert.match(note, /Re-baking/, 'alongside the reason it was retried')
+    assert.match(note, /wrong flavour/, 'the first failure reason must survive')
+    assert.match(note, /Gate locked/, 'alongside the second')
   })
 
   // express.raw() matches via type-is, which PARSES the media type, while
@@ -927,13 +929,16 @@ describe('delivery management', () => {
     assert.equal(afterFinishing.status, 200)
     const { counts, deliveries } = afterFinishing.body
     assert.equal(counts.delivered, before.counts.delivered + 1)
-    assert.equal(counts.failed, before.counts.failed + 1)
+    // A failed delivery goes back to the bakery's queue (the user,
+    // 2026-10-16), so it is no longer this driver's; it is not in their
+    // history.
+    assert.equal(counts.failed, before.counts.failed)
     assert.ok(counts.assignedNow >= 1, 'the still-assigned delivery counts as work in hand')
     const ids = deliveries.map((delivery) => delivery.id)
-    assert.ok(ids.includes(delivered.deliveryId) && ids.includes(failed.deliveryId))
+    assert.ok(ids.includes(delivered.deliveryId))
+    assert.ok(!ids.includes(failed.deliveryId), 'returned to the queue, not history')
     assert.ok(!ids.includes(open.deliveryId), 'an unfinished delivery is not history yet')
     assert.equal(deliveries.length, counts.delivered + counts.failed, 'the list and the counts agree')
-    assert.ok(deliveries.find((delivery) => delivery.id === failed.deliveryId).failedAt, 'a failed delivery carries when it failed')
 
     const other = await history(secondDriverCookie)
     const otherIds = other.body.deliveries.map((delivery) => delivery.id)
@@ -946,11 +951,12 @@ describe('delivery management', () => {
     assert.equal((await history(firstDriverCookie, '')).status, 422, 'a range is required')
     assert.equal((await history(cashierCookie)).status, 403, 'drivers only')
 
-    // A retry clears failed_at along with the driver.
-    const retry = await setStatus(failed.deliveryId, 'PENDING_ASSIGNMENT', adminCookie, 'Customer asked for another try')
-    assert.equal(retry.status, 200)
-    const retried = await pool.query('SELECT failed_at FROM deliveries WHERE delivery_id = $1', [failed.deliveryId])
-    assert.equal(retried.rows[0].failed_at, null)
+    // The failed attempt went back to the queue on its own, with no driver,
+    // keeping when it failed.
+    const returned = await pool.query('SELECT status, delivery_personnel_id, failed_at FROM deliveries WHERE delivery_id = $1', [failed.deliveryId])
+    assert.equal(returned.rows[0].status, 'PENDING_ASSIGNMENT')
+    assert.equal(returned.rows[0].delivery_personnel_id, null)
+    assert.ok(returned.rows[0].failed_at)
   })
 })
 

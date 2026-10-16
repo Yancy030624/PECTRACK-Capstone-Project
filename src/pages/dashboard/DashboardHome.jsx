@@ -257,9 +257,21 @@ function RestockFirst({ loaded, lowItems, canOpen, onViewAll }) {
 }
 
 // Needed by (the user, 2026-10-16): paid orders still to be picked up or
-// sent out, soonest first, so the counter sees what is coming. A time
-// already passed is shown in red. Each row opens the order in Payment &
-// Billing.
+// sent out, soonest first, so the counter sees what is coming. Each row has
+// a status pill by how close its time is: an hour or less (or passed) needs
+// attention, five hours or less is okay, the rest is good. An order with no
+// time ("as soon as ready") is wanted now, so it needs attention. Each row
+// opens the order in Payment & Billing. The bell also announces an order
+// one hour before its time (GET /api/notifications, due_soon).
+const hourMs = 60 * 60 * 1000
+function dueTone(order, now) {
+  const when = order.requestedFulfillmentTime ? new Date(order.requestedFulfillmentTime).getTime() : now
+  const left = when - now
+  if (left <= hourMs) return 'attention'
+  if (left <= 5 * hourMs) return 'okay'
+  return 'good'
+}
+const dueToneLabel = { attention: 'Needs attention', okay: 'Okay', good: 'Good' }
 function NeededBy({ orders, canOpen, onOpen, onViewAll }) {
   const now = Date.now()
   const today = manilaDay(new Date())
@@ -278,6 +290,7 @@ function NeededBy({ orders, canOpen, onOpen, onViewAll }) {
           {orders.slice(0, dueRows).map((order) => {
             const when = order.requestedFulfillmentTime
             const late = when && new Date(when).getTime() < now
+            const tone = dueTone(order, now)
             const row = (
               <>
                 <span className="w-20 shrink-0 font-semibold text-ink-900 tabular-nums">{orderLabel(order)}</span>
@@ -288,6 +301,10 @@ function NeededBy({ orders, canOpen, onOpen, onViewAll }) {
                 <span className={`shrink-0 text-right text-xs font-semibold ${late ? 'text-status-fail-fg' : 'text-ink-700'}`}>
                   {when ? (manilaDay(when) === today ? timeFormat.format(new Date(when)) : dayTimeFormat.format(new Date(when))) : 'As soon as ready'}
                   {late && <span className="block font-normal">late</span>}
+                </span>
+                <span className={`inline-flex w-32 shrink-0 items-center justify-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${TONES[tone].pill}`}>
+                  <span className={`h-2 w-2 rounded-full ${TONES[tone].dot}`} aria-hidden="true" />
+                  {dueToneLabel[tone]}
                 </span>
               </>
             )

@@ -11,63 +11,65 @@ import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { telHref } from '../../lib/bakery.js'
+import { TONES } from '../../lib/stockHealth.js'
 import { formatPeso } from '../../lib/format.js'
 import { orderLabel } from '../../lib/orderNumber.js'
 import { MyDeliveries } from './MyDeliveries.jsx'
 
-const statusOptions = ['PENDING_ASSIGNMENT', 'ASSIGNED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED']
+// The status filter, as buttons like Inventory Management's (the user,
+// 2026-10-16). No "Failed": a delivery the driver could not hand over goes
+// straight back to To assign (routes/deliveries.js).
+const deliveryFilters = [
+  { key: 'PENDING_ASSIGNMENT', label: 'To assign', tone: 'attention' },
+  { key: 'ASSIGNED', label: 'Assigned', tone: 'okay' },
+  { key: 'OUT_FOR_DELIVERY', label: 'Out for delivery', tone: 'okay' },
+  { key: 'DELIVERED', label: 'Delivered', tone: 'good' },
+  { key: 'ALL', label: 'All' },
+]
 
 export function DeliveryManagement({ user, params, onNavigate }) {
   if (user.role === 'DELIVERY PERSONNEL') return <MyDeliveries user={user} />
   return <StaffDeliveryView user={user} params={params} onNavigate={onNavigate} />
 }
 
-// The Dashboard's "Deliveries to assign" tile — the same rule as its
-// count in /api/reports/summary: waiting for a driver, on an order that
-// is not already finished.
-const waitingForDriver = (delivery) => delivery.status === 'PENDING_ASSIGNMENT' && delivery.orderStatus !== 'COMPLETED' && delivery.orderStatus !== 'CANCELLED'
+// A delivery staff still work with: not the record of a cancelled order's
+// delivery (FAILED), and not one whose order is already finished.
+const isLive = (delivery) => delivery.status !== 'FAILED' && !(delivery.status === 'PENDING_ASSIGNMENT' && ['COMPLETED', 'CANCELLED'].includes(delivery.orderStatus))
+const matchesFilter = (delivery, filter) => isLive(delivery) && (filter === 'ALL' || delivery.status === filter)
 
-// Stage 5 (RULES-PLANS/UI_AUDIT.md) — this is the staff half of the
-// delivery role (ADMIN/CASHIER's assignment queue); MyDeliveries.jsx is the
-// driver's mobile-first half. H7's local statusStyles is gone in favour of
-// the shared <StatusBadge>, and the hand-rolled inputs/buttons are now
-// Button/Input/Select from the kit, matching PaymentBilling/
-// InventoryRequests. This screen stays desktop-oriented (it's a staff
-// assignment queue, not a field tool) but the existing flex-wrap layout
-// already keeps it from breaking at narrow widths, so nothing structural
-// changed there.
-//
-// Untouched: the status transition rules/order and the one-directional
-// deliveries.status -> orders.status sync (PHASE7_PLAN.md). This is
-// presentation only.
+const dayTime = new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' })
+
+// Delivery Management, staff side (MyDeliveries.jsx is the driver's).
+// Minimal by request (the user, 2026-10-16): filter buttons, one compact
+// card per delivery — who, where, when, the driver — and one action: assign
+// a driver while it waits, or, for an admin, take it back from its driver
+// (it returns to To assign). Deliveries move on from the driver's phone.
 function StaffDeliveryView({ user, params, onNavigate }) {
   const isAdmin = user.role === 'ADMIN'
-  // Opened from the Dashboard tile: only the deliveries waiting for a
-  // driver, without the rest of the module around them.
+  // Opened from the Dashboard's "Deliveries to assign" tile.
   const toAssignOnly = params?.focus === 'toAssign'
 
   const [deliveries, setDeliveries] = useState([])
   const [personnel, setPersonnel] = useState([])
   const [loading, setLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState(toAssignOnly ? 'PENDING_ASSIGNMENT' : '')
+  const [filter, setFilter] = useState('PENDING_ASSIGNMENT')
   const [message, setMessage] = useState('')
   const [messageFailed, setMessageFailed] = useState(false)
 
   const [assignChoice, setAssignChoice] = useState({})
-  const [retryNotes, setRetryNotes] = useState({})
+  const [takingBack, setTakingBack] = useState(null)
+  const [takeBackNote, setTakeBackNote] = useState('')
   const [busyId, setBusyId] = useState(null)
 
   const [expandedProofsId, setExpandedProofsId] = useState(null)
   const [proofsById, setProofsById] = useState({})
-
-  const visibleDeliveries = toAssignOnly ? deliveries.filter(waitingForDriver) : deliveries
 
   // `quiet` reloads without the loading rows, for the refresh the bell
   // asks for when a delivery moves.
   const loadDeliveries = async ({ quiet = false } = {}) => {
     if (!quiet) setLoading(true)
     try {
-      const data = await apiGet(`/api/deliveries${statusFilter ? `?status=${statusFilter}` : ''}`)
+      const data = await apiGet('/api/deliveries')
       setDeliveries(data.deliveries)
     } catch (error) {
       setMessage(error.message)
@@ -79,13 +81,13 @@ function StaffDeliveryView({ user, params, onNavigate }) {
 
   useEffect(() => {
     loadDeliveries()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter])
-  useNotificationRefresh(() => loadDeliveries({ quiet: true }))
-
-  useEffect(() => {
     apiGet('/api/deliveries/personnel').then((data) => setPersonnel(data.personnel)).catch((error) => setMessage(error.message))
   }, [])
+  useNotificationRefresh(() => loadDeliveries({ quiet: true }))
+
+  const visibleDeliveries = deliveries.filter((delivery) => matchesFilter(delivery, toAssignOnly ? 'PENDING_ASSIGNMENT' : filter))
+
+  const say = (text, failed = false) => { setMessage(text); setMessageFailed(failed) }
 
   const handleAssign = async (deliveryId) => {
     const deliveryPersonnelId = assignChoice[deliveryId]
@@ -94,34 +96,29 @@ function StaffDeliveryView({ user, params, onNavigate }) {
     setMessage('')
     try {
       await apiPatch(`/api/deliveries/${deliveryId}/assign`, { deliveryPersonnelId })
-      setMessage('Delivery assigned.')
-      setMessageFailed(false)
-      await loadDeliveries()
+      say('Driver assigned.')
+      await loadDeliveries({ quiet: true })
     } catch (error) {
-      setMessage(error.message)
-      setMessageFailed(true)
+      say(error.message, true)
     } finally {
       setBusyId(null)
     }
   }
-  const handleAdminTransition = async (deliveryId, status) => {
-    const note = retryNotes[deliveryId]
-    if (!note) {
-      setMessage(status === 'FAILED' ? 'Explain why this delivery is being recalled.' : 'Explain why this delivery is being retried.')
-      setMessageFailed(true)
-      return
-    }
+
+  // An admin takes a delivery back from its driver (a lost phone, a driver
+  // who cannot go on): it returns to To assign, with the reason kept.
+  const handleTakeBack = async (deliveryId) => {
+    if (takeBackNote.trim().length === 0) return
     setBusyId(deliveryId)
     setMessage('')
     try {
-      await apiPatch(`/api/deliveries/${deliveryId}/status`, { status, note })
-      setRetryNotes({ ...retryNotes, [deliveryId]: '' })
-      setMessage(status === 'FAILED' ? 'Delivery recalled from its driver.' : 'Delivery sent back to the assignment queue.')
-      setMessageFailed(false)
-      await loadDeliveries()
+      await apiPatch(`/api/deliveries/${deliveryId}/status`, { status: 'FAILED', note: takeBackNote.trim() })
+      setTakingBack(null)
+      setTakeBackNote('')
+      say('Taken back from the driver — it is in To assign again.')
+      await loadDeliveries({ quiet: true })
     } catch (error) {
-      setMessage(error.message)
-      setMessageFailed(true)
+      say(error.message, true)
     } finally {
       setBusyId(null)
     }
@@ -138,8 +135,7 @@ function StaffDeliveryView({ user, params, onNavigate }) {
         const data = await apiGet(`/api/deliveries/${deliveryId}/proof`)
         setProofsById({ ...proofsById, [deliveryId]: data.proofs })
       } catch (error) {
-        setMessage(error.message)
-        setMessageFailed(true)
+        say(error.message, true)
       }
     }
   }
@@ -151,7 +147,7 @@ function StaffDeliveryView({ user, params, onNavigate }) {
           title="Deliveries to assign"
           count={loading ? null : visibleDeliveries.length}
           tone={visibleDeliveries.length > 0 ? 'attention' : 'good'}
-          description="Delivery orders waiting for a driver. Pick a driver for each one."
+          description="Paid delivery orders waiting for a driver."
           onBack={() => onNavigate?.('Dashboard')}
           onShowAll={() => onNavigate?.('Delivery Management')}
           showAllLabel="Show all deliveries"
@@ -160,7 +156,7 @@ function StaffDeliveryView({ user, params, onNavigate }) {
         <>
           <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
           <h1 className="mt-1 text-2xl font-semibold text-ink-900">Delivery Management</h1>
-          <p className="mt-2 text-sm text-ink-500">Assign drivers to delivery orders and track each one through to delivered. No GPS tracking — this is a status workflow, not a live map.</p>
+          <p className="mt-2 text-sm text-ink-500">Assign a driver; the driver moves each delivery on from their phone.</p>
         </>
       )}
 
@@ -171,54 +167,61 @@ function StaffDeliveryView({ user, params, onNavigate }) {
       )}
 
       <Card className="mt-6 p-6">
-        <div className={`flex-wrap items-center justify-between gap-3 ${toAssignOnly ? 'hidden' : 'flex'}`}>
-          <h2 className="text-lg font-semibold text-ink-900">Deliveries</h2>
-          <div className="w-full sm:w-56">
-            <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter by status">
-              <option value="">All statuses</option>
-              {statusOptions.map((status) => <option key={status} value={status}>{status.replaceAll('_', ' ')}</option>)}
-            </Select>
+        {!toAssignOnly && !loading && (
+          <div className="mb-5">
+            <p id="delivery-filter-label" className="text-xs font-semibold uppercase tracking-wide text-ink-500">Status</p>
+            <div role="group" aria-labelledby="delivery-filter-label" className="mt-2 flex flex-wrap gap-2">
+              {deliveryFilters.map((option) => {
+                const count = deliveries.filter((delivery) => matchesFilter(delivery, option.key)).length
+                const active = filter === option.key
+                return (
+                  <button
+                    type="button"
+                    key={option.key}
+                    onClick={() => setFilter(option.key)}
+                    aria-pressed={active}
+                    className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition ${active ? 'border-ink-900 bg-ink-900 text-white' : 'border-line-200 bg-surface text-ink-700 hover:bg-surface-sunk'}`}
+                  >
+                    {option.tone && <span className={`h-2.5 w-2.5 rounded-full ${TONES[option.tone].dot}`} aria-hidden="true" />}
+                    {option.label}
+                    <span className={`rounded-full px-1.5 text-xs tabular-nums ${active ? 'bg-white/20' : 'bg-surface-sunk text-ink-500'}`}>{count}</span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
-        </div>
+        )}
 
         {loading ? (
-          <LoadingRows className="mt-4" />
+          <LoadingRows />
         ) : visibleDeliveries.length === 0 ? (
-          <EmptyState title={toAssignOnly ? 'Every delivery has a driver.' : 'No deliveries match this filter.'} />
+          <EmptyState title={filter === 'PENDING_ASSIGNMENT' || toAssignOnly ? 'Every delivery has a driver.' : 'No deliveries here.'} />
         ) : (
-          <ul className={`space-y-4 ${toAssignOnly ? '' : 'mt-4'}`}>
+          <ul className="divide-y divide-line-100">
             {visibleDeliveries.map((delivery) => (
-              <li key={delivery.id} className="rounded-panel border border-line-200 p-4 text-sm">
+              <li key={delivery.id} className="py-3.5 text-sm first:pt-0 last:pb-0">
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <p className="font-semibold text-ink-900">Order {orderLabel(delivery)} · {delivery.customerName ?? 'Customer'} · <span className="tabular-nums">{formatPeso(delivery.totalAmount)}</span></p>
-                    <p className="mt-1 text-ink-500">{delivery.address.recipientName} · {delivery.address.contactNumber && <a href={telHref(delivery.address.contactNumber)} className="font-medium text-brand-700 underline underline-offset-2">{delivery.address.contactNumber}</a>}</p>
-                    <p className="mt-0.5 text-xs text-ink-500">
-                      {delivery.address.addressLine1}{delivery.address.addressLine2 && `, ${delivery.address.addressLine2}`}
-                      {delivery.address.barangay && `, ${delivery.address.barangay}`}, {delivery.address.municipality}, {delivery.address.province}
+                  <div className="min-w-0">
+                    <p className="font-semibold text-ink-900">
+                      {orderLabel(delivery)} · {delivery.customerName ?? 'Customer'} <span className="font-normal text-ink-500">· <span className="tabular-nums">{formatPeso(delivery.totalAmount)}</span></span>
                     </p>
-                    <p className="mt-1 text-xs text-ink-500">
-                      Order status: {delivery.orderStatus.replaceAll('_', ' ')}
+                    <p className="mt-0.5 text-xs text-ink-500">
+                      {delivery.address.recipientName}
+                      {delivery.address.contactNumber && <> · <a href={telHref(delivery.address.contactNumber)} className="font-medium text-brand-700 hover:underline">{delivery.address.contactNumber}</a></>}
+                      {' · '}{[delivery.address.barangay, delivery.address.municipality].filter(Boolean).join(', ')}
+                    </p>
+                    <p className="mt-0.5 text-xs text-ink-500">
+                      {delivery.requestedFulfillmentTime ? `Needed by ${dayTime.format(new Date(delivery.requestedFulfillmentTime))}` : 'As soon as ready'}
                       {delivery.deliveryPersonnelName && ` · Driver: ${delivery.deliveryPersonnelName}`}
                     </p>
-                    {delivery.note && <p className="mt-0.5 text-xs text-ink-500">Note: "{delivery.note}"</p>}
                   </div>
-                  <StatusBadge status={delivery.status} />
+                  <StatusBadge status={delivery.status} label={delivery.status === 'PENDING_ASSIGNMENT' ? 'To assign' : undefined} />
                 </div>
 
-                {delivery.status === 'PENDING_ASSIGNMENT' && (delivery.orderStatus === 'COMPLETED' || delivery.orderStatus === 'CANCELLED') && (
-                  <p className="mt-3 border-t border-line-100 pt-3 text-xs text-ink-500">This order is already {delivery.orderStatus.toLowerCase()} — nothing left to deliver.</p>
-                )}
-                {/* NO_COD_PLAN D2 — and refuses it while the order still owes
-                    money (only possible for orders confirmed before the rule,
-                    or reopened by a refund). */}
-                {delivery.status === 'PENDING_ASSIGNMENT' && !['COMPLETED', 'CANCELLED'].includes(delivery.orderStatus) && !delivery.isFullyPaid && (
-                  <p className="mt-3 border-t border-line-100 pt-3 text-xs font-semibold text-status-fail-fg">Not fully paid (balance {formatPeso(delivery.balanceDue)}) — record the payment in Payment &amp; Billing before assigning a driver.</p>
-                )}
-                {delivery.status === 'PENDING_ASSIGNMENT' && !['COMPLETED', 'CANCELLED'].includes(delivery.orderStatus) && delivery.isFullyPaid && (
-                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line-100 pt-3">
-                    <div className="min-w-40 flex-1">
-                      <Select value={assignChoice[delivery.id] ?? ''} onChange={(event) => setAssignChoice({ ...assignChoice, [delivery.id]: event.target.value })} aria-label={`Assign a driver for order ${orderLabel(delivery)}`}>
+                {delivery.status === 'PENDING_ASSIGNMENT' && (
+                  <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                    <div className="min-w-40 flex-1 sm:max-w-64">
+                      <Select value={assignChoice[delivery.id] ?? ''} onChange={(event) => setAssignChoice({ ...assignChoice, [delivery.id]: event.target.value })} aria-label={`Driver for order ${orderLabel(delivery)}`}>
                         <option value="">Select a driver…</option>
                         {personnel.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
                       </Select>
@@ -227,24 +230,23 @@ function StaffDeliveryView({ user, params, onNavigate }) {
                   </div>
                 )}
 
-                {delivery.status === 'FAILED' && isAdmin && (
-                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line-100 pt-3">
-                    <Input value={retryNotes[delivery.id] ?? ''} onChange={(event) => setRetryNotes({ ...retryNotes, [delivery.id]: event.target.value })} placeholder="Why is this being retried?" aria-label={`Retry note for order ${orderLabel(delivery)}`} className="flex-1" />
-                    <Button type="button" size="sm" variant="secondary" onClick={() => handleAdminTransition(delivery.id, 'PENDING_ASSIGNMENT')} disabled={busyId === delivery.id}>Retry</Button>
-                  </div>
-                )}
-                {(delivery.status === 'ASSIGNED' || delivery.status === 'OUT_FOR_DELIVERY') && isAdmin && (
-                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line-100 pt-3">
-                    <Input value={retryNotes[delivery.id] ?? ''} onChange={(event) => setRetryNotes({ ...retryNotes, [delivery.id]: event.target.value })} placeholder="Why is this being recalled from its driver?" aria-label={`Recall note for order ${orderLabel(delivery)}`} className="flex-1" />
-                    <Button type="button" size="sm" variant="destructive" onClick={() => handleAdminTransition(delivery.id, 'FAILED')} disabled={busyId === delivery.id}>Recall from driver</Button>
-                  </div>
+                {isAdmin && (delivery.status === 'ASSIGNED' || delivery.status === 'OUT_FOR_DELIVERY') && (
+                  takingBack === delivery.id ? (
+                    <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                      <Input value={takeBackNote} onChange={(event) => setTakeBackNote(event.target.value)} placeholder="Why take it back from the driver?" aria-label={`Reason for taking back order ${orderLabel(delivery)}`} className="flex-1 sm:max-w-80" />
+                      <Button type="button" size="sm" variant="destructive" onClick={() => handleTakeBack(delivery.id)} disabled={busyId === delivery.id || !takeBackNote.trim()}>Take back</Button>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => { setTakingBack(null); setTakeBackNote('') }}>Keep</Button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => { setTakingBack(delivery.id); setTakeBackNote('') }} className="mt-2 text-xs font-semibold text-ink-500 hover:text-red-700 hover:underline">Take back from driver</button>
+                  )
                 )}
 
                 {delivery.proofCount > 0 && (
-                  <div className="mt-3 border-t border-line-100 pt-3">
-                    <Button type="button" size="sm" variant="ghost" className="px-0 text-brand-700" onClick={() => toggleProofs(delivery.id)}>
+                  <div className="mt-2">
+                    <button type="button" onClick={() => toggleProofs(delivery.id)} className="text-xs font-semibold text-brand-700 hover:underline">
                       {expandedProofsId === delivery.id ? 'Hide' : 'View'} proof of delivery ({delivery.proofCount})
-                    </Button>
+                    </button>
                     {expandedProofsId === delivery.id && (
                       <div className="mt-2 flex flex-wrap gap-2">
                         {(proofsById[delivery.id] ?? []).map((proof) => (
