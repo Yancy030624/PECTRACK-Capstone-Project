@@ -46,8 +46,11 @@ function DetailPanel({ open, onClose, labelledBy, children }) {
 // first, so there is nothing owed to show — the list is the orders waiting
 // to be picked up, or the ones already completed. No status column and no
 // cancelled orders.
+// Out for delivery is not listed here (the user, 2026-10-16): it is on the
+// road, nothing for the counter to do; it shows again once Completed.
 const billingFilters = [
   { key: 'READY_FOR_PICKUP', label: 'Ready for pickup' },
+  { key: 'READY_FOR_DELIVERY', label: 'Ready for delivery' },
   { key: 'COMPLETED', label: 'Completed' },
 ]
 
@@ -98,7 +101,7 @@ export function PaymentBilling({ user, params }) {
   }, [])
 
   const [billingFilter, setBillingFilter] = useState('READY_FOR_PICKUP')
-  const showNeededBy = billingFilter === 'READY_FOR_PICKUP'
+  const showNeededBy = billingFilter !== 'COMPLETED'
   const visibleOrders = useMemo(
     () => orders.filter((order) => order.status === billingFilter),
     [orders, billingFilter],
@@ -343,7 +346,7 @@ export function PaymentBilling({ user, params }) {
             {loading ? (
               <LoadingRows className="mt-4" />
             ) : visibleOrders.length === 0 ? (
-              <EmptyState title={billingFilter === 'READY_FOR_PICKUP' ? 'Nothing waiting to be picked up' : 'No completed orders yet'} />
+              <EmptyState title={billingFilter === 'READY_FOR_PICKUP' ? 'Nothing waiting to be picked up' : billingFilter === 'READY_FOR_DELIVERY' ? 'Nothing waiting to be delivered' : 'No completed orders yet'} />
             ) : (
               <>
                 <ul className="mt-4 divide-y divide-line-100 md:hidden">

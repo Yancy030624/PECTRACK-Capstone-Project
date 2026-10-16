@@ -780,3 +780,5 @@ Figure 13 (Payment & Billing) and Figure 15 (Checkout button) descriptions follo
 - Inventory Management: under the Status buttons, **Category** buttons (All categories and one per category, with counts).
 
 Figures 2 / 2.1 (Dashboard) and 10 / 11 (Inventory) descriptions follow these.
+- Payment & Billing, Billing tab: a third button, **Ready for delivery** (with Needed by). Out for delivery is not listed there; the order shows again once Completed. (2026-10-16)
+- Customer My Orders: the order detail no longer lists the status history either. (2026-10-16)

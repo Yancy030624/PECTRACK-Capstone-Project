@@ -564,16 +564,6 @@ function CustomerOrders({ user }) {
             <p className="rounded-panel border border-line-200 bg-surface-warm p-3 text-sm font-semibold text-status-done-fg">Paid</p>
           )}
 
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Status history</p>
-            <ul className="mt-1.5 space-y-1 text-sm text-ink-500">
-              {orderDetail.statusHistory.map((entry, index) => (
-                <li key={index}>
-                  <span className="font-semibold text-ink-900">{humanize(entry.status)}</span> — {formatDateTime(entry.updatedAt)}
-                </li>
-              ))}
-            </ul>
-          </div>
         </div>
       ) : null}
     </Card>
