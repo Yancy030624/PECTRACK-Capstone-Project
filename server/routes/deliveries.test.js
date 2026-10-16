@@ -502,18 +502,28 @@ describe('delivery management', () => {
     assert.equal(after.rows[0].status, 'OUT_FOR_DELIVERY')
   })
 
-  test('OUT_FOR_DELIVERY can also end in FAILED, and orders.status stays untouched by that transition too', async () => {
+  // The user, 2026-10-16: a failed delivery puts its paid order back to
+  // Ready for delivery, so it can be assigned again — it used to stay
+  // "Out for delivery" for good.
+  test('OUT_FOR_DELIVERY can also end in FAILED, which puts the order back to READY_FOR_DELIVERY', async () => {
     const { orderId, deliveryId } = await placeDeliveryOrder()
     await assign(deliveryId, firstDriverId)
     await setStatus(deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)
-    const beforeFail = await pool.query('SELECT status FROM orders WHERE order_id = $1', [orderId])
+    assert.equal((await pool.query('SELECT status FROM orders WHERE order_id = $1', [orderId])).rows[0].status, 'OUT_FOR_DELIVERY')
 
     const failed = await setStatus(deliveryId, 'FAILED', firstDriverCookie, 'Customer not home')
     assert.equal(failed.status, 200)
     assert.equal((await failed.json()).delivery.status, 'FAILED')
 
     const afterFail = await pool.query('SELECT status FROM orders WHERE order_id = $1', [orderId])
-    assert.equal(afterFail.rows[0].status, beforeFail.rows[0].status, 'FAILED must not change orders.status either')
+    assert.equal(afterFail.rows[0].status, 'READY_FOR_DELIVERY')
+    const history = await pool.query(`SELECT note FROM order_status_history WHERE order_id = $1 AND status = 'READY_FOR_DELIVERY' ORDER BY history_id DESC LIMIT 1`, [orderId])
+    assert.equal(history.rows[0].note, 'Delivery failed: Customer not home')
+
+    // An admin sends it back to the queue, and it can be assigned again.
+    const requeued = await setStatus(deliveryId, 'PENDING_ASSIGNMENT', adminCookie, 'Try again tomorrow')
+    assert.equal(requeued.status, 200)
+    assert.equal((await assign(deliveryId, secondDriverId)).status, 200)
   })
 
   // Decision 5's one deliberate exception — only an ADMIN may retry a

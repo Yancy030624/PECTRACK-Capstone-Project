@@ -18,7 +18,6 @@ import { manilaDate, manilaDateFromToday } from '../../lib/dates.js'
 import { cssVar } from '../../lib/theme.js'
 
 const paymentMethodOptions = ['CASH', 'GCASH']
-const paymentStatusOptions = ['PENDING', 'PAID', 'FAILED', 'CANCELLED', 'REFUNDED']
 const transactionsLimit = 50
 const logsLimit = 20
 
@@ -176,7 +175,7 @@ export function ReportingAnalytics({ user }) {
   useEffect(() => {
     apiGet('/api/reports/summary').then(setSummary).catch(() => setSummary(null))
   }, [])
-  const [txFilters, setTxFilters] = useState({ from: '', to: '', method: '', status: '' })
+  const [txFilters, setTxFilters] = useState({ from: '', to: '', method: '' })
   const [txOffset, setTxOffset] = useState(0)
   const [txResult, setTxResult] = useState(null)
   const [txLoading, setTxLoading] = useState(true)
@@ -190,7 +189,9 @@ export function ReportingAnalytics({ user }) {
       if (txFilters.from) params.set('from', txFilters.from)
       if (txFilters.to) params.set('to', txFilters.to)
       if (txFilters.method) params.set('method', txFilters.method)
-      if (txFilters.status) params.set('status', txFilters.status)
+      // Payment first (the user, 2026-10-16): money received only, as in
+      // Payment & Billing's log — no pending, failed, cancelled or refunded.
+      params.set('status', 'PAID')
       try {
         const data = await apiGet(`/api/payments?${params.toString()}`)
         setTxResult(data)
@@ -212,7 +213,6 @@ export function ReportingAnalytics({ user }) {
       from: event.target.txFrom.value,
       to: event.target.txTo.value,
       method: event.target.txMethod.value,
-      status: event.target.txStatus.value,
     })
   }
   const [logsOffset, setLogsOffset] = useState(0)
@@ -312,7 +312,7 @@ export function ReportingAnalytics({ user }) {
             <div className="mt-6 grid gap-4 sm:grid-cols-3">
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Orders placed</p><p className="mt-3 text-4xl font-semibold text-ink-900">{sales.totals.ordersPlaced}</p></Card>
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Ordered</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.ordered)}</p><p className="mt-2 text-xs text-ink-500">Value of orders placed in this range</p></Card>
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Collected</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.collected)}</p><p className="mt-2 text-xs text-ink-500">Money received; refunds already taken out</p></Card>
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Collected</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.collected)}</p><p className="mt-2 text-xs text-ink-500">Money received in this range</p></Card>
             </div>
             <p className="mt-3 text-xs text-ink-500">
               Average payment: {formatPeso(sales.totals.averagePayment)}
@@ -503,12 +503,6 @@ export function ReportingAnalytics({ user }) {
                 {paymentMethodOptions.map((method) => <option key={method} value={method}>{method}</option>)}
               </Select>
             </Field>
-            <Field label="Status">
-              <Select name="txStatus" defaultValue={txFilters.status} className="w-auto">
-                <option value="">Any</option>
-                {paymentStatusOptions.map((status) => <option key={status} value={status}>{status}</option>)}
-              </Select>
-            </Field>
             <Button type="submit" size="sm">Apply filters</Button>
           </form>
 
@@ -532,7 +526,6 @@ export function ReportingAnalytics({ user }) {
                       <Th priority="md">Customer</Th>
                       <Th>Method</Th>
                       <Th align="right">Amount</Th>
-                      <Th>Status</Th>
                       <Th priority="lg">When</Th>
                     </Tr>
                   </Thead>
@@ -543,8 +536,7 @@ export function ReportingAnalytics({ user }) {
                         <Td priority="md">{payment.customerName ?? 'Walk-in'}</Td>
                         <Td>{payment.method}</Td>
                         <Td numeric>{formatPeso(payment.amount)}</Td>
-                        <Td>{payment.status}</Td>
-                        <Td priority="lg" className="whitespace-nowrap text-ink-500">{formatDateTime(payment.status === 'REFUNDED' ? payment.refundedAt : (payment.paymentDate ?? payment.createdAt))}</Td>
+                        <Td priority="lg" className="whitespace-nowrap text-ink-500">{formatDateTime(payment.paymentDate ?? payment.createdAt)}</Td>
                       </Tr>
                     ))}
                   </Tbody>

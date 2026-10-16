@@ -782,3 +782,5 @@ Figure 13 (Payment & Billing) and Figure 15 (Checkout button) descriptions follo
 Figures 2 / 2.1 (Dashboard) and 10 / 11 (Inventory) descriptions follow these.
 - Payment & Billing, Billing tab: a third button, **Ready for delivery** (with Needed by). Out for delivery is not listed there; the order shows again once Completed. (2026-10-16)
 - Customer My Orders: the order detail no longer lists the status history either. (2026-10-16)
+- Delivery: a failed delivery puts its paid order back to **Ready for delivery**, so it can be assigned again (it used to stay "Out for delivery"). (2026-10-16)
+- Reporting & Analytics, Transactions tab: paid payments only, no Status filter or column; Sales "Collected" reads "Money received in this range". In the Figure 17 description, drop "and status" from the filters. (2026-10-16)

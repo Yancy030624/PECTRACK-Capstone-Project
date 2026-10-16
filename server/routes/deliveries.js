@@ -5,7 +5,8 @@
 // (Decision 2); orders.status is synced FROM it, one direction only
 // (Pattern F): OUT_FOR_DELIVERY, and DELIVERED on a fully paid order, which
 // completes it (NOTIFICATIONS_PLAN.md, N2 — this replaces Decision 4 for
-// DELIVERED). FAILED never touches orders.status.
+// DELIVERED). FAILED puts an order that was out for delivery back to
+// READY_FOR_DELIVERY, so it can be assigned again (the user, 2026-10-16).
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
@@ -482,7 +483,7 @@ router.patch('/:id/status', async (request, response) => {
 
     // PATTERN F — the order follows its delivery, one direction only, in
     // the SAME transaction as the delivery transition so the two can never
-    // disagree. FAILED does not touch orders.status.
+    // disagree.
     if (status === 'OUT_FOR_DELIVERY') {
       await client.query(
         `UPDATE orders SET status = 'OUT_FOR_DELIVERY' WHERE order_id = $1 AND status NOT IN ('COMPLETED', 'CANCELLED')`,
@@ -492,6 +493,25 @@ router.patch('/:id/status', async (request, response) => {
         'INSERT INTO order_status_history (order_id, updated_by, status, note) VALUES ($1, $2, $3, $4)',
         [orderId, request.user.id, 'OUT_FOR_DELIVERY', note],
       )
+    }
+
+    // FAILED (the driver could not hand it over, or an admin called it
+    // back): the order is paid and still to be delivered, so it goes back
+    // to READY_FOR_DELIVERY — off the road, into Ready for delivery again,
+    // and assignable once an admin sends the delivery back to the queue.
+    // Without this it stayed "Out for delivery" for good (the user,
+    // 2026-10-16). A cancelled or completed order is left alone.
+    if (status === 'FAILED') {
+      const back = await client.query(
+        `UPDATE orders SET status = 'READY_FOR_DELIVERY' WHERE order_id = $1 AND status = 'OUT_FOR_DELIVERY' RETURNING order_id`,
+        [orderId],
+      )
+      if (back.rowCount) {
+        await client.query(
+          'INSERT INTO order_status_history (order_id, updated_by, status, note) VALUES ($1, $2, $3, $4)',
+          [orderId, request.user.id, 'READY_FOR_DELIVERY', note ? `Delivery failed: ${note}` : 'Delivery failed — back to ready for delivery.'],
+        )
+      }
     }
 
     // DELIVERED completes the order (NOTIFICATIONS_PLAN.md, N2). PHASE7
