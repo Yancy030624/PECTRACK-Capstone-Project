@@ -26,15 +26,20 @@ import { modules } from './modules.js'
 // Top to bottom (CLIENT_REVISIONS_PLAN.md, R4 — "organized at a glance"):
 // the greeting with today's figures; "Needs action now", only the tiles
 // that are not green, the red ones first, with the green ones folded into
-// one line; the Recent orders; and Restock first.
+// one line; then side by side Restock first (the most important, the user
+// 2026-10-16) and Needed by — paid orders still to be picked up or sent
+// out, soonest first, each opening in Payment & Billing; then Recent
+// orders.
 const recentRefreshMs = 20_000
 const restockRows = 5
+const dueRows = 5
 
 export function DashboardHome({ user, onNavigate }) {
   const [summary, setSummary] = useState(null)
   const [inventory, setInventory] = useState(null)
   const [ingredients, setIngredients] = useState(null)
   const [recentOrders, setRecentOrders] = useState(null)
+  const [dueOrders, setDueOrders] = useState(null)
   const [error, setError] = useState('')
 
   const loadTiles = () => Promise.all([apiGet('/api/reports/summary'), apiGet('/api/inventory'), apiGet('/api/ingredients')])
@@ -45,6 +50,14 @@ export function DashboardHome({ user, onNavigate }) {
     })
     .catch((fetchError) => setError(fetchError.message))
   const loadRecentOrders = () => apiGet('/api/orders/recent').then((data) => setRecentOrders(data.orders)).catch(() => {})
+  // Paid orders not handed over yet, by when they are needed (or when they
+  // were placed, for "as soon as ready"), soonest first.
+  const neededAt = (order) => new Date(order.requestedFulfillmentTime ?? order.orderDate).getTime()
+  const loadDueOrders = () => apiGet('/api/orders')
+    .then((data) => setDueOrders(data.orders
+      .filter((order) => order.status === 'READY_FOR_PICKUP' || order.status === 'READY_FOR_DELIVERY')
+      .sort((a, b) => neededAt(a) - neededAt(b))))
+    .catch(() => {})
 
   useEffect(() => {
     loadTiles()
@@ -52,14 +65,15 @@ export function DashboardHome({ user, onNavigate }) {
 
   // The newest orders, refreshed on their own while the page is open.
   useEffect(() => {
-    loadRecentOrders()
-    const timer = window.setInterval(loadRecentOrders, recentRefreshMs)
+    const load = () => { loadRecentOrders(); loadDueOrders() }
+    load()
+    const timer = window.setInterval(load, recentRefreshMs)
     return () => window.clearInterval(timer)
   }, [])
 
   // Something new from the bell (an order, a payment, a delivery) changes
   // the tiles and the list, so both reload at once.
-  useNotificationRefresh(() => { loadTiles(); loadRecentOrders() })
+  useNotificationRefresh(() => { loadTiles(); loadRecentOrders(); loadDueOrders() })
 
   // Only link to a module the signed-in role can open.
   const allowed = new Set(modules.filter((module) => module.roles.includes(user.role)).map((module) => module.name))
@@ -185,47 +199,111 @@ export function DashboardHome({ user, onNavigate }) {
         </p>
       )}
 
-      <RecentOrders orders={recentOrders} canOpen={allowed.has('Order Management')} onOpen={(order) => onNavigate('Order Management', { orderId: order.id })} onViewAll={() => onNavigate('Order Management')} />
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <RestockFirst loaded={loaded} lowItems={lowItems} canOpen={allowed.has('Inventory Management')} onViewAll={() => onNavigate('Inventory Management', { stockFilter: 'LOW' })} />
+        <NeededBy orders={dueOrders} canOpen={allowed.has('Payment & Billing')} onOpen={(order) => onNavigate('Payment & Billing', { orderId: order.id, at: Date.now() })} onViewAll={() => onNavigate('Payment & Billing')} />
+      </div>
 
-      {/* The products behind the red stock tile, worst first — enough to
-          act on without leaving the page; the full list is a click away. */}
-      {loaded && lowItems.length > 0 && (
-        <Card className="mt-6 p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="flex items-center gap-2 text-lg font-semibold text-ink-900">
-              <span className={`h-2.5 w-2.5 rounded-full ${TONES.attention.dot}`} aria-hidden="true" />
-              Restock first
-            </h2>
-            {allowed.has('Inventory Management') && (
-              <button type="button" onClick={() => onNavigate('Inventory Management', { stockFilter: 'LOW' })} className="text-sm font-semibold text-brand-700 hover:underline">
-                View all {lowItems.length} →
-              </button>
-            )}
-          </div>
-          <ul className="mt-3 divide-y divide-line-100">
-            {lowItems.slice(0, restockRows).map((item) => {
-              const status = stockStatus(item)
-              return (
-                <li key={item.productId} className="flex items-center justify-between gap-4 py-2.5 text-sm">
-                  <span className="min-w-0">
-                    <span className="font-semibold text-ink-900">{item.productName}</span>
-                    {item.variant && <span className="text-ink-500"> · {item.variant}</span>}
-                  </span>
-                  <span className="flex shrink-0 items-center gap-3">
-                    <span className="text-xs text-ink-500 tabular-nums">{item.stockQuantity} left · min {item.minStockLevel}</span>
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${TONES[STOCK_STATUSES[status].tone].pill}`}>{STOCK_STATUSES[status].label}</span>
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
-        </Card>
-      )}
+      <RecentOrders orders={recentOrders} canOpen={allowed.has('Order Management')} onOpen={(order) => onNavigate('Order Management', { orderId: order.id })} onViewAll={() => onNavigate('Order Management')} />
     </section>
   )
 }
 
 const timeFormat = new Intl.DateTimeFormat('en-PH', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' })
+const dayTimeFormat = new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' })
+const manilaDay = (value) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date(value))
+
+// The products behind the red stock tile, worst first — enough to act on
+// without leaving the page; the full list is a click away.
+function RestockFirst({ loaded, lowItems, canOpen, onViewAll }) {
+  return (
+    <Card className="p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="flex items-center gap-2 text-lg font-semibold text-ink-900">
+          <span className={`h-2.5 w-2.5 rounded-full ${lowItems.length > 0 ? TONES.attention.dot : TONES.good.dot}`} aria-hidden="true" />
+          Restock first
+        </h2>
+        {canOpen && lowItems.length > 0 && (
+          <button type="button" onClick={onViewAll} className="text-sm font-semibold text-brand-700 hover:underline">
+            View all {lowItems.length} →
+          </button>
+        )}
+      </div>
+      {!loaded ? (
+        <div className="mt-3 h-32 animate-pulse rounded-control bg-surface-sunk" />
+      ) : lowItems.length === 0 ? (
+        <p className="mt-3 text-sm text-ink-500">Every product is above its minimum.</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-line-100">
+          {lowItems.slice(0, restockRows).map((item) => {
+            const status = stockStatus(item)
+            return (
+              <li key={item.productId} className="flex items-center justify-between gap-4 py-2.5 text-sm">
+                <span className="min-w-0">
+                  <span className="font-semibold text-ink-900">{item.productName}</span>
+                  {item.variant && <span className="text-ink-500"> · {item.variant}</span>}
+                </span>
+                <span className="flex shrink-0 items-center gap-3">
+                  <span className="text-xs text-ink-500 tabular-nums">{item.stockQuantity} left · min {item.minStockLevel}</span>
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${TONES[STOCK_STATUSES[status].tone].pill}`}>{STOCK_STATUSES[status].label}</span>
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
+// Needed by (the user, 2026-10-16): paid orders still to be picked up or
+// sent out, soonest first, so the counter sees what is coming. A time
+// already passed is shown in red. Each row opens the order in Payment &
+// Billing.
+function NeededBy({ orders, canOpen, onOpen, onViewAll }) {
+  const now = Date.now()
+  const today = manilaDay(new Date())
+  return (
+    <Card className="p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold text-ink-900">Needed by</h2>
+        {canOpen && orders?.length > 0 && <button type="button" onClick={onViewAll} className="text-sm font-semibold text-brand-700 hover:underline">View all {orders.length} →</button>}
+      </div>
+      {orders === null ? (
+        <div className="mt-3 h-32 animate-pulse rounded-control bg-surface-sunk" />
+      ) : orders.length === 0 ? (
+        <p className="mt-3 text-sm text-ink-500">No orders waiting to be picked up or delivered.</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-line-100">
+          {orders.slice(0, dueRows).map((order) => {
+            const when = order.requestedFulfillmentTime
+            const late = when && new Date(when).getTime() < now
+            const row = (
+              <>
+                <span className="w-20 shrink-0 font-semibold text-ink-900 tabular-nums">{orderLabel(order)}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium text-ink-900">{order.customerName ?? 'Walk-in'}</span>
+                  <span className="block text-xs text-ink-500">{order.orderType === 'DELIVERY' ? 'Delivery' : 'Pickup'}</span>
+                </span>
+                <span className={`shrink-0 text-right text-xs font-semibold ${late ? 'text-status-fail-fg' : 'text-ink-700'}`}>
+                  {when ? (manilaDay(when) === today ? timeFormat.format(new Date(when)) : dayTimeFormat.format(new Date(when))) : 'As soon as ready'}
+                  {late && <span className="block font-normal">late</span>}
+                </span>
+              </>
+            )
+            return (
+              <li key={order.id}>
+                {canOpen
+                  ? <button type="button" onClick={() => onOpen(order)} aria-label={`Open order ${orderLabel(order)} in Payment & Billing`} className="flex w-full items-center gap-3 rounded-control px-2 py-2.5 text-left text-sm transition hover:bg-surface-sunk">{row}</button>
+                  : <div className="flex items-center gap-3 px-2 py-2.5 text-sm">{row}</div>}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </Card>
+  )
+}
 
 // What a recent order still owes, in words.
 function paymentState(order) {

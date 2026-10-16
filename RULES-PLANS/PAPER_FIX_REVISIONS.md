@@ -773,3 +773,10 @@ In fix 2 of A11–A17, replace "Today, Upcoming, Past" with "Today and Upcoming,
 - Payment & Billing, Payment log: paid payments only; no Status filter or column.
 
 Figure 13 (Payment & Billing) and Figure 15 (Checkout button) descriptions follow these.
+
+### Dashboard and Inventory after review (2026-10-16)
+
+- Dashboard, below "Needs action now": **Restock first** and **Needed by** side by side, then **Recent orders**. Needed by lists the paid orders still to be picked up or delivered, soonest first, with their time (red when late); each opens the order in Payment & Billing.
+- Inventory Management: under the Status buttons, **Category** buttons (All categories and one per category, with counts).
+
+Figures 2 / 2.1 (Dashboard) and 10 / 11 (Inventory) descriptions follow these.

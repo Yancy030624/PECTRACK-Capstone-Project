@@ -82,6 +82,10 @@ function ProductStock({ user, params }) {
     return stockFilters.some((filter) => filter.key === asked) ? asked : 'ALL'
   })
 
+  // Category filter (the user, 2026-10-16): one more row of buttons under
+  // the statuses, built from the categories the stock list actually has.
+  const [categoryFilter, setCategoryFilter] = useState('ALL')
+
   const [inventory, setInventory] = useState([])
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
@@ -155,8 +159,10 @@ function ProductStock({ user, params }) {
   // Worst first under a filter that mixes statuses, so what needs
   // attention is never below the fold of what is fine.
   const statusRank = { LOW: 0, OKAY: 1, GOOD: 2 }
+  const categories = [...new Set(inventory.map((item) => item.categoryName).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+  const inCategory = (item) => categoryFilter === 'ALL' || item.categoryName === categoryFilter
   const visibleInventory = inventory
-    .filter((item) => matchesFilter(item, stockFilter))
+    .filter((item) => matchesFilter(item, stockFilter) && inCategory(item))
     .sort((a, b) => (stockFilter === 'ALL' ? 0 : statusRank[stockStatus(a)] - statusRank[stockStatus(b)]))
 
   return (
@@ -175,7 +181,7 @@ function ProductStock({ user, params }) {
             <p id="stock-filter-label" className="text-xs font-semibold uppercase tracking-wide text-ink-500">Status</p>
             <div role="group" aria-labelledby="stock-filter-label" className="mt-2 flex flex-wrap gap-2">
               {stockFilters.map((filter) => {
-                const count = inventory.filter((item) => matchesFilter(item, filter.key)).length
+                const count = inventory.filter((item) => matchesFilter(item, filter.key) && inCategory(item)).length
                 const active = stockFilter === filter.key
                 return (
                   <button
@@ -192,6 +198,29 @@ function ProductStock({ user, params }) {
                 )
               })}
             </div>
+            {categories.length > 1 && (
+              <>
+                <p id="category-filter-label" className="mt-4 text-xs font-semibold uppercase tracking-wide text-ink-500">Category</p>
+                <div role="group" aria-labelledby="category-filter-label" className="mt-2 flex flex-wrap gap-2">
+                  {['ALL', ...categories].map((category) => {
+                    const active = categoryFilter === category
+                    const count = inventory.filter((item) => matchesFilter(item, stockFilter) && (category === 'ALL' || item.categoryName === category)).length
+                    return (
+                      <button
+                        type="button"
+                        key={category}
+                        onClick={() => setCategoryFilter(category)}
+                        aria-pressed={active}
+                        className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition ${active ? 'border-brand-700 bg-brand-700 text-white' : 'border-line-200 bg-surface text-ink-700 hover:bg-surface-sunk'}`}
+                      >
+                        {category === 'ALL' ? 'All categories' : category}
+                        <span className={`rounded-full px-1.5 text-xs tabular-nums ${active ? 'bg-white/20' : 'bg-surface-sunk text-ink-500'}`}>{count}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
           </div>
         )}
         {loading ? (
@@ -199,7 +228,7 @@ function ProductStock({ user, params }) {
         ) : inventory.length === 0 ? (
           <EmptyState title="No products yet" />
         ) : visibleInventory.length === 0 ? (
-          <EmptyState title={`No products are ${stockFilters.find((filter) => filter.key === stockFilter).label.toLowerCase()} right now`} description="Pick another status, or All." />
+          <EmptyState title={`No products are ${stockFilters.find((filter) => filter.key === stockFilter).label.toLowerCase()} right now${categoryFilter === 'ALL' ? '' : ` in ${categoryFilter}`}`} description="Pick another status or category, or All." />
         ) : (
           <div>
             <Table caption="Inventory stock levels">

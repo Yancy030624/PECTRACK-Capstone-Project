@@ -51,7 +51,7 @@ const billingFilters = [
   { key: 'COMPLETED', label: 'Completed' },
 ]
 
-export function PaymentBilling({ user }) {
+export function PaymentBilling({ user, params }) {
   const isStaff = user.role === 'ADMIN' || user.role === 'CASHIER'
   // Payment first (RULES-PLANS/PAYMENT_FIRST_PLAN.md, the adviser
   // 2026-10-16): every order is paid before it is placed, so there are no
@@ -91,6 +91,10 @@ export function PaymentBilling({ user }) {
     // at once — and opening it confirms the payment (below).
     const returnedOrderId = Number(new URLSearchParams(window.location.search).get('order'))
     if (Number.isInteger(returnedOrderId) && returnedOrderId > 0) openOrder(returnedOrderId)
+    // Opened from the Dashboard's Needed by list: that order's receipt.
+    else if (params?.orderId) openOrder(params.orderId)
+    // Once, on opening: Dashboard.jsx remounts the module for new params.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const [billingFilter, setBillingFilter] = useState('READY_FOR_PICKUP')
