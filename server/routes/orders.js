@@ -121,7 +121,10 @@ router.use(requireAuth, requireRole('CUSTOMER', 'CASHIER', 'ADMIN'))
 // is hidden, and so is a cancelled one nothing was paid for — an unpaid
 // hold that ran out, or an unpaid order from before. A cancelled order
 // that money still arrived for stays visible, for staff to settle.
-const visibleOrderSql = `o.status <> 'AWAITING_PAYMENT' AND (o.status <> 'CANCELLED' OR COALESCE(paid.amount, 0) > 0)`
+// Assumed (synthetic) history — the forecast's demo sales, migration 018 —
+// is not an order anyone works on, so it is not listed either; it stays
+// in the database for the Forecast (the adviser, 2026-10-16).
+const visibleOrderSql = `o.data_source = 'RECORDED' AND o.status <> 'AWAITING_PAYMENT' AND (o.status <> 'CANCELLED' OR COALESCE(paid.amount, 0) > 0)`
 
 router.get('/', async (request, response) => {
   if (request.user.role === 'CUSTOMER') {

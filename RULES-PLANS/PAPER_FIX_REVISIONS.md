@@ -754,3 +754,12 @@ Remove "Unpaid balances" from the tile list. "Orders to prepare" counts today's 
 
 ### Figures to retake after A11–A17
 2 / 2.1 (Dashboard tiles), 6 and 7 (Order Management, Walk-in with payment), 13 (Payment & Billing), 15 / 15.1 (Checkout), 15.2 (receipt and the pay-or-cancel page), and remove the Production figure.
+
+### A16 revised (2026-10-16, after the user's review)
+
+- Order Management's day filter is **Today**, **Upcoming**, and a **Date** picker for one day (from today on). There is no "Past": finished days are history, kept in Payment & Billing (receipts) and the reports.
+- Statuses shown: **Ready for pickup**, **Ready for delivery**, **Out for delivery** (from the driver's phone), **Completed**. No Placed, Confirmed or In production.
+- The assumed (synthetic) sales history behind the forecast is no longer listed in Order Management or Payment & Billing; it stays in the database for the Forecast and stays out of sales reports.
+- Past test orders were deleted from the live and local databases on 2026-10-16 (`scripts/delete-past-test-orders.sql`, after a full backup).
+
+In fix 2 of A11–A17, replace "Today, Upcoming, Past" with "Today and Upcoming, or one chosen date".

@@ -53,20 +53,24 @@ const matchesFilter = (order, filter) => {
 // The date filter (A16): by the order's own day — the Manila date it is
 // picked up or delivered (its requested time), or the day it was placed
 // when it named none. A reserved order shows under Upcoming until its day,
-// then under Today.
+// then under Today. A date picker looks up one day. There is no "Past":
+// finished days are history, kept in Payment & Billing and the reports.
 const manilaDay = (value) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date(value))
 const orderDay = (order) => manilaDay(order.requestedFulfillmentTime ?? order.orderDate)
 const dayFilters = [
   { key: 'TODAY', label: 'Today' },
   { key: 'UPCOMING', label: 'Upcoming' },
-  { key: 'PAST', label: 'Past' },
 ]
+// `filter` is TODAY, UPCOMING, ALL (an order opened from elsewhere), or a
+// picked date ('YYYY-MM-DD').
 const matchesDay = (order, filter, today) => {
   const day = orderDay(order)
+  if (filter === 'ALL') return true
   if (filter === 'TODAY') return day === today
   if (filter === 'UPCOMING') return day > today
-  return day < today
+  return day === filter
 }
+const isPickedDate = (filter) => /^\d{4}-\d{2}-\d{2}$/.test(filter)
 
 // No refunds (CLIENT_REVISIONS_PLAN.md, R2): an order with any payment
 // cannot be cancelled.
@@ -222,7 +226,7 @@ function StaffOrderManagement({ user, params }) {
     const term = search.trim().toLowerCase()
     return orders.filter((order) => {
       if (!matchesFilter(order, statusFilter)) return false
-      if (dayFilter !== 'ALL' && !matchesDay(order, dayFilter, today)) return false
+      if (!matchesDay(order, dayFilter, today)) return false
       if (!term) return true
       return matchesOrderSearch(order, term) || (order.customerName ?? 'walk-in').toLowerCase().includes(term)
     })
@@ -412,10 +416,14 @@ function StaffOrderManagement({ user, params }) {
                 </Button>
               )
             })}
+            <label className="flex items-center gap-1.5 text-xs text-ink-500">
+              Date
+              <Input type="date" value={isPickedDate(dayFilter) ? dayFilter : ''} min={today} onChange={(event) => setDayFilter(event.target.value || 'TODAY')} aria-label="Show the orders for one date" className="w-40" />
+            </label>
           </div>
           <div role="group" aria-label="Filter by status" className="mt-2 flex flex-wrap gap-1.5">
             {statusFilters.map((filter) => {
-              const count = orders.filter((order) => (dayFilter === 'ALL' || matchesDay(order, dayFilter, today)) && matchesFilter(order, filter.key)).length
+              const count = orders.filter((order) => matchesDay(order, dayFilter, today) && matchesFilter(order, filter.key)).length
               return (
                 <Button key={filter.key} type="button" size="sm" variant={statusFilter === filter.key ? 'primary' : 'secondary'} aria-pressed={statusFilter === filter.key} onClick={() => setStatusFilter(filter.key)}>
                   {filter.label} <span className="tabular-nums opacity-70">{count}</span>
