@@ -10,6 +10,7 @@ import { bcryptRounds, findDuplicateAccount } from '../lib/accounts.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { recordSecurityEvent } from '../lib/securityEvents.js'
 import { normalize, normalizeEmail, parseId, validateAccountFields, validateContactNumberField, validateEmailField, validateName, validatePasswordField } from '../lib/validation.js'
+import { forgetTrustedDevices } from '../lib/trustedDevices.js'
 
 const router = express.Router()
 
@@ -206,6 +207,7 @@ router.patch('/:id', async (request, response) => {
     // above has had a chance to fail fast.
     const passwordHash = updates.password !== undefined ? await bcrypt.hash(updates.password, bcryptRounds) : null
     await client.query('UPDATE users SET is_active = COALESCE($1, is_active), password_hash = COALESCE($2, password_hash) WHERE user_id = $3', [updates.isActive ?? null, passwordHash, userId])
+    if (passwordHash) await forgetTrustedDevices(client, userId)
 
     // LOGIN_SPLIT_PLAN.md Decision 5 — a reset ends ALL of this account's
     // sessions, not "all but the caller's". auth.js's PATCH /password

@@ -820,3 +820,14 @@ Plan: RULES-PLANS/RESERVE_SMS_PLAN.md. Migration 032.
 - New data: `phone_verifications` (texted codes), `customers.contact_verified_at`, and on `orders` the walk-in or reservation customer's `guest_name`, `guest_contact`, `guest_email`, `guest_contact_verified_at`, `is_reservation` and `receipt_token_hash`. Update the ERD and data dictionary.
 
 Add use cases "Verify contact number (SMS)" (Customer, Cashier) and "Reserve order" (Cashier), and "View reservation receipt" (Customer, no account).
+
+### Sign-in changes (2026-10-20)
+
+- **No 30-minute idle logout.** Admin, cashier and delivery personnel are no longer signed out after 30 minutes without activity. They keep the same 7-day session as customers, and still sign out themselves. The rule can be turned back on with the server setting `STAFF_IDLE_LOGOUT=on`. **Remove or reword** the thesis line "idle accounts are automatically logged out" (p.92), and any security table row or test case that lists it.
+- **Trust this device for 30 days (admin).** The admin sign-in code step has a **Trust this device for 30 days** box, ticked by default.
+  - When it is ticked, that browser gets a private cookie, and only a hash of its value is stored (`trusted_devices`, migration 033).
+  - For 30 days, signing in from that browser needs only the username and password; the emailed code is skipped. Another browser still needs the code.
+  - Changing or resetting the password forgets every trusted device.
+  - Each skip is logged as `OTP_SKIPPED_TRUSTED_DEVICE`.
+  - Update the admin two-factor description and the login flowchart.
+- **Sign out on phones.** My Profile now ends with a **Sign out** button for every role. The staff header also fits its Log out button on a phone, because the name initial is hidden on small screens. A customer on a phone signs out from My Profile (the account icon in the header).

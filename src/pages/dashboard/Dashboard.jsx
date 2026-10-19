@@ -118,13 +118,13 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
         <Link to="/" aria-label="Go to home">
           <Brand compact />
         </Link>
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
           <NotificationBell user={user} onOpen={openNotified} />
           <span className="hidden text-right text-xs text-ink-500 sm:block">
             <strong className="block font-semibold text-ink-900">{user.name}</strong>
             {user.role}
           </span>
-          <div className="grid h-9 w-9 place-items-center rounded-full bg-brand-100 font-semibold text-brand-700">{user.name[0]}</div>
+          <div className="hidden h-9 w-9 place-items-center rounded-full bg-brand-100 font-semibold text-brand-700 sm:grid">{user.name[0]}</div>
           {/* Stage 1 primitive (per the audit's Stage 2 scope note) — this
               is a generic secondary action, not navigation, so it's the
               one control in this shell that goes through <Button>. */}
@@ -202,7 +202,7 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
               only DashboardHome — see its M2 fix, UI_AUDIT.md) can switch
               to another permitted module the same way the sidebar/mobile
               nav above does, instead of faking a link that goes nowhere. */}
-          <ActiveModuleComponent key={`${activeModule}:${JSON.stringify(moduleParams)}`} user={user} activeModule={activeModule} params={moduleParams} onUserUpdated={onUserUpdated} onNavigate={openModule} />
+          <ActiveModuleComponent key={`${activeModule}:${JSON.stringify(moduleParams)}`} user={user} activeModule={activeModule} params={moduleParams} onUserUpdated={onUserUpdated} onNavigate={openModule} onLogout={onLogout} />
         </main>
       </div>
     </div>

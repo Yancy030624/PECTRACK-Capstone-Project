@@ -14,6 +14,7 @@ import { issueEmailVerification, redeemEmailVerification } from '../lib/emailVer
 import { recordSecurityEvent } from '../lib/securityEvents.js'
 import { consumeVerifiedPhone } from '../lib/phoneVerification.js'
 import { normalizePhone } from '../lib/sms.js'
+import { forgetTrustedDevices, isTrustedDevice, trustDevice, trustedDeviceCookieName, trustedDeviceCookieOptions } from '../lib/trustedDevices.js'
 import { sendEmailChangedNotice, sendMail, sendOtpEmail } from '../lib/mail.js'
 import { normalize, normalizeEmail, validateContactNumberField, validateCustomerRegistration, validateEmailField, validateName, validatePasswordField, validatePersonName } from '../lib/validation.js'
 
@@ -296,6 +297,17 @@ router.post('/login', authLimiter, loginAccountLimiter, async (request, response
   // No session is created here. The reply carries only the challenge
   // token, which is useless without the code, so a correct password alone
   // leaves the caller with nothing they can act on.
+  // "Trust this device for 30 days" (migration 033): a browser the admin
+  // trusted after a correct code skips the code until the trust expires.
+  // The password above was still checked in full.
+  if (user.user_type === 'ADMIN' && await isTrustedDevice(user.user_id, parseCookies(request.headers.cookie)[trustedDeviceCookieName])) {
+    const trustedSessionId = await createSession(user.user_id)
+    recordSecurityEvent({ request, type: 'OTP_SKIPPED_TRUSTED_DEVICE', userId: user.user_id, username: user.username })
+    recordSecurityEvent({ request, type: 'LOGIN_SUCCESS', userId: user.user_id, username: user.username, detail: 'ADMIN, trusted device' })
+    response.cookie(sessionCookieName, trustedSessionId, request.body.rememberMe === false ? sessionCookieOptionsForBrowserSession : sessionCookieOptions)
+    return response.json({ user: toPublicUser(user) })
+  }
+
   if (user.user_type === 'ADMIN') {
     const { code, challengeToken } = await createOtpCode(user.user_id)
     try {
@@ -442,6 +454,7 @@ router.post('/reset-password', authLimiter, async (request, response) => {
     resetUsername = row.username ?? null
     await client.query('UPDATE users SET password_hash = $1, failed_login_attempts = 0, locked_until = NULL WHERE user_id = $2', [passwordHash, row.user_id])
     await client.query('DELETE FROM sessions WHERE user_id = $1', [row.user_id])
+    await forgetTrustedDevices(client, row.user_id)
     // Opening this link proved the mailbox, so for a customer it also
     // confirms their email (migration 017) — but only if the link went to
     // the address the account holds NOW. A link from before an email
@@ -517,6 +530,9 @@ router.post('/verify-otp', authLimiter, async (request, response) => {
   recordSecurityEvent({ request, type: 'OTP_SUCCESS', userId: user.user_id, username: user.username })
   recordSecurityEvent({ request, type: 'LOGIN_SUCCESS', userId: user.user_id, username: user.username, detail: 'ADMIN, second factor verified' })
   response.cookie(sessionCookieName, sessionId, sessionCookieOptions)
+  if (request.body.trustDevice === true) {
+    response.cookie(trustedDeviceCookieName, await trustDevice(user.user_id, request.headers['user-agent']), trustedDeviceCookieOptions)
+  }
   return response.json({ user: toPublicUser(user) })
 })
 
@@ -576,6 +592,7 @@ router.patch('/password', requireAuth, async (request, response) => {
 
   const passwordHash = await bcrypt.hash(newPassword, bcryptRounds)
   await pool.query('UPDATE users SET password_hash = $1 WHERE user_id = $2', [passwordHash, user.user_id])
+  await forgetTrustedDevices(pool, user.user_id)
 
   // Sign out everywhere else. Sessions are independent of the password —
   // they're rows keyed by a random id — so without this, changing a

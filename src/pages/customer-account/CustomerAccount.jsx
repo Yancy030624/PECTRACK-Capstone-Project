@@ -159,7 +159,7 @@ export function CustomerAccount({ user, onLogout, onUserUpdated }) {
           same components the staff shell renders, and giving them a second
           set of spacing rules here is how the two drift apart. */}
       <main className="mx-auto w-full max-w-5xl flex-1 pt-6 pb-4 sm:pt-8">
-        <ActivePanel user={user} onUserUpdated={onUserUpdated} onNavigate={navigateToModule} />
+        <ActivePanel user={user} onUserUpdated={onUserUpdated} onNavigate={navigateToModule} onLogout={onLogout} />
       </main>
 
       <SiteFooter />

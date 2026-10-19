@@ -30,7 +30,7 @@ const emptyPasswordForm = { currentPassword: '', newPassword: '', confirmPasswor
 // handleToggleActive below each send exactly one boolean field
 // (isDefault: true / isActive: bool) and are unchanged from before this
 // pass.
-export function MyProfile({ user, onUserUpdated }) {
+export function MyProfile({ user, onUserUpdated, onLogout }) {
   const isCustomer = user.role === 'CUSTOMER'
   const tabs = isCustomer ? ['Profile', 'Addresses', 'Password'] : ['Profile', 'Password']
   const [activeTab, setActiveTab] = useState('Profile')
@@ -53,6 +53,15 @@ export function MyProfile({ user, onUserUpdated }) {
       {activeTab === 'Profile' && <ProfileTab user={user} onUserUpdated={onUserUpdated} />}
       {activeTab === 'Addresses' && isCustomer && <AddressesTab />}
       {activeTab === 'Password' && <PasswordTab />}
+
+      {/* Sign out lives here too (the user, 2026-10-20): on a phone the
+          header has no room for it, and My Profile is where people look. */}
+      {onLogout && (
+        <div className="mt-8 flex max-w-lg flex-wrap items-center justify-between gap-3 border-t border-line-200 pt-5">
+          <p className="text-sm text-ink-500">Signed in as <strong className="font-semibold text-ink-900">{user.name}</strong></p>
+          <Button type="button" variant="secondary" onClick={onLogout}>Sign out</Button>
+        </div>
+      )}
     </section>
   )
 }

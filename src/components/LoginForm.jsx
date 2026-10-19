@@ -69,6 +69,9 @@ export function LoginForm({ mode = 'customer', onModeChange = () => {}, onLogin,
   const [pendingOtp, setPendingOtp] = useState(null)
   // Store what the person types into the verification-code field.
   const [otpCode, setOtpCode] = useState('')
+  // "Trust this device for 30 days" (migration 033, the user 2026-10-20):
+  // ticked, this browser skips the emailed code at the next sign-ins.
+  const [trustDevice, setTrustDevice] = useState(true)
 
   // Send credentials to the server, which verifies the bcrypt hash.
   const handleSubmit = async (event) => {
@@ -104,7 +107,7 @@ export function LoginForm({ mode = 'customer', onModeChange = () => {}, onLogin,
       return
     }
     try {
-      const data = await apiPost('/api/auth/verify-otp', { challengeToken: pendingOtp.challengeToken, code: otpCode })
+      const data = await apiPost('/api/auth/verify-otp', { challengeToken: pendingOtp.challengeToken, code: otpCode, trustDevice })
       setError('')
       onLogin(data.user)
     } catch (error) {
@@ -142,6 +145,7 @@ export function LoginForm({ mode = 'customer', onModeChange = () => {}, onLogin,
           <div className="mt-6 md:mt-8"><span className={`rounded-full px-3 py-1.5 text-[10px] font-bold ${theme.badge}`}>Verification Required</span><h2 id="login-heading" className={`mt-3 text-3xl font-extrabold leading-[1.05] ${theme.heading}`}>Enter your<br />code</h2><p className="mt-2 text-xs font-medium text-stone-500">We sent a 6-digit code to the email on file for {pendingOtp.username}. It expires in 5 minutes.</p></div>
           <form className="mt-6 space-y-3" onSubmit={handleOtpSubmit} noValidate>
             <div><label htmlFor="otp-code" className="mb-1.5 block text-xs font-bold">Email verification code</label><input id="otp-code" value={otpCode} onChange={(event) => setOtpCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" placeholder="123456" maxLength={6} className={`${fieldClass} px-4 py-2.5 text-center text-lg font-bold tracking-[0.4em]`} /></div>
+            <label className="flex cursor-pointer items-start gap-2 py-1 text-xs font-bold"><input type="checkbox" checked={trustDevice} onChange={(event) => setTrustDevice(event.target.checked)} className={`mt-0.5 h-5 w-5 shrink-0 ${theme.accent}`} /><span>Trust this device for 30 days<span className="block font-medium text-stone-500">No code needed here again until then. Leave it unticked on a shared computer.</span></span></label>
             {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{error}</p>}
             <button type="submit" className={`mt-5 w-full rounded-2xl py-2.5 text-sm font-bold text-white shadow-md transition ${theme.button}`}>Verify</button>
             <button type="button" onClick={cancelOtp} className={`w-full rounded-2xl bg-white py-2.5 text-xs font-bold shadow-md ring-1 ring-stone-100 transition hover:bg-stone-50 ${theme.heading}`}>Back to login</button>

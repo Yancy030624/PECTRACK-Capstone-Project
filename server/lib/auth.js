@@ -55,6 +55,8 @@ export async function pruneExpiredAuthRows() {
   // Password reset tokens (migration 010) get the same grace period, for
   // the same support-question reason.
   const resetTokens = await pool.query(`DELETE FROM password_reset_tokens WHERE expires_at <= CURRENT_TIMESTAMP - ($1 * INTERVAL '1 day')`, [expiredOtpGraceDays])
+  // Trusted admin devices past their 30 days (migration 033).
+  await pool.query('DELETE FROM trusted_devices WHERE expires_at <= CURRENT_TIMESTAMP')
   return { sessions: sessions.rowCount, otpCodes: otpCodes.rowCount, resetTokens: resetTokens.rowCount }
 }
 
@@ -77,6 +79,10 @@ export async function createSession(userId) {
 // X-Pectrack-Background and does not count as activity; otherwise a screen
 // left open would keep its session alive forever.
 export const staffIdleLimitMinutes = 30
+// OFF since 2026-10-20, at the user's request: admin, cashier and driver
+// stay signed in like a customer (the 7-day session). STAFF_IDLE_LOGOUT=on
+// brings the 30-minute rule back; the tests switch it here.
+export const idleLogout = { enabled: process.env.STAFF_IDLE_LOGOUT === 'on' }
 const touchEverySeconds = 60
 export const backgroundRequestHeader = 'x-pectrack-background'
 
@@ -85,14 +91,14 @@ export const backgroundRequestHeader = 'x-pectrack-background'
 async function resolveSession(sessionId, request) {
   const result = await pool.query(
     `SELECT u.user_id, u.username, u.user_type, u.is_active,
-            (u.user_type <> 'CUSTOMER' AND s.last_seen_at < CURRENT_TIMESTAMP - make_interval(mins => $2)) AS idle,
+            ($4::boolean AND u.user_type <> 'CUSTOMER' AND s.last_seen_at < CURRENT_TIMESTAMP - make_interval(mins => $2)) AS idle,
             (s.last_seen_at < CURRENT_TIMESTAMP - make_interval(secs => $3)) AS stale,
             ${profileColumnsSql}
      FROM sessions s
      JOIN users u ON u.user_id = s.user_id
      ${profileJoinsSql}
      WHERE s.session_id = $1 AND s.expires_at > CURRENT_TIMESTAMP`,
-    [sessionId, staffIdleLimitMinutes, touchEverySeconds],
+    [sessionId, staffIdleLimitMinutes, touchEverySeconds, idleLogout.enabled],
   )
   const row = result.rows[0]
   if (!row || !row.is_active) return {}

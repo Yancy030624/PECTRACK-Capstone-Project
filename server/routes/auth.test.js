@@ -14,7 +14,7 @@ import bcrypt from 'bcrypt'
 import app from '../app.js'
 import { resetRateLimits } from '../lib/security.js'
 import { pool } from '../db.js'
-import { createSession, sessionCookieName } from '../lib/auth.js'
+import { createSession, idleLogout, sessionCookieName } from '../lib/auth.js'
 
 const runId = crypto.randomUUID().slice(0, 8)
 const randomContactNumber = () => `09${Math.floor(100000000 + Math.random() * 899999999)}`
@@ -713,6 +713,71 @@ describe('admin login and the email OTP second factor', () => {
   // file — that redeeming a valid code authenticates specifically as the
   // ADMIN it was seeded for — now lives as an extra assertion on 'accepts
   // the correct code once...' above, so no coverage was actually lost.
+
+  // "Trust this device for 30 days" (migration 033).
+  const cookieFrom = (response, name) => response.headers.getSetCookie().find((cookie) => cookie.startsWith(`${name}=`))
+  const loginFrom = (trustedCookie, password = admin.password) => fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...(trustedCookie && { Cookie: trustedCookie }) },
+    body: JSON.stringify({ identifier: admin.username, password }),
+  })
+  const trustThisDevice = async () => {
+    const challengeToken = await seedOtp('864209')
+    const verified = await fetch(`${baseUrl}/api/auth/verify-otp`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challengeToken, code: '864209', trustDevice: true }),
+    })
+    assert.equal(verified.status, 200)
+    const trusted = cookieFrom(verified, 'pectrack_trusted')
+    assert.ok(trusted, 'the browser is given a trust cookie')
+    assert.match(trusted, /HttpOnly/i)
+    assert.match(trusted, /Path=\/api\/auth/)
+    assert.match(trusted, /Max-Age=2592000/, '30 days')
+    return trusted.split(';')[0]
+  }
+
+  test('a trusted device signs the admin in with the password alone; no trust, no skip', async () => {
+    const trusted = await trustThisDevice()
+    const skipped = await loginFrom(trusted)
+    assert.equal(skipped.status, 200)
+    const body = await skipped.json()
+    assert.equal(body.otpRequired, undefined)
+    assert.equal(body.user.role, 'ADMIN')
+    assert.ok(cookieFrom(skipped, 'pectrack_sid'))
+
+    // The trust is not a password: a wrong one still fails.
+    assert.equal((await loginFrom(trusted, 'Wrong-Password-1!')).status, 401)
+    // Another browser, or a made-up token, still gets a code.
+    assert.equal((await (await loginFrom()).json()).otpRequired, true)
+    assert.equal((await (await loginFrom('pectrack_trusted=made-up-token')).json()).otpRequired, true)
+  })
+
+  test('without the box ticked no trust is given; an expired trust asks for the code again', async () => {
+    const challengeToken = await seedOtp('531975')
+    const verified = await fetch(`${baseUrl}/api/auth/verify-otp`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challengeToken, code: '531975' }),
+    })
+    assert.equal(verified.status, 200)
+    assert.equal(cookieFrom(verified, 'pectrack_trusted'), undefined)
+
+    const trusted = await trustThisDevice()
+    await pool.query(`UPDATE trusted_devices SET expires_at = CURRENT_TIMESTAMP - INTERVAL '1 minute' WHERE user_id = $1`, [adminUserId])
+    assert.equal((await (await loginFrom(trusted)).json()).otpRequired, true)
+  })
+
+  test('changing the password forgets every trusted device', async () => {
+    const trusted = await trustThisDevice()
+    const signedIn = await loginFrom(trusted)
+    const session = cookieFrom(signedIn, 'pectrack_sid').split(';')[0]
+    const newPassword = 'Admin-New-Password-8!'
+    const changed = await fetch(`${baseUrl}/api/auth/password`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: session },
+      body: JSON.stringify({ currentPassword: admin.password, newPassword, confirmPassword: newPassword }),
+    })
+    assert.equal(changed.status, 200, await changed.clone().text())
+    admin.password = newPassword
+    assert.equal((await (await loginFrom(trusted)).json()).otpRequired, true)
+  })
 })
 
 // Regression cover for the account lockout. Previously every failed
@@ -1194,6 +1259,16 @@ describe('inactivity timeout', () => {
     await pool.query('DELETE FROM customers WHERE user_id = ANY($1)', [userIds])
     await pool.query('DELETE FROM users WHERE user_id = ANY($1)', [userIds])
     await new Promise((resolve) => server.close(resolve))
+  })
+
+  // Off by default since 2026-10-20; these tests switch it on.
+  beforeEach(() => { idleLogout.enabled = true })
+  after(() => { idleLogout.enabled = false })
+
+  test('with the idle rule off (the default), a staff session idle for hours stays signed in', async () => {
+    idleLogout.enabled = false
+    const sessionId = await sessionIdle(cashierUserId, 5 * 60)
+    assert.equal((await me(sessionId)).status, 200)
   })
 
   const sessionIdle = async (userId, minutes) => {
