@@ -802,3 +802,21 @@ Figures for Delivery Management, the driver's My Deliveries, Order Management de
 - **Product Management** is no longer a separate module. It is now the **Edit Products** tab of Inventory Management (tabs: Products, Ingredients, Edit Products; Edit Products is admin only). The screen is simpler: a search box, **Categories** and **Add product** buttons, category filter buttons, and one row per product (photo, name, size or pack, category, price, an **On sale** switch, Edit). Add and Edit open the same form (photo, name, price, category, size or pack, description, on sale); Delete is inside the form.
 
 The admin main menu is now: Dashboard, Order Management, Inventory Management, Payment & Billing, Delivery Management, Reporting & Analytics, User Management, My Profile. Update the module list, the system architecture / module diagrams, the use-case diagram, and the figures for Product, Customer and Staff Management to match.
+
+### Reserve, SMS codes and proof of order (adviser, 2026-10-19)
+
+Plan: RULES-PLANS/RESERVE_SMS_PLAN.md. Migration 032.
+
+- **SMS (Semaphore, a Philippine SMS gateway).** The system sends text messages through Semaphore's API. It is used for one-time codes that prove a contact number, and for the order number of a reservation. Add Semaphore to the tools and technologies list and to the system architecture (an external service beside Gmail and PayMongo). Live texting needs a Semaphore account with prepaid credits; until then the codes are off on the live site.
+- **Customer sign-up** now proves the contact number. The customer taps **Text me a code**, types the 6-digit code from the SMS, and taps **Verify** before **Create account**. The code lasts 10 minutes, allows 5 tries, and a new code can be asked for after a minute. Only a hash of the code is stored. Update the registration process description, its flowchart or DFD, and the registration figure.
+- **Walk-in tab: Walk-in / Reserve switch.**
+  - **Walk-in:** the customer's name (required) and, if not now, the date and time it is needed.
+  - **Reserve:** the customer's name, contact number (proven with a texted code that the customer reads to the cashier), email, and the pickup date and time, all required.
+  - Both are paid in full at the counter (cash or GCash) and are Ready for pickup at once. Reservations are marked **Reserved** in the order list and detail.
+- **Proof of order for a reservation**, sent automatically once it is placed:
+  1. an **email receipt** (order number, items, total paid, pickup date and time, bakery address and hours) with a **private receipt link**;
+  2. the **receipt page** on the storefront, opened from that link with no sign-in, which shows the order number large with the pickup date and time;
+  3. an **SMS with the order number**, total and pickup time, for a customer without internet ("Show this text at the counter").
+- New data: `phone_verifications` (texted codes), `customers.contact_verified_at`, and on `orders` the walk-in or reservation customer's `guest_name`, `guest_contact`, `guest_email`, `guest_contact_verified_at`, `is_reservation` and `receipt_token_hash`. Update the ERD and data dictionary.
+
+Add use cases "Verify contact number (SMS)" (Customer, Cashier) and "Reserve order" (Cashier), and "View reservation receipt" (Customer, no account).

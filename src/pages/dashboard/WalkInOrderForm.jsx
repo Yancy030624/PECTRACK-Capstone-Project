@@ -10,6 +10,7 @@ import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatPeso } from '../../lib/format.js'
 import { NeededByFields } from '../../components/NeededByFields.jsx'
 import { checkPicked, toRequestedTime } from '../../lib/orderHours.js'
+import { usePhoneVerification } from '../../lib/usePhoneVerification.js'
 
 // The cashier's Walk-in page (the adviser, 2026-10-16): the customer is
 // standing at the counter, so the page asks only what to sell and, if it
@@ -25,8 +26,25 @@ import { checkPicked, toRequestedTime } from '../../lib/orderHours.js'
 // money here, before Place order — cash (the amount received, with the
 // change shown) or GCash (the reference number). The server saves the
 // order and its payment for the full total together, Ready for pickup.
+//
+// Walk-in or Reserve (the adviser, 2026-10-19; RULES-PLANS/RESERVE_SMS_PLAN.md):
+// a switch at the top. A walk-in asks only the customer's name; the date is
+// today unless a later one is picked. A reservation is for a later pickup
+// and asks name, contact number (proven with a texted code when codes are
+// on), email, and the pickup date and time. Both are paid now. The
+// reservation's receipt is emailed and its order number texted.
+const emptyCustomer = { name: '', contactNumber: '', email: '' }
 export function WalkInOrderForm({ onCreated }) {
   const [products, setProducts] = useState(null)
+  const [mode, setMode] = useState('WALK_IN')
+  const isReserve = mode === 'RESERVE'
+  const [customer, setCustomer] = useState(emptyCustomer)
+  const phone = usePhoneVerification('RESERVE')
+  const setCustomerField = (field, value) => {
+    setCustomer((current) => ({ ...current, [field]: value }))
+    setErrors((current) => ({ ...current, [field === 'name' ? 'customerName' : field]: undefined }))
+    if (field === 'contactNumber') phone.reset()
+  }
 
   const [lines, setLines] = useState([])
   // A Manila date and time ('YYYY-MM-DD', 'HH:mm'); both blank means "as
@@ -85,6 +103,8 @@ export function WalkInOrderForm({ onCreated }) {
 
   const resetDraft = () => {
     setLines([])
+    setCustomer(emptyCustomer)
+    phone.reset()
     setMethod('CASH')
     setCashReceived('')
     setGcashReference('')
@@ -99,6 +119,19 @@ export function WalkInOrderForm({ onCreated }) {
     setMessage('')
     if (lines.length === 0) {
       setMessage('Add at least one item.')
+      return
+    }
+    const customerErrors = {}
+    if (!customer.name.trim()) customerErrors.customerName = 'Enter the customer\'s name.'
+    if (isReserve) {
+      if (!customer.contactNumber.trim()) customerErrors.contactNumber = 'Enter the customer\'s contact number.'
+      else if (phone.required && !phone.verified) customerErrors.contactNumber = 'Send a code to this number and verify it first.'
+      if (!customer.email.trim()) customerErrors.email = 'Enter the customer\'s email.'
+      if (!neededDate || !neededTime) customerErrors.requestedFulfillmentTime = 'Choose the pickup date and time.'
+    }
+    if (Object.keys(customerErrors).length) {
+      setErrors(customerErrors)
+      setMessage('Fill in the customer details marked below.')
       return
     }
     const timeError = checkPicked(neededDate, neededTime)
@@ -121,12 +154,15 @@ export function WalkInOrderForm({ onCreated }) {
         orderType: 'PICKUP',
         items: lines.map(({ productId, quantity }) => ({ productId, quantity })),
         payment: method === 'GCASH' ? { method, gatewayReference: gcashReference.trim() } : { method },
+        customerName: customer.name.trim(),
       }
       if (neededDate) body.requestedFulfillmentTime = toRequestedTime(neededDate, neededTime)
+      if (isReserve) body.reservation = { contactNumber: customer.contactNumber.trim(), email: customer.email.trim(), phoneVerificationToken: phone.token ?? undefined }
 
       const data = await apiPost('/api/orders', body)
+      const pickupDay = neededDate
       resetDraft()
-      onCreated?.(data.order.id)
+      onCreated?.(data.order.id, isReserve ? data.message : null, pickupDay)
     } catch (error) {
       if (error.status === 409 || (error.status === 422 && error.errors?.items)) {
         setMessage('One or more items no longer have enough stock, or are no longer available. Review the order below and try again.')
@@ -145,6 +181,62 @@ export function WalkInOrderForm({ onCreated }) {
   return (
     <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
       <div className="space-y-4">
+        <Card className="p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-ink-900">Customer</h2>
+            <div role="group" aria-label="Order kind" className="inline-flex rounded-full border border-line-200 bg-surface p-0.5">
+              {[['WALK_IN', 'Walk-in'], ['RESERVE', 'Reserve']].map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={mode === key}
+                  onClick={() => { setMode(key); setErrors({}); setMessage('') }}
+                  className={`min-h-8 rounded-full px-4 text-sm font-medium transition ${mode === key ? 'bg-ink-900 text-white' : 'text-ink-700 hover:bg-surface-sunk'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="mt-1 text-xs text-ink-500">
+            {isReserve ? 'For a later pickup. The receipt goes to their email and the order number to their phone.' : 'The customer is here now.'}
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <Field label="Name *" error={errors.customerName}>
+              <Input value={customer.name} onChange={(event) => setCustomerField('name', event.target.value)} placeholder="Customer's name" autoComplete="off" />
+            </Field>
+            {isReserve && (
+              <Field label="Email *" error={errors.email}>
+                <Input type="email" value={customer.email} onChange={(event) => setCustomerField('email', event.target.value)} placeholder="name@gmail.com" autoComplete="off" />
+              </Field>
+            )}
+          </div>
+          {isReserve && (
+            <div className="mt-3">
+              <Field label="Contact number *" error={errors.contactNumber}>
+                <div className="flex flex-wrap gap-2">
+                  <Input value={customer.contactNumber} onChange={(event) => setCustomerField('contactNumber', event.target.value)} inputMode="tel" placeholder="0917 123 4567" autoComplete="off" className="min-w-40 flex-1" />
+                  {phone.required && !phone.verified && (
+                    <Button type="button" size="sm" variant="secondary" className="h-9" onClick={() => phone.send(customer.contactNumber)} disabled={phone.busy || !customer.contactNumber.trim()}>
+                      {phone.token ? 'Send again' : 'Send code'}
+                    </Button>
+                  )}
+                </div>
+              </Field>
+              {phone.required && phone.verified && <p className="mt-1 text-xs font-semibold text-status-done-fg">✓ Number verified</p>}
+              {phone.required && !phone.verified && phone.token && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Input value={phone.code} onChange={(event) => phone.setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" placeholder="6-digit code" aria-label="Code from the text" className="w-36" />
+                  <Button type="button" size="sm" className="h-9" onClick={phone.check} disabled={phone.busy || phone.code.length !== 6}>Verify</Button>
+                  <span className="text-xs text-ink-500">Ask the customer for the code we texted.</span>
+                </div>
+              )}
+              {phone.info && <p className="mt-1 text-xs text-ink-500">{phone.info}</p>}
+              {phone.error && <p className="mt-1 text-xs text-red-700">{phone.error}</p>}
+            </div>
+          )}
+        </Card>
+
         <Card className="p-6">
           <h2 className="text-lg font-semibold text-ink-900">Items</h2>
           <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1.4fr]">
@@ -199,7 +291,7 @@ export function WalkInOrderForm({ onCreated }) {
         </Card>
 
         <Card className="p-6">
-          <p className="mb-1 text-xs font-semibold text-ink-700">Needed by</p>
+          <p className="mb-1 text-xs font-semibold text-ink-700">{isReserve ? 'Pickup date and time *' : 'Needed by'}</p>
           <NeededByFields
             idPrefix="walk-in-needed"
             date={neededDate}
@@ -269,7 +361,7 @@ export function WalkInOrderForm({ onCreated }) {
           </>
         )}
         <Button type="button" size="touch" className="mt-4 w-full" onClick={handleSubmit} disabled={submitting || lines.length === 0}>
-          {submitting ? 'Placing order…' : 'Place paid order'}
+          {submitting ? 'Placing order…' : isReserve ? 'Place paid reservation' : 'Place paid order'}
         </Button>
       </div>
     </div>

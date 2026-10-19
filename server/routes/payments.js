@@ -82,7 +82,7 @@ const mapPaymentListRow = (row) => ({
 // relies on). Reading it off row 0 gives GET / (below) the true total
 // match count in the SAME round trip as the page of rows itself, rather
 // than a second COUNT(*) query against the same filters.
-const paymentListSelectQuery = `SELECT p.payment_id, p.order_id, o.daily_number, o.order_day, o.status AS order_status, c.name AS customer_name,
+const paymentListSelectQuery = `SELECT p.payment_id, p.order_id, o.daily_number, o.order_day, o.status AS order_status, COALESCE(c.name, o.guest_name) AS customer_name,
             p.payment_method, p.amount, p.status, p.gateway_reference, p.payment_date, p.created_at,
             COALESCE(ra.name, rc.name, rd.name) AS recorded_by_name,
             p.refunded_at, p.refund_reason, fa.name AS refunded_by_name,

@@ -41,7 +41,7 @@ const actorJoin = (userColumn) => `
   LEFT JOIN delivery_personnel adp ON adp.user_id = au.user_id`
 const actorColumns = `COALESCE(aa.name, ac.name, acu.name, adp.name) AS actor_name, au.user_type AS actor_type`
 
-const orderColumns = `o.order_id, o.daily_number, o.order_day, o.order_type, o.total_amount, o.status AS order_status, c.name AS customer_name`
+const orderColumns = `o.order_id, o.daily_number, o.order_day, o.order_type, o.total_amount, o.status AS order_status, COALESCE(c.name, o.guest_name) AS customer_name`
 
 // $1 since (or null), $2 the viewer's user id, $3 the limit. Every query
 // leaves out what the viewer did themselves, which also gives Postgres a

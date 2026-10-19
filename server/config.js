@@ -64,6 +64,17 @@ export const config = {
   orders: {
     enforceNowHours: !process.env.NODE_TEST_CONTEXT,
   },
+  // SMS over Semaphore (lib/sms.js, RULES-PLANS/RESERVE_SMS_PLAN.md).
+  // `verifyPhones` decides whether sign-up and Reserve need a texted code:
+  // on whenever a key is set, and on a developer machine without one (the
+  // code prints in the server console). On the live site with no key it
+  // is off, so sign-up and Reserve keep working until credits are bought.
+  // Off under the test runner; the tests that test it turn it on.
+  sms: {
+    apiKey: process.env.SEMAPHORE_API_KEY,
+    senderName: process.env.SEMAPHORE_SENDER_NAME,
+    verifyPhones: !process.env.NODE_TEST_CONTEXT && (Boolean(process.env.SEMAPHORE_API_KEY) || process.env.NODE_ENV !== 'production'),
+  },
   paymongo: {
     secretKey: process.env.PAYMONGO_SECRET_KEY,
     webhookSecret: process.env.PAYMONGO_WEBHOOK_SECRET,

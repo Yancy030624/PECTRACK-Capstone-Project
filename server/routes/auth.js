@@ -12,6 +12,8 @@ import { createSession, parseCookies, requireAuth, sessionCookieName, sessionCoo
 import { authLimiter, loginAccountLimiter, passwordResetLimiter, registerLimiter, verificationLimiter } from '../lib/security.js'
 import { issueEmailVerification, redeemEmailVerification } from '../lib/emailVerification.js'
 import { recordSecurityEvent } from '../lib/securityEvents.js'
+import { consumeVerifiedPhone } from '../lib/phoneVerification.js'
+import { normalizePhone } from '../lib/sms.js'
 import { sendEmailChangedNotice, sendMail, sendOtpEmail } from '../lib/mail.js'
 import { normalize, normalizeEmail, validateContactNumberField, validateCustomerRegistration, validateEmailField, validateName, validatePasswordField, validatePersonName } from '../lib/validation.js'
 
@@ -84,6 +86,11 @@ async function createOtpCode(userId) {
 
 router.post('/register', registerLimiter, async (request, response) => {
   const { errors, values } = validateCustomerRegistration(request.body)
+  // The contact number is proven with a texted code when codes are on
+  // (config.sms.verifyPhones, RULES-PLANS/RESERVE_SMS_PLAN.md): it must
+  // then be a Philippine mobile number, and the form must have verified it.
+  const verifiedPhone = config.sms.verifyPhones && !errors.contactNumber ? normalizePhone(values.contactNumber) : null
+  if (config.sms.verifyPhones && !errors.contactNumber && !verifiedPhone) errors.contactNumber = 'Enter a Philippine mobile number, like 0917 123 4567.'
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
 
   const client = await pool.connect()
@@ -114,6 +121,15 @@ router.post('/register', registerLimiter, async (request, response) => {
        RETURNING name`,
       [user.user_id, values.firstName, values.lastName, values.contactNumber, values.email],
     )
+    if (config.sms.verifyPhones) {
+      const proven = await consumeVerifiedPhone(client, { verificationToken: request.body.phoneVerificationToken, phone: verifiedPhone, purpose: 'REGISTER' })
+      if (!proven) {
+        await client.query('ROLLBACK')
+        const message = 'Verify your contact number with the code we text you before creating the account.'
+        return response.status(422).json({ message, errors: { contactNumber: message } })
+      }
+      await client.query('UPDATE customers SET contact_verified_at = CURRENT_TIMESTAMP WHERE user_id = $1', [user.user_id])
+    }
     await client.query('COMMIT')
     recordSecurityEvent({ request, type: 'ACCOUNT_CREATED', userId: user.user_id, username: user.username, detail: 'CUSTOMER self-registration' })
 
@@ -663,7 +679,9 @@ router.patch('/me', requireAuth, async (request, response) => {
       await client.query(
         `UPDATE customers SET name = CASE WHEN $5 THEN name ELSE COALESCE($1, name) END,
                 first_name = COALESCE($6, first_name), last_name = COALESCE($7, last_name),
-                email = COALESCE($2, email), contact_num = COALESCE($3, contact_num)
+                email = COALESCE($2, email), contact_num = COALESCE($3, contact_num),
+                -- A different number is an unproven one (migration 032).
+                contact_verified_at = CASE WHEN $3::varchar IS NOT NULL AND $3::varchar IS DISTINCT FROM contact_num THEN NULL ELSE contact_verified_at END
           WHERE user_id = $4`,
         [updates.name ?? null, updates.email ?? null, updates.contactNumber ?? null, current.user_id, byParts, updates.firstName ?? null, updates.lastName ?? null],
       )

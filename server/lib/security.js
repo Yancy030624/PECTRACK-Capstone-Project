@@ -229,6 +229,24 @@ export const verificationLimiter = rateLimit({
   message: 'Too many verification emails requested. Please check your inbox, or try again later.',
 })
 
+// A texted code costs real money (Semaphore credits), so sending one gets
+// a tight allowance per address, like the verification email above.
+export const smsCodeLimiter = rateLimit({
+  name: 'sms-code',
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: 'Too many codes requested. Please wait and try again later.',
+})
+
+// The private receipt link (/r/:token): generous for a customer reloading
+// it, tight enough that guessing tokens gets nowhere.
+export const receiptLimiter = rateLimit({
+  name: 'receipt',
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  message: 'Too many requests. Please wait a few minutes and try again.',
+})
+
 export const imageLimiter = rateLimit({
   name: 'images',
   windowMs: 60 * 1000,

@@ -20,7 +20,11 @@ import { config } from '../config.js'
 import { checkOrderTime } from '../lib/orderHours.js'
 import { applyCancellationEffects, readyIfPaid } from '../lib/orderStatus.js'
 import { sendInBackground, sendOrderReadyEmailFor } from '../lib/notices.js'
-import { normalize, parseId } from '../lib/validation.js'
+import crypto from 'node:crypto'
+import { normalize, normalizeEmail, parseId, validateEmailField } from '../lib/validation.js'
+import { consumeVerifiedPhone } from '../lib/phoneVerification.js'
+import { normalizePhone } from '../lib/sms.js'
+import { sendReservationNotices } from '../lib/reservationNotices.js'
 
 const router = express.Router()
 
@@ -86,6 +90,7 @@ const mapOrderSummary = (row) => ({
   customerId: row.customer_id,
   customerName: row.customer_name,
   orderType: row.order_type,
+  isReservation: row.is_reservation,
   status: row.status,
   totalAmount: row.total_amount,
   orderDate: row.order_date,
@@ -102,7 +107,7 @@ const mapOrderSummary = (row) => ({
   ...mapBillingColumns(row),
 })
 
-const orderSummarySelectQuery = `SELECT o.order_id, o.daily_number, o.order_day, o.customer_id, c.name AS customer_name, o.order_type, o.status, o.total_amount, o.order_date, o.requested_fulfillment_time,
+const orderSummarySelectQuery = `SELECT o.order_id, o.daily_number, o.order_day, o.customer_id, COALESCE(c.name, o.guest_name) AS customer_name, o.order_type, o.status, o.total_amount, o.order_date, o.requested_fulfillment_time, o.is_reservation,
             ${billingListSql.columns}
      FROM orders o
      LEFT JOIN customers c ON c.customer_id = o.customer_id
@@ -170,9 +175,9 @@ router.get('/:id', async (request, response) => {
   if (!orderId) return response.status(404).json({ message: 'Order not found.' })
 
   const orderResult = await pool.query(
-    `SELECT o.order_id, o.daily_number, o.order_day, o.customer_id, c.name AS customer_name, o.processed_by, ca.name AS cashier_name,
+    `SELECT o.order_id, o.daily_number, o.order_day, o.customer_id, COALESCE(c.name, o.guest_name) AS customer_name, o.processed_by, ca.name AS cashier_name,
             o.order_type, o.status, o.instructions, o.requested_fulfillment_time,
-            o.total_amount, o.order_date
+            o.total_amount, o.order_date, o.is_reservation, o.guest_contact, o.guest_email, o.guest_contact_verified_at
      FROM orders o
      LEFT JOIN customers c ON c.customer_id = o.customer_id
      LEFT JOIN cashiers ca ON ca.cashier_id = o.processed_by
@@ -254,6 +259,9 @@ router.get('/:id', async (request, response) => {
       customerId: order.customer_id,
       customerName: order.customer_name,
       cashierName: order.cashier_name,
+      // A counter reservation's own details (RESERVE_SMS_PLAN.md).
+      isReservation: order.is_reservation,
+      ...(order.is_reservation && { guestContact: order.guest_contact, guestEmail: order.guest_email, guestContactVerified: Boolean(order.guest_contact_verified_at) }),
       orderType: order.order_type,
       status: order.status,
       instructions: order.instructions,
@@ -352,6 +360,32 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     // Otherwise customerId stays null — a walk-in order with no account.
   }
 
+  // Walk-in or Reserve at the counter (RULES-PLANS/RESERVE_SMS_PLAN.md).
+  // A walk-in carries the customer's name. A reservation carries name,
+  // contact number and email, a pickup date and time, and — when codes are
+  // on — a number proven by a texted code; its receipt goes to that email
+  // and its order number to that phone.
+  let guest = null
+  if (request.user.role !== 'CUSTOMER' && !customerId) {
+    const name = normalize(request.body.customerName)
+    if (name.length > 100) return response.status(422).json({ message: 'Keep the name to 100 characters or fewer.', errors: { customerName: 'Keep the name to 100 characters or fewer.' } })
+    guest = { name: name || null, isReservation: false }
+    if (request.body.reservation) {
+      const reservation = request.body.reservation
+      const errors = {}
+      if (!name) errors.customerName = 'Enter the customer\'s name.'
+      const phone = normalizePhone(reservation.contactNumber)
+      if (!phone) errors.contactNumber = 'Enter a Philippine mobile number, like 0917 123 4567.'
+      const email = normalizeEmail(reservation.email)
+      const emailError = email ? validateEmailField(email) : 'Enter the customer\'s email.'
+      if (emailError) errors.email = emailError
+      if (!fulfillment.value) errors.requestedFulfillmentTime = 'Choose the pickup date and time.'
+      if (orderType !== 'PICKUP') errors.orderType = 'A reservation is picked up at the bakery.'
+      if (Object.keys(errors).length) return response.status(422).json({ message: Object.values(errors)[0], errors })
+      guest = { ...guest, isReservation: true, phone, email, verificationToken: reservation.phoneVerificationToken }
+    }
+  }
+
   // Payment first (RULES-PLANS/PAYMENT_FIRST_PLAN.md): an order placed by
   // staff — a walk-in at the counter — is paid as it is placed, cash or
   // GCash by its reference number, for the order's full total. Without a
@@ -432,13 +466,31 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     // cancelled by the system if not paid with GCash within 15 minutes
     // (lib/staleOrders.js).
     const initialStatus = 'AWAITING_PAYMENT'
+    // A reservation's receipt link: the token goes in the email, only its
+    // hash is kept (GET /api/receipts/:token).
+    const receiptToken = guest?.isReservation ? crypto.randomBytes(24).toString('base64url') : null
     const orderResult = await client.query(
-      `INSERT INTO orders (customer_id, processed_by, order_type, address_id, instructions, requested_fulfillment_time, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO orders (customer_id, processed_by, order_type, address_id, instructions, requested_fulfillment_time, status,
+                           guest_name, guest_contact, guest_email, is_reservation, receipt_token_hash)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING order_id, daily_number, order_day`,
-      [customerId, processedBy, orderType, addressId, instructions, fulfillment.value, initialStatus],
+      [customerId, processedBy, orderType, addressId, instructions, fulfillment.value, initialStatus,
+        guest?.name ?? null, guest?.phone ?? null, guest?.email ?? null, guest?.isReservation ?? false,
+        receiptToken ? crypto.createHash('sha256').update(receiptToken).digest('hex') : null],
     )
     const orderId = orderResult.rows[0].order_id
+
+    // The reservation's number must have been proven by a texted code, in
+    // this transaction, so a refused order leaves the code usable.
+    if (guest?.isReservation && config.sms.verifyPhones) {
+      const proven = await consumeVerifiedPhone(client, { verificationToken: guest.verificationToken, phone: guest.phone, purpose: 'RESERVE' })
+      if (!proven) {
+        await client.query('ROLLBACK')
+        const message = 'Verify the customer\'s contact number with the texted code first.'
+        return response.status(422).json({ message, errors: { contactNumber: message } })
+      }
+      await client.query('UPDATE orders SET guest_contact_verified_at = CURRENT_TIMESTAMP WHERE order_id = $1', [orderId])
+    }
     // The order number people see is the order's own permanent id (the
     // adviser, 2026-10-16). orders.daily_number (migration 024) is still
     // filled in by its trigger but no longer shown.
@@ -537,9 +589,11 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     }
 
     await client.query('COMMIT')
+    const receiptUrl = receiptToken ? `${config.clientOrigin}/r/${receiptToken}` : null
+    if (receiptUrl) sendReservationNotices({ orderId, receiptUrl })
     return response.status(201).json({
-      message: staffPayment ? 'Order placed and paid.' : 'Order saved. Pay with GCash within 15 minutes to place it.',
-      order: { id: orderId, orderNumber, orderDay, status, totalAmount, orderType },
+      message: guest?.isReservation ? 'Reservation placed and paid. The receipt is on its way to the customer\'s email, and the order number by SMS.' : staffPayment ? 'Order placed and paid.' : 'Order saved. Pay with GCash within 15 minutes to place it.',
+      order: { id: orderId, orderNumber, orderDay, status, totalAmount, orderType, isReservation: guest?.isReservation ?? false, receiptUrl },
     })
   } catch (error) {
     await client.query('ROLLBACK')

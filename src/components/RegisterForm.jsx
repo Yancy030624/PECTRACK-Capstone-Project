@@ -3,6 +3,7 @@ import { apiPost } from '../api/client.js'
 import { Brand } from './Brand.jsx'
 import { PasswordToggle } from './PasswordToggle.jsx'
 import { passwordHint as describePassword, strongPasswordHint } from '../lib/password.js'
+import { usePhoneVerification } from '../lib/usePhoneVerification.js'
 
 // The registration form itself, lifted out of the old RegistrationPage so
 // it can live inside the auth pop-up — the same move LoginForm already
@@ -67,11 +68,15 @@ export function RegisterForm({ onSwitchToLogin }) {
   // single obvious next step instead of leaving an empty form under a
   // success line the way the old page did.
   const [created, setCreated] = useState(false)
+  // The contact number is proven with a texted code when codes are on
+  // (the adviser, 2026-10-19; RULES-PLANS/RESERVE_SMS_PLAN.md).
+  const phone = usePhoneVerification('REGISTER')
 
   // Update a single registration field without losing the others. Typing
   // into a field clears its own error, so the message goes as it is fixed.
   const updateField = (field, value) => {
     setForm({ ...form, [field]: value })
+    if (field === 'contactNumber') phone.reset()
     if (errors[field]) setErrors({ ...errors, [field]: undefined })
   }
   // The props every required input shares: its error is announced with it.
@@ -87,6 +92,7 @@ export function RegisterForm({ onSwitchToLogin }) {
   const handleSubmit = async (event) => {
     event.preventDefault()
     const missing = missingFields(form)
+    if (!missing.contactNumber && phone.required && !phone.verified) missing.contactNumber = 'Verify your contact number with the code we text you.'
     if (Object.keys(missing).length) {
       setErrors(missing)
       setMessage('Please fill in the fields marked below.')
@@ -96,7 +102,7 @@ export function RegisterForm({ onSwitchToLogin }) {
     setMessage('')
     setErrors({})
     try {
-      const data = await apiPost('/api/auth/register', form)
+      const data = await apiPost('/api/auth/register', { ...form, phoneVerificationToken: phone.token ?? undefined })
       setForm(emptyForm)
       setCreated(true)
       // The server's own wording — it says a confirmation link went out,
@@ -160,6 +166,23 @@ export function RegisterForm({ onSwitchToLogin }) {
                 <RequiredLabel htmlFor="contact-number">Contact number</RequiredLabel>
                 <input id="contact-number" maxLength={11} value={form.contactNumber} onChange={(event) => updateField('contactNumber', event.target.value)} autoComplete="tel" inputMode="tel" placeholder="09XXXXXXXXX" className={fieldClass} {...fieldProps('contactNumber')} />
                 <FieldError id="contactNumber-error" message={errors.contactNumber} />
+                {phone.required && (phone.verified ? (
+                  <p className="mt-1 text-xs font-bold text-emerald-700">✓ Number verified</p>
+                ) : (
+                  <div className="mt-2 space-y-2">
+                    <button type="button" onClick={() => phone.send(form.contactNumber)} disabled={phone.busy || !form.contactNumber.trim()} className="w-full rounded-2xl border border-crust-500 py-2 text-xs font-bold text-crust-700 transition hover:bg-cream-100 disabled:cursor-not-allowed disabled:opacity-60">
+                      {phone.token ? 'Send the code again' : 'Text me a code'}
+                    </button>
+                    {phone.token && (
+                      <div className="flex gap-2">
+                        <input value={phone.code} onChange={(event) => phone.setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" aria-label="Code from the text" className={fieldClass} />
+                        <button type="button" onClick={phone.check} disabled={phone.busy || phone.code.length !== 6} className="shrink-0 rounded-2xl bg-crust-600 px-4 text-xs font-bold text-white transition hover:bg-crust-700 disabled:cursor-not-allowed disabled:opacity-60">Verify</button>
+                      </div>
+                    )}
+                    {phone.info && <p className="text-xs text-stone-500">{phone.info}</p>}
+                    {phone.error && <p className="text-xs font-medium text-red-700">{phone.error}</p>}
+                  </div>
+                ))}
               </div>
             </div>
             <div>

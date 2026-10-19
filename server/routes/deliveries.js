@@ -143,7 +143,7 @@ const mapProofRow = (row) => ({
 
 const deliverySelectQuery = `SELECT d.delivery_id, d.order_id, d.delivery_personnel_id, dp.name AS delivery_personnel_name,
             d.status, d.assigned_at, d.delivered_at, d.failed_at, d.note,
-            o.status AS order_status, o.daily_number, o.order_day, o.total_amount, o.instructions, o.requested_fulfillment_time, c.name AS customer_name,
+            o.status AS order_status, o.daily_number, o.order_day, o.total_amount, o.instructions, o.requested_fulfillment_time, COALESCE(c.name, o.guest_name) AS customer_name,
             c.contact_num AS customer_contact_num, c.email AS customer_email, c.email_verified_at AS customer_email_verified_at, dp.email AS delivery_personnel_email,
             a.label, a.recipient_name, a.contact_num, a.address_line_1, a.address_line_2,
             a.barangay, a.municipality, a.province, a.postal_code, a.delivery_notes,
