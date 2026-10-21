@@ -346,12 +346,19 @@ router.get('/summary', async (_request, response) => {
     // earlier), and those already past the time the customer asked for.
     // The tile opens Order Management on Today; there is no production
     // step any more, the bread is baked before opening.
+    //
+    // Exactly the orders the tile opens: real ones (not the assumed sales
+    // history behind the forecast, which Order Management never lists)
+    // whose day is today. An earlier day's open order is closed by the
+    // system (lib/staleOrders.js), so counting "today or earlier" only
+    // ever added assumed rows the list then hid (the user, 2026-10-22).
     pool.query(`SELECT COUNT(*)::int AS to_prepare,
                        COUNT(*) FILTER (WHERE requested_fulfillment_time < CURRENT_TIMESTAMP)::int AS overdue
                   FROM orders
                  WHERE status IN ('READY_FOR_PICKUP', 'READY_FOR_DELIVERY')
+                   AND data_source = 'RECORDED'
                    AND (COALESCE(requested_fulfillment_time, order_date) AT TIME ZONE 'Asia/Manila')::date
-                       <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date`),
+                       = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date`),
   ])
   const todayRow = todayResult.rows[0]
 

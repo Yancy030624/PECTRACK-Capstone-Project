@@ -59,7 +59,7 @@ export function MyProfile({ user, onUserUpdated, onLogout }) {
       {onLogout && (
         <div className="mt-8 flex max-w-lg flex-wrap items-center justify-between gap-3 border-t border-line-200 pt-5">
           <p className="text-sm text-ink-500">Signed in as <strong className="font-semibold text-ink-900">{user.name}</strong></p>
-          <Button type="button" variant="secondary" onClick={onLogout}>Sign out</Button>
+          <Button type="button" variant="destructive" onClick={onLogout}>Sign out</Button>
         </div>
       )}
     </section>

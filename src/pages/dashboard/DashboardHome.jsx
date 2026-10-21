@@ -99,7 +99,7 @@ export function DashboardHome({ user, onNavigate }) {
       to: ['Inventory Management', { stockFilter: 'LOW' }],
     },
     {
-      label: 'Running low',
+      label: 'Product running low',
       goodLabel: 'product stock',
       value: stockCounts.OKAY,
       tone: stockCounts.OKAY > 0 ? 'okay' : 'good',

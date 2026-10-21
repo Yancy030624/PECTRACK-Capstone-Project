@@ -48,7 +48,7 @@ export function MarketingHeader({ user, onOpenLogin = () => {}, onOpenRegister =
             {user ? (
               <>
                 <Link to={isCustomer ? '/account' : '/dashboard'} aria-label="My account" className={iconCircle}>{userIcon}</Link>
-                <button type="button" onClick={onLogout} className="hidden min-h-10 items-center rounded-full px-3 text-sm font-bold text-cocoa-700 transition hover:bg-cream-100 hover:text-crust-600 lg:inline-flex">Sign out</button>
+                <button type="button" onClick={onLogout} className="hidden min-h-10 items-center rounded-full px-3 text-sm font-bold text-red-700 transition hover:bg-red-50 lg:inline-flex">Sign out</button>
               </>
             ) : (
               <>

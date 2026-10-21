@@ -54,8 +54,6 @@ const tabs = [
   },
 ]
 
-// Orders a customer might still act on. Everything else is history.
-const openStatuses = new Set(['PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP', 'READY_FOR_DELIVERY', 'OUT_FOR_DELIVERY'])
 
 export function CustomerAccount({ user, onLogout, onUserUpdated }) {
   // ?tab=orders / ?tab=payments — the order-placed page links straight to
@@ -64,7 +62,7 @@ export function CustomerAccount({ user, onLogout, onUserUpdated }) {
     const requested = new URLSearchParams(window.location.search).get('tab')
     return tabs.some((tab) => tab.key === requested) ? requested : 'profile'
   })
-  // Three real numbers, read from the customer's own orders — the same
+  // Two real numbers, read from the customer's own orders — the same
   // endpoint the Orders panel below already calls. Deliberately not
   // invented or estimated: if the request fails the strip simply shows
   // nothing rather than a plausible-looking zero.
@@ -74,11 +72,10 @@ export function CustomerAccount({ user, onLogout, onUserUpdated }) {
     apiGet('/api/orders')
       .then((data) => {
         const orders = data.orders ?? []
-        const active = orders.filter((order) => openStatuses.has(order.status))
         const spent = orders
           .filter((order) => order.status !== 'CANCELLED')
           .reduce((total, order) => total + Number(order.totalAmount ?? 0), 0)
-        setStats({ total: orders.length, active: active.length, spent })
+        setStats({ total: orders.length, spent })
       })
       .catch(() => setStats(null))
   }, [])
@@ -114,9 +111,11 @@ export function CustomerAccount({ user, onLogout, onUserUpdated }) {
             </div>
           </div>
 
-          <div className="mt-7 grid gap-3 sm:grid-cols-3 sm:gap-4">
+          {/* "In progress" (orders not yet picked up) was removed at the
+              user's request, 2026-10-22: a count with nothing to do, and
+              My Orders already shows each open order. */}
+          <div className="mt-7 grid gap-3 sm:grid-cols-2 sm:gap-4">
             <Stat label="Orders placed" value={stats ? stats.total : '—'} />
-            <Stat label="In progress" value={stats ? stats.active : '—'} />
             <Stat label="Total ordered" value={stats ? formatPeso(stats.spent) : '—'} />
           </div>
         </div>

@@ -123,6 +123,33 @@
     outline: 2px solid var(--color-brand-600);
     outline-offset: 2px;
   }
+
+  /* One cursor rule for everything clickable (the user, 2026-10-22).
+     Tailwind v4 leaves buttons with the default arrow, so some screens
+     showed a hand and others did not. Every enabled button, link and
+     picker shows the hand; a disabled one shows "not allowed". In the
+     base layer, so a class on one element can still override it. */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  [role='switch'],
+  [role='tab'],
+  a[href],
+  summary,
+  select:not(:disabled),
+  label:has(> input[type='checkbox']:not(:disabled)),
+  label:has(> input[type='radio']:not(:disabled)),
+  input[type='checkbox']:not(:disabled),
+  input[type='radio']:not(:disabled),
+  input[type='file']:not(:disabled),
+  input[type='date']:not(:disabled),
+  input[type='time']:not(:disabled) {
+    cursor: pointer;
+  }
+  button:disabled,
+  select:disabled,
+  input:disabled {
+    cursor: not-allowed;
+  }
 }
 
 /* Printing and Save as PDF — PHASE10 B3. A4 with room for a binding edge;

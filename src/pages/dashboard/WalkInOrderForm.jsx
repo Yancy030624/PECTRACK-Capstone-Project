@@ -28,8 +28,8 @@ import { usePhoneVerification } from '../../lib/usePhoneVerification.js'
 // order and its payment for the full total together, Ready for pickup.
 //
 // Walk-in or Reserve (the adviser, 2026-10-19; RULES-PLANS/RESERVE_SMS_PLAN.md):
-// a switch at the top. A walk-in asks only the customer's name; the date is
-// today unless a later one is picked. A reservation is for a later pickup
+// a switch at the top. A walk-in asks nothing about the customer — only the
+// products and the payment (the user, 2026-10-22). A reservation is for a later pickup
 // and asks name, contact number (proven with a texted code when codes are
 // on), email, and the pickup date and time. Both are paid now. The
 // reservation's receipt is emailed and its order number texted.
@@ -122,8 +122,8 @@ export function WalkInOrderForm({ onCreated }) {
       return
     }
     const customerErrors = {}
-    if (!customer.name.trim()) customerErrors.customerName = 'Enter the customer\'s name.'
     if (isReserve) {
+      if (!customer.name.trim()) customerErrors.customerName = 'Enter the customer\'s name.'
       if (!customer.contactNumber.trim()) customerErrors.contactNumber = 'Enter the customer\'s contact number.'
       else if (phone.required && !phone.verified) customerErrors.contactNumber = 'Send a code to this number and verify it first.'
       if (!customer.email.trim()) customerErrors.email = 'Enter the customer\'s email.'
@@ -134,7 +134,8 @@ export function WalkInOrderForm({ onCreated }) {
       setMessage('Fill in the customer details marked below.')
       return
     }
-    const timeError = checkPicked(neededDate, neededTime)
+    // A walk-in is for now; only a reservation has a date and time.
+    const timeError = isReserve ? checkPicked(neededDate, neededTime) : checkPicked('', '')
     if (timeError) {
       setErrors({ requestedFulfillmentTime: timeError })
       return
@@ -154,13 +155,15 @@ export function WalkInOrderForm({ onCreated }) {
         orderType: 'PICKUP',
         items: lines.map(({ productId, quantity }) => ({ productId, quantity })),
         payment: method === 'GCASH' ? { method, gatewayReference: gcashReference.trim() } : { method },
-        customerName: customer.name.trim(),
       }
-      if (neededDate) body.requestedFulfillmentTime = toRequestedTime(neededDate, neededTime)
-      if (isReserve) body.reservation = { contactNumber: customer.contactNumber.trim(), email: customer.email.trim(), phoneVerificationToken: phone.token ?? undefined }
+      if (isReserve) {
+        body.customerName = customer.name.trim()
+        body.requestedFulfillmentTime = toRequestedTime(neededDate, neededTime)
+        body.reservation = { contactNumber: customer.contactNumber.trim(), email: customer.email.trim(), phoneVerificationToken: phone.token ?? undefined }
+      }
 
       const data = await apiPost('/api/orders', body)
-      const pickupDay = neededDate
+      const pickupDay = isReserve ? neededDate : ''
       resetDraft()
       onCreated?.(data.order.id, isReserve ? data.message : null, pickupDay)
     } catch (error) {
@@ -183,7 +186,7 @@ export function WalkInOrderForm({ onCreated }) {
       <div className="space-y-4">
         <Card className="p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold text-ink-900">Customer</h2>
+            <h2 className="text-lg font-semibold text-ink-900">{isReserve ? 'Customer' : 'Walk-in'}</h2>
             <div role="group" aria-label="Order kind" className="inline-flex rounded-full border border-line-200 bg-surface p-0.5">
               {[['WALK_IN', 'Walk-in'], ['RESERVE', 'Reserve']].map(([key, label]) => (
                 <button
@@ -199,18 +202,18 @@ export function WalkInOrderForm({ onCreated }) {
             </div>
           </div>
           <p className="mt-1 text-xs text-ink-500">
-            {isReserve ? 'For a later pickup. The receipt goes to their email and the order number to their phone.' : 'The customer is here now.'}
+            {isReserve ? 'For a later pickup. The receipt goes to their email and the order number to their phone.' : 'The customer is here now: add the products and take the payment.'}
           </p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <Field label="Name *" error={errors.customerName}>
-              <Input value={customer.name} onChange={(event) => setCustomerField('name', event.target.value)} placeholder="Customer's name" autoComplete="off" />
-            </Field>
-            {isReserve && (
+          {isReserve && (
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <Field label="Name *" error={errors.customerName}>
+                <Input value={customer.name} onChange={(event) => setCustomerField('name', event.target.value)} placeholder="Customer's name" autoComplete="off" />
+              </Field>
               <Field label="Email *" error={errors.email}>
                 <Input type="email" value={customer.email} onChange={(event) => setCustomerField('email', event.target.value)} placeholder="name@gmail.com" autoComplete="off" />
               </Field>
-            )}
-          </div>
+            </div>
+          )}
           {isReserve && (
             <div className="mt-3">
               <Field label="Contact number *" error={errors.contactNumber}>
@@ -290,8 +293,9 @@ export function WalkInOrderForm({ onCreated }) {
           )}
         </Card>
 
+        {isReserve && (
         <Card className="p-6">
-          <p className="mb-1 text-xs font-semibold text-ink-700">{isReserve ? 'Pickup date and time *' : 'Needed by'}</p>
+          <p className="mb-1 text-xs font-semibold text-ink-700">Pickup date and time *</p>
           <NeededByFields
             idPrefix="walk-in-needed"
             date={neededDate}
@@ -304,6 +308,8 @@ export function WalkInOrderForm({ onCreated }) {
           />
           {errors.requestedFulfillmentTime && <p className="mt-1 text-xs text-red-700">{errors.requestedFulfillmentTime}</p>}
         </Card>
+        )}
+        {!isReserve && errors.requestedFulfillmentTime && <Alert variant="error">{errors.requestedFulfillmentTime}</Alert>}
       </div>
 
       <div className="h-fit rounded-panel border border-line-200 bg-surface-warm p-6">

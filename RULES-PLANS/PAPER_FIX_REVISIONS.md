@@ -854,3 +854,14 @@ The team adopted:
   - **Restock first**, which tells staff what will sell out and how many to bake.
 - Confirm with the professor that "Predictive Analytics" satisfies the AI requirement. If "AI" must appear in the title, the fallback is "…with AI-Driven Predictive Analytics and Automated Inventory…".
 - The forecast runs on the assumed (synthetic) sales history the adviser approved; keep stating that in the methodology and limitations.
+
+### Screen fixes (2026-10-22)
+
+- **Walk-in asks only for the products and the payment.** It no longer asks for the customer's name or a Needed-by date; a walk-in is for now. **Reserve** still asks for the name, contact number (texted code), email, and pickup date and time. This replaces "Walk-in: the customer's name (required)" in the Reserve notes above.
+- **Dashboard:**
+  - The **Orders** tile now counts exactly what it opens: today's paid orders still to hand over. It no longer counts rows of the assumed sales history.
+  - The tile "Running low" is now **Product running low**, beside **Ingredients running low**.
+- **Customer account:**
+  - The **In progress** count was removed from My account. It only repeated what My Orders shows.
+  - **Sign out** is red.
+- **Everything clickable** (buttons, links, switches, tabs, pickers) shows the hand cursor; a disabled button shows "not allowed".
