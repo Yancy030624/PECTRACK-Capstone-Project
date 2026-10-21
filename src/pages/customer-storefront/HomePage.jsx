@@ -212,8 +212,11 @@ export function HomePage() {
 
 function SectionHeading({ eyebrow, title, lead, action, center = false }) {
   return (
-    <div className={`flex flex-wrap items-end justify-between gap-4 ${center ? 'flex-col items-center text-center' : ''}`}>
-      <div className={center ? 'flex flex-col items-center' : ''}>
+    // Centred and side-by-side are two separate class sets: putting
+    // items-center next to items-end let the stylesheet's order decide,
+    // and the centred heading sat to one side (the user, 2026-10-22).
+    <div className={center ? 'flex flex-col items-center gap-4 text-center' : 'flex flex-wrap items-end justify-between gap-4'}>
+      <div className={center ? 'flex w-full flex-col items-center' : ''}>
         <Eyebrow>{eyebrow}</Eyebrow>
         <h2 className="mt-3 font-display text-4xl font-bold text-cocoa-900 sm:text-5xl">{title}</h2>
         {lead && <p className="mt-3 max-w-2xl text-base text-cocoa-500">{lead}</p>}
