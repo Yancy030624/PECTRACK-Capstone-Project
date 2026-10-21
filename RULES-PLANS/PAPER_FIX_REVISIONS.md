@@ -833,3 +833,24 @@ Add use cases "Verify contact number (SMS)" (Customer, Cashier) and "Reserve ord
 - **Sign out on phones.** My Profile now ends with a **Sign out** button for every role. The staff header also fits its Log out button on a phone, because the name initial is hidden on small screens. A customer on a phone signs out from My Profile (the account icon in the header).
 
 - **SMS provider (2026-10-21):** the texts go through **textbee.dev** instead of Semaphore. textbee is a free SMS gateway that sends from an Android phone and prepaid SIM kept at the bakery. Its free plan covers 50 texts a day and 300 a month. In the tools and architecture, write "textbee.dev SMS gateway (Android phone)" where Semaphore was. Semaphore remains supported as the paid option. Setup steps: RULES-PLANS/TEXTBEE_SETUP.md.
+
+### Title (decided 2026-10-22)
+
+The team adopted:
+
+> **PECTRACK: A Web-Based Order Management System with Predictive Analytics and Automated Inventory for Pecto's Bakery in Lucban, Quezon**
+
+- It replaces the "AI-Assisted Analytics" wording everywhere: the title page, abstract, chapter headings, objectives, scope, the conceptual framework, and any figure or table caption that repeats the title.
+- **Predictive Analytics** is the Forecast in Reporting & Analytics. It is demand forecasting that learns from daily sales history, with three methods:
+  - a multiple linear regression on day of week, payday, holidays and trend;
+  - Holt-Winters exponential smoothing;
+  - a seasonal-naïve baseline.
+
+  The most accurate method for each product is chosen by a rolling 4-week backtest (MAPE).
+- In the methodology, describe the regression as the system's machine-learning model (supervised learning), which answers the professor's "AI model" requirement without the title claiming "AI".
+- **Automated Inventory** covers:
+  - stock deducted automatically when an order is paid, and restored on a cancellation;
+  - low-stock alerts;
+  - **Restock first**, which tells staff what will sell out and how many to bake.
+- Confirm with the professor that "Predictive Analytics" satisfies the AI requirement. If "AI" must appear in the title, the fallback is "…with AI-Driven Predictive Analytics and Automated Inventory…".
+- The forecast runs on the assumed (synthetic) sales history the adviser approved; keep stating that in the methodology and limitations.
