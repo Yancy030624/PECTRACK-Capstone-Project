@@ -831,3 +831,5 @@ Add use cases "Verify contact number (SMS)" (Customer, Cashier) and "Reserve ord
   - Each skip is logged as `OTP_SKIPPED_TRUSTED_DEVICE`.
   - Update the admin two-factor description and the login flowchart.
 - **Sign out on phones.** My Profile now ends with a **Sign out** button for every role. The staff header also fits its Log out button on a phone, because the name initial is hidden on small screens. A customer on a phone signs out from My Profile (the account icon in the header).
+
+- **SMS provider (2026-10-21):** the texts go through **textbee.dev** instead of Semaphore. textbee is a free SMS gateway that sends from an Android phone and prepaid SIM kept at the bakery. Its free plan covers 50 texts a day and 300 a month. In the tools and architecture, write "textbee.dev SMS gateway (Android phone)" where Semaphore was. Semaphore remains supported as the paid option. Setup steps: RULES-PLANS/TEXTBEE_SETUP.md.

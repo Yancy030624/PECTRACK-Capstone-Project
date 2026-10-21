@@ -24,6 +24,20 @@ export function normalizeOrigin(raw) {
   return url.origin
 }
 
+function smsSettings() {
+  const textbee = process.env.TEXTBEE_API_KEY && process.env.TEXTBEE_DEVICE_ID
+    ? { apiKey: process.env.TEXTBEE_API_KEY, deviceId: process.env.TEXTBEE_DEVICE_ID }
+    : null
+  const semaphore = process.env.SEMAPHORE_API_KEY ? { apiKey: process.env.SEMAPHORE_API_KEY, senderName: process.env.SEMAPHORE_SENDER_NAME } : null
+  const provider = textbee ? 'textbee' : semaphore ? 'semaphore' : null
+  return {
+    provider,
+    textbee,
+    semaphore,
+    verifyPhones: !process.env.NODE_TEST_CONTEXT && process.env.SMS_VERIFY_PHONES !== 'off' && (Boolean(provider) || process.env.NODE_ENV !== 'production'),
+  }
+}
+
 export const config = {
   port: Number(process.env.PORT ?? 3001),
   isProduction: process.env.NODE_ENV === 'production',
@@ -64,17 +78,19 @@ export const config = {
   orders: {
     enforceNowHours: !process.env.NODE_TEST_CONTEXT,
   },
-  // SMS over Semaphore (lib/sms.js, RULES-PLANS/RESERVE_SMS_PLAN.md).
+  // SMS (lib/sms.js, RULES-PLANS/RESERVE_SMS_PLAN.md). Two providers:
+  // textbee.dev (the team's choice, 2026-10-21: free, sends from the
+  // bakery's own Android phone and SIM) and Semaphore (a paid Philippine
+  // gateway, kept for later). textbee is used when its key and device are
+  // set, else Semaphore when its key is set, else none.
+  //
   // `verifyPhones` decides whether sign-up and Reserve need a texted code:
-  // on whenever a key is set, and on a developer machine without one (the
-  // code prints in the server console). On the live site with no key it
-  // is off, so sign-up and Reserve keep working until credits are bought.
-  // Off under the test runner; the tests that test it turn it on.
-  sms: {
-    apiKey: process.env.SEMAPHORE_API_KEY,
-    senderName: process.env.SEMAPHORE_SENDER_NAME,
-    verifyPhones: !process.env.NODE_TEST_CONTEXT && (Boolean(process.env.SEMAPHORE_API_KEY) || process.env.NODE_ENV !== 'production'),
-  },
+  // on whenever a provider is set, and on a developer machine without one
+  // (the code prints in the server console). On the live site with no
+  // provider it is off, so sign-up and Reserve keep working.
+  // SMS_VERIFY_PHONES=off turns it off even with a provider (the phone is
+  // down for a day). Off under the test runner; the tests turn it on.
+  sms: smsSettings(),
   paymongo: {
     secretKey: process.env.PAYMONGO_SECRET_KEY,
     webhookSecret: process.env.PAYMONGO_WEBHOOK_SECRET,

@@ -15,7 +15,7 @@
 
 | Question | Answer |
 |---|---|
-| SMS service | **Semaphore**, a Philippine gateway (about ₱0.50 per SMS on prepaid credits; OTP and priority texts cost 2 credits). |
+| SMS service | First **Semaphore** (paid). Changed on 2026-10-21 to **textbee.dev**: free, it sends from the team's own Android phone and SIM (setup: TEXTBEE_SETUP.md). Semaphore stays built in as the paid option. |
 | Where OTP runs | **Customer sign-up** (online ordering), and **inside Reserve** before the order is saved. |
 | Reserve payment | **Paid in full at the counter**, like a walk-in (payment first, no refunds). |
 | Proof of order | A **private receipt link** in the email, plus an **SMS with the order number** that works without internet. |

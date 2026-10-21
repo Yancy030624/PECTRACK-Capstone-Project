@@ -1,10 +1,11 @@
-// Outgoing SMS over Semaphore, a Philippine gateway
-// (RULES-PLANS/RESERVE_SMS_PLAN.md). Two kinds of text: a sign-in-style
+// Outgoing SMS (RULES-PLANS/RESERVE_SMS_PLAN.md), over textbee.dev — which
+// sends from the bakery's own Android phone and SIM — or Semaphore, a paid
+// Philippine gateway; config.js picks whichever is set up. Two kinds of text: a sign-in-style
 // code to prove a phone number, and the order number of a reservation,
 // for a customer with no internet to open the emailed receipt.
 //
 // Unconfigured is a supported state, the same as lib/mail.js: with no
-// SEMAPHORE_API_KEY nothing is sent, and outside production the text is
+// provider nothing is sent, and outside production the text is
 // printed to the server console so the flow can be tried on a developer
 // machine. Under the test runner nothing is ever sent either; each text
 // goes to `smsOutbox`, which the tests read.
@@ -23,22 +24,36 @@ export function normalizePhone(raw) {
   return local
 }
 
-// `priority` uses Semaphore's priority route — codes must arrive in
-// seconds, not wait behind a bulk queue. It costs 2 credits a text.
+// 09171234567 as +639171234567, the international form textbee takes.
+const international = (local) => `+63${local.slice(1)}`
+
 // Returns whether a text really went out. Throws on a gateway error; the
-// callers decide whether that matters.
+// callers decide whether that matters. `priority` matters to Semaphore
+// only: its priority route (2 credits a text) for codes that must arrive
+// in seconds. textbee sends every text straight from the phone.
 export async function sendSms({ to, message, priority = false }) {
   if (process.env.NODE_TEST_CONTEXT) {
     smsOutbox.push({ to, message, priority })
     return { sent: false }
   }
-  if (!config.sms.apiKey) {
+  const { provider, textbee, semaphore } = config.sms
+  if (!provider) {
     if (!config.isProduction) console.log(`[sms] to ${to}: ${message}`)
-    else console.warn('SMS is not set up (SEMAPHORE_API_KEY); a text was not sent.')
+    else console.warn('SMS is not set up (TEXTBEE_API_KEY and TEXTBEE_DEVICE_ID); a text was not sent.')
     return { sent: false }
   }
-  const body = new URLSearchParams({ apikey: config.sms.apiKey, number: to, message })
-  if (config.sms.senderName) body.set('sendername', config.sms.senderName)
+  if (provider === 'textbee') {
+    // A 200 means textbee queued it for the phone, not that it arrived.
+    const reply = await fetch('https://api.textbee.dev/api/v1/gateway/send-sms', {
+      method: 'POST',
+      headers: { 'x-api-key': textbee.apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipients: [international(to)], message, deviceId: textbee.deviceId }),
+    })
+    if (!reply.ok) throw new Error(`textbee answered ${reply.status}: ${(await reply.text()).slice(0, 300)}`)
+    return { sent: true }
+  }
+  const body = new URLSearchParams({ apikey: semaphore.apiKey, number: to, message })
+  if (semaphore.senderName) body.set('sendername', semaphore.senderName)
   const reply = await fetch(`https://api.semaphore.co/api/v4/${priority ? 'priority' : 'messages'}`, { method: 'POST', body })
   if (!reply.ok) throw new Error(`Semaphore answered ${reply.status}: ${(await reply.text()).slice(0, 300)}`)
   return { sent: true }
