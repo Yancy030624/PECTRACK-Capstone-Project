@@ -377,12 +377,14 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
       const phone = normalizePhone(reservation.contactNumber)
       if (!phone) errors.contactNumber = 'Enter a Philippine mobile number, like 0917 123 4567.'
       const email = normalizeEmail(reservation.email)
-      const emailError = email ? validateEmailField(email) : 'Enter the customer\'s email.'
+      // Email is optional (the adviser, 2026-10-23): without one, the
+      // order number still goes by SMS.
+      const emailError = email ? validateEmailField(email) : null
       if (emailError) errors.email = emailError
       if (!fulfillment.value) errors.requestedFulfillmentTime = 'Choose the pickup date and time.'
-      if (orderType !== 'PICKUP') errors.orderType = 'A reservation is picked up at the bakery.'
+      if (orderType !== 'PICKUP') errors.orderType = 'An advanced order is picked up at the bakery.'
       if (Object.keys(errors).length) return response.status(422).json({ message: Object.values(errors)[0], errors })
-      guest = { ...guest, isReservation: true, phone, email, verificationToken: reservation.phoneVerificationToken }
+      guest = { ...guest, isReservation: true, phone, email: email || null, verificationToken: reservation.phoneVerificationToken }
     }
   }
 
@@ -592,7 +594,7 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     const receiptUrl = receiptToken ? `${config.clientOrigin}/r/${receiptToken}` : null
     if (receiptUrl) sendReservationNotices({ orderId, receiptUrl })
     return response.status(201).json({
-      message: guest?.isReservation ? 'Reservation placed and paid. The receipt is on its way to the customer\'s email, and the order number by SMS.' : staffPayment ? 'Order placed and paid.' : 'Order saved. Pay with GCash within 15 minutes to place it.',
+      message: guest?.isReservation ? `Advanced order placed and paid. The order number is on its way by SMS${guest.email ? ', and the receipt by email' : ''}.` : staffPayment ? 'Order placed and paid.' : 'Order saved. Pay with GCash within 15 minutes to place it.',
       order: { id: orderId, orderNumber, orderDay, status, totalAmount, orderType, isReservation: guest?.isReservation ?? false, receiptUrl },
     })
   } catch (error) {

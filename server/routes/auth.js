@@ -276,8 +276,8 @@ router.post('/login', authLimiter, loginAccountLimiter, async (request, response
     recordSecurityEvent({ request, type: 'LOGIN_FAILURE', userId: user.user_id, username: user.username, detail: `correct password at the wrong door (${requestedAudience})` })
     return response.status(403).json({
       message: actualAudience === 'staff'
-        ? 'This is a staff account. Use the staff sign-in to continue.'
-        : 'This is a customer account. Use the customer sign-in to continue.',
+        ? 'This account signs in at Admin. Switch to Admin above to continue.'
+        : 'This is a customer account. Switch to Customer above to continue.',
       audience: actualAudience,
     })
   }

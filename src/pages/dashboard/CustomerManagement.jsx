@@ -9,6 +9,7 @@ import { Input } from '../../components/ui/Input.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
+import { digitsOnly } from '../../lib/phone.js'
 
 // Stage 1's proof screen (RULES-PLANS/UI_AUDIT.md — "Stage 1: The
 // primitive kit"). Smallest table in the dashboard, so it's the cheapest
@@ -152,7 +153,7 @@ export function CustomerManagement({ user, embedded = false }) {
                           <Input value={editForm.lastName} onChange={(event) => setEditForm({ ...editForm, lastName: event.target.value })} />
                         </Field>
                         <Field label="Contact number" error={editErrors.contactNumber}>
-                          <Input value={editForm.contactNumber} onChange={(event) => setEditForm({ ...editForm, contactNumber: event.target.value })} inputMode="tel" />
+                          <Input value={editForm.contactNumber} onChange={(event) => setEditForm({ ...editForm, contactNumber: digitsOnly(event.target.value) })} inputMode="numeric" maxLength={11} />
                         </Field>
                         <Field label="Email" error={editErrors.email}>
                           <Input value={editForm.email} onChange={(event) => setEditForm({ ...editForm, email: event.target.value })} type="email" />

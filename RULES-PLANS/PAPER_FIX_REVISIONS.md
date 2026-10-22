@@ -865,3 +865,25 @@ The team adopted:
   - The **In progress** count was removed from My account. It only repeated what My Orders shows.
   - **Sign out** is red.
 - **Everything clickable** (buttons, links, switches, tabs, pickers) shows the hand cursor; a disabled button shows "not allowed".
+
+### Adviser revisions (2026-10-23)
+
+**Sign-in**
+- The door switch reads **Customer | Admin** (it was "Staff"). The Admin door is still used by admin, cashier and delivery personnel accounts. The welcome panel tag reads "Admin Portal".
+- The admin door has no badge, heading or description. The customer door keeps only its "Customer Login" heading. Create account has no description.
+- The button reads **Log in** on both doors.
+
+**Cashier, Walk-in tab**
+- The switch is **Walk-in | Advanced order** ("Reserve" / "Reserved" are now "Advanced order" everywhere: the list, the detail, the email, the receipt page).
+- **Adding products is search-only.** Typing "m" lists the products whose name, or a word of it, starts with "m". Click one, or press Enter for the first. There is no drop-down list.
+- **Quantities can be typed** (for example 100), as well as stepped with − / +.
+- Each item row shows the **unit price**, unchanged. The line totals and the total are in **Order Details** (formerly "Order summary").
+- The button reads **Place Order**.
+- **A walk-in ends on a printable receipt:** order number, date and time, items, quantities, prices, total, cash and change (or the GCash reference). It has Print receipt, New order and View in Orders.
+- **Advanced order:**
+  - **Email is optional.** Without one, the order number still goes by SMS.
+  - **The contact number takes digits only** (09XXXXXXXXX, 11 digits).
+
+**Contact numbers everywhere** (sign-up, My Profile, addresses, Staff, Customers, Advanced order) accept digits only, 11 at most.
+
+**Dashboard:** the "Product running low" tile is removed. **Low stock** is enough to draw attention, the same as Ingredients running low.

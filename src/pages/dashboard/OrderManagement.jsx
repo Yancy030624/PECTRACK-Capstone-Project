@@ -124,7 +124,7 @@ function OrderCardList({ orders, selectedOrderId, onOpen, showCustomer }) {
               <span className="text-sm font-semibold text-ink-900">
                 Order {orderLabel(order, { numberOnly: true })}
                 {showCustomer && <span className="font-normal text-ink-500"> · {order.customerName ?? 'Walk-in'}</span>}
-                {order.isReservation && <span className="ml-1.5 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700">Reserved</span>}
+                {order.isReservation && <span className="ml-1.5 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700">Advanced order</span>}
               </span>
               <StatusBadge status={order.status} />
             </div>
@@ -330,7 +330,7 @@ function StaffOrderManagement({ user, params }) {
             </p>
             {orderDetail.isReservation && (
               <p className="mt-1">
-                <span className="font-semibold text-brand-700">Reserved</span> · {orderDetail.guestContact}{orderDetail.guestContactVerified ? ' (verified)' : ''} · {orderDetail.guestEmail}
+                <span className="font-semibold text-brand-700">Advanced order</span> · {orderDetail.guestContact}{orderDetail.guestContactVerified ? ' (verified)' : ''}{orderDetail.guestEmail ? ` · ${orderDetail.guestEmail}` : ''}
               </p>
             )}
             <p className="mt-1">Placed {formatDateTime(orderDetail.orderDate)}</p>
@@ -515,7 +515,7 @@ function StaffOrderManagement({ user, params }) {
                             {orderLabel(order, { numberOnly: true })}
                           </button>
                         </Td>
-                        <Td>{order.customerName ?? 'Walk-in'}{order.isReservation && <span className="ml-1.5 text-xs font-semibold text-brand-700">Reserved</span>}</Td>
+                        <Td>{order.customerName ?? 'Walk-in'}{order.isReservation && <span className="ml-1.5 text-xs font-semibold text-brand-700">Advanced order</span>}</Td>
                         <Td priority="xl">{formatDate(order.orderDate)}</Td>
                         <Td priority="xl">{order.requestedFulfillmentTime ? formatDateTime(order.requestedFulfillmentTime) : <span className="text-ink-500">—</span>}</Td>
                         <Td numeric>{formatPeso(order.totalAmount)}</Td>

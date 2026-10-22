@@ -14,7 +14,7 @@ export function WelcomePanel({ register, staff = false, onNavigateAway = () => {
     // `staff` (the password-recovery pages) get the customer copy, which
     // is still true for anyone signing in.
     : staff
-      ? { tag: 'Staff Portal', title: "Welcome back to Pecto's Bakery", body: <>A Web-Based Order Management System<br />With Predictive Analytics and Automated Inventory</> }
+      ? { tag: 'Admin Portal', title: "Welcome back to Pecto's Bakery", body: <>A Web-Based Order Management System<br />With Predictive Analytics and Automated Inventory</> }
       : { tag: 'Bakery Access', title: "Welcome back to Pecto's Bakery", body: 'Sign in to pick up where you left off.' }
   return (
     <aside className={`relative hidden min-h-155 overflow-hidden rounded-l-[26px] bg-linear-to-b p-7 text-white md:flex md:flex-col ${staff ? 'from-leaf-600 via-leaf-700 to-[#0f2e12]' : 'from-crust-500 via-crust-700 to-cocoa-900'}`}>

@@ -531,7 +531,7 @@ describe('admin login and the email OTP second factor', () => {
     assert.equal(wrongDoor.status, 403)
     const body = await wrongDoor.json()
     assert.equal(body.audience, 'staff')
-    assert.match(body.message, /staff account/i)
+    assert.match(body.message, /signs in at Admin/i)
     assert.equal(wrongDoor.headers.get('set-cookie'), null)
   })
 

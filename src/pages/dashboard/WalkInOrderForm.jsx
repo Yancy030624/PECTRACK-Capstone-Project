@@ -5,12 +5,14 @@ import { Button } from '../../components/ui/Button.jsx'
 import { Card } from '../../components/ui/Card.jsx'
 import { Field } from '../../components/ui/Field.jsx'
 import { FIELD_SHAPE, Input } from '../../components/ui/Input.jsx'
-import { Select } from '../../components/ui/Select.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
-import { formatPeso } from '../../lib/format.js'
+import { formatDateTime, formatPeso } from '../../lib/format.js'
+import { bakery, bakeryAddress } from '../../lib/bakery.js'
 import { NeededByFields } from '../../components/NeededByFields.jsx'
 import { checkPicked, toRequestedTime } from '../../lib/orderHours.js'
 import { usePhoneVerification } from '../../lib/usePhoneVerification.js'
+import { digitsOnly } from '../../lib/phone.js'
+import { PrintThisButton } from '../../components/PrintReport.jsx'
 
 // The cashier's Walk-in page (the adviser, 2026-10-16): the customer is
 // standing at the counter, so the page asks only what to sell and, if it
@@ -27,12 +29,14 @@ import { usePhoneVerification } from '../../lib/usePhoneVerification.js'
 // change shown) or GCash (the reference number). The server saves the
 // order and its payment for the full total together, Ready for pickup.
 //
-// Walk-in or Reserve (the adviser, 2026-10-19; RULES-PLANS/RESERVE_SMS_PLAN.md):
-// a switch at the top. A walk-in asks nothing about the customer — only the
-// products and the payment (the user, 2026-10-22). A reservation is for a later pickup
-// and asks name, contact number (proven with a texted code when codes are
-// on), email, and the pickup date and time. Both are paid now. The
-// reservation's receipt is emailed and its order number texted.
+// Walk-in or Advanced order (the adviser, 2026-10-19 and 2026-10-23;
+// RULES-PLANS/RESERVE_SMS_PLAN.md), a switch at the top. A walk-in asks
+// nothing about the customer — only the products and the payment — and
+// ends on a printable receipt. An advanced order (called a reservation in
+// the code) is for a later pickup: name, mobile number (digits only,
+// proven with a texted code when codes are on), email if they have one,
+// and the pickup date and time. Both are paid now. The order number is
+// texted, and the receipt emailed when there is an email.
 const emptyCustomer = { name: '', contactNumber: '', email: '' }
 export function WalkInOrderForm({ onCreated }) {
   const [products, setProducts] = useState(null)
@@ -61,6 +65,9 @@ export function WalkInOrderForm({ onCreated }) {
   const [errors, setErrors] = useState({})
   const [message, setMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  // The walk-in's receipt, shown in place of the form once it is placed
+  // (the adviser, 2026-10-23): printable, then "New order".
+  const [receipt, setReceipt] = useState(null)
 
   useEffect(() => {
     apiGet('/api/products').then((data) => setProducts(data.products)).catch(() => setProducts([]))
@@ -69,13 +76,17 @@ export function WalkInOrderForm({ onCreated }) {
   const loading = products === null
   const productsById = loading ? new Map() : new Map(products.map((product) => [product.id, product]))
   const availableProducts = loading ? [] : products.filter((product) => product.availabilityStatus)
-  // A cashier types the product name faster than they scroll a 40-entry
-  // dropdown; the search narrows the <select> below it as they type.
+  // Search only, no drop-down (the adviser, 2026-10-23): typing "m" lists
+  // the products whose name — or a word in it — starts with "m". Click one,
+  // or press Enter for the first, to add it.
   const [productSearch, setProductSearch] = useState('')
-  const matchingProducts = availableProducts.filter((product) => {
-    const term = productSearch.trim().toLowerCase()
-    return !term || `${product.name} ${product.variant ?? ''}`.toLowerCase().includes(term)
-  })
+  const term = productSearch.trim().toLowerCase()
+  const startsWithTerm = (product) => `${product.name} ${product.variant ?? ''}`.toLowerCase().split(/\s+/).some((word) => word.startsWith(term)) || product.name.toLowerCase().startsWith(term)
+  const matchingProducts = term ? availableProducts.filter(startsWithTerm).slice(0, 8) : []
+  const pick = (productId) => {
+    addLine(productId)
+    setProductSearch('')
+  }
 
   const addLine = (productId) => {
     if (!productId) return
@@ -92,10 +103,18 @@ export function WalkInOrderForm({ onCreated }) {
     })
   }
   const removeLine = (productId) => setLines((current) => current.filter((line) => line.productId !== productId))
+  // Typed quantity (the adviser, 2026-10-23): 100 pieces is typed, not 100
+  // clicks. Blank while typing; a blank or 0 left behind becomes 1.
+  const typeQuantity = (productId, text) => {
+    const digits = text.replace(/\D/g, '').slice(0, 4)
+    setLines((current) => current.map((line) => (line.productId === productId ? { ...line, quantity: digits === '' ? '' : Number(digits) } : line)))
+  }
+  const settleQuantity = (productId) => setLines((current) => current.map((line) => (line.productId === productId && !(line.quantity > 0) ? { ...line, quantity: 1 } : line)))
+  const quantityOf = (line) => Number(line.quantity) || 0
 
   const subtotal = lines.reduce((total, line) => {
     const product = productsById.get(line.productId)
-    return total + (product ? Number(product.price) * line.quantity : 0)
+    return total + (product ? Number(product.price) * quantityOf(line) : 0)
   }, 0)
 
   const received = Number(cashReceived)
@@ -121,12 +140,16 @@ export function WalkInOrderForm({ onCreated }) {
       setMessage('Add at least one item.')
       return
     }
+    if (lines.some((line) => !(quantityOf(line) > 0))) {
+      setMessage('Enter a quantity for every item.')
+      return
+    }
     const customerErrors = {}
     if (isReserve) {
       if (!customer.name.trim()) customerErrors.customerName = 'Enter the customer\'s name.'
       if (!customer.contactNumber.trim()) customerErrors.contactNumber = 'Enter the customer\'s contact number.'
       else if (phone.required && !phone.verified) customerErrors.contactNumber = 'Send a code to this number and verify it first.'
-      if (!customer.email.trim()) customerErrors.email = 'Enter the customer\'s email.'
+      if (customer.contactNumber && !/^09\d{9}$/.test(customer.contactNumber)) customerErrors.contactNumber = 'Enter an 11-digit mobile number starting with 09.'
       if (!neededDate || !neededTime) customerErrors.requestedFulfillmentTime = 'Choose the pickup date and time.'
     }
     if (Object.keys(customerErrors).length) {
@@ -153,19 +176,30 @@ export function WalkInOrderForm({ onCreated }) {
     try {
       const body = {
         orderType: 'PICKUP',
-        items: lines.map(({ productId, quantity }) => ({ productId, quantity })),
+        items: lines.map((line) => ({ productId: line.productId, quantity: quantityOf(line) })),
         payment: method === 'GCASH' ? { method, gatewayReference: gcashReference.trim() } : { method },
       }
       if (isReserve) {
         body.customerName = customer.name.trim()
         body.requestedFulfillmentTime = toRequestedTime(neededDate, neededTime)
-        body.reservation = { contactNumber: customer.contactNumber.trim(), email: customer.email.trim(), phoneVerificationToken: phone.token ?? undefined }
+        body.reservation = { contactNumber: customer.contactNumber, email: customer.email.trim() || undefined, phoneVerificationToken: phone.token ?? undefined }
       }
 
       const data = await apiPost('/api/orders', body)
       const pickupDay = isReserve ? neededDate : ''
+      const placed = {
+        orderId: data.order.id,
+        orderNumber: data.order.orderNumber,
+        at: new Date(),
+        items: lines.map((line) => ({ ...productsById.get(line.productId), quantity: quantityOf(line) })),
+        total: subtotal,
+        method,
+        cashReceived: method === 'CASH' ? received : null,
+        gcashReference: method === 'GCASH' ? gcashReference.trim() : null,
+      }
       resetDraft()
-      onCreated?.(data.order.id, isReserve ? data.message : null, pickupDay)
+      if (isReserve) onCreated?.(data.order.id, data.message, pickupDay)
+      else setReceipt(placed)
     } catch (error) {
       if (error.status === 409 || (error.status === 422 && error.errors?.items)) {
         setMessage('One or more items no longer have enough stock, or are no longer available. Review the order below and try again.')
@@ -181,6 +215,60 @@ export function WalkInOrderForm({ onCreated }) {
 
   if (loading) return <LoadingRows className="mt-6" />
 
+  if (receipt) {
+    return (
+      <div className="mt-6 max-w-md">
+        <article className="print-only-target rounded-panel border border-line-200 bg-surface p-6 text-sm text-ink-700">
+          <header className="border-b border-line-200 pb-3 text-center">
+            <p className="text-lg font-semibold text-ink-900">{bakery.name}</p>
+            <p className="text-xs text-ink-500">{bakeryAddress}</p>
+            <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-ink-500">Official receipt</p>
+            <p className="text-base font-semibold text-ink-900">Order #{receipt.orderNumber}</p>
+            <p className="text-xs text-ink-500">{formatDateTime(receipt.at)}</p>
+          </header>
+          <table className="mt-3 w-full text-left text-xs">
+            <caption className="sr-only">Items</caption>
+            <thead>
+              <tr className="text-ink-500">
+                <th scope="col" className="py-1 font-semibold">Item</th>
+                <th scope="col" className="py-1 text-right font-semibold">Qty</th>
+                <th scope="col" className="py-1 text-right font-semibold">Price</th>
+                <th scope="col" className="py-1 text-right font-semibold">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {receipt.items.map((item) => (
+                <tr key={item.id} className="border-t border-line-100">
+                  <td className="py-1.5 text-ink-900">{item.name}{item.variant ? ` (${item.variant})` : ''}</td>
+                  <td className="py-1.5 text-right tabular-nums">{item.quantity}</td>
+                  <td className="py-1.5 text-right tabular-nums">{formatPeso(item.price)}</td>
+                  <td className="py-1.5 text-right font-semibold tabular-nums text-ink-900">{formatPeso(Number(item.price) * item.quantity)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <dl className="mt-3 space-y-1 border-t border-line-200 pt-3 text-sm">
+            <div className="flex justify-between font-semibold text-ink-900"><dt>Total</dt><dd className="tabular-nums">{formatPeso(receipt.total)}</dd></div>
+            {receipt.method === 'CASH' ? (
+              <>
+                <div className="flex justify-between"><dt>Cash</dt><dd className="tabular-nums">{formatPeso(receipt.cashReceived)}</dd></div>
+                <div className="flex justify-between"><dt>Change</dt><dd className="tabular-nums">{formatPeso(receipt.cashReceived - receipt.total)}</dd></div>
+              </>
+            ) : (
+              <div className="flex justify-between"><dt>GCash ref.</dt><dd>{receipt.gcashReference}</dd></div>
+            )}
+          </dl>
+          <p className="mt-4 text-center text-xs text-ink-500">Paid in full. Thank you!</p>
+        </article>
+        <div className="mt-4 flex flex-wrap gap-2 print:hidden">
+          <PrintThisButton label="Print receipt" />
+          <Button type="button" onClick={() => setReceipt(null)}>New order</Button>
+          <Button type="button" variant="secondary" onClick={() => { const id = receipt.orderId; setReceipt(null); onCreated?.(id, null, '') }}>View in Orders</Button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
       <div className="space-y-4">
@@ -188,7 +276,7 @@ export function WalkInOrderForm({ onCreated }) {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold text-ink-900">{isReserve ? 'Customer' : 'Walk-in'}</h2>
             <div role="group" aria-label="Order kind" className="inline-flex rounded-full border border-line-200 bg-surface p-0.5">
-              {[['WALK_IN', 'Walk-in'], ['RESERVE', 'Reserve']].map(([key, label]) => (
+              {[['WALK_IN', 'Walk-in'], ['RESERVE', 'Advanced order']].map(([key, label]) => (
                 <button
                   key={key}
                   type="button"
@@ -202,14 +290,14 @@ export function WalkInOrderForm({ onCreated }) {
             </div>
           </div>
           <p className="mt-1 text-xs text-ink-500">
-            {isReserve ? 'For a later pickup. The receipt goes to their email and the order number to their phone.' : 'The customer is here now: add the products and take the payment.'}
+            {isReserve ? 'For a later pickup. The order number goes to their phone, and the receipt to their email if given.' : 'The customer is here now: add the products and take the payment.'}
           </p>
           {isReserve && (
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <Field label="Name *" error={errors.customerName}>
                 <Input value={customer.name} onChange={(event) => setCustomerField('name', event.target.value)} placeholder="Customer's name" autoComplete="off" />
               </Field>
-              <Field label="Email *" error={errors.email}>
+              <Field label="Email (optional)" error={errors.email}>
                 <Input type="email" value={customer.email} onChange={(event) => setCustomerField('email', event.target.value)} placeholder="name@gmail.com" autoComplete="off" />
               </Field>
             </div>
@@ -218,7 +306,7 @@ export function WalkInOrderForm({ onCreated }) {
             <div className="mt-3">
               <Field label="Contact number *" error={errors.contactNumber}>
                 <div className="flex flex-wrap gap-2">
-                  <Input value={customer.contactNumber} onChange={(event) => setCustomerField('contactNumber', event.target.value)} inputMode="tel" placeholder="0917 123 4567" autoComplete="off" className="min-w-40 flex-1" />
+                  <Input value={customer.contactNumber} onChange={(event) => setCustomerField('contactNumber', digitsOnly(event.target.value))} inputMode="numeric" maxLength={11} placeholder="09XXXXXXXXX" autoComplete="off" className="min-w-40 flex-1" />
                   {phone.required && !phone.verified && (
                     <Button type="button" size="sm" variant="secondary" className="h-9" onClick={() => phone.send(customer.contactNumber)} disabled={phone.busy || !customer.contactNumber.trim()}>
                       {phone.token ? 'Send again' : 'Send code'}
@@ -242,21 +330,31 @@ export function WalkInOrderForm({ onCreated }) {
 
         <Card className="p-6">
           <h2 className="text-lg font-semibold text-ink-900">Items</h2>
-          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1.4fr]">
-            <Input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Search products…" aria-label="Search products" />
+          <div className="relative mt-3">
             <Field error={errors.items}>
-              <Select value="" onChange={(event) => { addLine(event.target.value); setProductSearch('') }} aria-label="Add a product to the order">
-                <option value="" disabled>
-                  {matchingProducts.length === 0 ? 'No products match' : `Add a product… (${matchingProducts.length})`}
-                </option>
-                {matchingProducts.map((product) => (
-                  <option key={product.id} value={product.id}>
-                    {product.name}
-                    {product.variant ? ` (${product.variant})` : ''} — {formatPeso(product.price)}{product.inStock === false ? ' — sold out' : ''}
-                  </option>
-                ))}
-              </Select>
+              <Input
+                value={productSearch}
+                onChange={(event) => setProductSearch(event.target.value)}
+                onKeyDown={(event) => { if (event.key === 'Enter' && matchingProducts[0]) { event.preventDefault(); pick(matchingProducts[0].id) } }}
+                placeholder="Type a product name, e.g. m for Mamon…"
+                aria-label="Search products to add"
+                autoComplete="off"
+              />
             </Field>
+            {term && (
+              <ul className="mt-1 divide-y divide-line-100 overflow-hidden rounded-control border border-line-200 bg-surface shadow-raised">
+                {matchingProducts.length === 0 ? (
+                  <li className="px-3 py-2 text-sm text-ink-500">No product starts with “{productSearch.trim()}”.</li>
+                ) : matchingProducts.map((product) => (
+                  <li key={product.id}>
+                    <button type="button" onClick={() => pick(product.id)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-surface-sunk">
+                      <span className="min-w-0 text-ink-900">{product.name}{product.variant ? <span className="text-ink-500"> ({product.variant})</span> : ''}{product.inStock === false && <span className="ml-1 text-xs text-red-700">sold out</span>}</span>
+                      <span className="shrink-0 tabular-nums text-ink-700">{formatPeso(product.price)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           {lines.length > 0 && (
@@ -270,19 +368,24 @@ export function WalkInOrderForm({ onCreated }) {
                       {product.name}
                       {product.variant ? ` (${product.variant})` : ''}
                     </span>
-                    {/* A quantity stepper, not a text input — no shared
-                        primitive covers this shape, so it keeps its own
-                        markup, just retokened onto the shared palette. */}
+                    {/* The unit price stays as it is; the line total is in Order Details. */}
+                    <span className="w-16 shrink-0 text-right tabular-nums text-ink-500">{formatPeso(product.price)}</span>
                     <div className="flex items-center rounded-full border border-line-200">
-                      <button type="button" onClick={() => setLineQuantity(line.productId, line.quantity - 1)} aria-label="Decrease quantity" className="grid h-7 w-7 place-items-center text-sm font-semibold text-brand-700">
+                      <button type="button" onClick={() => setLineQuantity(line.productId, quantityOf(line) - 1)} aria-label="Decrease quantity" className="grid h-8 w-8 place-items-center text-sm font-semibold text-brand-700">
                         −
                       </button>
-                      <span className="w-6 text-center font-semibold text-ink-900">{line.quantity}</span>
-                      <button type="button" onClick={() => setLineQuantity(line.productId, line.quantity + 1)} aria-label="Increase quantity" className="grid h-7 w-7 place-items-center text-sm font-semibold text-brand-700">
+                      <input
+                        value={line.quantity}
+                        onChange={(event) => typeQuantity(line.productId, event.target.value)}
+                        onBlur={() => settleQuantity(line.productId)}
+                        inputMode="numeric"
+                        aria-label={`Quantity of ${product.name}`}
+                        className="h-8 w-12 bg-transparent text-center font-semibold tabular-nums text-ink-900 outline-none"
+                      />
+                      <button type="button" onClick={() => setLineQuantity(line.productId, quantityOf(line) + 1)} aria-label="Increase quantity" className="grid h-8 w-8 place-items-center text-sm font-semibold text-brand-700">
                         +
                       </button>
                     </div>
-                    <span className="w-16 shrink-0 text-right font-semibold text-brand-700 tabular-nums">{formatPeso(Number(product.price) * line.quantity)}</span>
                     <button type="button" onClick={() => removeLine(line.productId)} className="shrink-0 rounded-full px-2 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-50">
                       Remove
                     </button>
@@ -313,7 +416,7 @@ export function WalkInOrderForm({ onCreated }) {
       </div>
 
       <div className="h-fit rounded-panel border border-line-200 bg-surface-warm p-6">
-        <h2 className="text-lg font-semibold text-ink-900">Order summary</h2>
+        <h2 className="text-lg font-semibold text-ink-900">Order Details</h2>
         {message && (
           <div className="mt-3">
             <Alert variant="error">{message}</Alert>
@@ -330,9 +433,9 @@ export function WalkInOrderForm({ onCreated }) {
                 return (
                   <div key={line.productId} className="flex items-center justify-between gap-2">
                     <span className="text-ink-700">
-                      {product.name} × {line.quantity}
+                      {product.name} × {quantityOf(line)}
                     </span>
-                    <span className="font-medium text-ink-900 tabular-nums">{formatPeso(Number(product.price) * line.quantity)}</span>
+                    <span className="font-medium text-ink-900 tabular-nums">{formatPeso(Number(product.price) * quantityOf(line))}</span>
                   </div>
                 )
               })}
@@ -367,7 +470,7 @@ export function WalkInOrderForm({ onCreated }) {
           </>
         )}
         <Button type="button" size="touch" className="mt-4 w-full" onClick={handleSubmit} disabled={submitting || lines.length === 0}>
-          {submitting ? 'Placing order…' : isReserve ? 'Place paid reservation' : 'Place paid order'}
+          {submitting ? 'Placing order…' : 'Place Order'}
         </Button>
       </div>
     </div>

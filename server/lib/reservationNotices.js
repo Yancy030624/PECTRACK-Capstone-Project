@@ -44,11 +44,11 @@ export function sendReservationNotices({ orderId, receiptUrl }) {
     )
     await sendMail({
       to: order.guest_email,
-      subject: `Your reservation #${order.order_id} at ${bakery.name}`,
+      subject: `Your advanced order #${order.order_id} at ${bakery.name}`,
       text: [
         `Hello ${firstName(order.guest_name)},`,
         '',
-        `Thank you for your order. It is paid and reserved for you.`,
+        `Thank you for your advanced order. It is paid and will be ready for you.`,
         '',
         `Order number: #${order.order_id}`,
         `Pick up: ${pickup}`,

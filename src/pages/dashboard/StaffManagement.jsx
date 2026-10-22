@@ -11,6 +11,7 @@ import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
+import { digitsOnly } from '../../lib/phone.js'
 
 const emptyForm = { role: 'CASHIER', name: '', username: '', email: '', contactNumber: '', password: '', confirmPassword: '' }
 const roleLabels = { CASHIER: 'Cashier', DELIVERY_PERSONNEL: 'Delivery Personnel' }
@@ -227,7 +228,7 @@ export function StaffManagement({ embedded = false } = {}) {
               <Input value={form.username} onChange={(event) => updateField('username', event.target.value)} autoComplete="off" placeholder="e.g. juan.delacruz" />
             </Field>
             <Field label="Contact number" error={errors.contactNumber}>
-              <Input value={form.contactNumber} onChange={(event) => updateField('contactNumber', event.target.value)} autoComplete="tel" inputMode="tel" placeholder="09XXXXXXXXX" />
+              <Input value={form.contactNumber} onChange={(event) => updateField('contactNumber', digitsOnly(event.target.value))} autoComplete="tel" inputMode="numeric" maxLength={11} placeholder="09XXXXXXXXX" />
             </Field>
           </div>
           <Field label="Email" error={errors.email}>
@@ -282,7 +283,7 @@ export function StaffManagement({ embedded = false } = {}) {
                             <Input value={editForm.name} onChange={(event) => updateEditField('name', event.target.value)} />
                           </Field>
                           <Field label="Contact number" error={editErrors.contactNumber}>
-                            <Input value={editForm.contactNumber} onChange={(event) => updateEditField('contactNumber', event.target.value)} inputMode="tel" />
+                            <Input value={editForm.contactNumber} onChange={(event) => updateEditField('contactNumber', digitsOnly(event.target.value))} inputMode="numeric" maxLength={11} />
                           </Field>
                           <Field label="Email" error={editErrors.email}>
                             <Input value={editForm.email} onChange={(event) => updateEditField('email', event.target.value)} type="email" />

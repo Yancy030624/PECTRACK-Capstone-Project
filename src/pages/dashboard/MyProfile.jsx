@@ -9,6 +9,7 @@ import { Field } from '../../components/ui/Field.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { PasswordInput } from '../../components/ui/PasswordInput.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
+import { digitsOnly } from '../../lib/phone.js'
 
 const emptyPasswordForm = { currentPassword: '', newPassword: '', confirmPassword: '' }
 
@@ -129,7 +130,7 @@ function ProfileTab({ user, onUserUpdated }) {
           <Input type="email" value={form.email} onChange={(event) => updateField('email', event.target.value)} autoComplete="email" />
         </Field>
         <Field label="Contact number" error={errors.contactNumber}>
-          <Input value={form.contactNumber} onChange={(event) => updateField('contactNumber', event.target.value)} autoComplete="tel" inputMode="tel" />
+          <Input value={form.contactNumber} onChange={(event) => updateField('contactNumber', digitsOnly(event.target.value))} autoComplete="tel" inputMode="numeric" maxLength={11} />
         </Field>
         {emailChanging && (
           <Field label="Current password" error={errors.currentPassword} help="Needed to change your email. Your old address will be told about the change.">

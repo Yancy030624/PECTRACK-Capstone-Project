@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { apiPost } from '../api/client.js'
+import { digitsOnly } from '../lib/phone.js'
 
 const emptyAddressForm = { label: 'Home', recipientName: '', contactNumber: '', addressLine1: '', addressLine2: '', barangay: '', municipality: '', province: '', postalCode: '', deliveryNotes: '' }
 
@@ -65,7 +66,7 @@ export function AddressForm({ onSaved, onCancel, submitLabel = 'Save address', c
       </div>
       <div>
         <label htmlFor="addr-contact" className={cls.label}>Contact number</label>
-        <input id="addr-contact" value={form.contactNumber} onChange={(event) => updateField('contactNumber', event.target.value)} inputMode="tel" className={cls.input} />
+        <input id="addr-contact" value={form.contactNumber} onChange={(event) => updateField('contactNumber', digitsOnly(event.target.value))} inputMode="numeric" maxLength={11} placeholder="09XXXXXXXXX" className={cls.input} />
         {errors.contactNumber && <p className={cls.error}>{errors.contactNumber}</p>}
       </div>
       <div>

@@ -4,6 +4,7 @@ import { Brand } from './Brand.jsx'
 import { PasswordToggle } from './PasswordToggle.jsx'
 import { passwordHint as describePassword, strongPasswordHint } from '../lib/password.js'
 import { usePhoneVerification } from '../lib/usePhoneVerification.js'
+import { digitsOnly } from '../lib/phone.js'
 
 // The registration form itself, lifted out of the old RegistrationPage so
 // it can live inside the auth pop-up — the same move LoginForm already
@@ -131,7 +132,6 @@ export function RegisterForm({ onSwitchToLogin }) {
           <h2 id="auth-heading" className="mt-3 text-3xl font-extrabold leading-[1.05] text-crust-700">Create your<br />account.</h2>
         </div>
       </div>
-      <p className="mt-2 text-[11px] font-medium leading-5 text-stone-500">Create your Pectrack profile to place orders and keep your details in one place. Staff accounts are created by an admin.</p>
       {!created && <p className="mt-1 text-[11px] font-medium text-stone-500"><span aria-hidden="true" className="text-red-600">*</span> Required field</p>}
 
       {created ? (
@@ -164,7 +164,7 @@ export function RegisterForm({ onSwitchToLogin }) {
               </div>
               <div>
                 <RequiredLabel htmlFor="contact-number">Contact number</RequiredLabel>
-                <input id="contact-number" maxLength={11} value={form.contactNumber} onChange={(event) => updateField('contactNumber', event.target.value)} autoComplete="tel" inputMode="tel" placeholder="09XXXXXXXXX" className={fieldClass} {...fieldProps('contactNumber')} />
+                <input id="contact-number" maxLength={11} value={form.contactNumber} onChange={(event) => updateField('contactNumber', digitsOnly(event.target.value))} autoComplete="tel" inputMode="tel" placeholder="09XXXXXXXXX" className={fieldClass} {...fieldProps('contactNumber')} />
                 <FieldError id="contactNumber-error" message={errors.contactNumber} />
                 {phone.required && (phone.verified ? (
                   <p className="mt-1 text-xs font-bold text-emerald-700">✓ Number verified</p>

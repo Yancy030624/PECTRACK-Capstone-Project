@@ -99,14 +99,6 @@ export function DashboardHome({ user, onNavigate }) {
       to: ['Inventory Management', { stockFilter: 'LOW' }],
     },
     {
-      label: 'Product running low',
-      goodLabel: 'product stock',
-      value: stockCounts.OKAY,
-      tone: stockCounts.OKAY > 0 ? 'okay' : 'good',
-      note: stockCounts.OKAY > 0 ? 'Close to the minimum' : 'Nothing close',
-      to: ['Inventory Management', { stockFilter: 'OKAY' }],
-    },
-    {
       label: 'Ingredients running low',
       goodLabel: 'ingredients',
       value: ingredientCounts.LOW + ingredientCounts.OKAY,

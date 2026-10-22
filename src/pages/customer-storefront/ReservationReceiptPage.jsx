@@ -56,7 +56,7 @@ export function ReservationReceiptPage() {
             <p className="text-xs text-cocoa-500">Open {bakery.hours.days.toLowerCase()}, {bakery.hours.time}</p>
           </div>
           <div className="text-right">
-            <p className="text-xs font-bold uppercase tracking-wide text-cocoa-500">Reservation receipt</p>
+            <p className="text-xs font-bold uppercase tracking-wide text-cocoa-500">Advanced order receipt</p>
             <p className="text-lg font-extrabold text-cocoa-900">Order #{receipt.orderNumber}</p>
           </div>
         </header>

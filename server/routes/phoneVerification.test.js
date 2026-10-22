@@ -222,6 +222,16 @@ describe('phone codes and reservations', () => {
     assert.equal((await fetch(`${baseUrl}/api/receipts/${'x'.repeat(32)}`)).status, 404)
   })
 
+  test('an advanced order needs no email', async () => {
+    config.sms.verifyPhones = false
+    const placed = await post('/api/orders', { customerName: 'Nora Noemail', items: [{ productId, quantity: 1 }], payment: { method: 'CASH' }, requestedFulfillmentTime: tomorrowMorning(), reservation: { contactNumber: randomMobile() } }, cashierCookie)
+    assert.equal(placed.status, 201, await placed.clone().text())
+    const { order, message } = await placed.json()
+    orderIds.push(order.id)
+    assert.match(message, /SMS/)
+    assert.doesNotMatch(message, /email/)
+  })
+
   test('with codes off, a reservation is taken without one', async () => {
     config.sms.verifyPhones = false
     const placed = await post('/api/orders', { customerName: 'Nena Nocode', items: [{ productId, quantity: 1 }], payment: { method: 'CASH' }, requestedFulfillmentTime: tomorrowMorning(), reservation: { contactNumber: randomMobile(), email: `nena_${runId}@example.com` } }, cashierCookie)

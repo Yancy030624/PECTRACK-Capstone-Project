@@ -166,16 +166,22 @@ export function LoginForm({ mode = 'customer', onModeChange = () => {}, onLogin,
             </button>
             <button type="button" onClick={() => switchTo('staff')} aria-pressed={isStaffMode} className={`flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold transition ${isStaffMode ? 'bg-leaf-700 text-white shadow-sm' : 'text-stone-500 hover:bg-leaf-50 hover:text-leaf-700'}`}>
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="7" width="16" height="13" rx="2" /><path d="M9 7V5a3 3 0 0 1 6 0v2" /><path d="M9 13h6" /></svg>
-              Staff
+              Admin
             </button>
           </div>
-          {/* The badge, heading and subtitle all name the door, because a
-              door that turns the wrong account away has to say which
-              accounts it is for BEFORE the password is typed. */}
+          {/* Minimal by the adviser's request (2026-10-23): the switch above
+              names the door, so the admin door has no badge, heading or
+              description, and the customer door keeps only its heading.
+              The admin door's heading stays for screen readers. */}
           <div className="mt-6">
-            <span className={`rounded-full px-3 py-1.5 text-[10px] font-bold ${theme.badge}`}>{isStaffMode ? 'Staff Login' : 'Customer Login'}</span>
-            <h2 id="login-heading" className={`mt-3 text-3xl font-extrabold leading-[1.05] ${theme.heading}`}>{isStaffMode ? <>Staff sign in</> : <>Sign in to your<br />account</>}</h2>
-            <p className="mt-2 text-xs font-medium text-stone-500">{isStaffMode ? 'For admin, cashier, and delivery personnel accounts.' : 'For customer accounts. Use your username or email to continue.'}</p>
+            {isStaffMode ? (
+              <h2 id="login-heading" className="sr-only">Admin log in</h2>
+            ) : (
+              <>
+                <span className={`rounded-full px-3 py-1.5 text-[10px] font-bold ${theme.badge}`}>Customer Login</span>
+                <h2 id="login-heading" className={`mt-3 text-3xl font-extrabold leading-[1.05] ${theme.heading}`}>Sign in to your<br />account</h2>
+              </>
+            )}
             {/* Why the pop-up opened on its own — PHASE10 B6. */}
             {notice && <p role="status" className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{notice}</p>}
           </div>
@@ -193,12 +199,12 @@ export function LoginForm({ mode = 'customer', onModeChange = () => {}, onLogin,
                     open it — one click, nothing retyped. */}
                 {wrongDoor && (
                   <button type="button" onClick={() => switchTo(wrongDoor)} className="mt-2 block w-full rounded-xl bg-red-700 py-2 text-xs font-bold text-white transition hover:bg-red-800">
-                    {wrongDoor === 'staff' ? 'Go to staff sign in →' : 'Go to customer sign in →'}
+                    {wrongDoor === 'staff' ? 'Go to admin log in →' : 'Go to customer log in →'}
                   </button>
                 )}
               </div>
             )}
-            <button type="submit" className={`mt-5 w-full rounded-2xl py-2.5 text-sm font-bold text-white shadow-md transition ${theme.button}`}>{isStaffMode ? 'Log In as Staff' : 'Log In'}</button>
+            <button type="submit" className={`mt-5 w-full rounded-2xl py-2.5 text-sm font-bold text-white shadow-md transition ${theme.button}`}>Log in</button>
             {/* Hidden in staff mode (Decision 2's table) — self-registration
                 only ever creates CUSTOMER accounts (auth.js hard-codes it),
                 so this button could never do anything useful for a cashier
