@@ -907,3 +907,15 @@ The team adopted:
 - **Confirmation before saving:** "Are you sure you want to confirm these changes?", showing *on hand + added = new total*, with **Confirm** and **Back**.
 
 **Staff screens:** no outlines on cards and panels; a soft shadow separates them instead. The dashboard fills the whole screen width.
+
+### Adviser revisions, third list (2026-10-23)
+
+- **Sign-in and Create account:** the welcome panel beside the form (logo, "Welcome back to Pecto's Bakery", "Continue browsing") is gone, for customers and admin and on the password-recovery pages. The dialog is the form alone, with the logo on top. The "Customer Login" badge and the "Sign in to your account" heading are removed too.
+- **Rejects (products):**
+  - **Recording them:** Inventory Management → Edit Products has a **Rejects** button next to **Add product**.
+    - Type the start of the product's name. Its **Name, Category, Price and Size or pack** are shown as on file.
+    - Enter the **pieces rejected** and a **Description (why is this product a reject)**.
+    - A confirmation shows *on hand − rejects = left*.
+    - The rejects come off the shelf count and are logged as a REJECT.
+  - **Seeing them:** Inventory Management → Products has a **Rejects** button next to **Low stock**. It lists every reject recorded: product, category, price, pieces, why, when and who. The category buttons still filter it.
+- **Ingredients:** "Record" is now **Add**. It asks only for the amount to add, which goes on top of what is on hand, with the same "Are you sure…?" confirmation as product stock. There are no reason or note fields.

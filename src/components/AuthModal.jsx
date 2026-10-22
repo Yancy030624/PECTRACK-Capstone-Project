@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { LoginForm } from './LoginForm.jsx'
 import { Modal } from './Modal.jsx'
 import { RegisterForm } from './RegisterForm.jsx'
-import { WelcomePanel } from './WelcomePanel.jsx'
 
 // The one place anyone signs in or registers. Replaces the /login,
 // /staff-login and /register PAGES, which are gone: signing in is
@@ -47,9 +46,10 @@ function AuthDialog({ request, isRegister, onClose, onLogin, onView }) {
           exactly the width the two-column layout switched on. Flexible
           tracks let the panel take whatever the viewport allows, and
           max-w still caps it on a desktop. */}
-      <div className={`relative grid w-full overflow-hidden rounded-[26px] bg-[#fffedc] shadow-2xl shadow-[#102d71]/25 md:grid-cols-[minmax(0,300px)_minmax(0,1fr)] xl:grid-cols-[minmax(0,370px)_minmax(0,1fr)] ${isRegister ? 'max-w-190 xl:max-w-207.5' : 'max-w-179 xl:max-w-200'}`}>
+      {/* One column, the form alone (the adviser, 2026-10-23): the welcome
+          panel that sat beside it is gone, for both doors. */}
+      <div className={`relative w-full overflow-hidden rounded-[26px] bg-[#fffedc] shadow-2xl shadow-[#102d71]/25 ${isRegister ? 'max-w-130' : 'max-w-110'}`}>
         <button type="button" onClick={onClose} aria-label="Close" className="absolute right-3 top-3 z-10 grid h-8 w-8 place-items-center rounded-full bg-white/90 text-lg leading-none text-stone-500 shadow-md transition hover:text-stone-900">✕</button>
-        <WelcomePanel register={isRegister} staff={!isRegister && mode === 'staff'} onNavigateAway={onClose} />
         {isRegister ? (
           <RegisterForm onSwitchToLogin={() => onView({ view: 'login', mode: 'customer' })} />
         ) : (

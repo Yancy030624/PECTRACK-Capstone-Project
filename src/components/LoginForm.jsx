@@ -138,8 +138,8 @@ export function LoginForm({ mode = 'customer', onModeChange = () => {}, onLogin,
   const fieldClass = `w-full rounded-2xl border border-stone-200 bg-white shadow-sm outline-none transition focus:ring-4 ${theme.focus}`
 
   return (
-    <div className={`${theme.panel} p-5 transition-colors sm:p-8 md:min-h-142.5 md:p-12`}>
-      <div className="md:hidden"><Brand compact /></div>
+    <div className={`${theme.panel} p-5 transition-colors sm:p-8`}>
+      <Brand compact />
       {pendingOtp ? (
         <>
           <div className="mt-6 md:mt-8"><span className={`rounded-full px-3 py-1.5 text-[10px] font-bold ${theme.badge}`}>Verification Required</span><h2 id="login-heading" className={`mt-3 text-3xl font-extrabold leading-[1.05] ${theme.heading}`}>Enter your<br />code</h2><p className="mt-2 text-xs font-medium text-stone-500">We sent a 6-digit code to the email on file for {pendingOtp.username}. It expires in 5 minutes.</p></div>
@@ -174,14 +174,9 @@ export function LoginForm({ mode = 'customer', onModeChange = () => {}, onLogin,
               description, and the customer door keeps only its heading.
               The admin door's heading stays for screen readers. */}
           <div className="mt-6">
-            {isStaffMode ? (
-              <h2 id="login-heading" className="sr-only">Admin log in</h2>
-            ) : (
-              <>
-                <span className={`rounded-full px-3 py-1.5 text-[10px] font-bold ${theme.badge}`}>Customer Login</span>
-                <h2 id="login-heading" className={`mt-3 text-3xl font-extrabold leading-[1.05] ${theme.heading}`}>Sign in to your<br />account</h2>
-              </>
-            )}
+            {/* No badge or heading on either door (the adviser, 2026-10-23);
+                the switch names the door. Kept for screen readers. */}
+            <h2 id="login-heading" className="sr-only">{isStaffMode ? 'Admin log in' : 'Customer log in'}</h2>
             {/* Why the pop-up opened on its own — PHASE10 B6. */}
             {notice && <p role="status" className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{notice}</p>}
           </div>

@@ -125,7 +125,7 @@ export function RegisterForm({ onSwitchToLogin }) {
 
   return (
     <div className="bg-[#fffedc] p-5 sm:p-8 md:p-11">
-      <div className="md:hidden"><Brand compact /></div>
+      <Brand compact />
       <div className="mt-6 flex items-start justify-between gap-4 md:mt-2">
         <div>
           <span className="rounded-full bg-butter-300 px-3 py-1.5 text-[10px] font-bold text-crust-700">Customer Registration</span>

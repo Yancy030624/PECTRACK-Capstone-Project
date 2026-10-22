@@ -66,6 +66,42 @@ router.get('/', async (_request, response) => {
   return response.json({ inventory: result.rows.map(mapInventoryRow) })
 })
 
+// GET /api/inventory/rejects — every reject recorded, newest first: the
+// Products page's Rejects list (the adviser, 2026-10-23). Real rejects
+// only, not the assumed history behind the forecast.
+router.get('/rejects', async (request, response) => {
+  const limit = Math.min(Math.max(Number.parseInt(request.query.limit, 10) || 100, 1), 500)
+  const result = await pool.query(
+    `SELECT m.movement_id, m.created_at, -m.quantity_change AS pieces, m.note,
+            p.product_id, p.product_name, p.variant, p.price, c.category_name,
+            COALESCE(a.name, ca.name) AS recorded_by
+       FROM inventory_movements m
+       JOIN inventory i ON i.inventory_id = m.inventory_id
+       JOIN products p ON p.product_id = i.product_id
+       JOIN categories c ON c.category_id = p.category_id
+       LEFT JOIN admins a ON a.user_id = m.changed_by
+       LEFT JOIN cashiers ca ON ca.user_id = m.changed_by
+      WHERE m.reason = 'REJECT' AND m.data_source = 'RECORDED'
+      ORDER BY m.created_at DESC, m.movement_id DESC
+      LIMIT $1`,
+    [limit],
+  )
+  return response.json({
+    rejects: result.rows.map((row) => ({
+      id: row.movement_id,
+      at: row.created_at,
+      pieces: Number(row.pieces),
+      reason: row.note,
+      productId: row.product_id,
+      name: row.product_name,
+      variant: row.variant,
+      price: row.price,
+      categoryName: row.category_name,
+      recordedBy: row.recorded_by,
+    })),
+  })
+})
+
 // PATCH /api/inventory/:productId — a direct stock edit, applied at once.
 // Admin and cashier both change the stock count (with a reason, written to
 // the ledger with who made it). The minimum level is a setting, not a
@@ -101,6 +137,16 @@ router.patch('/:productId', async (request, response) => {
     if (!Number.isInteger(addQuantity) || addQuantity < 1 || addQuantity > 100000) errors.addQuantity = 'Enter how many pieces to add, 1 or more.'
     if ('stockQuantity' in request.body) errors.addQuantity = 'Send either the pieces to add or the new count, not both.'
   }
+  // `rejectQuantity` (the adviser, 2026-10-23): pieces taken off the
+  // shelf as rejects, with the reason why in `note` (required). Recorded
+  // as a REJECT and listed under Products → Rejects.
+  let rejectQuantity = null
+  if ('rejectQuantity' in request.body) {
+    rejectQuantity = Number(request.body.rejectQuantity)
+    if (!Number.isInteger(rejectQuantity) || rejectQuantity < 1 || rejectQuantity > 100000) errors.rejectQuantity = 'Enter how many pieces are rejects, 1 or more.'
+    if (!normalize(request.body.note)) errors.note = 'Say why these are rejects.'
+    if ('stockQuantity' in request.body || 'addQuantity' in request.body) errors.rejectQuantity = 'Send the rejects on their own.'
+  }
   if ('stockQuantity' in request.body) {
     const stockQuantity = Number(request.body.stockQuantity)
     if (!Number.isInteger(stockQuantity) || stockQuantity < 0) errors.stockQuantity = 'Enter a whole number, zero or greater.'
@@ -117,13 +163,14 @@ router.patch('/:productId', async (request, response) => {
   // this route is metadata that doesn't need a reason.
   let reason = null
   if (addQuantity != null && !errors.addQuantity) reason = 'RESTOCK'
+  else if (rejectQuantity != null && !errors.rejectQuantity) reason = 'REJECT'
   else if ('stockQuantity' in values) {
     reason = normalize(request.body.reason).toUpperCase()
     if (!manualMovementReasons.has(reason)) errors.reason = 'Select why stock is changing: restock, reject, or recount.'
   }
 
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
-  if (Object.keys(values).length === 0 && addQuantity == null) return response.status(422).json({ message: 'Provide at least one field to update.' })
+  if (Object.keys(values).length === 0 && addQuantity == null && rejectQuantity == null) return response.status(422).json({ message: 'Provide at least one field to update.' })
 
   const note = request.body.note == null ? null : normalize(request.body.note).slice(0, 500) || null
 
@@ -155,6 +202,14 @@ router.patch('/:productId', async (request, response) => {
     }
     const current = locked.rows[0]
     if (addQuantity != null) values.stockQuantity = current.stock_quantity + addQuantity
+    if (rejectQuantity != null) {
+      if (rejectQuantity > current.stock_quantity) {
+        await client.query('ROLLBACK')
+        const message = `Only ${current.stock_quantity} on the shelf — that is the most that can be rejected.`
+        return response.status(422).json({ message, errors: { rejectQuantity: message } })
+      }
+      values.stockQuantity = current.stock_quantity - rejectQuantity
+    }
 
     // Judged against the LOCKED figure, for the same reason the ledger row
     // below is: the direction of the change is only knowable once the

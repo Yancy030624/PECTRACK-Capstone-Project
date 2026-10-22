@@ -21,14 +21,10 @@ import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDateTime, formatQuantity } from '../../lib/format.js'
 import { STOCK_STATUSES, TONES, stockStatus } from '../../lib/stockHealth.js'
 
-// What each button records. A recount's amount is the figure counted; the
-// others are the amount that came in or went out.
-const actions = [
-  { reason: 'RESTOCK', label: 'Restock', amountLabel: 'Amount received' },
-  { reason: 'USAGE', label: 'Record usage', amountLabel: 'Amount used' },
-  { reason: 'REJECT', label: 'Record reject', amountLabel: 'Amount thrown out' },
-  { reason: 'CORRECTION', label: 'Correct', amountLabel: 'Amount counted' },
-]
+// "Add" (the adviser, 2026-10-23), the same as product stock: the amount
+// typed is ADDED to what is on hand and saved as a restock, after a
+// confirmation showing on hand + added = new total. No reason or note.
+// The history below still names older usage, reject and recount rows.
 const reasonLabels = { RESTOCK: 'Restock', USAGE: 'Usage', REJECT: 'Reject', CORRECTION: 'Recount' }
 const filters = [
   { key: 'ALL', label: 'All' },
@@ -50,7 +46,8 @@ export function IngredientsPanel({ user, initialFilter }) {
 
   // The open form on one row: { id, mode: 'move' | 'edit' }.
   const [openRow, setOpenRow] = useState(null)
-  const [moveForm, setMoveForm] = useState({ reason: 'RESTOCK', quantity: '', note: '' })
+  const [moveForm, setMoveForm] = useState({ quantity: '' })
+  const [confirming, setConfirming] = useState(false)
   const [editForm, setEditForm] = useState({ name: '', unit: '', minStockLevel: '', isActive: true })
   const [rowErrors, setRowErrors] = useState({})
   const [saving, setSaving] = useState(false)
@@ -86,9 +83,10 @@ export function IngredientsPanel({ user, initialFilter }) {
     loadHistory()
   }, [])
 
-  const openMove = (ingredient, reason) => {
+  const openMove = (ingredient) => {
     setOpenRow({ id: ingredient.id, mode: 'move' })
-    setMoveForm({ reason, quantity: reason === 'CORRECTION' ? String(Number(ingredient.stockQuantity)) : '', note: '' })
+    setMoveForm({ quantity: '' })
+    setConfirming(false)
     setRowErrors({})
     setNotice('')
   }
@@ -100,21 +98,31 @@ export function IngredientsPanel({ user, initialFilter }) {
   }
   const close = () => setOpenRow(null)
 
-  const saveMove = async (event, ingredient) => {
+  const amountToAdd = Number(moveForm.quantity) || 0
+  // First press: check the amount, then ask to confirm.
+  const reviewMove = (event) => {
     event.preventDefault()
+    if (!(amountToAdd > 0) || !/^\d+(\.\d{1,3})?$/.test(moveForm.quantity.trim())) {
+      setRowErrors({ quantity: 'Enter the amount to add, more than zero (up to 3 decimals).' })
+      return
+    }
+    setRowErrors({})
+    setConfirming(true)
+  }
+  const saveMove = async (ingredient) => {
     setSaving(true)
     setRowErrors({})
     setMessage('')
     try {
-      const body = { reason: moveForm.reason, quantity: moveForm.quantity.trim() }
-      if (moveForm.note.trim()) body.note = moveForm.note.trim()
-      const data = await apiPost(`/api/ingredients/${ingredient.id}/movements`, body)
-      setNotice(`${ingredient.name}: ${reasonLabels[moveForm.reason].toLowerCase()} recorded — ${formatQuantity(data.ingredient.stockQuantity, data.ingredient.unit)} on hand.`)
+      const data = await apiPost(`/api/ingredients/${ingredient.id}/movements`, { reason: 'RESTOCK', quantity: moveForm.quantity.trim() })
+      setNotice(`${ingredient.name}: added ${formatQuantity(amountToAdd, ingredient.unit)} — ${formatQuantity(data.ingredient.stockQuantity, data.ingredient.unit)} on hand.`)
+      setConfirming(false)
       close()
       await Promise.all([load(), loadHistory()])
     } catch (error) {
       setRowErrors(error.errors ?? {})
       if (!error.errors) setMessage(error.message)
+      setConfirming(false)
     } finally {
       setSaving(false)
     }
@@ -166,7 +174,6 @@ export function IngredientsPanel({ user, initialFilter }) {
   const visible = (ingredients ?? [])
     .filter((ingredient) => filter === 'ALL' || statusOf(ingredient) === filter)
     .sort((a, b) => (filter === 'ALL' ? 0 : statusRank[statusOf(a)] - statusRank[statusOf(b)]))
-  const activeAction = actions.find((action) => action.reason === moveForm.reason)
 
   return (
     <div>
@@ -256,28 +263,31 @@ export function IngredientsPanel({ user, initialFilter }) {
                     <td colSpan={5} className="px-3 py-3 text-sm text-ink-700">
                       <p className="font-semibold text-ink-900">{ingredient.name} <span className="font-normal text-ink-500">· {formatQuantity(ingredient.stockQuantity, ingredient.unit)} on hand</span></p>
                       {openRow.mode === 'move' ? (
-                        <form onSubmit={(event) => saveMove(event, ingredient)} className="mt-2">
-                          <div role="group" aria-label="What happened" className="flex flex-wrap gap-2">
-                            {actions.map((action) => (
-                              <Button key={action.reason} type="button" size="sm" variant={moveForm.reason === action.reason ? 'primary' : 'secondary'} aria-pressed={moveForm.reason === action.reason}
-                                onClick={() => setMoveForm({ ...moveForm, reason: action.reason, quantity: action.reason === 'CORRECTION' ? String(Number(ingredient.stockQuantity)) : '' })}>
-                                {action.label}
-                              </Button>
-                            ))}
+                        confirming ? (
+                          <div className="mt-2 rounded-panel bg-amber-50 p-3">
+                            <p className="font-semibold text-ink-900">Are you sure you want to confirm these changes?</p>
+                            <p className="mt-1.5 text-sm">
+                              {formatQuantity(ingredient.stockQuantity, ingredient.unit)} on hand + {formatQuantity(amountToAdd, ingredient.unit)} added = <strong>{formatQuantity(Number(ingredient.stockQuantity) + amountToAdd, ingredient.unit)}</strong>
+                            </p>
+                            <div className="mt-3 flex gap-2">
+                              <Button type="button" size="sm" onClick={() => saveMove(ingredient)} disabled={saving}>{saving ? 'Saving…' : 'Confirm'}</Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={() => setConfirming(false)} disabled={saving}>Back</Button>
+                            </div>
                           </div>
-                          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                            <Field label={`${activeAction.amountLabel} (${ingredient.unit})`} error={rowErrors.quantity ?? rowErrors.reason}>
-                              <Input value={moveForm.quantity} onChange={(event) => setMoveForm({ ...moveForm, quantity: event.target.value })} inputMode="decimal" autoFocus />
-                            </Field>
-                            <Field label="Note (optional)">
-                              <Input value={moveForm.note} onChange={(event) => setMoveForm({ ...moveForm, note: event.target.value })} />
-                            </Field>
-                          </div>
-                          <div className="mt-3 flex gap-2">
-                            <Button type="submit" size="sm" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
-                            <Button type="button" size="sm" variant="secondary" onClick={close}>Cancel</Button>
-                          </div>
-                        </form>
+                        ) : (
+                          <form onSubmit={reviewMove} noValidate className="mt-2">
+                            <div className="grid gap-3 sm:grid-cols-3">
+                              <Field label={`Amount to add (${ingredient.unit})`} error={rowErrors.quantity ?? rowErrors.reason}>
+                                <Input value={moveForm.quantity} onChange={(event) => setMoveForm({ quantity: event.target.value.replace(/[^\d.]/g, '').slice(0, 12) })} inputMode="decimal" placeholder="e.g. 25" autoFocus />
+                              </Field>
+                            </div>
+                            {amountToAdd > 0 && <p className="mt-2 text-xs text-ink-500">{formatQuantity(ingredient.stockQuantity, ingredient.unit)} on hand + {formatQuantity(amountToAdd, ingredient.unit)} = <strong className="text-ink-900">{formatQuantity(Number(ingredient.stockQuantity) + amountToAdd, ingredient.unit)}</strong> after adding</p>}
+                            <div className="mt-3 flex gap-2">
+                              <Button type="submit" size="sm">Add</Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={close}>Cancel</Button>
+                            </div>
+                          </form>
+                        )
                       ) : (
                         <form onSubmit={(event) => saveEdit(event, ingredient)} className="mt-2">
                           <div className="grid gap-3 sm:grid-cols-3">
@@ -316,10 +326,8 @@ export function IngredientsPanel({ user, initialFilter }) {
                     <Td numeric priority="md">{formatQuantity(ingredient.minStockLevel, ingredient.unit)}</Td>
                     <Td priority="md"><StockStatusPill status={statusOf(ingredient)} /></Td>
                     <Td>
-                      {/* One button; the form it opens offers Restock,
-                          Record usage, Record reject and Correct. */}
                       <div className="flex flex-wrap gap-1">
-                        <Button type="button" size="sm" variant="ghost" onClick={() => openMove(ingredient, 'RESTOCK')} aria-label={`Record a change to ${ingredient.name}`}>Record</Button>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => openMove(ingredient)} aria-label={`Add stock to ${ingredient.name}`}>Add</Button>
                         {isAdmin && <Button type="button" size="sm" variant="ghost" onClick={() => openEdit(ingredient)} aria-label={`Edit ${ingredient.name}`}>Edit</Button>}
                       </div>
                     </Td>

@@ -12,6 +12,7 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { IngredientsPanel } from './IngredientsPanel.jsx'
 import { ProductManagement } from './ProductManagement.jsx'
+import { formatDateTime, formatPeso } from '../../lib/format.js'
 
 // "Add" stock (the adviser, 2026-10-23): the pieces typed are ADDED to
 // what is on the shelf — 7 camachile plus 50 is 57, never 50 — and saved
@@ -30,9 +31,12 @@ const stockFilters = [
   { key: 'ALL', label: 'All' },
   { key: 'GOOD', label: STOCK_STATUSES.GOOD.label, tone: 'good' },
   { key: 'LOW', label: STOCK_STATUSES.LOW.label, tone: 'attention' },
+  // Not a stock status: every reject recorded (the adviser, 2026-10-23),
+  // listed in place of the stock table. Recorded from Edit Products → Rejects.
+  { key: 'REJECTS', label: 'Rejects' },
 ]
 const matchesFilter = (item, filter) => {
-  if (filter === 'ALL') return true
+  if (filter === 'ALL' || filter === 'REJECTS') return true
   const status = stockStatus(item)
   return status === filter
 }
@@ -89,6 +93,13 @@ function ProductStock({ user, params }) {
   // Set once Add is pressed: "Are you sure…?" with the totals, then Confirm.
   const [confirming, setConfirming] = useState(false)
   const [notice, setNotice] = useState('')
+
+  // The Rejects list (GET /api/inventory/rejects), loaded with the stock
+  // so its button shows a count.
+  const [rejects, setRejects] = useState([])
+  const loadRejects = () => apiGet('/api/inventory/rejects').then((data) => setRejects(data.rejects)).catch(() => setRejects([]))
+  useEffect(() => { loadRejects() }, [])
+  const visibleRejects = rejects.filter((reject) => categoryFilter === 'ALL' || reject.categoryName === categoryFilter)
 
   const loadInventory = async () => {
     setLoading(true)
@@ -186,7 +197,7 @@ function ProductStock({ user, params }) {
             <p id="stock-filter-label" className="text-xs font-semibold uppercase tracking-wide text-ink-500">Status</p>
             <div role="group" aria-labelledby="stock-filter-label" className="mt-2 flex flex-wrap gap-2">
               {stockFilters.map((filter) => {
-                const count = inventory.filter((item) => matchesFilter(item, filter.key) && inCategory(item)).length
+                const count = filter.key === 'REJECTS' ? visibleRejects.length : inventory.filter((item) => matchesFilter(item, filter.key) && inCategory(item)).length
                 const active = stockFilter === filter.key
                 return (
                   <button
@@ -209,7 +220,9 @@ function ProductStock({ user, params }) {
                 <div role="group" aria-labelledby="category-filter-label" className="mt-2 flex flex-wrap gap-2">
                   {['ALL', ...categories].map((category) => {
                     const active = categoryFilter === category
-                    const count = inventory.filter((item) => matchesFilter(item, stockFilter) && (category === 'ALL' || item.categoryName === category)).length
+                    const count = stockFilter === 'REJECTS'
+                      ? rejects.filter((reject) => category === 'ALL' || reject.categoryName === category).length
+                      : inventory.filter((item) => matchesFilter(item, stockFilter) && (category === 'ALL' || item.categoryName === category)).length
                     return (
                       <button
                         type="button"
@@ -228,7 +241,42 @@ function ProductStock({ user, params }) {
             )}
           </div>
         )}
-        {loading ? (
+        {stockFilter === 'REJECTS' ? (
+          visibleRejects.length === 0 ? (
+            <EmptyState title="No rejects recorded" description="Record them in Edit Products → Rejects." />
+          ) : (
+            <Table caption="Rejected products">
+              <Thead>
+                <Tr className="hover:bg-transparent">
+                  <Th>Product</Th>
+                  <Th priority="lg">Category</Th>
+                  <Th align="right" priority="md">Price</Th>
+                  <Th align="right">Pieces</Th>
+                  <Th>Why</Th>
+                  <Th priority="lg">When</Th>
+                </Tr>
+              </Thead>
+              <Tbody>
+                {visibleRejects.map((reject) => (
+                  <Tr key={reject.id}>
+                    <Td className="font-semibold text-ink-900">
+                      {reject.name}
+                      {reject.variant && <span className="block text-xs font-normal text-ink-500">{reject.variant}</span>}
+                    </Td>
+                    <Td priority="lg">{reject.categoryName}</Td>
+                    <Td numeric priority="md">{formatPeso(reject.price)}</Td>
+                    <Td numeric>{reject.pieces}</Td>
+                    <Td>{reject.reason ?? '—'}</Td>
+                    <Td priority="lg">
+                      {formatDateTime(reject.at)}
+                      {reject.recordedBy && <span className="block text-xs text-ink-500">{reject.recordedBy}</span>}
+                    </Td>
+                  </Tr>
+                ))}
+              </Tbody>
+            </Table>
+          )
+        ) : loading ? (
           <LoadingRows className="mt-4" />
         ) : inventory.length === 0 ? (
           <EmptyState title="No products yet" />

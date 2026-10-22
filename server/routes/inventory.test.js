@@ -254,6 +254,27 @@ describe('editing stock directly', () => {
     await pool.query(`DELETE FROM inventory_movements WHERE movement_id = (SELECT max(m.movement_id) FROM inventory_movements m JOIN inventory i ON i.inventory_id = m.inventory_id WHERE i.product_id = $1)`, [productId])
   })
 
+  test('rejects come off the shelf with a reason, and the Rejects list shows them', async () => {
+    const before = (await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [productId])).rows[0].stock_quantity
+    const patch = (body) => fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify(body) })
+
+    assert.equal((await patch({ rejectQuantity: 1 })).status, 422, 'a reject must say why')
+    assert.equal((await patch({ rejectQuantity: before + 1, note: 'Burnt' })).status, 422, 'never more than the shelf holds')
+
+    const response = await patch({ rejectQuantity: 1, note: 'Burnt batch' })
+    assert.equal(response.status, 200, await response.clone().text())
+    assert.equal((await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [productId])).rows[0].stock_quantity, before - 1)
+
+    const list = await (await fetch(`${baseUrl}/api/inventory/rejects`, { headers: { Cookie: cashierCookie } })).json()
+    const row = list.rejects.find((reject) => String(reject.productId) === String(productId) && reject.reason === 'Burnt batch')
+    assert.ok(row, 'listed under Rejects')
+    assert.equal(row.pieces, 1)
+    assert.ok(row.name && row.categoryName && row.price != null)
+
+    await pool.query('UPDATE inventory SET stock_quantity = $2 WHERE product_id = $1', [productId, before])
+    await pool.query(`DELETE FROM inventory_movements WHERE note = 'Burnt batch' AND inventory_id = (SELECT inventory_id FROM inventory WHERE product_id = $1)`, [productId])
+  })
+
   test('a cashier cannot change the minimum level', async () => {
     const response = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ minStockLevel: 8 }) })
     assert.equal(response.status, 403)
