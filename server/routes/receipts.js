@@ -18,7 +18,8 @@ router.get('/:token', receiptLimiter, async (request, response) => {
   const found = await pool.query(
     `SELECT o.order_id, o.guest_name, o.status, o.total_amount, o.requested_fulfillment_time, o.order_date,
             (SELECT COALESCE(SUM(p.amount), 0) FROM payments p WHERE p.order_id = o.order_id AND p.status = 'PAID') AS amount_paid,
-            (SELECT p.payment_method FROM payments p WHERE p.order_id = o.order_id AND p.status = 'PAID' ORDER BY p.payment_id LIMIT 1) AS payment_method
+            (SELECT p.payment_method FROM payments p WHERE p.order_id = o.order_id AND p.status = 'PAID' ORDER BY p.payment_id LIMIT 1) AS payment_method,
+            (SELECT p.amount_tendered FROM payments p WHERE p.order_id = o.order_id AND p.status = 'PAID' ORDER BY p.payment_id LIMIT 1) AS amount_tendered
        FROM orders o
       WHERE o.receipt_token_hash = $1`,
     [crypto.createHash('sha256').update(token).digest('hex')],
@@ -40,6 +41,8 @@ router.get('/:token', receiptLimiter, async (request, response) => {
       totalAmount: order.total_amount,
       amountPaid: order.amount_paid,
       paymentMethod: order.payment_method,
+      // Migration 034: the cash handed over, when the cashier entered it.
+      amountTendered: order.amount_tendered,
       pickupTime: order.requested_fulfillment_time,
       orderedAt: order.order_date,
       items: items.rows.map((row) => ({ name: row.product_name, variant: row.variant, quantity: row.quantity, unitPrice: row.unit_price })),

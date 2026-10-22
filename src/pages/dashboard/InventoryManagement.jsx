@@ -8,41 +8,27 @@ import { Card } from '../../components/ui/Card.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Field } from '../../components/ui/Field.jsx'
 import { Input } from '../../components/ui/Input.jsx'
-import { Select } from '../../components/ui/Select.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { IngredientsPanel } from './IngredientsPanel.jsx'
 import { ProductManagement } from './ProductManagement.jsx'
 
-const emptyEditForm = { stockQuantity: '', minStockLevel: '', reason: '', note: '' }
-// Matches server/routes/inventory.js's manualMovementReasons exactly
-// (CLIENT_REVISIONS_PLAN.md, R3): the bakery writes down rejected bread
-// and nothing else as a loss, so REJECT is the one loss reason.
-const reasonOptions = [
-  { value: 'RESTOCK', label: 'Restock (delivery received)' },
-  { value: 'REJECT', label: 'Reject' },
-  { value: 'CORRECTION', label: 'Correction (recount)' },
-]
+// "Add" stock (the adviser, 2026-10-23): the pieces typed are ADDED to
+// what is on the shelf — 7 camachile plus 50 is 57, never 50 — and saved
+// as a restock. No reason or note to fill in, and a confirmation shows the
+// new totals before anything is saved.
+const emptyAddForm = { addQuantity: '', minStockLevel: '' }
 
-// Admin and cashier both edit stock here, with no approval step
+// Admin and cashier both add stock here, with no approval step
 // (CLIENT_REVISIONS_PLAN.md, R1): cashiers encode stock, and every change
 // is in the movement ledger with who made it. The minimum level is
-// admin-only. The role="status" 10px error (C3) is
-// <Alert variant="error">; the inputs are Input/Select/Field
-// (H3); Stock and Min level are <Td numeric> per the audit's "numeric and
-// currency columns right-aligned with tabular-nums" rule. Each row's
-// status (Good / Running low / Low stock) comes from
-// lib/stockHealth.jsx — the same rule the Dashboard counts with — and the
+// admin-only. Each row's status (Good / Low stock) comes from
+// lib/stockHealth.js — the same rule the Dashboard counts with — and the
 // Status filter above the table narrows the list to one of them.
-//
-// saveEdit's request-body construction is untouched: it still only adds
-// stockQuantity/reason/note/minStockLevel keys when that
-// field actually changed from editOriginal, same as before.
 // The status filter's choices.
 const stockFilters = [
   { key: 'ALL', label: 'All' },
   { key: 'GOOD', label: STOCK_STATUSES.GOOD.label, tone: 'good' },
-  { key: 'OKAY', label: STOCK_STATUSES.OKAY.label, tone: 'okay' },
   { key: 'LOW', label: STOCK_STATUSES.LOW.label, tone: 'attention' },
 ]
 const matchesFilter = (item, filter) => {
@@ -96,10 +82,13 @@ function ProductStock({ user, params }) {
   const [message, setMessage] = useState('')
 
   const [editingProductId, setEditingProductId] = useState(null)
-  const [editForm, setEditForm] = useState(emptyEditForm)
+  const [addForm, setAddForm] = useState(emptyAddForm)
   const [editOriginal, setEditOriginal] = useState(null)
   const [editErrors, setEditErrors] = useState({})
   const [editSubmitting, setEditSubmitting] = useState(false)
+  // Set once Add is pressed: "Are you sure…?" with the totals, then Confirm.
+  const [confirming, setConfirming] = useState(false)
+  const [notice, setNotice] = useState('')
 
   const loadInventory = async () => {
     setLoading(true)
@@ -119,43 +108,49 @@ function ProductStock({ user, params }) {
 
   const startEdit = (item) => {
     setEditingProductId(item.productId)
-    setEditForm({ stockQuantity: String(item.stockQuantity), minStockLevel: String(item.minStockLevel), reason: '', note: '' })
+    setAddForm({ addQuantity: '', minStockLevel: String(item.minStockLevel) })
     setEditOriginal(item)
     setEditErrors({})
+    setConfirming(false)
+    setNotice('')
   }
 
   const cancelEdit = () => {
     setEditingProductId(null)
     setEditOriginal(null)
+    setConfirming(false)
   }
-  const stockQuantityChanged = editOriginal && String(editOriginal.stockQuantity) !== editForm.stockQuantity
 
-  const saveEdit = async (event, item) => {
+  const piecesToAdd = Number(addForm.addQuantity) || 0
+  const minChanged = isAdmin && editOriginal && addForm.minStockLevel !== '' && String(editOriginal.minStockLevel) !== addForm.minStockLevel
+
+  // First press: check, then ask to confirm.
+  const reviewAdd = (event) => {
     event.preventDefault()
+    const errors = {}
+    if (addForm.addQuantity !== '' && !(piecesToAdd >= 1)) errors.addQuantity = 'Enter how many pieces to add, 1 or more.'
+    if (minChanged && !/^\d+$/.test(addForm.minStockLevel)) errors.minStockLevel = 'Enter a whole number, zero or greater.'
+    if (!piecesToAdd && !minChanged) errors.addQuantity = 'Enter how many pieces to add.'
+    setEditErrors(errors)
+    if (Object.keys(errors).length === 0) setConfirming(true)
+  }
+
+  const confirmAdd = async (item) => {
     setEditSubmitting(true)
     setEditErrors({})
     const body = {}
-    if (stockQuantityChanged) {
-      body.stockQuantity = Number(editForm.stockQuantity)
-      body.reason = editForm.reason
-      if (editForm.note.trim()) body.note = editForm.note.trim()
-    }
-    if (String(editOriginal.minStockLevel) !== editForm.minStockLevel) body.minStockLevel = Number(editForm.minStockLevel)
-
-    if (Object.keys(body).length === 0) {
-      // Nothing was actually changed — close the form without a wasted request.
-      setEditingProductId(null)
-      setEditSubmitting(false)
-      return
-    }
-
+    if (piecesToAdd) body.addQuantity = piecesToAdd
+    if (minChanged) body.minStockLevel = Number(addForm.minStockLevel)
     try {
       await apiPatch(`/api/inventory/${item.productId}`, body)
+      setNotice(piecesToAdd ? `${item.productName}: added ${piecesToAdd} — ${item.stockQuantity + piecesToAdd} in stock now.` : `${item.productName}: minimum level saved.`)
       setEditingProductId(null)
+      setConfirming(false)
       await loadInventory()
     } catch (error) {
       setEditErrors(error.errors ?? {})
       setMessage(error.message)
+      setConfirming(false)
     } finally {
       setEditSubmitting(false)
     }
@@ -163,7 +158,7 @@ function ProductStock({ user, params }) {
 
   // Worst first under a filter that mixes statuses, so what needs
   // attention is never below the fold of what is fine.
-  const statusRank = { LOW: 0, OKAY: 1, GOOD: 2 }
+  const statusRank = { LOW: 0, GOOD: 1 }
   const categories = [...new Set(inventory.map((item) => item.categoryName).filter(Boolean))].sort((a, b) => a.localeCompare(b))
   const inCategory = (item) => categoryFilter === 'ALL' || item.categoryName === categoryFilter
   const visibleInventory = inventory
@@ -172,7 +167,12 @@ function ProductStock({ user, params }) {
 
   return (
     <div>
-      <p className="mt-4 text-sm text-ink-500">Current stock levels. Edit a product to record a restock, a reject, or a recount; every change is logged with who made it.</p>
+      <p className="mt-4 text-sm text-ink-500">Current stock levels. Press Add to put newly baked or delivered pieces on the shelf; every change is logged with who made it.</p>
+      {notice && (
+        <div className="mt-4">
+          <Alert variant="success">{notice}</Alert>
+        </div>
+      )}
 
       {message && (
         <div className="mt-4">
@@ -257,42 +257,42 @@ function ProductStock({ user, params }) {
                     <Tr key={item.productId}>
                       <td colSpan={6} className="px-3 py-3 text-sm text-ink-700">
                         <p className="font-semibold text-ink-900">{item.productName}{item.variant ? ` (${item.variant})` : ''}</p>
-                        <div className="mt-2 grid gap-3 sm:grid-cols-3">
-                          <Field label="Stock" error={editErrors.stockQuantity}>
-                            <Input value={editForm.stockQuantity} onChange={(event) => setEditForm({ ...editForm, stockQuantity: event.target.value })} inputMode="numeric" />
-                          </Field>
-                          {/* A setting, not a count: admin only (routes/inventory.js). */}
-                          {isAdmin && (
-                            <Field label="Min level" error={editErrors.minStockLevel}>
-                              <Input value={editForm.minStockLevel} onChange={(event) => setEditForm({ ...editForm, minStockLevel: event.target.value })} inputMode="numeric" />
-                            </Field>
-                          )}
-                        </div>
-                        {stockQuantityChanged && (
-                          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                            <Field label="Why is stock changing?" error={editErrors.reason}>
-                              <Select value={editForm.reason} onChange={(event) => setEditForm({ ...editForm, reason: event.target.value })}>
-                                <option value="">Select a reason</option>
-                                {reasonOptions.map((option) => (
-                                  <option key={option.value} value={option.value}>
-                                    {option.label}
-                                  </option>
-                                ))}
-                              </Select>
-                            </Field>
-                            <Field label="Note (optional)">
-                              <Input value={editForm.note} onChange={(event) => setEditForm({ ...editForm, note: event.target.value })} />
-                            </Field>
+                        {confirming ? (
+                          <div className="mt-2 rounded-panel border border-amber-300 bg-amber-50 p-3">
+                            <p className="font-semibold text-ink-900">Are you sure you want to confirm these changes?</p>
+                            <ul className="mt-1.5 space-y-0.5 text-sm">
+                              {piecesToAdd > 0 && (
+                                <li>Stock: <span className="tabular-nums">{item.stockQuantity}</span> on hand + <span className="tabular-nums">{piecesToAdd}</span> added = <strong className="tabular-nums">{item.stockQuantity + piecesToAdd}</strong> pieces</li>
+                              )}
+                              {minChanged && <li>Minimum level: <span className="tabular-nums">{item.minStockLevel}</span> → <strong className="tabular-nums">{addForm.minStockLevel}</strong></li>}
+                            </ul>
+                            <div className="mt-3 flex gap-2">
+                              <Button size="sm" onClick={() => confirmAdd(item)} disabled={editSubmitting}>{editSubmitting ? 'Saving…' : 'Confirm'}</Button>
+                              <Button size="sm" variant="secondary" onClick={() => setConfirming(false)} disabled={editSubmitting}>Back</Button>
+                            </div>
                           </div>
+                        ) : (
+                          <form onSubmit={reviewAdd} noValidate>
+                            <div className="mt-2 grid gap-3 sm:grid-cols-3">
+                              <Field label="Pieces to add" error={editErrors.addQuantity}>
+                                <Input value={addForm.addQuantity} onChange={(event) => setAddForm({ ...addForm, addQuantity: event.target.value.replace(/\D/g, '').slice(0, 6) })} inputMode="numeric" placeholder="e.g. 50" autoFocus />
+                              </Field>
+                              {/* A setting, not a count: admin only (routes/inventory.js). */}
+                              {isAdmin && (
+                                <Field label="Min level" error={editErrors.minStockLevel}>
+                                  <Input value={addForm.minStockLevel} onChange={(event) => setAddForm({ ...addForm, minStockLevel: event.target.value.replace(/\D/g, '').slice(0, 6) })} inputMode="numeric" />
+                                </Field>
+                              )}
+                            </div>
+                            <p className="mt-2 text-xs text-ink-500">
+                              {item.stockQuantity} on hand{piecesToAdd > 0 ? <> + {piecesToAdd} = <strong className="text-ink-900">{item.stockQuantity + piecesToAdd}</strong> after adding</> : ''}
+                            </p>
+                            <div className="mt-3 flex gap-2">
+                              <Button type="submit" size="sm">Add</Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={cancelEdit}>Cancel</Button>
+                            </div>
+                          </form>
                         )}
-                        <div className="mt-3 flex gap-2">
-                          <Button size="sm" onClick={(event) => saveEdit(event, item)} disabled={editSubmitting}>
-                            {editSubmitting ? 'Saving…' : 'Save'}
-                          </Button>
-                          <Button size="sm" variant="secondary" onClick={cancelEdit}>
-                            Cancel
-                          </Button>
-                        </div>
                       </td>
                     </Tr>
                   ) : (
@@ -308,8 +308,8 @@ function ProductStock({ user, params }) {
                         <StockStatusPill status={stockStatus(item)} />
                       </Td>
                       <Td>
-                        <Button size="sm" variant="ghost" onClick={() => startEdit(item)}>
-                          Edit
+                        <Button size="sm" variant="ghost" onClick={() => startEdit(item)} aria-label={`Add stock to ${item.productName}`}>
+                          Add
                         </Button>
                       </Td>
                     </Tr>

@@ -95,6 +95,18 @@ export function ReservationReceiptPage() {
               <th scope="row" colSpan={2} className="pt-1 text-right text-xs font-semibold text-cocoa-500">Paid{receipt.paymentMethod ? ` (${methodName(receipt.paymentMethod)})` : ''}</th>
               <td className="pt-1 text-right text-xs font-semibold tabular-nums text-cocoa-900">{formatPeso(receipt.amountPaid)}</td>
             </tr>
+            {receipt.amountTendered != null && (
+              <>
+                <tr>
+                  <th scope="row" colSpan={2} className="pt-1 text-right text-xs font-semibold text-cocoa-500">Cash received</th>
+                  <td className="pt-1 text-right text-xs font-semibold tabular-nums text-cocoa-900">{formatPeso(receipt.amountTendered)}</td>
+                </tr>
+                <tr>
+                  <th scope="row" colSpan={2} className="pt-1 text-right text-xs font-semibold text-cocoa-500">Change</th>
+                  <td className="pt-1 text-right text-xs font-semibold tabular-nums text-cocoa-900">{formatPeso(Number(receipt.amountTendered) - Number(receipt.amountPaid))}</td>
+                </tr>
+              </>
+            )}
           </tfoot>
         </table>
         <p className="mt-5 text-xs text-cocoa-500">Paid in full at the counter. Show this page, the email, or the order number we texted you when you pick it up.</p>

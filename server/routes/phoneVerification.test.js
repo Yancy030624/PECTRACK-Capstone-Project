@@ -172,6 +172,21 @@ describe('phone codes and reservations', () => {
     assert.equal(detail.order.customerName, 'Maria Walkin')
   })
 
+  test('the cash handed over is kept, and the order shows the change', async () => {
+    const placed = await post('/api/orders', { items: [{ productId, quantity: 1 }], payment: { method: 'CASH', cashReceived: 100 } }, cashierCookie)
+    assert.equal(placed.status, 201)
+    const { order } = await placed.json()
+    orderIds.push(order.id)
+    const detail = await (await fetch(`${baseUrl}/api/orders/${order.id}`, { headers: { Cookie: cashierCookie } })).json()
+    const [payment] = detail.order.payment.payments
+    assert.equal(Number(payment.amount), 25, 'the payment is the total')
+    assert.equal(Number(payment.amountTendered), 100, 'the bill handed over')
+    assert.equal(Number(payment.change), 75)
+
+    const short = await post('/api/orders', { items: [{ productId, quantity: 1 }], payment: { method: 'CASH', cashReceived: 10 } }, cashierCookie)
+    assert.equal(short.status, 422)
+  })
+
   test('a reservation needs name, mobile, email, a pickup time and a verified number', async () => {
     const phone = randomMobile()
     const base = { customerName: 'Rosa Reserve', items: [{ productId, quantity: 3 }], payment: { method: 'CASH' }, requestedFulfillmentTime: tomorrowMorning() }

@@ -402,7 +402,16 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
       if (!gatewayReference) return response.status(422).json({ message: 'Enter the GCash reference number from the receipt.', errors: { gatewayReference: 'Enter the GCash reference number from the receipt.' } })
       if (gatewayReference.length > 255) return response.status(422).json({ message: 'A GCash reference cannot be longer than 255 characters.', errors: { gatewayReference: 'A GCash reference cannot be longer than 255 characters.' } })
     }
-    staffPayment = { method, gatewayReference }
+    // The bill the customer handed over, for the receipt's "Cash received
+    // / Change" (migration 034). Optional; never less than the total,
+    // which is checked once the total is known below.
+    let amountTendered = null
+    if (method === 'CASH' && request.body.payment?.cashReceived != null && request.body.payment.cashReceived !== '') {
+      amountTendered = Number(request.body.payment.cashReceived)
+      if (!Number.isFinite(amountTendered) || amountTendered < 0 || amountTendered > 1_000_000) return response.status(422).json({ message: 'Enter the cash received as an amount.', errors: { cashReceived: 'Enter the cash received as an amount.' } })
+      amountTendered = Math.round(amountTendered * 100) / 100
+    }
+    staffPayment = { method, gatewayReference, amountTendered }
   }
 
   // PHASE 7, DECISION 7 — a DELIVERY order needs somewhere to send it, and
@@ -574,11 +583,16 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     // recorded twice would credit money that arrived once.
     let status = initialStatus
     if (staffPayment) {
+      if (staffPayment.amountTendered != null && staffPayment.amountTendered < Number(totalAmount)) {
+        await client.query('ROLLBACK')
+        const message = `The cash received is less than the total of ${totalAmount}.`
+        return response.status(422).json({ message, errors: { cashReceived: message } })
+      }
       try {
         await client.query(
-          `INSERT INTO payments (order_id, recorded_by, payment_method, amount, status, gateway_reference, payment_date)
-           VALUES ($1, $2, $3, $4, 'PAID', $5, CURRENT_TIMESTAMP)`,
-          [orderId, request.user.id, staffPayment.method, totalAmount, staffPayment.gatewayReference],
+          `INSERT INTO payments (order_id, recorded_by, payment_method, amount, status, gateway_reference, payment_date, amount_tendered)
+           VALUES ($1, $2, $3, $4, 'PAID', $5, CURRENT_TIMESTAMP, $6)`,
+          [orderId, request.user.id, staffPayment.method, totalAmount, staffPayment.gatewayReference, staffPayment.amountTendered],
         )
       } catch (error) {
         if (error.code === '23505' && error.constraint === 'payments_gateway_reference_key') {

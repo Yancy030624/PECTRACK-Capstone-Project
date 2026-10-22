@@ -34,9 +34,9 @@ import { PrintThisButton } from '../../components/PrintReport.jsx'
 // nothing about the customer — only the products and the payment — and
 // ends on a printable receipt. An advanced order (called a reservation in
 // the code) is for a later pickup: name, mobile number (digits only,
-// proven with a texted code when codes are on), email if they have one,
-// and the pickup date and time. Both are paid now. The order number is
-// texted, and the receipt emailed when there is an email.
+// proven with a texted code when codes are on) and the pickup date and
+// time; no email (the adviser, 2026-10-23). Both are paid now. The order
+// number is texted.
 const emptyCustomer = { name: '', contactNumber: '', email: '' }
 export function WalkInOrderForm({ onCreated }) {
   const [products, setProducts] = useState(null)
@@ -76,12 +76,13 @@ export function WalkInOrderForm({ onCreated }) {
   const loading = products === null
   const productsById = loading ? new Map() : new Map(products.map((product) => [product.id, product]))
   const availableProducts = loading ? [] : products.filter((product) => product.availabilityStatus)
-  // Search only, no drop-down (the adviser, 2026-10-23): typing "m" lists
-  // the products whose name — or a word in it — starts with "m". Click one,
+  // Search only, no drop-down (the adviser, 2026-10-23): typing "b" lists
+  // only the products whose name starts with "b" — not ones with a "b"
+  // further in, nor ones with a later word starting with it. Click one,
   // or press Enter for the first, to add it.
   const [productSearch, setProductSearch] = useState('')
   const term = productSearch.trim().toLowerCase()
-  const startsWithTerm = (product) => `${product.name} ${product.variant ?? ''}`.toLowerCase().split(/\s+/).some((word) => word.startsWith(term)) || product.name.toLowerCase().startsWith(term)
+  const startsWithTerm = (product) => product.name.toLowerCase().startsWith(term)
   const matchingProducts = term ? availableProducts.filter(startsWithTerm).slice(0, 8) : []
   const pick = (productId) => {
     addLine(productId)
@@ -177,12 +178,12 @@ export function WalkInOrderForm({ onCreated }) {
       const body = {
         orderType: 'PICKUP',
         items: lines.map((line) => ({ productId: line.productId, quantity: quantityOf(line) })),
-        payment: method === 'GCASH' ? { method, gatewayReference: gcashReference.trim() } : { method },
+        payment: method === 'GCASH' ? { method, gatewayReference: gcashReference.trim() } : { method, cashReceived: received },
       }
       if (isReserve) {
         body.customerName = customer.name.trim()
         body.requestedFulfillmentTime = toRequestedTime(neededDate, neededTime)
-        body.reservation = { contactNumber: customer.contactNumber, email: customer.email.trim() || undefined, phoneVerificationToken: phone.token ?? undefined }
+        body.reservation = { contactNumber: customer.contactNumber, phoneVerificationToken: phone.token ?? undefined }
       }
 
       const data = await apiPost('/api/orders', body)
@@ -218,7 +219,7 @@ export function WalkInOrderForm({ onCreated }) {
   if (receipt) {
     return (
       <div className="mt-6 max-w-md">
-        <article className="print-only-target rounded-panel border border-line-200 bg-surface p-6 text-sm text-ink-700">
+        <article className="print-only-target rounded-panel bg-surface p-6 text-sm text-ink-700 shadow-raised">
           <header className="border-b border-line-200 pb-3 text-center">
             <p className="text-lg font-semibold text-ink-900">{bakery.name}</p>
             <p className="text-xs text-ink-500">{bakeryAddress}</p>
@@ -290,15 +291,12 @@ export function WalkInOrderForm({ onCreated }) {
             </div>
           </div>
           <p className="mt-1 text-xs text-ink-500">
-            {isReserve ? 'For a later pickup. The order number goes to their phone, and the receipt to their email if given.' : 'The customer is here now: add the products and take the payment.'}
+            {isReserve ? 'For a later pickup. The order number goes to their phone by SMS.' : 'The customer is here now: add the products and take the payment.'}
           </p>
           {isReserve && (
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div className="mt-3">
               <Field label="Name *" error={errors.customerName}>
                 <Input value={customer.name} onChange={(event) => setCustomerField('name', event.target.value)} placeholder="Customer's name" autoComplete="off" />
-              </Field>
-              <Field label="Email (optional)" error={errors.email}>
-                <Input type="email" value={customer.email} onChange={(event) => setCustomerField('email', event.target.value)} placeholder="name@gmail.com" autoComplete="off" />
               </Field>
             </div>
           )}
@@ -415,7 +413,7 @@ export function WalkInOrderForm({ onCreated }) {
         {!isReserve && errors.requestedFulfillmentTime && <Alert variant="error">{errors.requestedFulfillmentTime}</Alert>}
       </div>
 
-      <div className="h-fit rounded-panel border border-line-200 bg-surface-warm p-6">
+      <div className="h-fit rounded-panel bg-surface-warm p-6 shadow-raised">
         <h2 className="text-lg font-semibold text-ink-900">Order Details</h2>
         {message && (
           <div className="mt-3">

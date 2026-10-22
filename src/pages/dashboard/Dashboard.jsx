@@ -114,7 +114,7 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
   // ---------------------------------------------------------------------
   return (
     <div className="flex min-h-screen flex-col bg-surface-sunk text-ink-700 lg:h-screen lg:overflow-hidden print:block print:h-auto print:min-h-0 print:overflow-visible print:bg-white">
-      <header className="flex shrink-0 items-center justify-between border-b border-line-200 bg-surface px-4 py-3 shadow-raised sm:px-7 print:hidden">
+      <header className="relative z-10 flex shrink-0 items-center justify-between bg-surface px-4 py-3 shadow-raised sm:px-7 print:hidden">
         <Link to="/" aria-label="Go to home">
           <Brand compact />
         </Link>
@@ -137,12 +137,15 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
       {/* The sidebar appears from `lg`, not `md`: at 768–1023px its 256px
           took a third of the screen and squeezed every table into a
           horizontal scroller. Tablets get the same pill row as phones. */}
-      <div className="mx-auto flex w-full max-w-7xl min-h-0 flex-1 flex-col lg:flex-row 2xl:max-w-[1440px] print:block print:max-w-none">
+      {/* Full width (the adviser, 2026-10-23): the sidebar sits at the
+          screen's left edge and the content fills the rest, with no empty
+          gutters either side on a wide monitor. */}
+      <div className="flex w-full min-h-0 flex-1 flex-col lg:flex-row print:block">
         {/* Desktop sidebar. No explicit height anywhere — it stretches to
             fill the row (see the layout note above) and scrolls its own
             content with `overflow-y-auto` if a role ever has enough
             modules to exceed the viewport. */}
-        <aside className="hidden w-64 shrink-0 overflow-y-auto border-r border-line-200 bg-surface p-5 lg:block print:hidden">
+        <aside className="hidden w-64 shrink-0 overflow-y-auto bg-surface p-5 shadow-raised lg:block print:hidden">
           {/* Micro-label per DESIGN SYSTEM's typography table: 10px/600,
               uppercase, tracking-wide — not the old font-bold/tracking-widest
               pairing (H2: weight should carry meaning, not be maxed out
@@ -177,7 +180,7 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
             child that sits between the header and the content in normal
             flow, so it can never overlap anything regardless of header
             height. */}
-        <div className="flex gap-2 overflow-x-auto border-b border-line-200 bg-surface p-3 lg:hidden print:hidden">
+        <div className="flex gap-2 overflow-x-auto bg-surface p-3 shadow-raised lg:hidden print:hidden">
           {allowedModules.map((module) => (
             <button
               type="button"

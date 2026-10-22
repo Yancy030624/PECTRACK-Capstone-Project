@@ -234,6 +234,26 @@ describe('editing stock directly', () => {
     await pool.query(`DELETE FROM inventory_movements WHERE inventory_id = (SELECT inventory_id FROM inventory WHERE product_id = $1) AND reason = 'RESTOCK' AND note = 'Morning delivery'`, [productId])
   })
 
+  test('Add puts pieces ON TOP of the shelf count, as a restock with no reason typed', async () => {
+    const before = (await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [productId])).rows[0].stock_quantity
+    const response = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ addQuantity: 50 }) })
+    assert.equal(response.status, 200, await response.clone().text())
+    assert.equal((await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [productId])).rows[0].stock_quantity, before + 50, '7 + 50 is 57, never 50')
+    const movement = (await pool.query(
+      `SELECT m.reason, m.quantity_change FROM inventory_movements m JOIN inventory i ON i.inventory_id = m.inventory_id WHERE i.product_id = $1 ORDER BY m.movement_id DESC LIMIT 1`,
+      [productId],
+    )).rows[0]
+    assert.deepEqual({ reason: movement.reason, change: movement.quantity_change }, { reason: 'RESTOCK', change: 50 })
+
+    for (const bad of [0, -3, 2.5, 'ten']) {
+      const refused = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ addQuantity: bad }) })
+      assert.equal(refused.status, 422, `addQuantity ${bad}`)
+    }
+
+    await pool.query('UPDATE inventory SET stock_quantity = $2 WHERE product_id = $1', [productId, before])
+    await pool.query(`DELETE FROM inventory_movements WHERE movement_id = (SELECT max(m.movement_id) FROM inventory_movements m JOIN inventory i ON i.inventory_id = m.inventory_id WHERE i.product_id = $1)`, [productId])
+  })
+
   test('a cashier cannot change the minimum level', async () => {
     const response = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ minStockLevel: 8 }) })
     assert.equal(response.status, 403)

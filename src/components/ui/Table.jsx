@@ -23,7 +23,7 @@ const priorityClass = (priority) => (priority ? PRIORITY_CLASSES[priority] ?? ''
 
 export function Table({ caption, children, className = '' }) {
   return (
-    <div className="overflow-x-auto rounded-panel border border-line-200 bg-surface">
+    <div className="overflow-x-auto rounded-panel bg-surface">
       <table className={`w-full text-left text-sm ${className}`}>
         {caption && <caption className="sr-only">{caption}</caption>}
         {children}

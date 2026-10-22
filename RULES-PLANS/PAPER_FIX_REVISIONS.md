@@ -887,3 +887,23 @@ The team adopted:
 **Contact numbers everywhere** (sign-up, My Profile, addresses, Staff, Customers, Advanced order) accept digits only, 11 at most.
 
 **Dashboard:** the "Product running low" tile is removed. **Low stock** is enough to draw attention, the same as Ingredients running low.
+
+### Adviser revisions, second list (2026-10-23)
+
+**Order Management / Payment & Billing**
+- **Cash received and change are recorded** (migration 034, `payments.amount_tendered`).
+  - The payment itself is still the order's total.
+  - The bill the customer handed over is kept beside it. For example, a ₱35 bavarian paid with ₱100 shows "Cash received ₱100.00 · Change ₱65.00".
+  - It shows on every receipt: the walk-in receipt, the order detail, the Payment & Billing receipt, and the advanced-order receipt page.
+- **Advanced order no longer asks for an email.** The order number goes by SMS.
+- **Product search matches the start of the name only.** "b" lists Bavarian and Banana Bread, not products with a "b" further in the name.
+
+**Inventory Management**
+- **Stock status is Good or Low stock only.** "Running low" was removed everywhere: the filters, the Dashboard, and Ingredients. The Dashboard tile reads "Ingredients low stock".
+- **Edit is now Add.**
+  - Pressing **Add** asks only for **pieces to add** (an admin also sees the minimum level).
+  - The pieces are added to what is on the shelf: 7 camachile + 50 = 57.
+  - It is recorded as a restock automatically, so there is no "Why is stock changing?" or note to fill in.
+- **Confirmation before saving:** "Are you sure you want to confirm these changes?", showing *on hand + added = new total*, with **Confirm** and **Back**.
+
+**Staff screens:** no outlines on cards and panels; a soft shadow separates them instead. The dashboard fills the whole screen width.

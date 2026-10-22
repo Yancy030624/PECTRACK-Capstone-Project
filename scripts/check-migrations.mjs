@@ -25,6 +25,7 @@ const checks = [
   ['031_failed_deliveries_requeued', () => exists(`SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM deliveries d JOIN orders o ON o.order_id = d.order_id WHERE d.status = 'FAILED' AND o.status NOT IN ('COMPLETED', 'CANCELLED'))`)],
   ['032_phone_codes_and_reservations', () => table('phone_verifications')],
   ['033_trusted_devices', () => table('trusted_devices')],
+  ['034_cash_tendered', () => column('payments', 'amount_tendered')],
 ]
 
 const missing = []

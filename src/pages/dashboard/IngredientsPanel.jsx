@@ -33,7 +33,6 @@ const reasonLabels = { RESTOCK: 'Restock', USAGE: 'Usage', REJECT: 'Reject', COR
 const filters = [
   { key: 'ALL', label: 'All' },
   { key: 'GOOD', label: STOCK_STATUSES.GOOD.label, tone: 'good' },
-  { key: 'OKAY', label: STOCK_STATUSES.OKAY.label, tone: 'okay' },
   { key: 'LOW', label: STOCK_STATUSES.LOW.label, tone: 'attention' },
 ]
 const historyPage = 15
@@ -163,7 +162,7 @@ export function IngredientsPanel({ user, initialFilter }) {
     }
   }
 
-  const statusRank = { LOW: 0, OKAY: 1, GOOD: 2 }
+  const statusRank = { LOW: 0, GOOD: 1 }
   const visible = (ingredients ?? [])
     .filter((ingredient) => filter === 'ALL' || statusOf(ingredient) === filter)
     .sort((a, b) => (filter === 'ALL' ? 0 : statusRank[statusOf(a)] - statusRank[statusOf(b)]))

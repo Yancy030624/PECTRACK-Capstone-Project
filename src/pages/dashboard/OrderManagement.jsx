@@ -167,7 +167,7 @@ function OrderItems({ order }) {
 function DeliveryProgress({ delivery }) {
   if (!delivery) return null
   return (
-    <div className="rounded-panel border border-line-200 bg-surface-warm p-3 text-xs text-ink-700">
+    <div className="rounded-panel bg-surface-warm p-3 text-xs text-ink-700">
       <p className="font-semibold text-ink-900">Delivery: {humanize(delivery.status)}</p>
       {delivery.deliveryPersonnelName && <p className="mt-0.5">Driver: {delivery.deliveryPersonnelName}</p>}
       {delivery.deliveredAt && <p className="mt-0.5">Delivered {formatDateTime(delivery.deliveredAt)}</p>}
@@ -339,7 +339,7 @@ function StaffOrderManagement({ user, params }) {
           </div>
           <DeliveryProgress delivery={orderDetail.delivery} />
           {orderDetail.orderType === 'DELIVERY' && orderDetail.delivery?.id && orderDetail.delivery.status === 'PENDING_ASSIGNMENT' && orderDetail.status === 'READY_FOR_DELIVERY' && (
-            <div className="rounded-panel border border-line-200 p-3">
+            <div className="rounded-panel bg-surface-sunk p-3">
               <p className="text-xs font-semibold text-ink-700">Assign rider</p>
               {riders.length === 0 ? (
                 <p className="mt-1 text-xs text-ink-500">No active riders. Add one in User Management, Staff.</p>
@@ -362,6 +362,9 @@ function StaffOrderManagement({ user, params }) {
           {orderDetail.payment && (
             <p className="text-xs text-ink-500">
               Paid {formatPeso(orderDetail.payment.amountPaid)} · {orderDetail.payment.isFullyPaid ? <span className="font-semibold text-status-done-fg">Fully paid</span> : <span className="font-semibold text-status-fail-fg">Owes {formatPeso(orderDetail.payment.balanceDue)}</span>}
+              {orderDetail.payment.payments.filter((payment) => payment.amountTendered != null).map((payment) => (
+                <span key={payment.id} className="block">Cash received <span className="tabular-nums">{formatPeso(payment.amountTendered)}</span> · Change <span className="tabular-nums">{formatPeso(payment.change)}</span></span>
+              ))}
             </p>
           )}
           {orderDetail.status === 'CANCELLED' && hasPaid(orderDetail) && (
@@ -399,7 +402,7 @@ function StaffOrderManagement({ user, params }) {
                 // A cancellation needs a reason (PHASE10 B7); it is kept in
                 // the status history below. Unpaid orders only: the
                 // bakery gives no refunds.
-                <div className="space-y-2 rounded-panel border border-line-200 p-3">
+                <div className="space-y-2 rounded-panel bg-surface-sunk p-3">
                   <Input value={statusNote} onChange={(event) => setStatusNote(event.target.value)} placeholder="Reason for cancelling (required)" aria-label="Reason for cancelling" />
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" size="sm" variant="destructive" onClick={() => changeStatus('CANCELLED')} disabled={statusSubmitting || statusNote.trim().length < 5}>
@@ -616,7 +619,7 @@ function CustomerOrders({ user }) {
           <OrderItems order={orderDetail} />
 
           {orderDetail.payment && orderDetail.status !== 'CANCELLED' && orderDetail.payment.isFullyPaid && (
-            <p className="rounded-panel border border-line-200 bg-surface-warm p-3 text-sm font-semibold text-status-done-fg">Paid</p>
+            <p className="rounded-panel bg-surface-warm p-3 text-sm font-semibold text-status-done-fg">Paid</p>
           )}
 
         </div>

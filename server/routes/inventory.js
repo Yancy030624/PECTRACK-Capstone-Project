@@ -91,6 +91,16 @@ router.patch('/:productId', async (request, response) => {
   const errors = {}
   const values = {}
 
+  // `addQuantity` (the adviser, 2026-10-23): pieces received, ADDED to
+  // what is on the shelf — 7 camachile plus 50 received is 57 — recorded
+  // as a restock. The total is worked out below under the row lock, so a
+  // sale in between is never lost.
+  let addQuantity = null
+  if ('addQuantity' in request.body) {
+    addQuantity = Number(request.body.addQuantity)
+    if (!Number.isInteger(addQuantity) || addQuantity < 1 || addQuantity > 100000) errors.addQuantity = 'Enter how many pieces to add, 1 or more.'
+    if ('stockQuantity' in request.body) errors.addQuantity = 'Send either the pieces to add or the new count, not both.'
+  }
   if ('stockQuantity' in request.body) {
     const stockQuantity = Number(request.body.stockQuantity)
     if (!Number.isInteger(stockQuantity) || stockQuantity < 0) errors.stockQuantity = 'Enter a whole number, zero or greater.'
@@ -106,13 +116,14 @@ router.patch('/:productId', async (request, response) => {
   // movement ledger (see PHASE5_PLAN.md, Decision 1). Every other field on
   // this route is metadata that doesn't need a reason.
   let reason = null
-  if ('stockQuantity' in values) {
+  if (addQuantity != null && !errors.addQuantity) reason = 'RESTOCK'
+  else if ('stockQuantity' in values) {
     reason = normalize(request.body.reason).toUpperCase()
     if (!manualMovementReasons.has(reason)) errors.reason = 'Select why stock is changing: restock, reject, or recount.'
   }
 
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
-  if (Object.keys(values).length === 0) return response.status(422).json({ message: 'Provide at least one field to update.' })
+  if (Object.keys(values).length === 0 && addQuantity == null) return response.status(422).json({ message: 'Provide at least one field to update.' })
 
   const note = request.body.note == null ? null : normalize(request.body.note).slice(0, 500) || null
 
@@ -143,6 +154,7 @@ router.patch('/:productId', async (request, response) => {
       return response.status(404).json({ message: 'Product not found.' })
     }
     const current = locked.rows[0]
+    if (addQuantity != null) values.stockQuantity = current.stock_quantity + addQuantity
 
     // Judged against the LOCKED figure, for the same reason the ledger row
     // below is: the direction of the change is only knowable once the

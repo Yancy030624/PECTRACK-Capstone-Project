@@ -229,7 +229,7 @@ export function PaymentBilling({ user, params }) {
             </ul>
           </div>
 
-          <div className="rounded-panel border border-line-200 bg-surface-warm p-4 text-sm text-ink-900">
+          <div className="rounded-panel bg-surface-warm p-4 text-sm text-ink-900">
             <div className="flex items-center justify-between">
               <span>Total</span>
               <span className="font-semibold tabular-nums">{formatPeso(orderDetail.payment.totalAmount)}</span>
@@ -266,6 +266,7 @@ export function PaymentBilling({ user, params }) {
                   <li key={payment.id} className="flex flex-wrap items-center justify-between gap-2">
                     <span>
                       {payment.method} · <span className="tabular-nums">{formatPeso(payment.amount)}</span> {payment.gatewayReference && <span className="text-ink-500">({payment.gatewayReference})</span>}
+                      {payment.amountTendered != null && <span className="block text-ink-700">Cash received <span className="tabular-nums">{formatPeso(payment.amountTendered)}</span> · Change <span className="tabular-nums">{formatPeso(payment.change)}</span></span>}
                       <span className="block text-xs text-ink-500">{formatDateTime(payment.paymentDate ?? payment.createdAt)}{payment.recordedByName ? ` · ${payment.recordedByName}` : ''}</span>
                     </span>
                     <span className="flex items-center gap-2">

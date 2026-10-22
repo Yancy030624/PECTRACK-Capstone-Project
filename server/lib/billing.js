@@ -111,7 +111,7 @@ export async function getBillingSummary(client, orderId) {
 // tables name whoever took the payment.
 // refunded_by is narrower still: only the admin-only branch of PATCH
 // /api/orders/:id ever sets it, so it only ever needs the admins table.
-const paymentsForOrderSelectQuery = `SELECT p.payment_id, p.payment_method, p.amount, p.status, p.gateway_reference, p.payment_date, p.created_at,
+const paymentsForOrderSelectQuery = `SELECT p.payment_id, p.payment_method, p.amount, p.amount_tendered, p.status, p.gateway_reference, p.payment_date, p.created_at,
             COALESCE(ra.name, rc.name, rd.name) AS recorded_by_name,
             p.refunded_at, p.refund_reason, fa.name AS refunded_by_name,
             p.gateway_payment_id, p.refund_reference
@@ -127,6 +127,10 @@ const mapPaymentRow = (row) => ({
   id: row.payment_id,
   method: row.payment_method,
   amount: row.amount,
+  // Migration 034: the cash handed over and the change given, when the
+  // cashier entered it; null otherwise.
+  amountTendered: row.amount_tendered,
+  change: row.amount_tendered == null ? null : (Number(row.amount_tendered) - Number(row.amount)).toFixed(2),
   status: row.status,
   gatewayReference: row.gateway_reference,
   paymentDate: row.payment_date,

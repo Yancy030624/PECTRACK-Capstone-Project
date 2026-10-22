@@ -79,10 +79,10 @@ export function DashboardHome({ user, onNavigate }) {
   const allowed = new Set(modules.filter((module) => module.roles.includes(user.role)).map((module) => module.name))
   const loaded = summary && inventory
 
-  const stockCounts = { GOOD: 0, OKAY: 0, LOW: 0 }
+  const stockCounts = { GOOD: 0, LOW: 0 }
   for (const item of inventory ?? []) stockCounts[stockStatus(item)] += 1
   // Ingredients (CLIENT_REVISIONS_PLAN.md, R5), by the same rule.
-  const ingredientCounts = { GOOD: 0, OKAY: 0, LOW: 0 }
+  const ingredientCounts = { GOOD: 0, LOW: 0 }
   for (const ingredient of ingredients ?? []) ingredientCounts[stockStatus(ingredient)] += 1
   const lowItems = (inventory ?? [])
     .filter((item) => stockStatus(item) === 'LOW')
@@ -94,17 +94,17 @@ export function DashboardHome({ user, onNavigate }) {
       label: 'Low stock',
       goodLabel: 'product stock',
       value: stockCounts.LOW,
-      tone: stockCounts.LOW > 0 ? 'attention' : stockCounts.OKAY > 0 ? 'okay' : 'good',
+      tone: stockCounts.LOW > 0 ? 'attention' : 'good',
       note: stockCounts.LOW > 0 ? 'At or under the minimum' : 'Well stocked',
       to: ['Inventory Management', { stockFilter: 'LOW' }],
     },
     {
-      label: 'Ingredients running low',
+      label: 'Ingredients low stock',
       goodLabel: 'ingredients',
-      value: ingredientCounts.LOW + ingredientCounts.OKAY,
-      tone: ingredientCounts.LOW > 0 ? 'attention' : ingredientCounts.OKAY > 0 ? 'okay' : 'good',
-      note: ingredientCounts.LOW > 0 ? `${ingredientCounts.LOW} at or under the minimum` : ingredientCounts.OKAY > 0 ? 'Close to the minimum' : 'Well stocked',
-      to: ['Inventory Management', { tab: 'Ingredients', stockFilter: ingredientCounts.LOW > 0 ? 'LOW' : 'OKAY' }],
+      value: ingredientCounts.LOW,
+      tone: ingredientCounts.LOW > 0 ? 'attention' : 'good',
+      note: ingredientCounts.LOW > 0 ? 'At or under the minimum' : 'Well stocked',
+      to: ['Inventory Management', { tab: 'Ingredients', stockFilter: 'LOW' }],
     },
     {
       label: 'Orders',
@@ -160,7 +160,7 @@ export function DashboardHome({ user, onNavigate }) {
         </div>
         {/* Today at a glance: plain figures, no colour — they are facts,
             not problems. */}
-        <div className="grid w-full grid-cols-3 gap-4 rounded-panel border border-line-200 bg-surface px-4 py-3 shadow-raised sm:w-auto sm:gap-8 sm:px-5">
+        <div className="grid w-full grid-cols-3 gap-4 rounded-panel bg-surface px-4 py-3 shadow-raised sm:w-auto sm:gap-8 sm:px-5">
           <TodayFigure label="Orders today" value={summary ? summary.today.ordersPlaced : '—'} />
           <TodayFigure label="Ordered" value={summary ? formatPeso(summary.today.ordered) : '—'} />
           <TodayFigure label="Collected" value={summary ? formatPeso(summary.today.collected) : '—'} />
@@ -178,7 +178,7 @@ export function DashboardHome({ user, onNavigate }) {
           {Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-32 animate-pulse rounded-panel bg-surface-sunk" />)}
         </div>
       ) : actionTiles.length === 0 ? (
-        <p className="mt-3 rounded-panel border border-line-200 border-l-4 border-l-emerald-500 bg-surface p-4 text-sm text-ink-700 shadow-raised">Nothing needs action right now.</p>
+        <p className="mt-3 rounded-panel border-l-4 border-l-emerald-500 bg-surface p-4 shadow-raised text-sm text-ink-700 shadow-raised">Nothing needs action right now.</p>
       ) : (
         <div className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {actionTiles.map((tile) => <StatusTile key={tile.label} tile={tile} linkable={allowed.has(tile.to[0])} onOpen={() => onNavigate(...tile.to)} />)}
@@ -382,7 +382,7 @@ function StatusTile({ tile, linkable, onOpen }) {
       <p className="mt-auto pt-3 text-xs text-ink-500">{tile.note}{linkable ? <span className="font-semibold text-brand-700"> · View →</span> : null}</p>
     </div>
   )
-  const shell = `rounded-panel border border-line-200 border-l-4 ${tone.edge} bg-surface p-5 text-left shadow-raised`
+  const shell = `rounded-panel border-l-4 ${tone.edge} bg-surface p-5 text-left shadow-raised`
   return linkable
     ? <button type="button" onClick={onOpen} className={`${shell} transition hover:bg-surface-sunk`} aria-label={`${tile.label}: ${tile.value}, ${tone.label}. Open.`}>{body}</button>
     : <div className={shell}>{body}</div>

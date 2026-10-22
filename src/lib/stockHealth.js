@@ -2,28 +2,27 @@
 // Dashboard tiles and the Inventory status filter, so the two can never
 // disagree about what counts as low.
 //
-//   GOOD     comfortably stocked — more than twice the minimum level
-//   OKAY     running low — above the minimum, at most twice it
+//   GOOD     above the minimum level
 //   LOW      needs attention — at or under the minimum (incl. sold out)
+//
+// There is no "Running low" (OKAY) step any more (the adviser,
+// 2026-10-23): Low stock is enough to draw attention.
 //
 // There is no "expired" status: the bakery does not track expiry
 // (CLIENT_REVISIONS_PLAN.md, R3).
 //
 // LOW matches the server's own `lowStock` (stock_quantity <=
-// min_stock_level, routes/inventory.js) exactly; OKAY is the early
-// warning above it. A product with no minimum set (0) is GOOD while any
-// stock is left.
+// min_stock_level, routes/inventory.js) exactly. A product with no
+// minimum set (0) is GOOD while any stock is left.
 export function stockStatus(item) {
   const stock = Number(item.stockQuantity)
   const minimum = Number(item.minStockLevel)
   if (stock <= minimum) return 'LOW'
-  if (minimum > 0 && stock <= minimum * 2) return 'OKAY'
   return 'GOOD'
 }
 
 export const STOCK_STATUSES = {
   GOOD: { label: 'Good', tone: 'good' },
-  OKAY: { label: 'Running low', tone: 'okay' },
   LOW: { label: 'Low stock', tone: 'attention' },
 }
 
