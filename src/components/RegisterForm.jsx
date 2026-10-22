@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { apiPost } from '../api/client.js'
-import { Brand } from './Brand.jsx'
+import logoMark from '../assets/logo-mark.png'
 import { PasswordToggle } from './PasswordToggle.jsx'
 import { passwordHint as describePassword, strongPasswordHint } from '../lib/password.js'
 import { usePhoneVerification } from '../lib/usePhoneVerification.js'
@@ -124,22 +124,21 @@ export function RegisterForm({ onSwitchToLogin }) {
   const passwordFieldClass = 'w-full rounded-2xl border border-stone-200 bg-white py-2.5 pl-4 pr-11 text-sm shadow-sm outline-none transition focus:border-crust-500 focus:ring-4 focus:ring-cream-200'
 
   return (
-    <div className="bg-[#fffedc] p-5 sm:p-8 md:p-11">
-      <Brand compact />
-      <div className="mt-6 flex items-start justify-between gap-4 md:mt-2">
-        <div>
-          <span className="rounded-full bg-butter-300 px-3 py-1.5 text-[10px] font-bold text-crust-700">Customer Registration</span>
-          <h2 id="auth-heading" className="mt-3 text-3xl font-extrabold leading-[1.05] text-crust-700">Create your<br />account.</h2>
-        </div>
+    // The same top as the log-in form (the user, 2026-10-23): the logo
+    // centred, one heading, nothing else.
+    <div className="bg-[#fffedc] px-6 pb-6 pt-8 sm:px-9 sm:pb-8">
+      <div className="flex flex-col items-center text-center">
+        <img src={logoMark} alt="Pecto's Bakery" className="h-20 w-20 rounded-full bg-white object-contain shadow-md ring-1 ring-black/5" />
+        <h2 id="auth-heading" className="mt-3 font-display text-2xl font-bold text-crust-700">Create your account</h2>
+        {!created && <p className="mt-1 text-[11px] font-medium text-stone-500"><span aria-hidden="true" className="text-red-600">*</span> Required field</p>}
       </div>
-      {!created && <p className="mt-1 text-[11px] font-medium text-stone-500"><span aria-hidden="true" className="text-red-600">*</span> Required field</p>}
 
       {created ? (
         // One clear next step, rather than a blank form sitting under a
         // success message with nothing to do.
         <div className="mt-6">
           <p role="status" className="rounded-lg bg-cream-100 px-3 py-2 text-xs font-semibold text-crust-700">{message}</p>
-          <button type="button" onClick={onSwitchToLogin} className="mt-5 w-full rounded-2xl bg-crust-600 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-crust-700">Sign in now</button>
+          <button type="button" onClick={onSwitchToLogin} className="mt-5 w-full rounded-2xl bg-crust-600 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-crust-700">Log in now</button>
         </div>
       ) : (
         <>
@@ -214,7 +213,7 @@ export function RegisterForm({ onSwitchToLogin }) {
             <button type="submit" disabled={submitting} className="w-full rounded-2xl bg-crust-600 py-2.5 text-sm font-bold text-white shadow-lg shadow-crust-600/25 transition hover:bg-crust-700 focus:ring-4 focus:ring-cream-200 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Creating account…' : 'Create account'}</button>
           </form>
           <p className="mt-5 border-t border-stone-200 pt-4 text-center text-xs text-stone-500">
-            Already have an account? <button type="button" onClick={onSwitchToLogin} className="font-bold text-crust-600 hover:underline">Back to sign in</button>
+            Already have an account? <button type="button" onClick={onSwitchToLogin} className="font-bold text-crust-600 hover:underline">Log in</button>
           </p>
         </>
       )}

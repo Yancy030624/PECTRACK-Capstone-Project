@@ -919,3 +919,19 @@ The team adopted:
     - The rejects come off the shelf count and are logged as a REJECT.
   - **Seeing them:** Inventory Management → Products has a **Rejects** button next to **Low stock**. It lists every reject recorded: product, category, price, pieces, why, when and who. The category buttons still filter it.
 - **Ingredients:** "Record" is now **Add**. It asks only for the amount to add, which goes on top of what is on hand, with the same "Are you sure…?" confirmation as product stock. There are no reason or note fields.
+
+### Log-in screen polish (2026-10-23)
+
+- **Top of the form:** the logo is centred, with one line: "Welcome back". Below it, "Log in to order your favourites" at Customer, or "Log in to manage the bakery" at Admin.
+- **Main part:** the Customer | Admin switch, then **Username or email** and **Password**. "Forgot password?" sits beside the Password label.
+- **Options and buttons:** **Keep me logged in**, then one large **Log in** button. It reads "Logging in…" while it works, and cannot be pressed twice.
+- **Help while typing:**
+  - The first field is focused when the form opens.
+  - A "Caps Lock is on" warning appears while typing the password.
+  - Errors name the missing field.
+- **Create an account:** "New here? Create an account" at Customer. The Create account form uses the same centred logo and a single heading.
+- **Admin code step:**
+  - It is titled "Check your email" and takes digits only, in a large 6-box style field.
+  - It notes the code lasts 5 minutes and may be in spam.
+  - It keeps "Trust this device for 30 days" and has "Verify and log in" and "← Back to log in".
+- **Footer:** "Trouble logging in? Call (042) 540-4366", replacing a placeholder email address.

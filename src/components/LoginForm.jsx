@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiPost } from '../api/client.js'
-import { Brand } from './Brand.jsx'
+import logoMark from '../assets/logo-mark.png'
+import { bakery, telHref } from '../lib/bakery.js'
 import { PasswordToggle } from './PasswordToggle.jsx'
 
 // Each door wears its own colours, so nobody has to read a label to know
@@ -72,16 +73,22 @@ export function LoginForm({ mode = 'customer', onModeChange = () => {}, onLogin,
   // "Trust this device for 30 days" (migration 033, the user 2026-10-20):
   // ticked, this browser skips the emailed code at the next sign-ins.
   const [trustDevice, setTrustDevice] = useState(true)
+  // While a request is out: the button says so and cannot be pressed twice.
+  const [submitting, setSubmitting] = useState(false)
+  // Caps Lock on while typing the password — the commonest reason a right
+  // password is refused.
+  const [capsLock, setCapsLock] = useState(false)
 
   // Send credentials to the server, which verifies the bcrypt hash.
   const handleSubmit = async (event) => {
     // Prevent the default page refresh from a form submission.
     event.preventDefault()
     // Explain how to proceed if either field is incomplete.
-    if (!username || !password) {
-      setError('Enter a username and password to sign in.')
+    if (!username.trim() || !password) {
+      setError(!username.trim() ? 'Enter your username or email.' : 'Enter your password.')
       return
     }
+    setSubmitting(true)
     try {
       const data = await apiPost('/api/auth/login', { identifier: username, password, rememberMe, audience: mode })
       setError('')
@@ -95,6 +102,8 @@ export function LoginForm({ mode = 'customer', onModeChange = () => {}, onLogin,
       // wrong front page. Everything typed stays put.
       setWrongDoor(error.status === 403 && error.audience ? error.audience : null)
       setError(error.message)
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -102,16 +111,19 @@ export function LoginForm({ mode = 'customer', onModeChange = () => {}, onLogin,
   // like a normal login (same response shape, same session cookie).
   const handleOtpSubmit = async (event) => {
     event.preventDefault()
-    if (!otpCode) {
-      setError('Enter the verification code to continue.')
+    if (otpCode.length !== 6) {
+      setError('Enter the 6-digit code from your email.')
       return
     }
+    setSubmitting(true)
     try {
       const data = await apiPost('/api/auth/verify-otp', { challengeToken: pendingOtp.challengeToken, code: otpCode, trustDevice })
       setError('')
       onLogin(data.user)
     } catch (error) {
       setError(error.message)
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -132,34 +144,58 @@ export function LoginForm({ mode = 'customer', onModeChange = () => {}, onLogin,
     setError('')
   }
 
-  // No text-size class here: the code field is text-lg, and two size
-  // classes on one element are decided by stylesheet order, not by which
-  // is written last.
-  const fieldClass = `w-full rounded-2xl border border-stone-200 bg-white shadow-sm outline-none transition focus:ring-4 ${theme.focus}`
+  const fieldClass = `w-full rounded-2xl border border-stone-200 bg-white text-sm shadow-sm outline-none transition focus:ring-4 ${theme.focus}`
+  const primaryButton = `w-full rounded-2xl py-3 text-sm font-bold text-white shadow-md transition disabled:cursor-not-allowed disabled:opacity-70 ${theme.button}`
+  const errorBox = error && (
+    <div role="alert" className="flex gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-700">
+      <svg viewBox="0 0 24 24" className="mt-px h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 8v5M12 16h.01" /></svg>
+      <div className="min-w-0 flex-1">
+        {error}
+        {/* A refusal that names the right door opens it — one click, nothing retyped. */}
+        {wrongDoor && (
+          <button type="button" onClick={() => switchTo(wrongDoor)} className="mt-2 block w-full rounded-xl bg-red-700 py-2 text-xs font-bold text-white transition hover:bg-red-800">
+            {wrongDoor === 'staff' ? 'Go to admin log in →' : 'Go to customer log in →'}
+          </button>
+        )}
+      </div>
+    </div>
+  )
 
+  // Simple and friendly (the user, 2026-10-23): the logo and one welcome
+  // line on top, the Customer | Admin switch, two clearly labelled fields,
+  // one big button. Small helps: the button says when it is working,
+  // Caps Lock is pointed out, the first field is focused, and the code step
+  // takes digits only.
   return (
-    <div className={`${theme.panel} p-5 transition-colors sm:p-8`}>
-      <Brand compact />
+    <div className={`${theme.panel} px-6 pb-6 pt-8 transition-colors sm:px-9 sm:pb-8`}>
+      <div className="flex flex-col items-center text-center">
+        <img src={logoMark} alt="Pecto's Bakery" className="h-20 w-20 rounded-full bg-white object-contain shadow-md ring-1 ring-black/5" />
+        <p className={`mt-3 font-display text-2xl font-bold ${theme.heading}`}>{pendingOtp ? 'Check your email' : 'Welcome back'}</p>
+        <p className="mt-1 text-xs text-stone-500">
+          {pendingOtp ? <>We sent a 6-digit code to the email of <strong>{pendingOtp.username}</strong>.</> : isStaffMode ? 'Log in to manage the bakery.' : 'Log in to order your favourites.'}
+        </p>
+      </div>
+
       {pendingOtp ? (
-        <>
-          <div className="mt-6 md:mt-8"><span className={`rounded-full px-3 py-1.5 text-[10px] font-bold ${theme.badge}`}>Verification Required</span><h2 id="login-heading" className={`mt-3 text-3xl font-extrabold leading-[1.05] ${theme.heading}`}>Enter your<br />code</h2><p className="mt-2 text-xs font-medium text-stone-500">We sent a 6-digit code to the email on file for {pendingOtp.username}. It expires in 5 minutes.</p></div>
-          <form className="mt-6 space-y-3" onSubmit={handleOtpSubmit} noValidate>
-            <div><label htmlFor="otp-code" className="mb-1.5 block text-xs font-bold">Email verification code</label><input id="otp-code" value={otpCode} onChange={(event) => setOtpCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" placeholder="123456" maxLength={6} className={`${fieldClass} px-4 py-2.5 text-center text-lg font-bold tracking-[0.4em]`} /></div>
-            <label className="flex cursor-pointer items-start gap-2 py-1 text-xs font-bold"><input type="checkbox" checked={trustDevice} onChange={(event) => setTrustDevice(event.target.checked)} className={`mt-0.5 h-5 w-5 shrink-0 ${theme.accent}`} /><span>Trust this device for 30 days<span className="block font-medium text-stone-500">No code needed here again until then. Leave it unticked on a shared computer.</span></span></label>
-            {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{error}</p>}
-            <button type="submit" className={`mt-5 w-full rounded-2xl py-2.5 text-sm font-bold text-white shadow-md transition ${theme.button}`}>Verify</button>
-            <button type="button" onClick={cancelOtp} className={`w-full rounded-2xl bg-white py-2.5 text-xs font-bold shadow-md ring-1 ring-stone-100 transition hover:bg-stone-50 ${theme.heading}`}>Back to login</button>
-          </form>
-        </>
+        <form className="mt-6 space-y-4" onSubmit={handleOtpSubmit} noValidate>
+          <h2 id="login-heading" className="sr-only">Enter your code</h2>
+          <div>
+            <label htmlFor="otp-code" className="mb-1.5 block text-xs font-bold">Verification code</label>
+            <input id="otp-code" value={otpCode} onChange={(event) => setOtpCode(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" autoFocus className={`${fieldClass} px-4 py-3 text-center text-2xl font-bold tracking-[0.5em]`} />
+            <p className="mt-1 text-[11px] text-stone-500">The code works for 5 minutes. Check spam if it is not in your inbox.</p>
+          </div>
+          <label className="flex cursor-pointer items-start gap-2 text-xs font-bold">
+            <input type="checkbox" checked={trustDevice} onChange={(event) => setTrustDevice(event.target.checked)} className={`mt-0.5 h-4 w-4 shrink-0 ${theme.accent}`} />
+            <span>Trust this device for 30 days<span className="block font-medium text-stone-500">No code needed here until then. Untick on a shared computer.</span></span>
+          </label>
+          {errorBox}
+          <button type="submit" disabled={submitting || otpCode.length !== 6} className={primaryButton}>{submitting ? 'Checking…' : 'Verify and log in'}</button>
+          <button type="button" onClick={cancelOtp} className={`w-full py-1 text-xs font-bold hover:underline ${theme.link}`}>← Back to log in</button>
+        </form>
       ) : (
         <>
-          {/* The door switch, at the top, before anything is typed. It used
-              to be a full-width button under the form, but with both doors
-              in the same colours people still could not tell which one
-              they were at. Now it is a two-way switch showing both doors
-              with the open one filled in that door's colour, and the
-              whole form changes colour with it. */}
-          <div className="mt-6 grid grid-cols-2 gap-1 rounded-2xl bg-white p-1 shadow-sm ring-1 ring-stone-200 md:mt-0" role="group" aria-label="Who is signing in">
+          {/* The door switch: Customer | Admin, the open one filled in its colour. */}
+          <div className="mt-6 grid grid-cols-2 gap-1 rounded-2xl bg-white p-1 shadow-sm ring-1 ring-stone-200" role="group" aria-label="Who is logging in">
             <button type="button" onClick={() => switchTo('customer')} aria-pressed={!isStaffMode} className={`flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold transition ${isStaffMode ? 'text-stone-500 hover:bg-cream-100 hover:text-crust-700' : 'bg-crust-600 text-white shadow-sm'}`}>
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 10.5 12 4l9 6.5" /><path d="M5 10v9h14v-9" /><path d="M10 19v-5h4v5" /></svg>
               Customer
@@ -169,48 +205,59 @@ export function LoginForm({ mode = 'customer', onModeChange = () => {}, onLogin,
               Admin
             </button>
           </div>
-          {/* Minimal by the adviser's request (2026-10-23): the switch above
-              names the door, so the admin door has no badge, heading or
-              description, and the customer door keeps only its heading.
-              The admin door's heading stays for screen readers. */}
-          <div className="mt-6">
-            {/* No badge or heading on either door (the adviser, 2026-10-23);
-                the switch names the door. Kept for screen readers. */}
-            <h2 id="login-heading" className="sr-only">{isStaffMode ? 'Admin log in' : 'Customer log in'}</h2>
-            {/* Why the pop-up opened on its own — PHASE10 B6. */}
-            {notice && <p role="status" className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{notice}</p>}
-          </div>
-          <form className="mt-6 space-y-3" onSubmit={handleSubmit} noValidate>
-            <div><label htmlFor="username" className="mb-1.5 block text-xs font-bold">Username or Email</label><div className="relative"><svg viewBox="0 0 24 24" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="3" /><path d="M5.5 20c.8-3.3 2.9-5 6.5-5s5.7 1.7 6.5 5" /></svg><input id="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" placeholder="Email" className={`${fieldClass} py-2.5 pl-9 pr-3 text-sm`} /></div></div>
-            <div><label htmlFor="password" className="mb-1.5 block text-xs font-bold">Password</label><div className="relative"><svg viewBox="0 0 24 24" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg><input id="password" type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" placeholder="Password" className={`${fieldClass} py-2.5 pl-9 pr-11 text-sm`} /><PasswordToggle shown={showPassword} onToggle={() => setShowPassword(!showPassword)} /></div></div>
-            {/* Email password recovery (routes/auth.js /forgot-password)
-                works for every role, so the link is the same in both
-                modes; staff can also still ask an admin. */}
-            <div className="flex items-center justify-between gap-2 py-2 text-xs font-bold"><label className="flex cursor-pointer items-center gap-1.5"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className={`h-5 w-5 ${theme.accent}`} />Remember me</label><Link to="/forgot-password" onClick={onNavigateAway} className={`inline-block py-2 hover:underline ${theme.link}`}>Forgot password?</Link></div>
-            {error && (
-              <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
-                {error}
-                {/* A refusal that names the right door has to be able to
-                    open it — one click, nothing retyped. */}
-                {wrongDoor && (
-                  <button type="button" onClick={() => switchTo(wrongDoor)} className="mt-2 block w-full rounded-xl bg-red-700 py-2 text-xs font-bold text-white transition hover:bg-red-800">
-                    {wrongDoor === 'staff' ? 'Go to admin log in →' : 'Go to customer log in →'}
-                  </button>
-                )}
+          <h2 id="login-heading" className="sr-only">{isStaffMode ? 'Admin log in' : 'Customer log in'}</h2>
+          {/* Why the pop-up opened on its own — PHASE10 B6. */}
+          {notice && <p role="status" className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{notice}</p>}
+
+          <form className="mt-5 space-y-4" onSubmit={handleSubmit} noValidate>
+            <div>
+              <label htmlFor="username" className="mb-1.5 block text-xs font-bold">Username or email</label>
+              <div className="relative">
+                <svg viewBox="0 0 24 24" className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="8" r="3" /><path d="M5.5 20c.8-3.3 2.9-5 6.5-5s5.7 1.7 6.5 5" /></svg>
+                <input id="username" value={username} onChange={(event) => { setUsername(event.target.value); setError('') }} autoComplete="username" autoFocus placeholder="e.g. maria or maria@gmail.com" className={`${fieldClass} py-3 pl-10 pr-3`} />
               </div>
-            )}
-            <button type="submit" className={`mt-5 w-full rounded-2xl py-2.5 text-sm font-bold text-white shadow-md transition ${theme.button}`}>Log in</button>
-            {/* Hidden in staff mode (Decision 2's table) — self-registration
-                only ever creates CUSTOMER accounts (auth.js hard-codes it),
-                so this button could never do anything useful for a cashier
-                or driver standing at this form. */}
+            </div>
+            <div>
+              <div className="mb-1.5 flex items-baseline justify-between gap-2">
+                <label htmlFor="password" className="text-xs font-bold">Password</label>
+                {/* Email password recovery works for every role. */}
+                <Link to="/forgot-password" onClick={onNavigateAway} className={`text-xs font-bold hover:underline ${theme.link}`}>Forgot password?</Link>
+              </div>
+              <div className="relative">
+                <svg viewBox="0 0 24 24" className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
+                <input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(event) => { setPassword(event.target.value); setError('') }}
+                  onKeyUp={(event) => setCapsLock(event.getModifierState?.('CapsLock') ?? false)}
+                  onBlur={() => setCapsLock(false)}
+                  autoComplete="current-password"
+                  placeholder="Your password"
+                  className={`${fieldClass} py-3 pl-10 pr-11`}
+                />
+                <PasswordToggle shown={showPassword} onToggle={() => setShowPassword(!showPassword)} />
+              </div>
+              {capsLock && <p className="mt-1 text-[11px] font-semibold text-amber-700">Caps Lock is on.</p>}
+            </div>
+            <label className="flex w-fit cursor-pointer items-center gap-2 text-xs font-bold">
+              <input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className={`h-4 w-4 ${theme.accent}`} />
+              Keep me logged in
+            </label>
+            {errorBox}
+            <button type="submit" disabled={submitting} className={primaryButton}>{submitting ? 'Logging in…' : 'Log in'}</button>
+            {/* Self-registration only ever creates customer accounts. */}
             {mode === 'customer' && (
-              <button type="button" onClick={onRegister} className="w-full rounded-2xl bg-white py-2.5 py-2 text-xs font-bold text-crust-700 shadow-md ring-1 ring-stone-100 transition hover:bg-stone-50">Create account</button>
+              <p className="text-center text-xs text-stone-500">
+                New here? <button type="button" onClick={onRegister} className="font-bold text-crust-700 hover:underline">Create an account</button>
+              </p>
             )}
           </form>
         </>
       )}
-      <div className="mt-7 border-t border-stone-200 pt-4 text-center text-xs text-stone-500">Need help? Contact <a href="mailto:hello@pectrack.example" className={`font-bold hover:underline ${theme.link}`}>Pectos Bakery Lucban Quezon</a></div>
+      <p className="mt-6 border-t border-stone-200 pt-4 text-center text-[11px] text-stone-500">
+        Trouble logging in? Call <a href={telHref(bakery.phones[0])} className={`font-bold hover:underline ${theme.link}`}>{bakery.phones[0]}</a>
+      </p>
     </div>
   )
 }
