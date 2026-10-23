@@ -970,3 +970,14 @@ Update the inventory process description, the flowcharts and DFDs, the ERD (`pro
     - **Soft:** All, Good, **About to be sold out**, **Sold out today**, Rejects. A soft bread is never "Low stock".
     - **Hard:** All, Good, **Low stock**, Rejects.
   - The Dashboard has two tiles: **"Soft breads about to be sold out"** (not restocked until 5:00 AM) and **"Hard breads low stock"** (at the minimum, time to produce).
+
+### Rejects removed; "Correct count" instead (client, 2026-10-23)
+
+- The bakery does not keep a list of rejects, so the **Rejects** button (Edit Products) and the **Rejects** list (Products) are removed. This replaces the Rejects notes above.
+- **Correct count (admin only):** beside **Add** on each product.
+  - The admin enters the count really on the shelf, for example after bread was thrown away.
+  - A confirmation shows "10 → 6 pieces".
+  - It is logged as a correction.
+  - This keeps the shelf figure true for selling, for the 5:00 AM soft-bread top-up, and for the hard-bread "time to produce" signal.
+- **Cashiers:** they only **Add** stock. Setting the count outright is the admin's.
+- **Limitation (for the paper):** "The bakery does not record rejected or wasted products; unsold or damaged bread is reflected through an admin stock count correction."

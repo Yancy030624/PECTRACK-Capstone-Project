@@ -10,7 +10,6 @@ import { Select } from '../../components/ui/Select.jsx'
 import { Textarea } from '../../components/ui/Textarea.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatPeso } from '../../lib/format.js'
-import { RejectForm } from './RejectForm.jsx'
 
 const emptyForm = { categoryId: '', name: '', description: '', price: '', variant: '', availabilityStatus: true, stockType: 'SOFT' }
 
@@ -58,14 +57,6 @@ export function ProductManagement() {
   }, [editingKey])
 
   const [showCategories, setShowCategories] = useState(false)
-  // "Rejects" beside "Add product" (the adviser, 2026-10-23): RejectForm.jsx.
-  const [showRejects, setShowRejects] = useState(false)
-  const [stockById, setStockById] = useState(new Map())
-  const openRejects = () => {
-    setShowRejects(true)
-    setEditing(null)
-    apiGet('/api/inventory').then((data) => setStockById(new Map(data.inventory.map((item) => [item.productId, item.stockQuantity])))).catch(() => {})
-  }
   const [newCategoryName, setNewCategoryName] = useState('')
   const [editingCategoryId, setEditingCategoryId] = useState(null)
   const [editingCategoryName, setEditingCategoryName] = useState('')
@@ -101,7 +92,6 @@ export function ProductManagement() {
   // --- The product form ----------------------------------------------------
 
   const openNew = () => {
-    setShowRejects(false)
     setEditing('new')
     setForm({ ...emptyForm, categoryId: categoryFilter === 'ALL' ? '' : String(categories.find((category) => category.name === categoryFilter)?.id ?? '') })
     setErrors({})
@@ -341,7 +331,6 @@ export function ProductManagement() {
       <div className="mt-5 flex flex-wrap items-center gap-2">
         <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search products" aria-label="Search products" className="min-w-48 flex-1 sm:max-w-80" />
         <Button type="button" variant="secondary" onClick={() => setShowCategories(!showCategories)} aria-expanded={showCategories}>Categories</Button>
-        <Button type="button" variant="secondary" onClick={openRejects}>Rejects</Button>
         <Button type="button" onClick={openNew}>Add product</Button>
       </div>
 
@@ -376,15 +365,6 @@ export function ProductManagement() {
             <Button type="submit" size="sm" variant="secondary" disabled={!newCategoryName.trim()}>Add category</Button>
           </form>
         </Card>
-      )}
-
-      {showRejects && (
-        <RejectForm
-          products={products}
-          stockById={stockById}
-          onClose={() => setShowRejects(false)}
-          onSaved={(text) => { setShowRejects(false); say(text) }}
-        />
       )}
 
       {productForm}

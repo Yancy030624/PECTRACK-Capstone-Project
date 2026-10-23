@@ -13,7 +13,6 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { IngredientsPanel } from './IngredientsPanel.jsx'
 import { ProductManagement } from './ProductManagement.jsx'
-import { formatDateTime, formatPeso } from '../../lib/format.js'
 
 // "Add" stock (the adviser, 2026-10-23): the pieces typed are ADDED to
 // what is on the shelf — 7 camachile plus 50 is 57, never 50 — and saved
@@ -32,8 +31,9 @@ const emptyAddForm = { addQuantity: '', minStockLevel: '' }
 // Soft breads and hard breads are listed apart (the user, 2026-10-23),
 // each with its own statuses: a soft bread is "About to be sold out" or
 // "Sold out today", never "Low stock"; a hard bread keeps "Low stock".
-// "Rejects" is not a status: every reject recorded (the adviser,
-// 2026-10-23), listed in place of the stock table.
+// No rejects list: the bakery does not record rejects (the client,
+// 2026-10-23). When bread is thrown away the admin corrects the count
+// instead ("Correct count", below), so the shelf figure stays true.
 const breadTypes = [
   { key: 'SOFT', label: 'Soft breads' },
   { key: 'HARD', label: 'Hard breads' },
@@ -44,10 +44,9 @@ const stockFiltersFor = (type) => [
   ...(type === 'SOFT'
     ? [{ key: 'SELLING_OUT', label: STOCK_STATUSES.SELLING_OUT.label, tone: 'okay' }, { key: 'SOLD_OUT', label: STOCK_STATUSES.SOLD_OUT.label, tone: 'attention' }]
     : [{ key: 'LOW', label: STOCK_STATUSES.LOW.label, tone: 'attention' }]),
-  { key: 'REJECTS', label: 'Rejects' },
 ]
 const matchesFilter = (item, filter) => {
-  if (filter === 'ALL' || filter === 'REJECTS') return true
+  if (filter === 'ALL') return true
   return stockStatus(item) === filter
 }
 
@@ -107,13 +106,12 @@ function ProductStock({ user, params }) {
   // Set once Add is pressed: "Are you sure…?" with the totals, then Confirm.
   const [confirming, setConfirming] = useState(false)
   const [notice, setNotice] = useState('')
+  // 'add' or 'count' — "Correct count" is the admin's way to make the
+  // shelf figure true again when bread is thrown away (the client keeps
+  // no rejects list). Logged as a CORRECTION.
+  const [formMode, setFormMode] = useState('add')
+  const [countedQuantity, setCountedQuantity] = useState('')
 
-  // The Rejects list (GET /api/inventory/rejects), loaded with the stock
-  // so its button shows a count.
-  const [rejects, setRejects] = useState([])
-  const loadRejects = () => apiGet('/api/inventory/rejects').then((data) => setRejects(data.rejects)).catch(() => setRejects([]))
-  useEffect(() => { loadRejects() }, [])
-  const visibleRejects = rejects.filter((reject) => reject.stockType === breadType && (categoryFilter === 'ALL' || reject.categoryName === categoryFilter))
 
   const loadInventory = async () => {
     setLoading(true)
@@ -131,7 +129,42 @@ function ProductStock({ user, params }) {
     loadInventory()
   }, [])
 
+  const startCount = (item) => {
+    setEditingProductId(item.productId)
+    setFormMode('count')
+    setCountedQuantity(String(item.stockQuantity))
+    setEditOriginal(item)
+    setEditErrors({})
+    setConfirming(false)
+    setNotice('')
+  }
+  const reviewCount = (event) => {
+    event.preventDefault()
+    if (countedQuantity === '' || Number(countedQuantity) === editOriginal.stockQuantity) {
+      setEditErrors({ counted: countedQuantity === '' ? 'Enter the count on the shelf.' : 'That is already the count.' })
+      return
+    }
+    setEditErrors({})
+    setConfirming(true)
+  }
+  const confirmCount = async (item) => {
+    setEditSubmitting(true)
+    try {
+      await apiPatch(`/api/inventory/${item.productId}`, { stockQuantity: Number(countedQuantity), reason: 'CORRECTION', note: 'Count corrected' })
+      setNotice(`${item.productName}: count corrected from ${item.stockQuantity} to ${countedQuantity}.`)
+      setEditingProductId(null)
+      setConfirming(false)
+      await loadInventory()
+    } catch (error) {
+      setEditErrors({ counted: error.errors?.stockQuantity ?? error.message })
+      setConfirming(false)
+    } finally {
+      setEditSubmitting(false)
+    }
+  }
+
   const startEdit = (item) => {
+    setFormMode('add')
     setEditingProductId(item.productId)
     setAddForm({ addQuantity: '', minStockLevel: String(item.minStockLevel), standardStock: String(item.standardStock), targetStock: String(item.targetStock) })
     setEditOriginal(item)
@@ -232,7 +265,7 @@ function ProductStock({ user, params }) {
             <p id="stock-filter-label" className="text-xs font-semibold uppercase tracking-wide text-ink-500">Status</p>
             <div role="group" aria-labelledby="stock-filter-label" className="mt-2 flex flex-wrap gap-2">
               {stockFilters.map((filter) => {
-                const count = filter.key === 'REJECTS' ? visibleRejects.length : inventory.filter((item) => matchesFilter(item, filter.key) && inCategory(item)).length
+                const count = inventory.filter((item) => matchesFilter(item, filter.key) && inCategory(item)).length
                 const active = stockFilter === filter.key
                 return (
                   <button
@@ -255,9 +288,7 @@ function ProductStock({ user, params }) {
                 <div role="group" aria-labelledby="category-filter-label" className="mt-2 flex flex-wrap gap-2">
                   {['ALL', ...categories].map((category) => {
                     const active = categoryFilter === category
-                    const count = stockFilter === 'REJECTS'
-                      ? rejects.filter((reject) => reject.stockType === breadType && (category === 'ALL' || reject.categoryName === category)).length
-                      : ofType.filter((item) => matchesFilter(item, stockFilter) && (category === 'ALL' || item.categoryName === category)).length
+                    const count = ofType.filter((item) => matchesFilter(item, stockFilter) && (category === 'ALL' || item.categoryName === category)).length
                     return (
                       <button
                         type="button"
@@ -276,42 +307,7 @@ function ProductStock({ user, params }) {
             )}
           </div>
         )}
-        {stockFilter === 'REJECTS' ? (
-          visibleRejects.length === 0 ? (
-            <EmptyState title="No rejects recorded" description="Record them in Edit Products → Rejects." />
-          ) : (
-            <Table caption="Rejected products">
-              <Thead>
-                <Tr className="hover:bg-transparent">
-                  <Th>Product</Th>
-                  <Th priority="lg">Category</Th>
-                  <Th align="right" priority="md">Price</Th>
-                  <Th align="right">Pieces</Th>
-                  <Th>Why</Th>
-                  <Th priority="lg">When</Th>
-                </Tr>
-              </Thead>
-              <Tbody>
-                {visibleRejects.map((reject) => (
-                  <Tr key={reject.id}>
-                    <Td className="font-semibold text-ink-900">
-                      {reject.name}
-                      {reject.variant && <span className="block text-xs font-normal text-ink-500">{reject.variant}</span>}
-                    </Td>
-                    <Td priority="lg">{reject.categoryName}</Td>
-                    <Td numeric priority="md">{formatPeso(reject.price)}</Td>
-                    <Td numeric>{reject.pieces}</Td>
-                    <Td>{reject.reason ?? '—'}</Td>
-                    <Td priority="lg">
-                      {formatDateTime(reject.at)}
-                      {reject.recordedBy && <span className="block text-xs text-ink-500">{reject.recordedBy}</span>}
-                    </Td>
-                  </Tr>
-                ))}
-              </Tbody>
-            </Table>
-          )
-        ) : loading ? (
+        {loading ? (
           <LoadingRows className="mt-4" />
         ) : ofType.length === 0 ? (
           <EmptyState title={`No ${breadType === 'SOFT' ? 'soft' : 'hard'} breads yet`} description="Set a product's bread type in Edit Products." />
@@ -340,7 +336,31 @@ function ProductStock({ user, params }) {
                     <Tr key={item.productId}>
                       <td colSpan={6} className="px-3 py-3 text-sm text-ink-700">
                         <p className="font-semibold text-ink-900">{item.productName}{item.variant ? ` (${item.variant})` : ''}</p>
-                        {confirming ? (
+                        {formMode === 'count' ? (
+                          confirming ? (
+                            <div className="mt-2 rounded-panel bg-amber-50 p-3">
+                              <p className="font-semibold text-ink-900">Are you sure you want to confirm these changes?</p>
+                              <p className="mt-1.5 text-sm">Count: <span className="tabular-nums">{item.stockQuantity}</span> → <strong className="tabular-nums">{countedQuantity}</strong> pieces</p>
+                              <div className="mt-3 flex gap-2">
+                                <Button size="sm" onClick={() => confirmCount(item)} disabled={editSubmitting}>{editSubmitting ? 'Saving…' : 'Confirm'}</Button>
+                                <Button size="sm" variant="secondary" onClick={() => setConfirming(false)} disabled={editSubmitting}>Back</Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <form onSubmit={reviewCount} noValidate>
+                              <div className="mt-2 grid gap-3 sm:grid-cols-3">
+                                <Field label="Count on the shelf now" error={editErrors.counted}>
+                                  <Input value={countedQuantity} onChange={(event) => setCountedQuantity(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoFocus />
+                                </Field>
+                              </div>
+                              <p className="mt-2 text-xs text-ink-500">The system has {item.stockQuantity}. Enter what is really on the shelf, for example after bread was thrown away.</p>
+                              <div className="mt-3 flex gap-2">
+                                <Button type="submit" size="sm">Correct count</Button>
+                                <Button type="button" size="sm" variant="secondary" onClick={cancelEdit}>Cancel</Button>
+                              </div>
+                            </form>
+                          )
+                        ) : confirming ? (
                           <div className="mt-2 rounded-panel border border-amber-300 bg-amber-50 p-3">
                             <p className="font-semibold text-ink-900">Are you sure you want to confirm these changes?</p>
                             <ul className="mt-1.5 space-y-0.5 text-sm">
@@ -397,9 +417,16 @@ function ProductStock({ user, params }) {
                         <StockStatusPill status={stockStatus(item)} />
                       </Td>
                       <Td>
-                        <Button size="sm" variant="ghost" onClick={() => startEdit(item)} aria-label={`Add stock to ${item.productName}`}>
-                          Add
-                        </Button>
+                        <div className="flex flex-wrap gap-1">
+                          <Button size="sm" variant="ghost" onClick={() => startEdit(item)} aria-label={`Add stock to ${item.productName}`}>
+                            Add
+                          </Button>
+                          {isAdmin && (
+                            <Button size="sm" variant="ghost" onClick={() => startCount(item)} aria-label={`Correct the count of ${item.productName}`}>
+                              Correct count
+                            </Button>
+                          )}
+                        </div>
                       </Td>
                     </Tr>
                   ),

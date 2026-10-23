@@ -216,9 +216,14 @@ describe('editing stock directly', () => {
   // CLIENT_REVISIONS_PLAN.md, R1 — cashiers encode stock themselves, with
   // no approval step; the ledger records which cashier did it. The minimum
   // level stays an admin setting.
-  test('a cashier changes the stock count directly, and the ledger names the cashier', async () => {
+  test('only an admin sets the count outright ("Correct count"); a cashier adds stock instead', async () => {
+    const refused = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ stockQuantity: 1, reason: 'CORRECTION' }) })
+    assert.equal(refused.status, 403)
+  })
+
+  test('an admin changes the stock count directly, and the ledger names the admin', async () => {
     const before = (await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [productId])).rows[0].stock_quantity
-    const response = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ stockQuantity: before + 4, reason: 'RESTOCK', note: 'Morning delivery' }) })
+    const response = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ stockQuantity: before + 4, reason: 'RESTOCK', note: 'Morning delivery' }) })
     assert.equal(response.status, 200)
     assert.equal((await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [productId])).rows[0].stock_quantity, before + 4)
     const movement = (await pool.query(
@@ -226,7 +231,7 @@ describe('editing stock directly', () => {
         WHERE i.product_id = $1 ORDER BY m.movement_id DESC LIMIT 1`,
       [productId],
     )).rows[0]
-    assert.deepEqual({ reason: movement.reason, change: movement.quantity_change, by: movement.user_type }, { reason: 'RESTOCK', change: 4, by: 'CASHIER' })
+    assert.deepEqual({ reason: movement.reason, change: movement.quantity_change, by: movement.user_type }, { reason: 'RESTOCK', change: 4, by: 'ADMIN' })
 
     // The later tests in this block count on the product's starting stock
     // and on its ledger holding only their own rows.
@@ -252,27 +257,6 @@ describe('editing stock directly', () => {
 
     await pool.query('UPDATE inventory SET stock_quantity = $2 WHERE product_id = $1', [productId, before])
     await pool.query(`DELETE FROM inventory_movements WHERE movement_id = (SELECT max(m.movement_id) FROM inventory_movements m JOIN inventory i ON i.inventory_id = m.inventory_id WHERE i.product_id = $1)`, [productId])
-  })
-
-  test('rejects come off the shelf with a reason, and the Rejects list shows them', async () => {
-    const before = (await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [productId])).rows[0].stock_quantity
-    const patch = (body) => fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify(body) })
-
-    assert.equal((await patch({ rejectQuantity: 1 })).status, 422, 'a reject must say why')
-    assert.equal((await patch({ rejectQuantity: before + 1, note: 'Burnt' })).status, 422, 'never more than the shelf holds')
-
-    const response = await patch({ rejectQuantity: 1, note: 'Burnt batch' })
-    assert.equal(response.status, 200, await response.clone().text())
-    assert.equal((await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [productId])).rows[0].stock_quantity, before - 1)
-
-    const list = await (await fetch(`${baseUrl}/api/inventory/rejects`, { headers: { Cookie: cashierCookie } })).json()
-    const row = list.rejects.find((reject) => String(reject.productId) === String(productId) && reject.reason === 'Burnt batch')
-    assert.ok(row, 'listed under Rejects')
-    assert.equal(row.pieces, 1)
-    assert.ok(row.name && row.categoryName && row.price != null)
-
-    await pool.query('UPDATE inventory SET stock_quantity = $2 WHERE product_id = $1', [productId, before])
-    await pool.query(`DELETE FROM inventory_movements WHERE note = 'Burnt batch' AND inventory_id = (SELECT inventory_id FROM inventory WHERE product_id = $1)`, [productId])
   })
 
   test('a cashier cannot change the minimum level', async () => {
