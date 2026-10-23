@@ -23,7 +23,9 @@ export function AuthModal({ request, onClose, onLogin, onView }) {
   const isRegister = view === 'register'
 
   return (
-    <Modal open={Boolean(request)} onClose={onClose} labelledBy={isRegister ? 'auth-heading' : 'login-heading'}>
+    // Create account is a long form: a click beside it must not close it and
+    // lose what was typed. The ✕ still closes it.
+    <Modal open={Boolean(request)} onClose={onClose} labelledBy={isRegister ? 'auth-heading' : 'login-heading'} closeOnBackdrop={!isRegister}>
       {/* Keyed by the request, so a new one (another door, or register)
           starts on that request's door instead of the last one shown. */}
       <AuthDialog key={`${view}:${request?.mode ?? 'customer'}`} request={request} isRegister={isRegister} onClose={onClose} onLogin={onLogin} onView={onView} />
