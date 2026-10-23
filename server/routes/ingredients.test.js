@@ -119,7 +119,8 @@ describe('ingredient stock', () => {
     assert.equal(Number(await stockOf(flourId)), 63.25)
     assert.equal((await move(adminCookie, flourId, { reason: 'REJECT', quantity: '0.25', note: 'Wet bag' })).status, 201)
     assert.equal(Number(await stockOf(flourId)), 63)
-    assert.equal((await move(cashierCookie, flourId, { reason: 'CORRECTION', quantity: '60' })).status, 201)
+    assert.equal((await move(cashierCookie, flourId, { reason: 'CORRECTION', quantity: '60' })).status, 403, 'a count is corrected by the admin')
+    assert.equal((await move(adminCookie, flourId, { reason: 'CORRECTION', quantity: '60' })).status, 201)
     assert.equal(Number(await stockOf(flourId)), 60)
 
     const rows = await pool.query('SELECT reason, quantity_change::text AS change FROM ingredient_movements WHERE ingredient_id = $1 ORDER BY movement_id DESC LIMIT 3', [flourId])
@@ -131,7 +132,7 @@ describe('ingredient stock', () => {
 
   test('stock never goes below zero, and a refused movement writes nothing', async () => {
     const before = (await pool.query('SELECT COUNT(*)::int AS n FROM ingredient_movements WHERE ingredient_id = $1', [flourId])).rows[0].n
-    const tooMuch = await move(cashierCookie, flourId, { reason: 'USAGE', quantity: '60.001' })
+    const tooMuch = await move(adminCookie, flourId, { reason: 'USAGE', quantity: '60.001' })
     assert.equal(tooMuch.status, 409)
     assert.match((await tooMuch.json()).message, /Only 60 kg on hand/)
     for (const body of [{ reason: 'USAGE', quantity: '-5' }, { reason: 'USAGE', quantity: '0' }, { reason: 'SPOILAGE', quantity: '1' }, { reason: 'RESTOCK', quantity: '1.2345' }, { reason: 'CORRECTION', quantity: '60' }]) {
@@ -143,7 +144,7 @@ describe('ingredient stock', () => {
 
   test('simultaneous usage cannot overdraw', async () => {
     // 60 on hand; five people each use 15 at once — only four can.
-    const results = await Promise.all(Array.from({ length: 5 }, () => move(cashierCookie, flourId, { reason: 'USAGE', quantity: '15' })))
+    const results = await Promise.all(Array.from({ length: 5 }, () => move(adminCookie, flourId, { reason: 'USAGE', quantity: '15' })))
     assert.deepEqual(results.map((response) => response.status).sort(), [201, 201, 201, 201, 409])
     assert.equal(Number(await stockOf(flourId)), 0)
     assert.equal(Number(await ledgerSum(flourId)), 0)
@@ -167,7 +168,7 @@ describe('ingredient stock', () => {
     assert.ok(body.hasMore)
     assert.equal(body.movements[0].ingredientName, `Flour ${runId}`)
     assert.equal(body.movements[0].reason, 'USAGE')
-    assert.equal(body.movements[0].changedByName, cashier.name)
+    assert.equal(body.movements[0].changedByName, 'Ingredient Test Admin')
   })
 
   test('the inventory report carries the ingredient totals and the low ingredients', async () => {

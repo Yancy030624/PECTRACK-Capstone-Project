@@ -138,6 +138,18 @@ describe('notification feed', () => {
   })
 
   after(async () => {
+    // Every order these users took part in, not only the ones a test
+    // remembered: one left behind keeps its payment's recorded_by pointing
+    // at a test user, and the users then cannot be deleted.
+    const touched = await pool.query(
+      `SELECT DISTINCT o.order_id FROM orders o
+         LEFT JOIN payments p ON p.order_id = o.order_id
+         LEFT JOIN cashiers ca ON ca.cashier_id = o.processed_by
+         LEFT JOIN customers cu ON cu.customer_id = o.customer_id
+        WHERE p.recorded_by = ANY($1) OR ca.user_id = ANY($1) OR cu.user_id = ANY($1)`,
+      [createdUserIds],
+    )
+    for (const row of touched.rows) if (!createdOrderIds.includes(row.order_id)) createdOrderIds.push(row.order_id)
     await pool.query('DELETE FROM deliveries WHERE order_id = ANY($1)', [createdOrderIds]).catch(() => {})
     await pool.query('DELETE FROM inventory_movements WHERE order_id = ANY($1)', [createdOrderIds]).catch(() => {})
     await pool.query('DELETE FROM payments WHERE order_id = ANY($1)', [createdOrderIds]).catch(() => {})

@@ -83,6 +83,46 @@ export function IngredientsPanel({ user, initialFilter }) {
     loadHistory()
   }, [])
 
+  // One "Edit" button per ingredient (the user, 2026-10-23), the same as
+  // product stock: it opens on Add stock; the admin also has Correct count
+  // (the real amount after a stock check) and Details (name, unit,
+  // minimum, hide).
+  const openCount = (ingredient) => {
+    setOpenRow({ id: ingredient.id, mode: 'count' })
+    setMoveForm({ quantity: String(Number(ingredient.stockQuantity)) })
+    setConfirming(false)
+    setRowErrors({})
+    setNotice('')
+  }
+  const reviewCount = (event, ingredient) => {
+    event.preventDefault()
+    if (!/^\d+(\.\d{1,3})?$/.test(moveForm.quantity.trim())) {
+      setRowErrors({ quantity: 'Enter the amount on hand (up to 3 decimals).' })
+      return
+    }
+    if (Number(moveForm.quantity) === Number(ingredient.stockQuantity)) {
+      setRowErrors({ quantity: 'That is already the amount on hand.' })
+      return
+    }
+    setRowErrors({})
+    setConfirming(true)
+  }
+  const saveCount = async (ingredient) => {
+    setSaving(true)
+    setMessage('')
+    try {
+      const data = await apiPost(`/api/ingredients/${ingredient.id}/movements`, { reason: 'CORRECTION', quantity: moveForm.quantity.trim() })
+      setNotice(`${ingredient.name}: count corrected to ${formatQuantity(data.ingredient.stockQuantity, data.ingredient.unit)}.`)
+      setConfirming(false)
+      close()
+      await Promise.all([load(), loadHistory()])
+    } catch (error) {
+      setRowErrors(error.errors ?? { quantity: error.message })
+      setConfirming(false)
+    } finally {
+      setSaving(false)
+    }
+  }
   const openMove = (ingredient) => {
     setOpenRow({ id: ingredient.id, mode: 'move' })
     setMoveForm({ quantity: '' })
@@ -92,6 +132,7 @@ export function IngredientsPanel({ user, initialFilter }) {
   }
   const openEdit = (ingredient) => {
     setOpenRow({ id: ingredient.id, mode: 'edit' })
+    setConfirming(false)
     setEditForm({ name: ingredient.name, unit: ingredient.unit, minStockLevel: String(Number(ingredient.minStockLevel)), isActive: ingredient.isActive })
     setRowErrors({})
     setNotice('')
@@ -261,8 +302,44 @@ export function IngredientsPanel({ user, initialFilter }) {
                 openRow?.id === ingredient.id ? (
                   <Tr key={ingredient.id}>
                     <td colSpan={5} className="px-3 py-3 text-sm text-ink-700">
-                      <p className="font-semibold text-ink-900">{ingredient.name} <span className="font-normal text-ink-500">· {formatQuantity(ingredient.stockQuantity, ingredient.unit)} on hand</span></p>
-                      {openRow.mode === 'move' ? (
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-semibold text-ink-900">{ingredient.name} <span className="font-normal text-ink-500">· {formatQuantity(ingredient.stockQuantity, ingredient.unit)} on hand</span></p>
+                        {isAdmin && !confirming && (
+                          <div role="tablist" aria-label="What to change" className="inline-flex rounded-full bg-surface-sunk p-0.5">
+                            {[['move', 'Add stock', openMove], ['count', 'Correct count', openCount], ['edit', 'Details', openEdit]].map(([key, label, open]) => (
+                              <button key={key} type="button" role="tab" aria-selected={openRow.mode === key} onClick={() => open(ingredient)}
+                                className={`min-h-8 rounded-full px-3 text-xs font-semibold transition ${openRow.mode === key ? 'bg-surface text-ink-900 shadow-raised' : 'text-ink-500 hover:text-ink-900'}`}>
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {openRow.mode === 'count' ? (
+                        confirming ? (
+                          <div className="mt-2 rounded-panel bg-amber-50 p-3">
+                            <p className="font-semibold text-ink-900">Are you sure you want to confirm these changes?</p>
+                            <p className="mt-1.5 text-sm">Count: {formatQuantity(ingredient.stockQuantity, ingredient.unit)} → <strong>{formatQuantity(Number(moveForm.quantity), ingredient.unit)}</strong></p>
+                            <div className="mt-3 flex gap-2">
+                              <Button type="button" size="sm" onClick={() => saveCount(ingredient)} disabled={saving}>{saving ? 'Saving…' : 'Confirm'}</Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={() => setConfirming(false)} disabled={saving}>Back</Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <form onSubmit={(event) => reviewCount(event, ingredient)} noValidate className="mt-2">
+                            <div className="grid gap-3 sm:grid-cols-3">
+                              <Field label={`Amount on hand now (${ingredient.unit})`} error={rowErrors.quantity}>
+                                <Input value={moveForm.quantity} onChange={(event) => setMoveForm({ quantity: event.target.value.replace(/[^\d.]/g, '').slice(0, 12) })} inputMode="decimal" autoFocus />
+                              </Field>
+                            </div>
+                            <p className="mt-2 text-xs text-ink-500">The system has {formatQuantity(ingredient.stockQuantity, ingredient.unit)}. Enter what is really in the storeroom, for example after a stock check.</p>
+                            <div className="mt-3 flex gap-2">
+                              <Button type="submit" size="sm">Correct count</Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={close}>Cancel</Button>
+                            </div>
+                          </form>
+                        )
+                      ) : openRow.mode === 'move' ? (
                         confirming ? (
                           <div className="mt-2 rounded-panel bg-amber-50 p-3">
                             <p className="font-semibold text-ink-900">Are you sure you want to confirm these changes?</p>
@@ -327,8 +404,7 @@ export function IngredientsPanel({ user, initialFilter }) {
                     <Td priority="md"><StockStatusPill status={statusOf(ingredient)} /></Td>
                     <Td>
                       <div className="flex flex-wrap gap-1">
-                        <Button type="button" size="sm" variant="ghost" onClick={() => openMove(ingredient)} aria-label={`Add stock to ${ingredient.name}`}>Add</Button>
-                        {isAdmin && <Button type="button" size="sm" variant="ghost" onClick={() => openEdit(ingredient)} aria-label={`Edit ${ingredient.name}`}>Edit</Button>}
+                        <Button type="button" size="sm" variant="ghost" onClick={() => openMove(ingredient)} aria-label={`Edit ${ingredient.name}`}>Edit</Button>
                       </div>
                     </Td>
                   </Tr>

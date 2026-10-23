@@ -982,3 +982,7 @@ Update the inventory process description, the flowcharts and DFDs, the ERD (`pro
 - **Cashiers:** they only **Add** stock. Setting the count outright is the admin's.
 - **Limitation (for the paper):** "The bakery does not record rejected or wasted products; unsold or damaged bread is reflected through an admin stock count correction."
 - **One "Edit" button per product (2026-10-23).** It replaces "Add" and "Correct count". It opens the form on **Add stock**; the admin also sees a small **Add stock | Correct count** switch at the top of that form.
+- **Ingredients use the same single "Edit" button (2026-10-23).** It opens on **Add stock** (everyone): the amount received goes on top, with a confirmation. The admin also has:
+  - **Correct count:** the real amount after a stock check, for example "35 kg → 28 kg", with a confirmation.
+  - **Details:** name, unit, minimum, and "no longer used".
+  Correcting an ingredient count is admin-only, the same as products. Ingredient usage is not recorded day to day; the count is kept true by the admin's stock checks. Add a line to the limitations.

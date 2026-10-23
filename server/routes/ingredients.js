@@ -196,6 +196,11 @@ router.post('/:id/movements', async (request, response) => {
 
   const errors = {}
   const reason = normalize(request.body.reason).toUpperCase()
+  // Everyone adds stock; correcting the count (and the older usage and
+  // reject entries) is the admin's, the same as product stock.
+  if (reasons.has(reason) && reason !== 'RESTOCK' && request.user.role !== 'ADMIN') {
+    return response.status(403).json({ message: 'Only an admin can correct an ingredient count.' })
+  }
   if (!reasons.has(reason)) errors.reason = 'Choose what happened: restock, usage, reject, or recount.'
   const quantity = parseQuantity(request.body.quantity, { allowZero: reason === 'CORRECTION' })
   if (quantity === null) {
