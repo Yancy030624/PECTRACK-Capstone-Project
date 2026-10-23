@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { apiGet, apiPatch } from '../../api/client.js'
 import { StockStatusPill } from '../../components/ui/StockStatusPill.jsx'
-import { STOCK_STATUSES, TONES, stockStatus } from '../../lib/stockHealth.js'
+import { STOCK_STATUSES, TONES, needsAttention, stockStatus } from '../../lib/stockHealth.js'
+import { ProductionPanel } from './ProductionPanel.jsx'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Button } from '../../components/ui/Button.jsx'
 import { Card } from '../../components/ui/Card.jsx'
@@ -38,6 +39,7 @@ const stockFilters = [
 const matchesFilter = (item, filter) => {
   if (filter === 'ALL' || filter === 'REJECTS') return true
   const status = stockStatus(item)
+  if (filter === 'LOW') return needsAttention(status)
   return status === filter
 }
 
@@ -50,7 +52,8 @@ const matchesFilter = (item, filter) => {
 // the Product Management module: adding products, prices, photos,
 // categories, on sale or not. Admin only, as that module was.
 export function InventoryManagement({ user, params }) {
-  const tabs = user.role === 'ADMIN' ? ['Products', 'Ingredients', 'Edit Products'] : ['Products', 'Ingredients']
+  // Production (RULES-PLANS/DAILY_STOCK_PLAN.md): what to bake tomorrow.
+  const tabs = user.role === 'ADMIN' ? ['Products', 'Production', 'Ingredients', 'Edit Products'] : ['Products', 'Production', 'Ingredients']
   const [tab, setTab] = useState(tabs.includes(params?.tab) ? params.tab : 'Products')
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
@@ -64,6 +67,7 @@ export function InventoryManagement({ user, params }) {
         ))}
       </div>
       {tab === 'Products' && <ProductStock user={user} params={params} />}
+      {tab === 'Production' && <ProductionPanel />}
       {tab === 'Ingredients' && <IngredientsPanel user={user} initialFilter={params?.tab === 'Ingredients' ? params.stockFilter : undefined} />}
       {tab === 'Edit Products' && <ProductManagement />}
     </section>
@@ -119,7 +123,7 @@ function ProductStock({ user, params }) {
 
   const startEdit = (item) => {
     setEditingProductId(item.productId)
-    setAddForm({ addQuantity: '', minStockLevel: String(item.minStockLevel) })
+    setAddForm({ addQuantity: '', minStockLevel: String(item.minStockLevel), standardStock: String(item.standardStock), targetStock: String(item.targetStock) })
     setEditOriginal(item)
     setEditErrors({})
     setConfirming(false)
@@ -133,14 +137,20 @@ function ProductStock({ user, params }) {
   }
 
   const piecesToAdd = Number(addForm.addQuantity) || 0
-  const minChanged = isAdmin && editOriginal && addForm.minStockLevel !== '' && String(editOriginal.minStockLevel) !== addForm.minStockLevel
+  // The levels an admin sets, by bread type (RULES-PLANS/DAILY_STOCK_PLAN.md):
+  // a soft bread's daily standard; a hard bread's minimum and stop level.
+  const levelFields = editOriginal?.stockType === 'HARD'
+    ? [['minStockLevel', 'Produce at (minimum)'], ['targetStock', 'Stop at']]
+    : editOriginal?.stockType === 'SOFT' ? [['standardStock', 'Daily standard']] : [['minStockLevel', 'Min level']]
+  const changedLevels = isAdmin && editOriginal ? levelFields.filter(([field]) => addForm[field] !== '' && String(editOriginal[field]) !== addForm[field]) : []
+  const minChanged = changedLevels.length > 0
 
   // First press: check, then ask to confirm.
   const reviewAdd = (event) => {
     event.preventDefault()
     const errors = {}
     if (addForm.addQuantity !== '' && !(piecesToAdd >= 1)) errors.addQuantity = 'Enter how many pieces to add, 1 or more.'
-    if (minChanged && !/^\d+$/.test(addForm.minStockLevel)) errors.minStockLevel = 'Enter a whole number, zero or greater.'
+    if (editOriginal?.stockType === 'HARD' && Number(addForm.targetStock) > 0 && Number(addForm.targetStock) <= Number(addForm.minStockLevel)) errors.targetStock = 'Stop at must be above the minimum.'
     if (!piecesToAdd && !minChanged) errors.addQuantity = 'Enter how many pieces to add.'
     setEditErrors(errors)
     if (Object.keys(errors).length === 0) setConfirming(true)
@@ -151,10 +161,10 @@ function ProductStock({ user, params }) {
     setEditErrors({})
     const body = {}
     if (piecesToAdd) body.addQuantity = piecesToAdd
-    if (minChanged) body.minStockLevel = Number(addForm.minStockLevel)
+    for (const [field] of changedLevels) body[field] = Number(addForm[field])
     try {
       await apiPatch(`/api/inventory/${item.productId}`, body)
-      setNotice(piecesToAdd ? `${item.productName}: added ${piecesToAdd} — ${item.stockQuantity + piecesToAdd} in stock now.` : `${item.productName}: minimum level saved.`)
+      setNotice(piecesToAdd ? `${item.productName}: added ${piecesToAdd} — ${item.stockQuantity + piecesToAdd} in stock now.` : `${item.productName}: levels saved.`)
       setEditingProductId(null)
       setConfirming(false)
       await loadInventory()
@@ -169,7 +179,7 @@ function ProductStock({ user, params }) {
 
   // Worst first under a filter that mixes statuses, so what needs
   // attention is never below the fold of what is fine.
-  const statusRank = { LOW: 0, GOOD: 1 }
+  const statusRank = { SOLD_OUT: 0, LOW: 1, SELLING_OUT: 2, GOOD: 3 }
   const categories = [...new Set(inventory.map((item) => item.categoryName).filter(Boolean))].sort((a, b) => a.localeCompare(b))
   const inCategory = (item) => categoryFilter === 'ALL' || item.categoryName === categoryFilter
   const visibleInventory = inventory
@@ -290,7 +300,8 @@ function ProductStock({ user, params }) {
                   <Th>Product</Th>
                   <Th priority="lg">Category</Th>
                   <Th align="right">Stock</Th>
-                  <Th align="right" priority="md">Min level</Th>
+                  <Th priority="md">Type</Th>
+                  <Th align="right" priority="md">Level</Th>
                   <Th>Status</Th>
                   <Th>Actions</Th>
                 </Tr>
@@ -303,7 +314,7 @@ function ProductStock({ user, params }) {
                     // moment a column was hidden on a narrow screen: the
                     // "Min level" input vanished with its column. One cell, one stacked form, every size.
                     <Tr key={item.productId}>
-                      <td colSpan={6} className="px-3 py-3 text-sm text-ink-700">
+                      <td colSpan={7} className="px-3 py-3 text-sm text-ink-700">
                         <p className="font-semibold text-ink-900">{item.productName}{item.variant ? ` (${item.variant})` : ''}</p>
                         {confirming ? (
                           <div className="mt-2 rounded-panel border border-amber-300 bg-amber-50 p-3">
@@ -312,7 +323,9 @@ function ProductStock({ user, params }) {
                               {piecesToAdd > 0 && (
                                 <li>Stock: <span className="tabular-nums">{item.stockQuantity}</span> on hand + <span className="tabular-nums">{piecesToAdd}</span> added = <strong className="tabular-nums">{item.stockQuantity + piecesToAdd}</strong> pieces</li>
                               )}
-                              {minChanged && <li>Minimum level: <span className="tabular-nums">{item.minStockLevel}</span> → <strong className="tabular-nums">{addForm.minStockLevel}</strong></li>}
+                              {changedLevels.map(([field, label]) => (
+                                <li key={field}>{label}: <span className="tabular-nums">{item[field]}</span> → <strong className="tabular-nums">{addForm[field]}</strong></li>
+                              ))}
                             </ul>
                             <div className="mt-3 flex gap-2">
                               <Button size="sm" onClick={() => confirmAdd(item)} disabled={editSubmitting}>{editSubmitting ? 'Saving…' : 'Confirm'}</Button>
@@ -325,12 +338,12 @@ function ProductStock({ user, params }) {
                               <Field label="Pieces to add" error={editErrors.addQuantity}>
                                 <Input value={addForm.addQuantity} onChange={(event) => setAddForm({ ...addForm, addQuantity: event.target.value.replace(/\D/g, '').slice(0, 6) })} inputMode="numeric" placeholder="e.g. 50" autoFocus />
                               </Field>
-                              {/* A setting, not a count: admin only (routes/inventory.js). */}
-                              {isAdmin && (
-                                <Field label="Min level" error={editErrors.minStockLevel}>
-                                  <Input value={addForm.minStockLevel} onChange={(event) => setAddForm({ ...addForm, minStockLevel: event.target.value.replace(/\D/g, '').slice(0, 6) })} inputMode="numeric" />
+                              {/* Settings, not counts: admin only (routes/inventory.js). */}
+                              {isAdmin && levelFields.map(([field, label]) => (
+                                <Field key={field} label={label} error={editErrors[field]}>
+                                  <Input value={addForm[field]} onChange={(event) => setAddForm({ ...addForm, [field]: event.target.value.replace(/\D/g, '').slice(0, 6) })} inputMode="numeric" />
                                 </Field>
-                              )}
+                              ))}
                             </div>
                             <p className="mt-2 text-xs text-ink-500">
                               {item.stockQuantity} on hand{piecesToAdd > 0 ? <> + {piecesToAdd} = <strong className="text-ink-900">{item.stockQuantity + piecesToAdd}</strong> after adding</> : ''}
@@ -351,7 +364,12 @@ function ProductStock({ user, params }) {
                       </Td>
                       <Td priority="lg">{item.categoryName}</Td>
                       <Td numeric>{item.stockQuantity}</Td>
-                      <Td numeric priority="md">{item.minStockLevel}</Td>
+                      <Td priority="md">{item.stockType === 'HARD' ? 'Hard bread' : 'Soft bread'}</Td>
+                      <Td numeric priority="md">
+                        {item.stockType === 'HARD'
+                          ? <span title="Produce at the minimum, stop at the stop level">{item.minStockLevel} → {item.targetStock || '—'}</span>
+                          : <span title="Daily standard (5:00 AM top-up)">{item.standardStock ? `${item.standardStock}/day` : '—'}</span>}
+                      </Td>
                       <Td>
                         <StockStatusPill status={stockStatus(item)} />
                       </Td>

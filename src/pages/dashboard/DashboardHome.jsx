@@ -6,7 +6,7 @@ import { Card } from '../../components/ui/Card.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { formatPeso } from '../../lib/format.js'
 import { orderLabel } from '../../lib/orderNumber.js'
-import { STOCK_STATUSES, TONES, stockStatus } from '../../lib/stockHealth.js'
+import { STOCK_STATUSES, TONES, needsAttention, stockStatus } from '../../lib/stockHealth.js'
 import { modules } from './modules.js'
 
 // The Dashboard — the first screen an ADMIN or CASHIER sees.
@@ -79,23 +79,25 @@ export function DashboardHome({ user, onNavigate }) {
   const allowed = new Set(modules.filter((module) => module.roles.includes(user.role)).map((module) => module.name))
   const loaded = summary && inventory
 
-  const stockCounts = { GOOD: 0, LOW: 0 }
+  const stockCounts = { GOOD: 0, LOW: 0, SELLING_OUT: 0, SOLD_OUT: 0 }
   for (const item of inventory ?? []) stockCounts[stockStatus(item)] += 1
   // Ingredients (CLIENT_REVISIONS_PLAN.md, R5), by the same rule.
-  const ingredientCounts = { GOOD: 0, LOW: 0 }
+  const ingredientCounts = { GOOD: 0, LOW: 0, SELLING_OUT: 0, SOLD_OUT: 0 }
   for (const ingredient of ingredients ?? []) ingredientCounts[stockStatus(ingredient)] += 1
   const lowItems = (inventory ?? [])
-    .filter((item) => stockStatus(item) === 'LOW')
-    .sort((a, b) => a.stockQuantity - a.minStockLevel - (b.stockQuantity - b.minStockLevel))
+    .filter((item) => needsAttention(stockStatus(item)))
+    .sort((a, b) => a.stockQuantity - b.stockQuantity)
 
   // Each tile: a count, the rule that colours it, and where it leads.
   const tiles = loaded ? [
     {
+      // Hard breads at their minimum (produce), soft breads selling out or
+      // sold out today (not restocked until 5:00 AM) — DAILY_STOCK_PLAN.md.
       label: 'Low stock',
       goodLabel: 'product stock',
-      value: stockCounts.LOW,
-      tone: stockCounts.LOW > 0 ? 'attention' : 'good',
-      note: stockCounts.LOW > 0 ? 'At or under the minimum' : 'Well stocked',
+      value: stockCounts.LOW + stockCounts.SELLING_OUT + stockCounts.SOLD_OUT,
+      tone: stockCounts.LOW + stockCounts.SOLD_OUT > 0 ? 'attention' : stockCounts.SELLING_OUT > 0 ? 'okay' : 'good',
+      note: [stockCounts.LOW && `${stockCounts.LOW} to produce`, stockCounts.SELLING_OUT && `${stockCounts.SELLING_OUT} selling out`, stockCounts.SOLD_OUT && `${stockCounts.SOLD_OUT} sold out today`].filter(Boolean).join(' · ') || 'Well stocked',
       to: ['Inventory Management', { stockFilter: 'LOW' }],
     },
     {
@@ -213,7 +215,7 @@ function RestockFirst({ loaded, lowItems, canOpen, onViewAll }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-lg font-semibold text-ink-900">
           <span className={`h-2.5 w-2.5 rounded-full ${lowItems.length > 0 ? TONES.attention.dot : TONES.good.dot}`} aria-hidden="true" />
-          Restock first
+          Running out
         </h2>
         {canOpen && lowItems.length > 0 && (
           <button type="button" onClick={onViewAll} className="text-sm font-semibold text-brand-700 hover:underline">
@@ -224,7 +226,7 @@ function RestockFirst({ loaded, lowItems, canOpen, onViewAll }) {
       {!loaded ? (
         <div className="mt-3 h-32 animate-pulse rounded-control bg-surface-sunk" />
       ) : lowItems.length === 0 ? (
-        <p className="mt-3 text-sm text-ink-500">Every product is above its minimum.</p>
+        <p className="mt-3 text-sm text-ink-500">Nothing is running out.</p>
       ) : (
         <ul className="mt-3 divide-y divide-line-100">
           {lowItems.slice(0, restockRows).map((item) => {

@@ -14,16 +14,33 @@
 // LOW matches the server's own `lowStock` (stock_quantity <=
 // min_stock_level, routes/inventory.js) exactly. A product with no
 // minimum set (0) is GOOD while any stock is left.
+//
+// Soft breads (RULES-PLANS/DAILY_STOCK_PLAN.md) are never restocked during
+// the day, so for them "low" is not "go restock" but "selling out today":
+//   SOLD_OUT     soft bread at 0 — off sale until the 5:00 AM top-up
+//   SELLING_OUT  soft bread under a fifth of its daily standard
+// A hard bread (and an ingredient, which has no stockType) keeps the
+// minimum rule: LOW means "produce".
 export function stockStatus(item) {
   const stock = Number(item.stockQuantity)
+  if (item.stockType === 'SOFT' && Number(item.standardStock) > 0) {
+    if (stock <= 0) return 'SOLD_OUT'
+    if (stock < Number(item.standardStock) / 5) return 'SELLING_OUT'
+    return 'GOOD'
+  }
   const minimum = Number(item.minStockLevel)
   if (stock <= minimum) return 'LOW'
   return 'GOOD'
 }
 
+// The statuses that need someone's eye: the "Low stock" filter and tile.
+export const needsAttention = (status) => status === 'LOW' || status === 'SELLING_OUT' || status === 'SOLD_OUT'
+
 export const STOCK_STATUSES = {
   GOOD: { label: 'Good', tone: 'good' },
   LOW: { label: 'Low stock', tone: 'attention' },
+  SELLING_OUT: { label: 'Selling out', tone: 'okay' },
+  SOLD_OUT: { label: 'Sold out today', tone: 'attention' },
 }
 
 // The three indicator colours, by meaning. `neutral` is for a plain

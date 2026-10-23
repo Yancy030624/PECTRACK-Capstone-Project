@@ -26,6 +26,7 @@ const checks = [
   ['032_phone_codes_and_reservations', () => table('phone_verifications')],
   ['033_trusted_devices', () => table('trusted_devices')],
   ['034_cash_tendered', () => column('payments', 'amount_tendered')],
+  ['035_soft_hard_breads', () => column('products', 'stock_type')],
 ]
 
 const missing = []

@@ -2,6 +2,7 @@ import { config } from './config.js'
 import app from './app.js'
 import { pruneExpiredAuthRows } from './lib/auth.js'
 import { cancelUnpaidOrders, closeStaleOrders } from './lib/staleOrders.js'
+import { runDailyStockReset } from './lib/dailyStock.js'
 
 // Expired sessions and old OTP codes are already ignored wherever they're
 // read, so this is housekeeping rather than a correctness fix — but neither
@@ -34,6 +35,9 @@ async function closeStaleOrdersQuietly() {
     if (closed.partPaid) console.log(`${closed.partPaid} old order(s) are part paid and stay open for staff.`)
     const released = await cancelUnpaidOrders()
     if (released.cancelled) console.log(`Released ${released.cancelled} unpaid order(s).`)
+    // Soft breads back up to their standard at 5:00 AM (lib/dailyStock.js).
+    const toppedUp = await runDailyStockReset()
+    if (toppedUp != null) console.log(`5:00 AM top-up: ${toppedUp} soft bread(s) back to their standard stock.`)
   } catch (error) {
     // Like the pruning above: a failed run is retried on the next one and
     // never takes the API down.

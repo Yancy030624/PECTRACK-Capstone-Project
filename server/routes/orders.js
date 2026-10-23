@@ -447,7 +447,7 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     // ::bigint[] casts the array explicitly rather than leaving Postgres to
     // infer a type for the string values parseId produced.
     const productsResult = await client.query(
-      `SELECT p.product_id, p.price, p.availability_status
+      `SELECT p.product_id, p.price, p.availability_status, p.stock_type
          FROM products p
         WHERE p.product_id = ANY($1::bigint[])`,
       [productIds],
@@ -525,6 +525,13 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
       // takes the row lock. See PHASE5_PLAN.md, Pattern A, for the
       // measured before/after (two 500s vs two clean 409s racing three
       // buyers for the last 10 units).
+      // A soft bread in an advanced order is baked on its pickup day, on
+      // top of that day's standard (RULES-PLANS/DAILY_STOCK_PLAN.md): it
+      // never takes today's shelf stock, so walk-in customers keep it.
+      if (guest?.isReservation && product.stock_type === 'SOFT') {
+        await client.query('INSERT INTO order_details (order_id, product_id, quantity, unit_price) VALUES ($1, $2, $3, $4)', [orderId, item.productId, item.quantity, product.price])
+        continue
+      }
       const deducted = await client.query(
         `UPDATE inventory
             SET stock_quantity = stock_quantity - $2,

@@ -14,6 +14,7 @@ import { pool } from '../db.js'
 import { optionalAuth, requireAuth, requireRole } from '../lib/auth.js'
 import { deleteFile, filePath, saveNamedFile } from '../lib/storage.js'
 import { normalize, parseId } from '../lib/validation.js'
+import { hardDefaults } from '../lib/dailyStock.js'
 
 const router = express.Router()
 
@@ -99,6 +100,13 @@ function validateProductFields(body, { partial }) {
     const categoryId = parseId(body.categoryId)
     if (!categoryId) errors.categoryId = 'Select a category.'
     else values.categoryId = categoryId
+  }
+  // Soft or hard bread (migration 035, RULES-PLANS/DAILY_STOCK_PLAN.md):
+  // how the bakery stocks it. Soft unless said otherwise.
+  if (has('stockType')) {
+    const stockType = partial ? body.stockType : (body.stockType ?? 'SOFT')
+    if (stockType !== 'SOFT' && stockType !== 'HARD') errors.stockType = 'Choose soft bread or hard bread.'
+    else values.stockType = stockType
   }
   if (has('availabilityStatus')) {
     const availabilityStatus = partial ? body.availabilityStatus : (body.availabilityStatus ?? true)
@@ -192,17 +200,20 @@ router.post('/', requireRole('ADMIN'), async (request, response) => {
   try {
     await client.query('BEGIN')
     const productResult = await client.query(
-      `INSERT INTO products (category_id, product_name, description, price, variant, availability_status)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO products (category_id, product_name, description, price, variant, availability_status, stock_type)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING product_id`,
-      [values.categoryId, values.name, values.description, values.price, values.variant, values.availabilityStatus],
+      [values.categoryId, values.name, values.description, values.price, values.variant, values.availabilityStatus, values.stockType],
     )
     const productId = productResult.rows[0].product_id
     // Every product needs exactly one inventory row (inventory.product_id
     // is NOT NULL UNIQUE) — this just satisfies that with the table's own
     // defaults (stock_quantity 0, min_stock_level 0). Managing those
     // values is Phase 5, not this endpoint.
-    await client.query('INSERT INTO inventory (product_id) VALUES ($1)', [productId])
+    // A hard bread starts with the client's levels (decision B); a soft
+    // one with no standard until the admin sets it.
+    if (values.stockType === 'HARD') await client.query('INSERT INTO inventory (product_id, min_stock_level, target_stock) VALUES ($1, $2, $3)', [productId, hardDefaults.minStockLevel, hardDefaults.targetStock])
+    else await client.query('INSERT INTO inventory (product_id) VALUES ($1)', [productId])
     await client.query('COMMIT')
 
     const created = await pool.query(`${productSelectQuery} WHERE p.product_id = $1`, [productId])
@@ -241,7 +252,8 @@ router.patch('/:id', requireRole('ADMIN'), async (request, response) => {
            description = CASE WHEN $3 THEN $4 ELSE description END,
            variant = CASE WHEN $5 THEN $6 ELSE variant END,
            price = COALESCE($7, price),
-           availability_status = COALESCE($8, availability_status)
+           availability_status = COALESCE($8, availability_status),
+           stock_type = COALESCE($10, stock_type)
        WHERE product_id = $9`,
       [
         values.categoryId ?? null,
@@ -253,8 +265,13 @@ router.patch('/:id', requireRole('ADMIN'), async (request, response) => {
         values.price ?? null,
         values.availabilityStatus ?? null,
         productId,
+        values.stockType ?? null,
       ],
     )
+    // Switched to hard bread with no levels yet: the client's defaults.
+    if (values.stockType === 'HARD') {
+      await pool.query('UPDATE inventory SET min_stock_level = $2, target_stock = $3 WHERE product_id = $1 AND target_stock = 0', [productId, hardDefaults.minStockLevel, hardDefaults.targetStock])
+    }
   } catch (error) {
     if (error.code === '23505') return response.status(409).json({ message: 'A product with that name and variant already exists in this category.' })
     if (error.code === '23503') return response.status(422).json({ message: 'Selected category does not exist.', errors: { categoryId: 'Selected category does not exist.' } })

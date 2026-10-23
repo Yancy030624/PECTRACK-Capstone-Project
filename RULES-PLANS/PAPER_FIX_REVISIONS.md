@@ -935,3 +935,32 @@ The team adopted:
   - It notes the code lasts 5 minutes and may be in spam.
   - It keeps "Trust this device for 30 days" and has "Verify and log in" and "← Back to log in".
 - **Footer:** "Trouble logging in? Call (042) 540-4366", replacing a placeholder email address.
+
+### Soft breads and hard breads (client, 2026-10-23)
+
+Plan: RULES-PLANS/DAILY_STOCK_PLAN.md. Migration 035.
+
+- **Bread type:** each product is a **soft bread** (keeps about 3 days) or a **hard bread** (keeps longer). It is set in Edit Products. The menu categories stay as they are.
+- **Soft breads (automated daily stock):**
+  - Each has a **daily standard**, for example Pandesal 300.
+  - Every day at **5:00 AM** the system tops it back up to the standard. Leftovers are sold first, and only the difference is baked: 40 left means 260 baked, for 300 on the shelf.
+  - It is never restocked during the day. At 0 it shows **"Sold out today"** and cannot be ordered until the next morning. Under a fifth of the standard, it shows **"Selling out"**.
+  - Each top-up is logged in the stock history as **DAILY_STOCK**.
+- **Hard breads:**
+  - Each has a **minimum** (produce at, default 200) and a **stop level** (default 600). Stock carries over from day to day.
+  - At or below the minimum it shows **Low stock**, and production makes it up to the stop level. Above the minimum it shows "Not needed".
+- **Advanced orders:**
+  - A soft bread ordered in advance is baked **on its pickup day, on top of the standard**. It no longer takes today's shelf stock.
+  - Hard breads are taken from stock as before.
+  - Cancelling an order returns only what it actually took off the shelf.
+- **Inventory → Production (new tab):**
+  - It shows what to bake on a chosen day (tomorrow by default).
+  - **Soft:** standard − on shelf + advanced orders.
+  - **Hard:** stop level − stock, when at the minimum.
+  - The forecast is shown beside each line, and the list prints.
+- **Dashboard:**
+  - The Low stock tile says "N to produce · N selling out · N sold out today".
+  - "Restock first" is now **"Running out"**.
+- **Limitation:** the system does not track the age of leftover soft bread. Stale bread is pulled as a reject.
+
+Update the inventory process description, the flowcharts and DFDs, the ERD (`products.stock_type`, `inventory.standard_stock` / `target_stock`, `daily_stock_resets`) and the "Automated Inventory" section. The 5:00 AM top-up and the production list are its strongest examples.

@@ -19,6 +19,7 @@ import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { syncStockAlert } from '../lib/inventory.js'
 import { normalize, parseId } from '../lib/validation.js'
+import { productionFor } from '../lib/dailyStock.js'
 
 const router = express.Router()
 
@@ -46,6 +47,10 @@ const mapInventoryRow = (row) => ({
   categoryName: row.category_name,
   stockQuantity: row.stock_quantity,
   minStockLevel: row.min_stock_level,
+  // Migration 035: how the bakery stocks it, and its levels.
+  stockType: row.stock_type,
+  standardStock: row.standard_stock,
+  targetStock: row.target_stock,
   lastUpdated: row.last_updated,
   // Computed rather than stored: it's always exactly this comparison, so
   // storing it would just be a second place it could go stale relative to
@@ -54,7 +59,7 @@ const mapInventoryRow = (row) => ({
 })
 
 const inventorySelectQuery = `SELECT i.inventory_id, i.product_id, p.product_name, p.variant, p.category_id, c.category_name,
-            i.stock_quantity, i.min_stock_level, i.last_updated
+            i.stock_quantity, i.min_stock_level, i.last_updated, p.stock_type, i.standard_stock, i.target_stock
      FROM inventory i
      JOIN products p ON p.product_id = i.product_id
      JOIN categories c ON c.category_id = p.category_id`
@@ -64,6 +69,16 @@ router.use(requireAuth, requireRole('ADMIN', 'CASHIER'))
 router.get('/', async (_request, response) => {
   const result = await pool.query(`${inventorySelectQuery} ORDER BY p.product_name`)
   return response.json({ inventory: result.rows.map(mapInventoryRow) })
+})
+
+// GET /api/inventory/production?day=YYYY-MM-DD — what to bake that day
+// (default tomorrow), per product: RULES-PLANS/DAILY_STOCK_PLAN.md.
+router.get('/production', async (request, response) => {
+  const asked = String(request.query.day ?? '')
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(asked)
+    ? asked
+    : (await pool.query(`SELECT ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date + 1)::text AS day`)).rows[0].day
+  return response.json({ day, items: await productionFor(day) })
 })
 
 // GET /api/inventory/rejects — every reject recorded, newest first: the
@@ -106,7 +121,7 @@ router.get('/rejects', async (request, response) => {
 // Admin and cashier both change the stock count (with a reason, written to
 // the ledger with who made it). The minimum level is a setting, not a
 // count, and stays with the admin.
-const adminOnlyInventoryFields = ['minStockLevel']
+const adminOnlyInventoryFields = ['minStockLevel', 'standardStock', 'targetStock']
 router.patch('/:productId', async (request, response) => {
   if (request.user.role !== 'ADMIN' && adminOnlyInventoryFields.some((field) => field in request.body)) {
     return response.status(403).json({ message: 'Only an admin can change the minimum level.' })
@@ -151,6 +166,14 @@ router.patch('/:productId', async (request, response) => {
     const stockQuantity = Number(request.body.stockQuantity)
     if (!Number.isInteger(stockQuantity) || stockQuantity < 0) errors.stockQuantity = 'Enter a whole number, zero or greater.'
     else values.stockQuantity = stockQuantity
+  }
+  // Migration 035: a soft bread's daily standard, a hard bread's stop level.
+  for (const field of ['standardStock', 'targetStock']) {
+    if (field in request.body) {
+      const level = Number(request.body[field])
+      if (!Number.isInteger(level) || level < 0 || level > 100000) errors[field] = 'Enter a whole number, zero or greater.'
+      else values[field] = level
+    }
   }
   if ('minStockLevel' in request.body) {
     const minStockLevel = Number(request.body.minStockLevel)
@@ -232,10 +255,12 @@ router.patch('/:productId', async (request, response) => {
       `UPDATE inventory
        SET stock_quantity = COALESCE($1, stock_quantity),
            min_stock_level = COALESCE($2, min_stock_level),
+           standard_stock = COALESCE($4, standard_stock),
+           target_stock = COALESCE($5, target_stock),
            last_updated = CURRENT_TIMESTAMP
        WHERE product_id = $3
        RETURNING stock_quantity, min_stock_level`,
-      [values.stockQuantity ?? null, values.minStockLevel ?? null, productId],
+      [values.stockQuantity ?? null, values.minStockLevel ?? null, productId, values.standardStock ?? null, values.targetStock ?? null],
     )
 
     // Only stock_quantity changes get a ledger row — min_stock_level is a

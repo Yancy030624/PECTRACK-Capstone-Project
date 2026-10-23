@@ -252,6 +252,20 @@ describe('phone codes and reservations', () => {
     assert.equal((await fetch(`${baseUrl}/api/receipts/${'x'.repeat(32)}`)).status, 404)
   })
 
+  test('a soft bread in an advanced order is baked on its day: the shelf today is untouched', async () => {
+    config.sms.verifyPhones = false
+    const stock = async () => (await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [productId])).rows[0].stock_quantity
+    const before = await stock()
+    const advanced = await post('/api/orders', { customerName: 'Sol Soft', items: [{ productId, quantity: 4 }], payment: { method: 'CASH' }, requestedFulfillmentTime: tomorrowMorning(), reservation: { contactNumber: randomMobile() } }, cashierCookie)
+    assert.equal(advanced.status, 201)
+    orderIds.push((await advanced.json()).order.id)
+    assert.equal(await stock(), before, 'not taken from today')
+    const walkIn = await post('/api/orders', { items: [{ productId, quantity: 2 }], payment: { method: 'CASH' } }, cashierCookie)
+    assert.equal(walkIn.status, 201)
+    orderIds.push((await walkIn.json()).order.id)
+    assert.equal(await stock(), before - 2, 'a walk-in still sells from the shelf')
+  })
+
   test('an advanced order needs no email', async () => {
     config.sms.verifyPhones = false
     const placed = await post('/api/orders', { customerName: 'Nora Noemail', items: [{ productId, quantity: 1 }], payment: { method: 'CASH' }, requestedFulfillmentTime: tomorrowMorning(), reservation: { contactNumber: randomMobile() } }, cashierCookie)

@@ -64,8 +64,19 @@ export async function readyIfPaid(client, orderId, updatedBy) {
 // `restoreStock: false` skips the first step, for an order closed after
 // its day that was already baked: that bread is not on the shelf any more.
 export async function applyCancellationEffects(client, orderId, changedBy, { restoreStock = true } = {}) {
+  // What this order actually took off the shelf, from its ORDER_PLACED
+  // ledger rows — not its items: a soft bread in an advanced order took
+  // nothing (it is baked on its day), so there is nothing to put back.
   const items = restoreStock
-    ? await client.query('SELECT product_id, quantity FROM order_details WHERE order_id = $1 ORDER BY product_id', [orderId])
+    ? await client.query(
+      `SELECT i.product_id, -SUM(m.quantity_change)::int AS quantity
+         FROM inventory_movements m JOIN inventory i ON i.inventory_id = m.inventory_id
+        WHERE m.order_id = $1 AND m.reason = 'ORDER_PLACED'
+        GROUP BY i.product_id
+       HAVING SUM(m.quantity_change) < 0
+        ORDER BY i.product_id`,
+      [orderId],
+    )
     : { rows: [] }
   for (const item of items.rows) {
     const restored = await client.query(

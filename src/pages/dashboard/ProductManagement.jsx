@@ -12,7 +12,7 @@ import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatPeso } from '../../lib/format.js'
 import { RejectForm } from './RejectForm.jsx'
 
-const emptyForm = { categoryId: '', name: '', description: '', price: '', variant: '', availabilityStatus: true }
+const emptyForm = { categoryId: '', name: '', description: '', price: '', variant: '', availabilityStatus: true, stockType: 'SOFT' }
 
 const pill = (active) => `inline-flex min-h-9 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition ${active ? 'border-ink-900 bg-ink-900 text-white' : 'border-line-200 bg-surface text-ink-700 hover:bg-surface-sunk'}`
 const countChip = (active) => `rounded-full px-1.5 text-xs tabular-nums ${active ? 'bg-white/20' : 'bg-surface-sunk text-ink-500'}`
@@ -78,10 +78,14 @@ export function ProductManagement() {
 
   const loadAll = async () => {
     try {
-      const [categoriesData, productsData] = await Promise.all([apiGet('/api/categories'), apiGet('/api/products')])
+      // The bread type (soft or hard) is a staff detail kept with the stock
+      // (GET /api/inventory), not on the public menu, so it is joined here.
+      const [categoriesData, productsData, inventoryData] = await Promise.all([apiGet('/api/categories'), apiGet('/api/products'), apiGet('/api/inventory')])
+      const typeById = new Map(inventoryData.inventory.map((item) => [String(item.productId), item.stockType]))
+      const withTypes = productsData.products.map((product) => ({ ...product, stockType: typeById.get(String(product.id)) ?? 'SOFT' }))
       setCategories(categoriesData.categories)
-      setProducts(productsData.products)
-      return productsData.products
+      setProducts(withTypes)
+      return withTypes
     } catch (error) {
       say(error.message, true)
       return null
@@ -107,7 +111,7 @@ export function ProductManagement() {
 
   const openEdit = (product) => {
     setEditing(product)
-    setForm({ categoryId: product.categoryId, name: product.name, description: product.description ?? '', price: product.price, variant: product.variant ?? '', availabilityStatus: product.availabilityStatus })
+    setForm({ categoryId: product.categoryId, name: product.name, description: product.description ?? '', price: product.price, variant: product.variant ?? '', availabilityStatus: product.availabilityStatus, stockType: product.stockType ?? 'SOFT' })
     setErrors({})
     setMessage('')
   }
@@ -294,6 +298,13 @@ export function ProductManagement() {
                 <Field label="Size or pack (optional)">
                   <Input value={form.variant} onChange={(event) => setField('variant', event.target.value)} placeholder="e.g. 10 pieces" />
                 </Field>
+                {/* How the bakery stocks it (RULES-PLANS/DAILY_STOCK_PLAN.md). */}
+                <Field label="Bread type" error={errors.stockType}>
+                  <Select value={form.stockType} onChange={(event) => setField('stockType', event.target.value)}>
+                    <option value="SOFT">Soft bread — daily standard stock, keeps about 3 days</option>
+                    <option value="HARD">Hard bread — keeps longer, made at a minimum</option>
+                  </Select>
+                </Field>
               </div>
               <Field label="Description (optional)">
                 <Textarea value={form.description} onChange={(event) => setField('description', event.target.value)} rows={2} placeholder="What the customer sees on the Menu" />
@@ -411,7 +422,7 @@ export function ProductManagement() {
                   <p className={`truncate text-sm font-semibold ${product.availabilityStatus ? 'text-ink-900' : 'text-ink-500'}`}>
                     {product.name}{product.variant && <span className="font-normal text-ink-500"> · {product.variant}</span>}
                   </p>
-                  <p className="text-xs text-ink-500">{product.categoryName} · <span className="tabular-nums">{formatPeso(product.price)}</span></p>
+                  <p className="text-xs text-ink-500">{product.categoryName} · {product.stockType === 'HARD' ? 'Hard bread' : 'Soft bread'} · <span className="tabular-nums">{formatPeso(product.price)}</span></p>
                 </div>
                 <button
                   type="button"

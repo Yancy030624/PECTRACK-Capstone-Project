@@ -30,6 +30,9 @@ describe('closing old orders', () => {
     const orderId = order.rows[0].order_id
     orderIds.push(orderId)
     await pool.query('INSERT INTO order_details (order_id, product_id, quantity, unit_price) VALUES ($1, $2, 3, 10)', [orderId, productId])
+    // The ledger row placing an order writes: a cancel gives back what the
+    // order took off the shelf, read from these (lib/orderStatus.js).
+    await pool.query(`INSERT INTO inventory_movements (inventory_id, order_id, quantity_change, reason, data_source) SELECT inventory_id, $1, -3, 'ORDER_PLACED', $3 FROM inventory WHERE product_id = $2`, [orderId, productId, dataSource])
     if (paid) await pool.query(`INSERT INTO payments (order_id, payment_method, amount, status, payment_date) VALUES ($1, 'CASH', $2, 'PAID', CURRENT_TIMESTAMP)`, [orderId, paid])
     return orderId
   }
