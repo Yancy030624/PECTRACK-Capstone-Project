@@ -335,7 +335,25 @@ function ProductStock({ user, params }) {
                     // "Min level" input vanished with its column. One cell, one stacked form, every size.
                     <Tr key={item.productId}>
                       <td colSpan={6} className="px-3 py-3 text-sm text-ink-700">
-                        <p className="font-semibold text-ink-900">{item.productName}{item.variant ? ` (${item.variant})` : ''}</p>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-semibold text-ink-900">{item.productName}{item.variant ? ` (${item.variant})` : ''}</p>
+                          {isAdmin && !confirming && (
+                            <div role="tablist" aria-label="What to change" className="inline-flex rounded-full bg-surface-sunk p-0.5">
+                              {[['add', 'Add stock'], ['count', 'Correct count']].map(([key, label]) => (
+                                <button
+                                  key={key}
+                                  type="button"
+                                  role="tab"
+                                  aria-selected={formMode === key}
+                                  onClick={() => (key === 'count' ? startCount(item) : startEdit(item))}
+                                  className={`min-h-8 rounded-full px-3 text-xs font-semibold transition ${formMode === key ? 'bg-surface text-ink-900 shadow-raised' : 'text-ink-500 hover:text-ink-900'}`}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                         {formMode === 'count' ? (
                           confirming ? (
                             <div className="mt-2 rounded-panel bg-amber-50 p-3">
@@ -417,16 +435,11 @@ function ProductStock({ user, params }) {
                         <StockStatusPill status={stockStatus(item)} />
                       </Td>
                       <Td>
-                        <div className="flex flex-wrap gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => startEdit(item)} aria-label={`Add stock to ${item.productName}`}>
-                            Add
-                          </Button>
-                          {isAdmin && (
-                            <Button size="sm" variant="ghost" onClick={() => startCount(item)} aria-label={`Correct the count of ${item.productName}`}>
-                              Correct count
-                            </Button>
-                          )}
-                        </div>
+                        {/* One button (the user, 2026-10-23); Add stock and, for
+                            the admin, Correct count are inside the form. */}
+                        <Button size="sm" variant="ghost" onClick={() => startEdit(item)} aria-label={`Edit the stock of ${item.productName}`}>
+                          Edit
+                        </Button>
                       </Td>
                     </Tr>
                   ),

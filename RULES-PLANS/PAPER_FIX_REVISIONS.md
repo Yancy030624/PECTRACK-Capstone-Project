@@ -981,3 +981,4 @@ Update the inventory process description, the flowcharts and DFDs, the ERD (`pro
   - This keeps the shelf figure true for selling, for the 5:00 AM soft-bread top-up, and for the hard-bread "time to produce" signal.
 - **Cashiers:** they only **Add** stock. Setting the count outright is the admin's.
 - **Limitation (for the paper):** "The bakery does not record rejected or wasted products; unsold or damaged bread is reflected through an admin stock count correction."
+- **One "Edit" button per product (2026-10-23).** It replaces "Add" and "Correct count". It opens the form on **Add stock**; the admin also sees a small **Add stock | Correct count** switch at the top of that form.
