@@ -88,7 +88,7 @@ router.get('/rejects', async (request, response) => {
   const limit = Math.min(Math.max(Number.parseInt(request.query.limit, 10) || 100, 1), 500)
   const result = await pool.query(
     `SELECT m.movement_id, m.created_at, -m.quantity_change AS pieces, m.note,
-            p.product_id, p.product_name, p.variant, p.price, c.category_name,
+            p.product_id, p.product_name, p.variant, p.price, p.stock_type, c.category_name,
             COALESCE(a.name, ca.name) AS recorded_by
        FROM inventory_movements m
        JOIN inventory i ON i.inventory_id = m.inventory_id
@@ -112,6 +112,7 @@ router.get('/rejects', async (request, response) => {
       variant: row.variant,
       price: row.price,
       categoryName: row.category_name,
+      stockType: row.stock_type,
       recordedBy: row.recorded_by,
     })),
   })

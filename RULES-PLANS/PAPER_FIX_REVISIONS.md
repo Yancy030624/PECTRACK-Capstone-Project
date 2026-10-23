@@ -964,3 +964,9 @@ Plan: RULES-PLANS/DAILY_STOCK_PLAN.md. Migration 035.
 - **Limitation:** the system does not track the age of leftover soft bread. Stale bread is pulled as a reject.
 
 Update the inventory process description, the flowcharts and DFDs, the ERD (`products.stock_type`, `inventory.standard_stock` / `target_stock`, `daily_stock_resets`) and the "Automated Inventory" section. The 5:00 AM top-up and the production list are its strongest examples.
+
+- **Soft and hard breads are shown apart (2026-10-23):**
+  - Inventory → Products has a **Soft breads | Hard breads** switch, each with its own status buttons.
+    - **Soft:** All, Good, **About to be sold out**, **Sold out today**, Rejects. A soft bread is never "Low stock".
+    - **Hard:** All, Good, **Low stock**, Rejects.
+  - The Dashboard has two tiles: **"Soft breads about to be sold out"** (not restocked until 5:00 AM) and **"Hard breads low stock"** (at the minimum, time to produce).

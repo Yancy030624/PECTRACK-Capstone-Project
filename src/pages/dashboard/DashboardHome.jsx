@@ -91,14 +91,23 @@ export function DashboardHome({ user, onNavigate }) {
   // Each tile: a count, the rule that colours it, and where it leads.
   const tiles = loaded ? [
     {
-      // Hard breads at their minimum (produce), soft breads selling out or
-      // sold out today (not restocked until 5:00 AM) — DAILY_STOCK_PLAN.md.
-      label: 'Low stock',
-      goodLabel: 'product stock',
-      value: stockCounts.LOW + stockCounts.SELLING_OUT + stockCounts.SOLD_OUT,
-      tone: stockCounts.LOW + stockCounts.SOLD_OUT > 0 ? 'attention' : stockCounts.SELLING_OUT > 0 ? 'okay' : 'good',
-      note: [stockCounts.LOW && `${stockCounts.LOW} to produce`, stockCounts.SELLING_OUT && `${stockCounts.SELLING_OUT} selling out`, stockCounts.SOLD_OUT && `${stockCounts.SOLD_OUT} sold out today`].filter(Boolean).join(' · ') || 'Well stocked',
-      to: ['Inventory Management', { stockFilter: 'LOW' }],
+      // Soft and hard breads apart (the user, 2026-10-23): a soft bread is
+      // never restocked during the day, so it is "about to be sold out";
+      // a hard bread at its minimum is "low stock" — time to produce.
+      label: 'Soft breads about to be sold out',
+      goodLabel: 'soft breads',
+      value: stockCounts.SELLING_OUT + stockCounts.SOLD_OUT,
+      tone: stockCounts.SELLING_OUT + stockCounts.SOLD_OUT > 0 ? 'okay' : 'good',
+      note: stockCounts.SOLD_OUT > 0 ? `${stockCounts.SOLD_OUT} already sold out today` : stockCounts.SELLING_OUT > 0 ? 'Not restocked until 5:00 AM' : 'Plenty on the shelf',
+      to: ['Inventory Management', { breadType: 'SOFT', stockFilter: stockCounts.SELLING_OUT > 0 ? 'SELLING_OUT' : 'SOLD_OUT' }],
+    },
+    {
+      label: 'Hard breads low stock',
+      goodLabel: 'hard breads',
+      value: stockCounts.LOW,
+      tone: stockCounts.LOW > 0 ? 'attention' : 'good',
+      note: stockCounts.LOW > 0 ? 'At the minimum — time to produce' : 'Well stocked',
+      to: ['Inventory Management', { breadType: 'HARD', stockFilter: 'LOW' }],
     },
     {
       label: 'Ingredients low stock',

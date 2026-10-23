@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiGet, apiPatch } from '../../api/client.js'
 import { StockStatusPill } from '../../components/ui/StockStatusPill.jsx'
-import { STOCK_STATUSES, TONES, needsAttention, stockStatus } from '../../lib/stockHealth.js'
+import { STOCK_STATUSES, TONES, stockStatus } from '../../lib/stockHealth.js'
 import { ProductionPanel } from './ProductionPanel.jsx'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Button } from '../../components/ui/Button.jsx'
@@ -28,19 +28,27 @@ const emptyAddForm = { addQuantity: '', minStockLevel: '' }
 // lib/stockHealth.js — the same rule the Dashboard counts with — and the
 // Status filter above the table narrows the list to one of them.
 // The status filter's choices.
-const stockFilters = [
+//
+// Soft breads and hard breads are listed apart (the user, 2026-10-23),
+// each with its own statuses: a soft bread is "About to be sold out" or
+// "Sold out today", never "Low stock"; a hard bread keeps "Low stock".
+// "Rejects" is not a status: every reject recorded (the adviser,
+// 2026-10-23), listed in place of the stock table.
+const breadTypes = [
+  { key: 'SOFT', label: 'Soft breads' },
+  { key: 'HARD', label: 'Hard breads' },
+]
+const stockFiltersFor = (type) => [
   { key: 'ALL', label: 'All' },
   { key: 'GOOD', label: STOCK_STATUSES.GOOD.label, tone: 'good' },
-  { key: 'LOW', label: STOCK_STATUSES.LOW.label, tone: 'attention' },
-  // Not a stock status: every reject recorded (the adviser, 2026-10-23),
-  // listed in place of the stock table. Recorded from Edit Products → Rejects.
+  ...(type === 'SOFT'
+    ? [{ key: 'SELLING_OUT', label: STOCK_STATUSES.SELLING_OUT.label, tone: 'okay' }, { key: 'SOLD_OUT', label: STOCK_STATUSES.SOLD_OUT.label, tone: 'attention' }]
+    : [{ key: 'LOW', label: STOCK_STATUSES.LOW.label, tone: 'attention' }]),
   { key: 'REJECTS', label: 'Rejects' },
 ]
 const matchesFilter = (item, filter) => {
   if (filter === 'ALL' || filter === 'REJECTS') return true
-  const status = stockStatus(item)
-  if (filter === 'LOW') return needsAttention(status)
-  return status === filter
+  return stockStatus(item) === filter
 }
 
 // Two tabs (CLIENT_REVISIONS_PLAN.md, R5): Products, the finished goods for
@@ -76,9 +84,11 @@ export function InventoryManagement({ user, params }) {
 
 function ProductStock({ user, params }) {
   const isAdmin = user.role === 'ADMIN'
+  const [breadType, setBreadType] = useState(params?.breadType === 'HARD' ? 'HARD' : 'SOFT')
+  const stockFilters = stockFiltersFor(breadType)
   const [stockFilter, setStockFilter] = useState(() => {
-    const asked = ['ATTENTION', 'EXPIRED'].includes(params?.stockFilter) ? 'LOW' : params?.stockFilter
-    return stockFilters.some((filter) => filter.key === asked) ? asked : 'ALL'
+    const asked = params?.stockFilter
+    return stockFiltersFor(params?.breadType === 'HARD' ? 'HARD' : 'SOFT').some((filter) => filter.key === asked) ? asked : 'ALL'
   })
 
   // Category filter (the user, 2026-10-16): one more row of buttons under
@@ -103,7 +113,7 @@ function ProductStock({ user, params }) {
   const [rejects, setRejects] = useState([])
   const loadRejects = () => apiGet('/api/inventory/rejects').then((data) => setRejects(data.rejects)).catch(() => setRejects([]))
   useEffect(() => { loadRejects() }, [])
-  const visibleRejects = rejects.filter((reject) => categoryFilter === 'ALL' || reject.categoryName === categoryFilter)
+  const visibleRejects = rejects.filter((reject) => reject.stockType === breadType && (categoryFilter === 'ALL' || reject.categoryName === categoryFilter))
 
   const loadInventory = async () => {
     setLoading(true)
@@ -180,8 +190,9 @@ function ProductStock({ user, params }) {
   // Worst first under a filter that mixes statuses, so what needs
   // attention is never below the fold of what is fine.
   const statusRank = { SOLD_OUT: 0, LOW: 1, SELLING_OUT: 2, GOOD: 3 }
-  const categories = [...new Set(inventory.map((item) => item.categoryName).filter(Boolean))].sort((a, b) => a.localeCompare(b))
-  const inCategory = (item) => categoryFilter === 'ALL' || item.categoryName === categoryFilter
+  const ofType = inventory.filter((item) => item.stockType === breadType)
+  const categories = [...new Set(ofType.map((item) => item.categoryName).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+  const inCategory = (item) => item.stockType === breadType && (categoryFilter === 'ALL' || item.categoryName === categoryFilter)
   const visibleInventory = inventory
     .filter((item) => matchesFilter(item, stockFilter) && inCategory(item))
     .sort((a, b) => (stockFilter === 'ALL' ? 0 : statusRank[stockStatus(a)] - statusRank[stockStatus(b)]))
@@ -204,6 +215,20 @@ function ProductStock({ user, params }) {
       <Card className="mt-6 p-6">
         {!loading && inventory.length > 0 && (
           <div className="mb-5">
+            <div role="tablist" aria-label="Bread type" className="mb-4 inline-flex rounded-full bg-surface-sunk p-1">
+              {breadTypes.map((type) => (
+                <button
+                  key={type.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={breadType === type.key}
+                  onClick={() => { setBreadType(type.key); setStockFilter('ALL'); setCategoryFilter('ALL') }}
+                  className={`min-h-9 rounded-full px-4 text-sm font-semibold transition ${breadType === type.key ? 'bg-surface text-ink-900 shadow-raised' : 'text-ink-500 hover:text-ink-900'}`}
+                >
+                  {type.label} <span className="tabular-nums text-ink-500">{inventory.filter((item) => item.stockType === type.key).length}</span>
+                </button>
+              ))}
+            </div>
             <p id="stock-filter-label" className="text-xs font-semibold uppercase tracking-wide text-ink-500">Status</p>
             <div role="group" aria-labelledby="stock-filter-label" className="mt-2 flex flex-wrap gap-2">
               {stockFilters.map((filter) => {
@@ -231,8 +256,8 @@ function ProductStock({ user, params }) {
                   {['ALL', ...categories].map((category) => {
                     const active = categoryFilter === category
                     const count = stockFilter === 'REJECTS'
-                      ? rejects.filter((reject) => category === 'ALL' || reject.categoryName === category).length
-                      : inventory.filter((item) => matchesFilter(item, stockFilter) && (category === 'ALL' || item.categoryName === category)).length
+                      ? rejects.filter((reject) => reject.stockType === breadType && (category === 'ALL' || reject.categoryName === category)).length
+                      : ofType.filter((item) => matchesFilter(item, stockFilter) && (category === 'ALL' || item.categoryName === category)).length
                     return (
                       <button
                         type="button"
@@ -288,8 +313,8 @@ function ProductStock({ user, params }) {
           )
         ) : loading ? (
           <LoadingRows className="mt-4" />
-        ) : inventory.length === 0 ? (
-          <EmptyState title="No products yet" />
+        ) : ofType.length === 0 ? (
+          <EmptyState title={`No ${breadType === 'SOFT' ? 'soft' : 'hard'} breads yet`} description="Set a product's bread type in Edit Products." />
         ) : visibleInventory.length === 0 ? (
           <EmptyState title={`No products are ${stockFilters.find((filter) => filter.key === stockFilter).label.toLowerCase()} right now${categoryFilter === 'ALL' ? '' : ` in ${categoryFilter}`}`} description="Pick another status or category, or All." />
         ) : (
@@ -300,7 +325,6 @@ function ProductStock({ user, params }) {
                   <Th>Product</Th>
                   <Th priority="lg">Category</Th>
                   <Th align="right">Stock</Th>
-                  <Th priority="md">Type</Th>
                   <Th align="right" priority="md">Level</Th>
                   <Th>Status</Th>
                   <Th>Actions</Th>
@@ -314,7 +338,7 @@ function ProductStock({ user, params }) {
                     // moment a column was hidden on a narrow screen: the
                     // "Min level" input vanished with its column. One cell, one stacked form, every size.
                     <Tr key={item.productId}>
-                      <td colSpan={7} className="px-3 py-3 text-sm text-ink-700">
+                      <td colSpan={6} className="px-3 py-3 text-sm text-ink-700">
                         <p className="font-semibold text-ink-900">{item.productName}{item.variant ? ` (${item.variant})` : ''}</p>
                         {confirming ? (
                           <div className="mt-2 rounded-panel border border-amber-300 bg-amber-50 p-3">
@@ -364,7 +388,6 @@ function ProductStock({ user, params }) {
                       </Td>
                       <Td priority="lg">{item.categoryName}</Td>
                       <Td numeric>{item.stockQuantity}</Td>
-                      <Td priority="md">{item.stockType === 'HARD' ? 'Hard bread' : 'Soft bread'}</Td>
                       <Td numeric priority="md">
                         {item.stockType === 'HARD'
                           ? <span title="Produce at the minimum, stop at the stop level">{item.minStockLevel} → {item.targetStock || '—'}</span>

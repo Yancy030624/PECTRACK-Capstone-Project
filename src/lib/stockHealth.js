@@ -23,9 +23,13 @@
 // minimum rule: LOW means "produce".
 export function stockStatus(item) {
   const stock = Number(item.stockQuantity)
-  if (item.stockType === 'SOFT' && Number(item.standardStock) > 0) {
+  // A soft bread is never "Low stock" (the user, 2026-10-23): it is
+  // "About to be sold out" — under a fifth of its standard, or at its
+  // minimum when no standard is set yet — or "Sold out today" at 0.
+  if (item.stockType === 'SOFT') {
     if (stock <= 0) return 'SOLD_OUT'
-    if (stock < Number(item.standardStock) / 5) return 'SELLING_OUT'
+    const standard = Number(item.standardStock)
+    if (standard > 0 ? stock < standard / 5 : stock <= Number(item.minStockLevel)) return 'SELLING_OUT'
     return 'GOOD'
   }
   const minimum = Number(item.minStockLevel)
@@ -39,7 +43,7 @@ export const needsAttention = (status) => status === 'LOW' || status === 'SELLIN
 export const STOCK_STATUSES = {
   GOOD: { label: 'Good', tone: 'good' },
   LOW: { label: 'Low stock', tone: 'attention' },
-  SELLING_OUT: { label: 'Selling out', tone: 'okay' },
+  SELLING_OUT: { label: 'About to be sold out', tone: 'okay' },
   SOLD_OUT: { label: 'Sold out today', tone: 'attention' },
 }
 
