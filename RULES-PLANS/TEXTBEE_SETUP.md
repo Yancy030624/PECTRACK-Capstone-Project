@@ -79,3 +79,11 @@ A reservation's order-number text failing never stops the reservation. Its email
 - A paid gateway (Semaphore) is still built in, for when the bakery outgrows this. Set `SEMAPHORE_API_KEY` instead, and remove the textbee variables.
 
 **Never commit the API key to git and never paste it in chat.** It lives only in `.env` and in Railway's Variables.
+
+## Until textbee is set up: test mode
+
+While no SMS service is set (no `TEXTBEE_API_KEY` / `SEMAPHORE_API_KEY`), the phone codes run in **test mode**, both locally and on the live site:
+- pressing **Text me a code** / **Send code** shows "Test mode — no SMS is sent yet. The code for 09… is 123456";
+- the code box is already filled in, so you press **Verify** and carry on.
+
+Sign-up and Advanced order then work end to end without texting anything. Test mode switches itself off the moment a provider is added, and real codes are then only ever texted. To turn the code step off entirely instead, set `SMS_VERIFY_PHONES=off`. To keep the step but hide the code (it goes to the server log), set `SMS_TEST_MODE=off`.

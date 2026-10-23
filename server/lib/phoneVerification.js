@@ -52,7 +52,8 @@ export async function startPhoneVerification({ phone, purpose }) {
   )
   // Never starts with "TEST": Semaphore silently drops those.
   const { sent } = await sendSms({ to: phone, message: `PECTRACK code: ${code}. Valid for ${codeMinutes} minutes. Do not share this code.`, priority: true })
-  return { verificationToken: token, sent }
+  // `code` goes back to the route, which shows it only in test mode.
+  return { verificationToken: token, sent, code }
 }
 
 export async function checkPhoneCode({ verificationToken, code }) {

@@ -35,12 +35,16 @@ router.post('/send', smsCodeLimiter, staffForReserve, async (request, response) 
   }
 
   try {
-    const { verificationToken, sent } = await startPhoneVerification({ phone, purpose })
+    const { verificationToken, sent, code } = await startPhoneVerification({ phone, purpose })
+    // Test mode (config.js): no SMS service yet, so the code is handed
+    // back to show on the screen. Never when a real text went out.
+    const showCode = !sent && config.sms.testMode
     return response.json({
       verificationToken,
       phone,
       minutes: codeMinutes,
-      message: sent ? `We texted a code to ${phone}.` : `Code created for ${phone}. Texting is not set up here, so the code is in the server log.`,
+      ...(showCode && { testCode: code }),
+      message: sent ? `We texted a code to ${phone}.` : showCode ? `Test mode — no SMS is sent yet. The code for ${phone} is ${code}.` : `Code created for ${phone}. Texting is not set up here, so the code is in the server log.`,
     })
   } catch (error) {
     if (error instanceof PhoneVerificationError) return response.status(error.status).json({ message: error.message })

@@ -102,6 +102,21 @@ describe('phone codes and reservations', () => {
     assert.deepEqual(await (await fetch(`${baseUrl}/api/phone-verification/status`)).json(), { required: true })
   })
 
+  test('test mode shows the code on screen only while no SMS service is set up', async () => {
+    const saved = config.sms.testMode
+    try {
+      config.sms.testMode = true
+      const shown = await (await post('/api/phone-verification/send', { phone: randomMobile(), purpose: 'REGISTER' })).json()
+      assert.match(shown.testCode, /^\d{6}$/)
+      assert.match(shown.message, /Test mode/)
+      config.sms.testMode = false
+      const hidden = await (await post('/api/phone-verification/send', { phone: randomMobile(), purpose: 'REGISTER' })).json()
+      assert.equal(hidden.testCode, undefined)
+    } finally {
+      config.sms.testMode = saved
+    }
+  })
+
   test('a code is texted, a wrong one is refused, the right one verifies', async () => {
     const phone = randomMobile()
     const { verificationToken, code } = await sendCode(phone, 'REGISTER')

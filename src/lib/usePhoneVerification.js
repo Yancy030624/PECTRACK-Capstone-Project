@@ -29,7 +29,9 @@ export function usePhoneVerification(purpose) {
       const data = await apiPost('/api/phone-verification/send', { phone, purpose })
       setToken(data.verificationToken)
       setVerifiedPhone(null)
-      setCode('')
+      // Test mode (no SMS service yet): the server returns the code, and
+      // the message says so — the code box is filled in for the tester.
+      setCode(data.testCode ?? '')
       setInfo(data.message)
     } catch (failure) {
       setError(failure.errors?.contactNumber ?? failure.message)

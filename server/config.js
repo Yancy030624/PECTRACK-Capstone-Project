@@ -30,11 +30,18 @@ function smsSettings() {
     : null
   const semaphore = process.env.SEMAPHORE_API_KEY ? { apiKey: process.env.SEMAPHORE_API_KEY, senderName: process.env.SEMAPHORE_SENDER_NAME } : null
   const provider = textbee ? 'textbee' : semaphore ? 'semaphore' : null
+  // Test mode (the user, 2026-10-23): with no SMS service set up, the code
+  // is shown on the screen instead of texted, so sign-up and Advanced order
+  // can be tested end to end. On by default whenever no provider is set;
+  // SMS_TEST_MODE=off turns it off. It never applies once a provider is
+  // set — real codes are only ever texted.
+  const testMode = !provider && process.env.SMS_TEST_MODE !== 'off'
   return {
     provider,
     textbee,
     semaphore,
-    verifyPhones: !process.env.NODE_TEST_CONTEXT && process.env.SMS_VERIFY_PHONES !== 'off' && (Boolean(provider) || process.env.NODE_ENV !== 'production'),
+    testMode,
+    verifyPhones: !process.env.NODE_TEST_CONTEXT && process.env.SMS_VERIFY_PHONES !== 'off' && (Boolean(provider) || testMode || process.env.NODE_ENV !== 'production'),
   }
 }
 
