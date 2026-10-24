@@ -10,7 +10,6 @@ import { Select } from '../../components/ui/Select.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDate, formatDateTime, formatPeso, formatQuantity } from '../../lib/format.js'
-import { orderLabel } from '../../lib/orderNumber.js'
 import { ForecastPanel } from './ForecastPanel.jsx'
 import { StockStatusPill } from '../../components/ui/StockStatusPill.jsx'
 import { PeakPeriods } from './PeakPeriods.jsx'
@@ -18,8 +17,6 @@ import { PrintButton, PrintHeader } from '../../components/PrintReport.jsx'
 import { manilaDate, manilaDateFromToday } from '../../lib/dates.js'
 import { cssVar } from '../../lib/theme.js'
 
-const paymentMethodOptions = ['CASH', 'GCASH']
-const transactionsLimit = 50
 const logsLimit = 20
 
 
@@ -36,7 +33,9 @@ const logsLimit = 20
 
 // Phase 9B adds 'Forecast' for both roles: a cashier planning the morning
 // bake needs it; only an admin can start a new run (ForecastPanel.jsx).
-const tabsFor = (role) => (role === 'ADMIN' ? ['Sales', 'Products', 'Inventory', 'Forecast', 'Transactions', 'Report History'] : ['Sales', 'Products', 'Inventory', 'Forecast', 'Transactions'])
+// No Transactions tab (DELIVERY_FEE_PLAN.md, D2): it listed the same
+// payments as Payment & Billing's Payment log, which now exports the PDF.
+const tabsFor = (role) => (role === 'ADMIN' ? ['Sales', 'Products', 'Inventory', 'Forecast', 'Report History'] : ['Sales', 'Products', 'Inventory', 'Forecast'])
 
 // Stage 5.5 (RULES-PLANS/UI_AUDIT.md) — the largest dashboard screen and
 // the only one with Chart.js canvases, done last per the stage's own
@@ -54,7 +53,7 @@ const tabsFor = (role) => (role === 'ADMIN' ? ['Sales', 'Products', 'Inventory',
 //
 // tabsFor(role) is UNCHANGED: ADMIN gets 'Report History', CASHIER does
 // not, matching reports.js restricting GET /api/reports/logs to ADMIN.
-// generate/applyTxFilters/the logs effect all build the exact same
+// generate and the logs effect build the exact same
 // request params as before — this is presentation only.
 // Readable names for the ledger's reasons. REJECT is the one loss the
 // bakery records now (CLIENT_REVISIONS_PLAN.md, R3); the older loss reasons
@@ -177,46 +176,6 @@ export function ReportingAnalytics({ user }) {
   useEffect(() => {
     apiGet('/api/reports/summary').then(setSummary).catch(() => setSummary(null))
   }, [])
-  const [txFilters, setTxFilters] = useState({ from: '', to: '', method: '' })
-  const [txOffset, setTxOffset] = useState(0)
-  const [txResult, setTxResult] = useState(null)
-  const [txLoading, setTxLoading] = useState(true)
-  const [txMessage, setTxMessage] = useState('')
-
-  useEffect(() => {
-    const loadTransactions = async () => {
-      setTxLoading(true)
-      setTxMessage('')
-      const params = new URLSearchParams({ limit: String(transactionsLimit), offset: String(txOffset) })
-      if (txFilters.from) params.set('from', txFilters.from)
-      if (txFilters.to) params.set('to', txFilters.to)
-      if (txFilters.method) params.set('method', txFilters.method)
-      // Payment first (the user, 2026-10-16): money received only, as in
-      // Payment & Billing's log — no pending, failed, cancelled or refunded.
-      params.set('status', 'PAID')
-      try {
-        const data = await apiGet(`/api/payments?${params.toString()}`)
-        setTxResult(data)
-      } catch (error) {
-        const fieldError = error.errors ? Object.values(error.errors)[0] : null
-        setTxMessage(fieldError ?? error.message)
-        setTxResult(null)
-      } finally {
-        setTxLoading(false)
-      }
-    }
-    loadTransactions()
-  }, [txFilters, txOffset])
-
-  const applyTxFilters = (event) => {
-    event.preventDefault()
-    setTxOffset(0)
-    setTxFilters({
-      from: event.target.txFrom.value,
-      to: event.target.txTo.value,
-      method: event.target.txMethod.value,
-    })
-  }
   const [logsOffset, setLogsOffset] = useState(0)
   const [logsResult, setLogsResult] = useState(null)
   const [logsLoading, setLogsLoading] = useState(false)
@@ -247,7 +206,7 @@ export function ReportingAnalytics({ user }) {
           heading, tabs and range form are hidden when printing. */}
       <PrintHeader
         title={`${activeTab} report`}
-        subtitle={appliedRange && activeTab !== 'Forecast' && activeTab !== 'Transactions' && activeTab !== 'Report History' ? `${formatDate(`${appliedRange.from}T00:00:00`)} – ${formatDate(`${appliedRange.to}T00:00:00`)}` : activeTab === 'Forecast' ? 'Next seven days' : undefined}
+        subtitle={appliedRange && activeTab !== 'Forecast' && activeTab !== 'Report History' ? `${formatDate(`${appliedRange.from}T00:00:00`)} – ${formatDate(`${appliedRange.to}T00:00:00`)}` : activeTab === 'Forecast' ? 'Next seven days' : undefined}
         user={user}
       />
       <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600 print:hidden">{user.role} PORTAL</p>
@@ -266,7 +225,7 @@ export function ReportingAnalytics({ user }) {
       </div>
       {/* The date-range form drives the historical reports only; a forecast
           looks forward from today and has no range to pick. */}
-      <div hidden={activeTab === 'Transactions' || activeTab === 'Report History' || activeTab === 'Forecast'} className="print:hidden">
+      <div hidden={activeTab === 'Report History' || activeTab === 'Forecast'} className="print:hidden">
         <Card className="mt-6 p-6">
           <form onSubmit={generate} className="flex flex-wrap items-end gap-3">
             <Field label="From" error={errors.from}>
@@ -311,10 +270,12 @@ export function ReportingAnalytics({ user }) {
       <div hidden={activeTab !== 'Sales'}>
         {sales ? (
           <>
-            <div className="mt-6 grid gap-4 sm:grid-cols-3">
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Orders placed</p><p className="mt-3 text-4xl font-semibold text-ink-900">{sales.totals.ordersPlaced}</p></Card>
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Ordered</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.ordered)}</p><p className="mt-2 text-xs text-ink-500">Value of orders placed in this range</p></Card>
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Collected</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.collected)}</p><p className="mt-2 text-xs text-ink-500">Money received in this range</p></Card>
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Ordered</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.ordered)}</p><p className="mt-2 text-xs text-ink-500">Value of the goods ordered in this range</p></Card>
+              {/* Kept apart from bread sales (DELIVERY_FEE_PLAN.md, D1). */}
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Delivery fees</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.deliveryFees)}</p><p className="mt-2 text-xs text-ink-500">On delivery orders placed in this range</p></Card>
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Collected</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.collected)}</p><p className="mt-2 text-xs text-ink-500">Money received in this range, delivery fees included</p></Card>
             </div>
             <p className="mt-3 text-xs text-ink-500">
               Average payment: {formatPeso(sales.totals.averagePayment)}
@@ -339,6 +300,7 @@ export function ReportingAnalytics({ user }) {
                     <Th>Period</Th>
                     <Th>Orders placed</Th>
                     <Th align="right">Ordered</Th>
+                    <Th align="right">Delivery fees</Th>
                     <Th align="right">Collected</Th>
                   </Tr>
                 </Thead>
@@ -348,6 +310,7 @@ export function ReportingAnalytics({ user }) {
                       <Td className="font-semibold text-ink-900">{bucket.period}</Td>
                       <Td>{bucket.ordersPlaced}</Td>
                       <Td numeric>{formatPeso(bucket.ordered)}</Td>
+                      <Td numeric>{formatPeso(bucket.deliveryFees)}</Td>
                       <Td numeric>{formatPeso(bucket.collected)}</Td>
                     </Tr>
                   ))}
@@ -494,67 +457,6 @@ export function ReportingAnalytics({ user }) {
         <ForecastPanel user={user} active={activeTab === 'Forecast'} />
       </div>
 
-      <div hidden={activeTab !== 'Transactions'}>
-        <Card className="mt-6 p-6">
-          <form onSubmit={applyTxFilters} className="flex flex-wrap items-end gap-3">
-            <Field label="From"><Input type="date" name="txFrom" defaultValue={txFilters.from} className="w-auto" /></Field>
-            <Field label="To"><Input type="date" name="txTo" defaultValue={txFilters.to} className="w-auto" /></Field>
-            <Field label="Method">
-              <Select name="txMethod" defaultValue={txFilters.method} className="w-auto">
-                <option value="">Any</option>
-                {paymentMethodOptions.map((method) => <option key={method} value={method}>{method}</option>)}
-              </Select>
-            </Field>
-            <Button type="submit" size="sm">Apply filters</Button>
-          </form>
-
-          {txMessage && (
-            <div className="mt-4">
-              <Alert variant="error">{txMessage}</Alert>
-            </div>
-          )}
-
-          {txLoading ? (
-            <LoadingRows className="mt-4" />
-          ) : txMessage ? null : !txResult || txResult.payments.length === 0 ? (
-            <p className="mt-4 text-sm text-ink-500">No payments match these filters.</p>
-          ) : (
-            <>
-              <div className="mt-4">
-                <Table caption="Transactions">
-                  <Thead>
-                    <Tr className="hover:bg-transparent">
-                      <Th>Order</Th>
-                      <Th priority="md">Customer</Th>
-                      <Th>Method</Th>
-                      <Th align="right">Amount</Th>
-                      <Th priority="lg">When</Th>
-                    </Tr>
-                  </Thead>
-                  <Tbody>
-                    {txResult.payments.map((payment) => (
-                      <Tr key={payment.id}>
-                        <Td className="font-semibold text-ink-900">{orderLabel(payment)}</Td>
-                        <Td priority="md">{payment.customerName ?? 'Walk-in'}</Td>
-                        <Td>{payment.method}</Td>
-                        <Td numeric>{formatPeso(payment.amount)}</Td>
-                        <Td priority="lg" className="whitespace-nowrap text-ink-500">{formatDateTime(payment.paymentDate ?? payment.createdAt)}</Td>
-                      </Tr>
-                    ))}
-                  </Tbody>
-                </Table>
-              </div>
-              <div className="mt-4 flex items-center justify-between text-xs text-ink-500">
-                <span>{txResult.total} total</span>
-                <div className="flex gap-2">
-                  <Button type="button" size="sm" variant="secondary" disabled={txOffset === 0} onClick={() => setTxOffset(Math.max(0, txOffset - transactionsLimit))}>Previous</Button>
-                  <Button type="button" size="sm" variant="secondary" disabled={!txResult.hasMore} onClick={() => setTxOffset(txOffset + transactionsLimit)}>Next</Button>
-                </div>
-              </div>
-            </>
-          )}
-        </Card>
-      </div>
       {user.role === 'ADMIN' && (
         <div hidden={activeTab !== 'Report History'}>
           <Card className="mt-6 p-6">
