@@ -54,7 +54,8 @@ function BarChart({ labels, values, label, color, highlight }) {
 }
 
 export function PeakPeriods({ range }) {
-  const [includeAssumed, setIncludeAssumed] = useState(true)
+  // Real orders by default, like every report (REPORTS_UI_PLAN.md U1).
+  const [includeAssumed, setIncludeAssumed] = useState(false)
   const [data, setData] = useState(null)
   const [message, setMessage] = useState('')
 

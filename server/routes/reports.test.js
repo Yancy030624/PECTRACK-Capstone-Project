@@ -687,11 +687,11 @@ describe('reporting & analytics', () => {
       assert.equal(body.grid[6][7] >= 3, true)
     })
 
-    test('assumed orders are counted by default and can be excluded', async () => {
+    test('assumed orders are left out by default and can be included (REPORTS_UI_PLAN U1)', async () => {
       const orderId = await placeOrderAt('2021-04-10T09:05:00+08:00')
       await pool.query(`UPDATE orders SET data_source = 'ASSUMED' WHERE order_id = $1`, [orderId])
-      const withAssumed = await (await fetch(`${baseUrl}/api/reports/peak?from=2021-04-01&to=2021-04-30`, { headers: { Cookie: adminCookie } })).json()
-      const without = await (await fetch(`${baseUrl}/api/reports/peak?from=2021-04-01&to=2021-04-30&includeAssumed=false`, { headers: { Cookie: adminCookie } })).json()
+      const withAssumed = await (await fetch(`${baseUrl}/api/reports/peak?from=2021-04-01&to=2021-04-30&includeAssumed=true`, { headers: { Cookie: adminCookie } })).json()
+      const without = await (await fetch(`${baseUrl}/api/reports/peak?from=2021-04-01&to=2021-04-30`, { headers: { Cookie: adminCookie } })).json()
       assert.ok(withAssumed.assumedOrders >= 1)
       assert.equal(without.assumedOrders, 0)
       assert.equal(without.totalOrders, withAssumed.totalOrders - withAssumed.assumedOrders)

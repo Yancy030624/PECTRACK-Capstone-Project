@@ -195,10 +195,8 @@ export function ReportingAnalytics({ user }) {
   }, [user.role, activeTab, logsOffset])
 
   const csvHref = appliedRange ? `/api/reports/sales?${new URLSearchParams({ ...appliedRange, format: 'csv' })}` : null
-  // The analytics-ready export (migration 014's views joined by day and
-  // product, data_source carried through). What a notebook reads
-  // when the predictive work starts; nothing here predicts anything.
-  const analyticsCsvHref = appliedRange ? `/api/reports/analytics?${new URLSearchParams({ from: appliedRange.from, to: appliedRange.to, format: 'csv' })}` : null
+  // The analytics export (GET /api/reports/analytics) is no longer offered
+  // here: it is a raw developer file (REPORTS_UI_PLAN.md U1).
 
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
@@ -211,7 +209,7 @@ export function ReportingAnalytics({ user }) {
       />
       <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600 print:hidden">{user.role} PORTAL</p>
       <h1 className="mt-1 text-2xl font-semibold text-ink-900 print:hidden">Reporting &amp; Analytics</h1>
-      <p className="mt-2 text-sm text-ink-500 print:hidden">Pick a date range and generate sales, product, and inventory reports — or browse the transaction history below.</p>
+      <p className="mt-2 text-sm text-ink-500 print:hidden">Pick a date range for the sales, product and inventory reports, or see the next 7 days' forecast. Payments are listed in Payment &amp; Billing.</p>
 
       <div className="mt-6 flex flex-wrap items-center gap-2 print:hidden">
         {tabs.map((tab) => (
@@ -234,28 +232,29 @@ export function ReportingAnalytics({ user }) {
             <Field label="To" error={errors.to}>
               <Input type="date" value={toInput} onChange={(event) => setToInput(event.target.value)} className="w-auto" />
             </Field>
-            <Field label="Group by" error={errors.groupBy}>
-              <Select value={groupBy} onChange={(event) => setGroupBy(event.target.value)} className="w-auto">
-                <option value="day">Day</option>
-                <option value="week">Week</option>
-                <option value="month">Month</option>
-              </Select>
-            </Field>
-            <Field label="Top products" help={Number(productLimit) > 50 ? 'Capped at 50.' : undefined}>
-              <Input value={productLimit} onChange={(event) => setProductLimit(event.target.value)} inputMode="numeric" className="w-20" />
-            </Field>
+            {/* Each tab shows only the controls that change it
+                (REPORTS_UI_PLAN.md U1). */}
+            {activeTab === 'Sales' && (
+              <Field label="Group by" error={errors.groupBy}>
+                <Select value={groupBy} onChange={(event) => setGroupBy(event.target.value)} className="w-auto">
+                  <option value="day">Day</option>
+                  <option value="week">Week</option>
+                  <option value="month">Month</option>
+                </Select>
+              </Field>
+            )}
+            {activeTab === 'Products' && (
+              <Field label="Top products" help={Number(productLimit) > 50 ? 'Capped at 50.' : undefined}>
+                <Input value={productLimit} onChange={(event) => setProductLimit(event.target.value)} inputMode="numeric" className="w-20" />
+              </Field>
+            )}
             <Button type="submit" size="sm" disabled={generating}>{generating ? 'Generating…' : 'Generate report'}</Button>
-            {csvHref && (
+            {csvHref && activeTab === 'Sales' && (
               // A download link, not an action — kept as a plain <a> on
               // Button's secondary styling rather than forcing the Button
               // primitive to render an anchor for one call site.
               <a href={csvHref} download className="inline-flex h-8 items-center rounded-control border border-line-200 bg-surface px-3 text-xs font-medium text-ink-700 transition hover:bg-surface-sunk">
                 Export sales CSV
-              </a>
-            )}
-            {analyticsCsvHref && (
-              <a href={analyticsCsvHref} download className="inline-flex h-8 items-center rounded-control border border-line-200 bg-surface px-3 text-xs font-medium text-ink-700 transition hover:bg-surface-sunk">
-                Export analytics CSV
               </a>
             )}
           </form>

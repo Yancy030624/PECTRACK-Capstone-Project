@@ -565,14 +565,16 @@ router.get('/inventory', async (request, response) => {
 // by hour of day and by day of week on the Manila clock, cancelled ones
 // excluded.
 //
-// includeAssumed (default true, Decision D2): the system holds two days of
-// real orders, so a chart of real orders alone is empty. The demo seed's
-// orders are ASSUMED; they are counted by default, and the response says
-// so, so the screen can label the chart the way the forecast is labelled.
+// includeAssumed (default false, REPORTS_UI_PLAN.md U1): the demo seed's
+// orders are ASSUMED, and like every other report this one shows real
+// orders unless asked. Asked, they are counted and the response says how
+// many, so the screen can label the chart the way the forecast is labelled.
+// (Until 2026-10-25 they were counted by default, when the system held two
+// days of real orders.)
 router.get('/peak', async (request, response) => {
   const { from, to, errors } = parseDateRange(request.query)
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
-  const includeAssumed = String(request.query.includeAssumed ?? 'true') !== 'false'
+  const includeAssumed = String(request.query.includeAssumed ?? 'false') === 'true'
 
   const result = await pool.query(
     `SELECT EXTRACT(HOUR FROM o.order_date AT TIME ZONE 'Asia/Manila')::int AS hour,
