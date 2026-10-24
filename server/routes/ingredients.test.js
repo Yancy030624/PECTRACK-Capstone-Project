@@ -171,13 +171,6 @@ describe('ingredient stock', () => {
     assert.equal(body.movements[0].changedByName, 'Ingredient Test Admin')
   })
 
-  test('the inventory report carries the ingredient totals and the low ingredients', async () => {
-    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())
-    const report = await (await fetch(`${baseUrl}/api/reports/inventory?from=${today}&to=${today}`, { headers: { Cookie: adminCookie } })).json()
-    const flour = report.ingredients.movements.find((row) => row.ingredientId === flourId)
-    assert.deepEqual([flour.restocked, flour.used, flour.rejected, flour.corrected].map(Number), [50, 72.25, 0.25, 22.5])
-    assert.equal(report.ingredients.low, undefined, 'what is low now is the Ingredients screen\'s, not the report\'s (REPORTS_UI_PLAN U5)')
-  })
 })
 
 after(async () => {

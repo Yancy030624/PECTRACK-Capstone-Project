@@ -364,79 +364,65 @@ router.get('/products', async (request, response) => {
 
 // GET /api/reports/inventory?from=&to=
 //
-// PHASE 8, DECISION 7 — reports the inventory_movements LEDGER; never
-// recalculates stock_quantity from it and never "corrects" a discrepancy.
-// A reporting phase that writes to inventory is a reporting phase that can
-// corrupt inventory.
+// Baked, sold and lost, per product, in the range (the user, 2026-10-25,
+// REPORTS_UI_PLAN.md U5 revised): the one place that sets what the bakery
+// put on the shelf against what it sold. Three figures, from the
+// inventory_movements ledger, real movements only (data_source RECORDED —
+// the demo seed's are ASSUMED):
 //
-// Movement totals are reported SIGNED, exactly as the ledger stores them —
-// negative for stock leaving (ORDER_PLACED, SPOILAGE), positive for stock
-// arriving (RESTOCK, ORDER_CANCELLED), either sign for CORRECTION. That is
-// deliberate: it is what makes SUM(every reason's total) reconcile to
-// SUM(quantity_change) ungrouped, which is the same invariant Phase 5's
-// own ledger is built to uphold (Decision 1 there: SUM() must equal the
-// net change to stock_quantity). A friendlier "units sold: 450" is a
-// display-layer sign flip, not a data-correctness one, so it stays out of
-// this response.
+//   added  restocks, the 5:00 AM top-up, production, and counts corrected UP
+//   sold   order deductions net of cancelled orders' returns
+//   lost   rejects (and the older loss reasons) and counts corrected DOWN
+//
+// added − sold − lost is exactly the ledger's net change for the range, the
+// invariant Phase 5's ledger is built on (PHASE 8, Decision 7: this route
+// reads the ledger and never recalculates or "corrects" stock).
+const addedReasons = ['RESTOCK', 'DAILY_STOCK', 'PRODUCTION']
+const soldReasons = ['ORDER_PLACED', 'ORDER_CANCELLED']
+const lostReasons = ['REJECT', 'SPOILAGE', 'PRODUCTION_LOSS', 'EXPIRED', 'DAMAGED']
+
 router.get('/inventory', async (request, response) => {
   const { from, to, errors } = parseDateRange(request.query)
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
 
-  const [movementsResult, lossResult, lowStockAlerts, ingredientResult] = await Promise.all([
+  const [productsResult, lowStockAlerts] = await Promise.all([
     pool.query(
-      `SELECT im.reason, COALESCE(SUM(im.quantity_change), 0)::int AS net_change
+      `SELECT p.product_id, p.product_name, p.variant, p.stock_type,
+              COALESCE(SUM(im.quantity_change) FILTER (WHERE im.reason::text = ANY($3::text[]) OR (im.reason = 'CORRECTION' AND im.quantity_change > 0)), 0)::int AS added,
+              COALESCE(-SUM(im.quantity_change) FILTER (WHERE im.reason::text = ANY($4::text[])), 0)::int AS sold,
+              COALESCE(-SUM(im.quantity_change) FILTER (WHERE im.reason::text = ANY($5::text[]) OR (im.reason = 'CORRECTION' AND im.quantity_change < 0)), 0)::int AS lost
          FROM inventory_movements im
-        WHERE ${dateRangeSql('im.created_at')}
-        GROUP BY im.reason
-        ORDER BY im.reason`,
-      [from, to],
-    ),
-    // Stock LOST gets its own headline figure. The bakery keeps no rejects
-    // list any more (the client, 2026-10-23): bread thrown away shows as an
-    // admin's count corrected DOWN, so those are counted, with the older
-    // reject and loss rows for a range that reaches back to them.
-    pool.query(
-      `SELECT COALESCE(SUM(-im.quantity_change), 0)::int AS lost_units
-         FROM inventory_movements im
-        WHERE (im.reason IN ('REJECT', 'SPOILAGE', 'PRODUCTION_LOSS', 'EXPIRED', 'DAMAGED')
-               OR (im.reason = 'CORRECTION' AND im.quantity_change < 0))
-          AND ${dateRangeSql('im.created_at')}`,
-      [from, to],
+         JOIN inventory i ON i.inventory_id = im.inventory_id
+         JOIN products p ON p.product_id = i.product_id
+        WHERE im.data_source = 'RECORDED' AND ${dateRangeSql('im.created_at')}
+        GROUP BY p.product_id, p.product_name, p.variant, p.stock_type
+        ORDER BY p.stock_type, p.product_name, p.variant`,
+      [from, to, addedReasons, soldReasons, lostReasons],
     ),
     // The stock-alert rows (lib/inventory.js), kept in the reply for the
-    // older readers. What is low NOW is not part of this report any more
-    // (REPORTS_UI_PLAN.md U5): a report covers the range asked for, and the
-    // live state is the Inventory screen's and the Dashboard's.
+    // older readers. What is low NOW is the Inventory screen's and the
+    // Dashboard's, not this report's.
     getLowStockAlerts(),
-    // Ingredients (CLIENT_REVISIONS_PLAN.md, R5): what came in, was used,
-    // was thrown out, or was corrected by a recount in the range, per
-    // ingredient. Amounts are NUMERIC strings, positive except the
-    // correction, which keeps its sign.
-    pool.query(
-      `SELECT i.ingredient_id, i.name, i.unit,
-              COALESCE(SUM(m.quantity_change) FILTER (WHERE m.reason = 'RESTOCK'), 0)::text AS restocked,
-              COALESCE(-SUM(m.quantity_change) FILTER (WHERE m.reason = 'USAGE'), 0)::text AS used,
-              COALESCE(-SUM(m.quantity_change) FILTER (WHERE m.reason = 'REJECT'), 0)::text AS rejected,
-              COALESCE(SUM(m.quantity_change) FILTER (WHERE m.reason = 'CORRECTION'), 0)::text AS corrected
-         FROM ingredient_movements m
-         JOIN ingredients i ON i.ingredient_id = m.ingredient_id
-        WHERE ${dateRangeSql('m.created_at')}
-        GROUP BY i.ingredient_id, i.name, i.unit
-        ORDER BY i.name`,
-      [from, to],
-    ),
   ])
+
+  const products = productsResult.rows.map((row) => ({
+    productId: row.product_id,
+    productName: row.product_name,
+    variant: row.variant,
+    stockType: row.stock_type,
+    added: row.added,
+    sold: row.sold,
+    lost: row.lost,
+  }))
+  const sum = (key) => products.reduce((total, product) => total + product[key], 0)
 
   return response.json({
     from,
     to,
-    movements: movementsResult.rows.map((row) => ({ reason: row.reason, netChange: row.net_change })),
-    lossUnits: lossResult.rows[0].lost_units,
+    totals: { added: sum('added'), sold: sum('sold'), lost: sum('lost') },
+    products,
     lowStockAlerts: lowStockAlerts.alerts,
     lowStockAlertsTotal: lowStockAlerts.total,
-    ingredients: {
-      movements: ingredientResult.rows.map((row) => ({ ingredientId: row.ingredient_id, name: row.name, unit: row.unit, restocked: row.restocked, used: row.used, rejected: row.rejected, corrected: row.corrected })),
-    },
   })
 })
 

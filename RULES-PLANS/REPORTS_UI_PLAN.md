@@ -66,6 +66,20 @@ The live lists come off the report: "Needs attention" and the ingredients
 keeps Units lost, Movement totals and Ingredient activity. The API drops
 `attention` and `ingredients.low`.
 
+### U5, revised (the user, 2026-10-25)
+The user asked to drop the Inventory tab because the bakery rarely cancels
+orders and has no spoilage. Chapter 1 (p. 288) promises reports on
+"inventory movements", so the tab stays, cut down to three figures, real
+movements only (`inventory_movements.data_source = 'RECORDED'`):
+- **Baked / added**: restocks, the 5:00 AM top-up, and counts corrected up.
+- **Sold**: order deductions minus cancelled orders' returns.
+- **Lost**: rejects and counts corrected down.
+
+There is also a per-product table with those three columns. The
+movements-by-reason table and the ingredient activity are removed, because
+ingredients keep their own history on the Ingredients screen.
+added − sold − lost equals the ledger's net change.
+
 ## U6. Forecast tab
 - The accuracy card on practice data reads "Method test (practice data):
   about X%", with the note "how well the method fits the sample pattern,

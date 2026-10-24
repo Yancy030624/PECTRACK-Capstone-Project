@@ -743,11 +743,10 @@ describe('reporting & analytics', () => {
     // total reconciles to the ledger's own SUM(quantity_change) for the
     // same rows. Backdated to an isolated date so this GLOBAL, unscoped
     // report sees only what THIS test wrote.
-    test('movement totals group by reason and reconcile with the raw ledger', async () => {
+    test('baked, sold and lost per product reconcile with the raw ledger, real movements only (REPORTS_UI_PLAN U5)', async () => {
       const testDate = '2023-03-05'
 
-      // RESTOCK +50, then REJECT -8, then a CORRECTION -2 — three
-      // different reasons, three different signs.
+      // RESTOCK +50, then REJECT -8, then a CORRECTION -2.
       const restock = await fetch(`${baseUrl}/api/inventory/${inventoryProductId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ stockQuantity: 150, reason: 'RESTOCK' }) })
       assert.equal(restock.status, 200)
       const reject = await fetch(`${baseUrl}/api/inventory/${inventoryProductId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ stockQuantity: 142, reason: 'REJECT' }) })
@@ -758,20 +757,20 @@ describe('reporting & analytics', () => {
       await pool.query(`UPDATE inventory_movements SET created_at = $1 WHERE inventory_id = $2`, [`${testDate} 12:00:00+08`, inventoryOfId])
 
       const response = await (await getInventory({ from: testDate, to: testDate })).json()
-      const reported = Object.fromEntries(response.movements.map((m) => [m.reason, m.netChange]))
-      assert.equal(reported.RESTOCK, 50)
-      assert.equal(reported.REJECT, -8)
-      assert.equal(reported.CORRECTION, -2)
-      // The bakery keeps no rejects list now (2026-10-23): a count corrected
-      // DOWN is bread lost too, so the -2 correction is counted with the -8.
-      assert.equal(response.lossUnits, 10, 'lossUnits is the positive magnitude of rejects and counts corrected down')
-
-      // Reconciliation: sum of what the report shows for THIS product's
-      // movements must equal the ledger's own signed SUM for those same
-      // rows — the exact invariant Phase 5's ledger is built to uphold.
-      const reportedSum = Object.values(reported).reduce((sum, value) => sum + value, 0)
+      const row = response.products.find((product) => product.productId === inventoryProductId)
+      assert.deepEqual([row.added, row.sold, row.lost], [50, 0, 10], 'a count corrected down is bread lost, with the reject')
       const ledger = await pool.query('SELECT COALESCE(SUM(quantity_change), 0)::int AS n FROM inventory_movements WHERE inventory_id = $1', [inventoryOfId])
-      assert.equal(reportedSum, ledger.rows[0].n)
+      assert.equal(row.added - row.sold - row.lost, ledger.rows[0].n, 'added − sold − lost is the ledger\'s net change')
+      assert.ok(response.totals.added >= 50)
+
+      // A demo (ASSUMED) movement is not real history and never counts.
+      await pool.query(`UPDATE inventory_movements SET data_source = 'ASSUMED' WHERE inventory_id = $1`, [inventoryOfId])
+      try {
+        const demo = await (await getInventory({ from: testDate, to: testDate })).json()
+        assert.ok(!demo.products.some((product) => product.productId === inventoryProductId))
+      } finally {
+        await pool.query(`UPDATE inventory_movements SET data_source = 'RECORDED' WHERE inventory_id = $1`, [inventoryOfId])
+      }
     })
 
     test('an open alert appears in lowStockAlerts; resolving it removes it', async () => {

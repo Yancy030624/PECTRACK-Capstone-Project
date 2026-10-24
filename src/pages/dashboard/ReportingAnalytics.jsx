@@ -9,7 +9,7 @@ import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
-import { formatDate, formatDateTime, formatPeso, formatQuantity } from '../../lib/format.js'
+import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
 import { ForecastPanel } from './ForecastPanel.jsx'
 import { PeakPeriods } from './PeakPeriods.jsx'
 import { PrintButton, PrintHeader } from '../../components/PrintReport.jsx'
@@ -59,23 +59,6 @@ const printTypes = { Sales: 'SALES_PDF', Products: 'PRODUCTS_PDF', Inventory: 'I
 // not, matching reports.js restricting GET /api/reports/logs to ADMIN.
 // generate and the logs effect build the exact same
 // request params as before — this is presentation only.
-// Readable names for the ledger's reasons. REJECT is the one loss the
-// bakery records now (CLIENT_REVISIONS_PLAN.md, R3); the older loss reasons
-// only appear on movements recorded before that change.
-const movementReasonLabels = {
-  ORDER_PLACED: 'Sold (order placed)',
-  ORDER_CANCELLED: 'Returned (order cancelled)',
-  RESTOCK: 'Restock',
-  DAILY_STOCK: '5:00 AM top-up (soft breads)',
-  REJECT: 'Reject',
-  CORRECTION: 'Count corrected',
-  PRODUCTION: 'Production',
-  SPOILAGE: 'Spoilage (before rejects)',
-  PRODUCTION_LOSS: 'Production loss (before rejects)',
-  EXPIRED: 'Expired (before rejects)',
-  DAMAGED: 'Damaged (before rejects)',
-}
-
 export function ReportingAnalytics({ user }) {
   const tabs = tabsFor(user.role)
   const [activeTab, setActiveTab] = useState('Sales')
@@ -388,31 +371,40 @@ export function ReportingAnalytics({ user }) {
       </div>
 
       <div hidden={activeTab !== 'Inventory'}>
+        {/* Baked, sold and lost in the range, real movements only (the user,
+            2026-10-25): the one place that sets what went on the shelf
+            against what sold. Ingredients have their own history on the
+            Ingredients screen. */}
         {inventory ? (
           <>
-            {/* Activity in the range only (REPORTS_UI_PLAN.md U5): what is low
-                right now is on the Inventory screen and the Dashboard. */}
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Units lost</p><p className="mt-3 text-4xl font-semibold text-ink-900">{inventory.lossUnits}</p><p className="mt-1 text-xs text-ink-500">Counts corrected down, in this range</p></Card>
+            <div className="mt-6 grid gap-4 sm:grid-cols-3">
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Baked / added</p><p className="mt-3 text-4xl font-semibold text-ink-900 tabular-nums">{inventory.totals.added.toLocaleString()}</p><p className="mt-1 text-xs text-ink-500">Restocks and the 5:00 AM top-up</p></Card>
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Sold</p><p className="mt-3 text-4xl font-semibold text-ink-900 tabular-nums">{inventory.totals.sold.toLocaleString()}</p><p className="mt-1 text-xs text-ink-500">Pieces in orders, cancelled ones returned</p></Card>
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Lost</p><p className="mt-3 text-4xl font-semibold text-ink-900 tabular-nums">{inventory.totals.lost.toLocaleString()}</p><p className="mt-1 text-xs text-ink-500">Rejects and counts corrected down</p></Card>
             </div>
 
             <Card className="mt-6 p-6">
-              <h2 className="text-lg font-semibold text-ink-900">Movement totals by reason</h2>
-              <p className="mt-1 text-xs text-ink-500">Signed, exactly as recorded — negative is stock leaving, positive is stock arriving.</p>
-              {inventory.movements.length === 0 ? <p className="mt-4 text-sm text-ink-500">No movements in this range.</p> : (
+              <h2 className="text-lg font-semibold text-ink-900">By product</h2>
+              {inventory.products.length === 0 ? <p className="mt-4 text-sm text-ink-500">No stock changes in this range.</p> : (
                 <div className="mt-4">
-                  <Table caption="Movement totals by reason">
+                  <Table caption="Baked, sold and lost by product">
                     <Thead>
                       <Tr className="hover:bg-transparent">
-                        <Th>Reason</Th>
-                        <Th align="right">Net change</Th>
+                        <Th>Product</Th>
+                        <Th priority="md">Type</Th>
+                        <Th align="right">Baked / added</Th>
+                        <Th align="right">Sold</Th>
+                        <Th align="right">Lost</Th>
                       </Tr>
                     </Thead>
                     <Tbody>
-                      {inventory.movements.map((movement) => (
-                        <Tr key={movement.reason}>
-                          <Td className="font-semibold text-ink-900">{movementReasonLabels[movement.reason] ?? movement.reason}</Td>
-                          <Td numeric className={`font-semibold ${movement.netChange < 0 ? 'text-status-fail-fg' : 'text-status-done-fg'}`}>{movement.netChange > 0 ? '+' : ''}{movement.netChange}</Td>
+                      {inventory.products.map((row) => (
+                        <Tr key={row.productId}>
+                          <Td className="font-semibold text-ink-900">{row.productName}{row.variant ? ` (${row.variant})` : ''}</Td>
+                          <Td priority="md" className="text-ink-500">{row.stockType === 'HARD' ? 'Hard' : 'Soft'}</Td>
+                          <Td numeric>{row.added}</Td>
+                          <Td numeric>{row.sold}</Td>
+                          <Td numeric className={row.lost > 0 ? 'font-semibold text-status-fail-fg' : ''}>{row.lost}</Td>
                         </Tr>
                       ))}
                     </Tbody>
@@ -420,40 +412,6 @@ export function ReportingAnalytics({ user }) {
                 </div>
               )}
             </Card>
-
-            {/* Ingredients (CLIENT_REVISIONS_PLAN.md, R5): what came in,
-                was used, and was thrown out in the range. */}
-            {inventory.ingredients && (
-              <Card className="mt-6 p-6">
-                <h2 className="text-lg font-semibold text-ink-900">Ingredient activity</h2>
-                {inventory.ingredients.movements.length === 0 ? <p className="mt-4 text-sm text-ink-500">No ingredient changes in this range.</p> : (
-                  <div className="mt-4">
-                    <Table caption="Ingredient movements in the range">
-                      <Thead>
-                        <Tr className="hover:bg-transparent">
-                          <Th>Ingredient</Th>
-                          <Th align="right">Restocked</Th>
-                          <Th align="right">Used</Th>
-                          <Th align="right">Rejected</Th>
-                          <Th align="right" priority="md">Recount</Th>
-                        </Tr>
-                      </Thead>
-                      <Tbody>
-                        {inventory.ingredients.movements.map((row) => (
-                          <Tr key={row.ingredientId}>
-                            <Td className="font-semibold text-ink-900">{row.name}</Td>
-                            <Td numeric>{formatQuantity(row.restocked, row.unit)}</Td>
-                            <Td numeric>{formatQuantity(row.used, row.unit)}</Td>
-                            <Td numeric className={Number(row.rejected) > 0 ? 'font-semibold text-status-fail-fg' : ''}>{formatQuantity(row.rejected, row.unit)}</Td>
-                            <Td numeric priority="md">{Number(row.corrected) > 0 ? '+' : ''}{formatQuantity(row.corrected, row.unit)}</Td>
-                          </Tr>
-                        ))}
-                      </Tbody>
-                    </Table>
-                  </div>
-                )}
-              </Card>
-            )}
           </>
         ) : <p className="mt-6 text-sm text-ink-500">Loading inventory activity…</p>}
       </div>
