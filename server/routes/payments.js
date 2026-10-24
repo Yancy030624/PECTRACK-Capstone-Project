@@ -212,7 +212,10 @@ const billingRoles = requireRole('ADMIN', 'CASHIER', 'CUSTOMER')
 // customer filtering their own history is a new feature; a customer
 // seeing anyone else's is the bug that scoping already prevented.
 router.get('/', billingRoles, async (request, response) => {
-  const filters = []
+  // Practice orders (data_source ASSUMED, the demo seed) are not money the
+  // bakery received, so the Payment log never lists them
+  // (RULES-PLANS/ANALYTICS_PLAN.md, A1).
+  const filters = ["o.data_source = 'RECORDED'"]
   const params = []
 
   if (request.user.role === 'CUSTOMER') {

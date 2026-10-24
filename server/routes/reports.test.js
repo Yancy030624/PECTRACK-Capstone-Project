@@ -235,6 +235,18 @@ describe('reporting & analytics', () => {
     assert.equal(body.buckets[0].deliveryFees, '50.00')
   })
 
+  test('a practice (ASSUMED) order never counts as money, in the report or the payment log (ANALYTICS_PLAN A1)', async () => {
+    const orderId = await placeOrderAt('2021-08-08 10:00:00+08')
+    const paymentId = await payInFullAt(orderId, '2021-08-08 10:30:00+08')
+    await pool.query(`UPDATE orders SET data_source = 'ASSUMED' WHERE order_id = $1`, [orderId])
+    const body = await (await getSales({ from: '2021-08-08', to: '2021-08-08' })).json()
+    assert.equal(body.totals.ordersPlaced, 0)
+    assert.equal(body.totals.ordered, '0.00')
+    assert.equal(body.totals.collected, '0.00')
+    const log = await (await fetch(`${baseUrl}/api/payments?from=2021-08-08&to=2021-08-08&status=PAID`, { headers: { Cookie: adminCookie } })).json()
+    assert.ok(!log.payments.some((payment) => payment.id === paymentId), 'not in the Payment log')
+  })
+
   test('cancelled orders appear in neither ordersPlaced nor ordered', async () => {
     const orderId = await placeOrderAt('2021-07-10 09:00:00+08')
     const cancel = await cancelOrder(orderId)
