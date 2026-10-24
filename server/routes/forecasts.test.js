@@ -2,8 +2,8 @@
 //
 // The unit tests prove the methods; these prove the rules around them:
 // who may run and read a forecast, that a run records what it was trained
-// on, that assumed history never leaks into a sales figure, and that the
-// restock recommendation follows from the forecast.
+// on, that assumed history never leaks into a sales figure, that the
+// training data is real sales on their own day, and the nightly run.
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import { after, before, beforeEach, describe, test } from 'node:test'
@@ -236,24 +236,6 @@ describe('demand forecasting API', () => {
       await pool.query('DELETE FROM order_details WHERE order_id = ANY($1)', [orderIds])
       await pool.query('DELETE FROM orders WHERE order_id = ANY($1)', [orderIds])
     }
-  })
-
-  test('restock recommendations: the out-of-stock test product runs out today and gets a bake quantity', async () => {
-    assert.equal((await json(adminCookie, 'POST', '/api/forecasts/run', { source: 'ASSUMED' })).status, 201, 'the run itself must succeed')
-    const latest = await (await json(cashierCookie, 'GET', '/api/forecasts/latest')).json()
-    const bun = latest.products.find((product) => product.productId === productId)
-    const item = latest.restock.find((entry) => entry.productId === productId)
-    assert.ok(item)
-    // The test product has no stock, so it runs out on the first day.
-    assert.equal(item.stock, 0)
-    assert.equal(item.sellsOutOn, latest.dates[0])
-    const margin = Math.max(0, bun.days[0].high - bun.days[0].predicted)
-    assert.equal(item.recommended, Math.ceil(bun.days[0].predicted + bun.days[1].predicted + margin))
-
-    // And the Dashboard counts it among the products running out by tomorrow.
-    const summary = await (await json(adminCookie, 'GET', '/api/reports/summary')).json()
-    assert.ok(summary.likelySellOut.count >= 1)
-    assert.equal(summary.likelySellOut.assumed, true)
   })
 
   test('the chart history comes from the same source as the run, with quiet days filled', async () => {

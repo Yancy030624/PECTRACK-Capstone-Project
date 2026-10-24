@@ -19,7 +19,6 @@ import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { addDays } from '../lib/forecasting.js'
 import { runForecast, SOURCE_SETS } from '../lib/forecastRun.js'
-import { restockForRun } from '../lib/restock.js'
 import { normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
@@ -102,10 +101,9 @@ async function loadRun(runId) {
   }
 
   const sources = run.sources.replace(/[{}]/g, '').split(',').filter(Boolean)
-  // B1 of PHASE10: which products run out, and how many to bake.
-  const restock = await restockForRun(runId)
+  // What to bake is the Production list's (lib/dailyStock.js), which
+  // compares this forecast with the plan (ANALYTICS_PLAN.md, A3).
   return {
-    restock,
     run: {
       id: run.run_id,
       createdAt: run.created_at,

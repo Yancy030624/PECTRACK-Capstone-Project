@@ -11,7 +11,6 @@ import { pool } from '../db.js'
 import { billingListSql } from '../lib/billing.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { bucketSql, csvRow, dateRangeSql, parseDateRange, parseGroupBy } from '../lib/reporting.js'
-import { likelySellOutSummary } from '../lib/restock.js'
 import { normalize } from '../lib/validation.js'
 
 const router = express.Router()
@@ -316,7 +315,7 @@ router.get('/sales', async (request, response) => {
 // database that already has to know the right answer (Decision 1) compute
 // it start to finish.
 router.get('/summary', async (_request, response) => {
-  const [todayResult, outstandingResult, deliveriesResult, likelySellOut, kitchen] = await Promise.all([
+  const [todayResult, outstandingResult, deliveriesResult, kitchen] = await Promise.all([
     pool.query(`
       WITH today_range AS (
         SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date AS local_date,
@@ -354,8 +353,6 @@ router.get('/summary', async (_request, response) => {
     // assign" and opens exactly this list. An ASSIGNED delivery already
     // has one; it is the driver's to move, not the counter's.
     pool.query(`SELECT COUNT(*)::int AS n FROM deliveries d JOIN orders o ON o.order_id = d.order_id WHERE d.status = 'PENDING_ASSIGNMENT' AND o.status NOT IN ('COMPLETED', 'CANCELLED') AND o.data_source <> 'ASSUMED'`),
-    // PHASE10 B1 — products the latest forecast says run out by tomorrow.
-    likelySellOutSummary(),
     // Orders to prepare (payment first, the adviser 2026-10-16): paid
     // orders still to hand over or send out whose day is today (or came
     // earlier), and those already past the time the customer asked for.
@@ -389,7 +386,6 @@ router.get('/summary', async (_request, response) => {
     // /api/inventory through the same rule the Inventory screen filters
     // by (PAPER_VS_SYSTEM.md H4).
     deliveriesNeedingAttention: deliveriesResult.rows[0].n,
-    likelySellOut,
     ordersToPrepare: kitchen.rows[0].to_prepare,
     ordersOverdue: kitchen.rows[0].overdue,
   })
