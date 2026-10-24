@@ -25,7 +25,7 @@
 import { pool } from '../server/db.js'
 import { addDays, dayOfWeek, holidayKind, isPayday } from '../server/lib/forecasting.js'
 
-const GENERATOR_VERSION = 'v1-2026-09-25'
+const GENERATOR_VERSION = 'v2-2026-10-24' // v2: hard breads x2 weekends, x(event) on events
 const SEED = 20260925
 const HISTORY_DAYS = 365
 
