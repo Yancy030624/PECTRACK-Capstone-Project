@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { apiPost } from '../api/client.js'
+import { deliveryTown } from '../lib/bakery.js'
 import { digitsOnly } from '../lib/phone.js'
 
-const emptyAddressForm = { label: 'Home', recipientName: '', contactNumber: '', addressLine1: '', addressLine2: '', barangay: '', municipality: '', province: '', postalCode: '', deliveryNotes: '' }
+const emptyAddressForm = { label: 'Home', recipientName: '', contactNumber: '', addressLine1: '', addressLine2: '', barangay: '', postalCode: '', deliveryNotes: '' }
 
 // `variant="dashboard"` swaps the storefront's cream/rounded-xl field
 // styling for the dashboard's own Input/Button look. The same form is
@@ -38,7 +39,10 @@ export function AddressForm({ onSaved, onCancel, submitLabel = 'Save address', c
     setErrors({})
     try {
       const body = { label: form.label, recipientName: form.recipientName, contactNumber: form.contactNumber, addressLine1: form.addressLine1 }
-      for (const field of ['addressLine2', 'barangay', 'municipality', 'province', 'postalCode', 'deliveryNotes']) {
+      // Municipality and province are never sent: the bakery delivers in
+      // Lucban, Quezon only (SENIOR_CONSULT_PLAN.md, S2), and the columns
+      // default to those.
+      for (const field of ['addressLine2', 'barangay', 'postalCode', 'deliveryNotes']) {
         if (form[field]) body[field] = form[field]
       }
       if (customerId) body.customerId = customerId
@@ -86,12 +90,12 @@ export function AddressForm({ onSaved, onCancel, submitLabel = 'Save address', c
       </div>
       <div>
         <label htmlFor="addr-municipality" className={cls.label}>Municipality / City</label>
-        <input id="addr-municipality" value={form.municipality} onChange={(event) => updateField('municipality', event.target.value)} placeholder="Lucban" className={cls.input} />
-        {errors.municipality ? <p className={cls.error}>{errors.municipality}</p> : <p className="mt-1 text-[11px] text-stone-500">We deliver within Lucban only. Blank means Lucban.</p>}
+        <input id="addr-municipality" value={deliveryTown} readOnly aria-describedby="addr-town-help" className={`${cls.input} cursor-not-allowed bg-stone-100 text-stone-500`} />
+        {errors.municipality ? <p className={cls.error}>{errors.municipality}</p> : <p id="addr-town-help" className="mt-1 text-[11px] text-stone-500">We deliver within Lucban, Quezon only.</p>}
       </div>
       <div>
         <label htmlFor="addr-province" className={cls.label}>Province</label>
-        <input id="addr-province" value={form.province} onChange={(event) => updateField('province', event.target.value)} placeholder="Quezon" className={cls.input} />
+        <input id="addr-province" value="Quezon" readOnly className={`${cls.input} cursor-not-allowed bg-stone-100 text-stone-500`} />
         {errors.province && <p className={cls.error}>{errors.province}</p>}
       </div>
       <div>

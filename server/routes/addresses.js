@@ -26,6 +26,9 @@ const addressFieldLimits = { label: 50, addressLine1: 255, addressLine2: 255, ba
 // instructionsMaxLength uses in routes/orders.js for a column that is
 // also TEXT.
 const deliveryNotesMaxLength = 500
+// The one place the bakery delivers (the seniors, 2026-10-24).
+const serviceArea = { municipality: 'Lucban', province: 'Quezon' }
+const serviceAreaMessage = 'We deliver within Lucban, Quezon only.'
 // The fields that say WHERE an order went. Once any order references an
 // address, these are frozen on it: orders.address_id points at the row
 // itself, so editing them would rewrite the destination on every past
@@ -112,12 +115,15 @@ function validateAddressFields(body, { partial }) {
   // error. Explicitly sending an EMPTY value, though, is treated as a
   // mistake rather than silently falling back to the default — a request
   // that touches the field at all should say something real.
+  //
+  // The bakery delivers within Lucban, Quezon only, so no other town is
+  // taken (SENIOR_CONSULT_PLAN.md, S2). The form never sends either field.
   for (const field of ['municipality', 'province']) {
     if (field in body) {
       const value = normalize(body[field])
       if (!value) errors[field] = `Enter the ${field}.`
-      else if (value.length > addressFieldLimits[field]) errors[field] = `${field} must be ${addressFieldLimits[field]} characters or fewer.`
-      else values[field] = value
+      else if (value.toLowerCase() !== serviceArea[field].toLowerCase()) errors[field] = serviceAreaMessage
+      else values[field] = serviceArea[field]
     }
   }
   if (has('deliveryNotes')) {

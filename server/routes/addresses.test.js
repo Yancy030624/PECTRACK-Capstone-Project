@@ -121,6 +121,19 @@ describe('customer address management', () => {
     assert.equal(body.address.province, 'Quezon')
   })
 
+  test('an address outside Lucban, Quezon is refused (SENIOR_CONSULT_PLAN S2)', async () => {
+    const town = await createAddress({ ...validAddress(), municipality: 'Tayabas' })
+    assert.equal(town.status, 422)
+    assert.equal((await town.json()).errors.municipality, 'We deliver within Lucban, Quezon only.')
+    const province = await createAddress({ ...validAddress(), province: 'Laguna' })
+    assert.equal(province.status, 422)
+    const named = await createAddress({ ...validAddress(), municipality: 'lucban', province: 'QUEZON' })
+    assert.equal(named.status, 201)
+    const body = await named.json()
+    assert.equal(body.address.municipality, 'Lucban')
+    assert.equal(body.address.province, 'Quezon')
+  })
+
   test('a second address is NOT default unless explicitly requested, and setting it clears the first', async () => {
     const second = await createAddress({ ...validAddress(), label: 'Work' })
     assert.equal(second.status, 201)
