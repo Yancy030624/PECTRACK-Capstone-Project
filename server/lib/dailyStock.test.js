@@ -6,7 +6,7 @@ import crypto from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { pool } from '../db.js'
 import { applyCancellationEffects } from './orderStatus.js'
-import { productionFor, runDailyStockReset } from './dailyStock.js'
+import { forecastShortfall, productionFor, runDailyStockReset } from './dailyStock.js'
 
 const runId = crypto.randomUUID().slice(0, 8)
 // Days far in the future, so they never collide with a real top-up.
@@ -135,6 +135,13 @@ describe('soft and hard breads', () => {
     } finally {
       await pool.query('DELETE FROM events WHERE event_id = $1', [event])
     }
+  })
+
+  test('the forecast check flags shortfalls only (ANALYTICS_PLAN A3)', () => {
+    assert.equal(forecastShortfall(320, 300), 20)
+    assert.equal(forecastShortfall(300, 300), null, 'equal is covered')
+    assert.equal(forecastShortfall(150, 300), null, 'a forecast below the plan never flags')
+    assert.equal(forecastShortfall(null, 300), null, 'no forecast, no flag')
   })
 
   test('cancelling gives back only what an order took off the shelf', async () => {

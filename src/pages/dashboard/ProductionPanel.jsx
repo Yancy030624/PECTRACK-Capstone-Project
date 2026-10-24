@@ -15,7 +15,9 @@ import { EventsCard } from './EventsCard.jsx'
 //                pieces in advanced orders picked up that day.
 //   Hard breads  at or under the minimum: up to the stop level; otherwise
 //                not needed.
-// The forecast's figure for the day is shown beside each, for reference.
+// The forecast's figure for the day is shown beside each. When it is above
+// what the plan will have, it says how many more it expects to sell
+// (ANALYTICS_PLAN.md, A3) — a warning; the rules still decide the list.
 export function ProductionPanel({ user }) {
   const [day, setDay] = useState(manilaDateFromToday(1))
   const [data, setData] = useState(null)
@@ -57,6 +59,11 @@ export function ProductionPanel({ user }) {
             {data.boosts.soft.reason && <>Soft breads: <strong>{data.boosts.soft.reason}</strong>.</>}
           </p>
         )}
+        {data?.forecastShortCount > 0 && (
+          <p className="mt-2 rounded-panel bg-amber-50 px-3 py-2 text-sm text-ink-900">
+            Forecast says bake more: <strong>{data.forecastShortCount} product{data.forecastShortCount === 1 ? '' : 's'}</strong>. See the Forecast column.
+          </p>
+        )}
         {!data ? (
           <LoadingRows className="mt-4" />
         ) : data.items.length === 0 ? (
@@ -85,7 +92,7 @@ export function ProductionPanel({ user }) {
                         <Td numeric priority="md">{item.onHand}</Td>
                         <Td numeric priority="md">{item.advanced || '—'}</Td>
                         <Td numeric className="font-semibold text-ink-900">{item.toBake}</Td>
-                        <Td numeric priority="lg">{item.forecast ?? '—'}</Td>
+                        <Td numeric priority="lg"><ForecastCell item={item} /></Td>
                       </Tr>
                     ))}
                   </Tbody>
@@ -104,6 +111,7 @@ export function ProductionPanel({ user }) {
                       <Th align="right" priority="md">Produce at</Th>
                       <Th align="right" priority="md">Make up to</Th>
                       <Th align="right">To bake</Th>
+                      <Th align="right" priority="lg">Forecast</Th>
                     </Tr>
                   </Thead>
                   <Tbody>
@@ -114,18 +122,30 @@ export function ProductionPanel({ user }) {
                         <Td numeric priority="md">{item.minStockLevel}</Td>
                         <Td numeric priority="md">{item.targetStock || '—'}{item.boost && <span className="block text-[11px] font-semibold text-amber-700">{item.boost}</span>}</Td>
                         <Td numeric className={item.needed ? 'font-semibold text-ink-900' : 'text-ink-500'}>{item.needed ? item.toBake : 'Not needed'}</Td>
+                        <Td numeric priority="lg"><ForecastCell item={item} /></Td>
                       </Tr>
                     ))}
                   </Tbody>
                 </Table>
               </div>
             )}
-            <p className="mt-4 text-xs text-ink-500">Soft "To bake" uses what is on the shelf now; it is smaller if more sells today. Advanced orders for soft breads are baked on their pickup day, outside the shelf stock. Hard breads are built up to their stop level × 2 from Thursday for the weekend, and × the event's multiplier from a week before an event.</p>
+            <p className="mt-4 text-xs text-ink-500">Soft "To bake" uses what is on the shelf now; it is smaller if more sells today. Advanced orders for soft breads are baked on their pickup day, outside the shelf stock. Hard breads are built up to their stop level × 2 from Thursday for the weekend, and × the event's multiplier from a week before an event. Forecast is the latest forecast's expected sales for the day; "+N" means it expects N more than the plan will have.</p>
           </>
         )}
       </Card>
 
       <EventsCard user={user} onChanged={() => setReload((count) => count + 1)} />
     </div>
+  )
+}
+
+// The forecast for the day, and the shortfall when it is above the plan.
+function ForecastCell({ item }) {
+  if (item.forecast == null) return <span className="text-ink-500">—</span>
+  return (
+    <>
+      {item.forecast}
+      {item.forecastShort != null && <span className="block text-[11px] font-semibold text-amber-700">+{item.forecastShort} more</span>}
+    </>
   )
 }

@@ -108,6 +108,16 @@ export async function boostsFor(day) {
 //         which are baked outside the shelf stock.
 //   HARD  at or under the minimum: target − stock. Otherwise not needed.
 //         (Hard-bread advanced orders already came off the shelf.)
+//
+// The forecast check (RULES-PLANS/ANALYTICS_PLAN.md, A3): the rules above
+// decide what to bake; the forecast only warns. When the latest forecast
+// for the day (its middle figure) is above what the plan will have — soft:
+// the standard plus advanced orders; hard: on hand plus what to bake — the
+// product carries forecastShort, how many more the forecast expects to
+// sell. Shortfalls only: the bakery would rather toast or reject than sell
+// out.
+export const forecastShortfall = (forecast, planned) => (forecast != null && forecast > planned ? forecast - planned : null)
+
 export async function productionFor(day) {
   const boosts = await boostsFor(day)
   const rows = await pool.query(
@@ -139,19 +149,20 @@ export async function productionFor(day) {
     if (row.stock_type === 'SOFT') {
       const standard = Math.round(row.standard_stock * boosts.soft.factor)
       const topUp = Math.max(standard - row.stock_quantity, 0)
-      return { ...base, standardStock: standard, boost: boosts.soft.reason, advanced: row.advanced, topUp, toBake: topUp + row.advanced, needed: topUp + row.advanced > 0 }
+      return { ...base, standardStock: standard, boost: boosts.soft.reason, advanced: row.advanced, topUp, toBake: topUp + row.advanced, needed: topUp + row.advanced > 0, forecastShort: forecastShortfall(base.forecast, standard + row.advanced) }
     }
     // Boosted (an event ahead, or the weekend): build up to stop level x
     // factor, whatever the minimum. Otherwise: make it at the minimum.
     const boosted = boosts.hard.factor > 1 && row.target_stock > 0
     const target = boosted ? Math.round(row.target_stock * boosts.hard.factor) : row.target_stock
     const needed = row.target_stock > 0 && (boosted ? row.stock_quantity < target : row.stock_quantity <= row.min_stock_level)
-    return { ...base, minStockLevel: row.min_stock_level, targetStock: target, boost: boosted ? boosts.hard.reason : null, toBake: needed ? Math.max(target - row.stock_quantity, 0) : 0, needed }
+    const toBake = needed ? Math.max(target - row.stock_quantity, 0) : 0
+    return { ...base, minStockLevel: row.min_stock_level, targetStock: target, boost: boosted ? boosts.hard.reason : null, toBake, needed, forecastShort: forecastShortfall(base.forecast, row.stock_quantity + toBake) }
   })
 }
 
 // The production list with the reasons the day is boosted.
 export async function productionPlan(day) {
   const [items, boosts] = await Promise.all([productionFor(day), boostsFor(day)])
-  return { items, boosts }
+  return { items, boosts, forecastShortCount: items.filter((item) => item.forecastShort != null).length }
 }

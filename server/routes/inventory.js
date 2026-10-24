@@ -78,8 +78,8 @@ router.get('/production', async (request, response) => {
   const day = /^\d{4}-\d{2}-\d{2}$/.test(asked)
     ? asked
     : (await pool.query(`SELECT ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date + 1)::text AS day`)).rows[0].day
-  const { items, boosts } = await productionPlan(day)
-  return response.json({ day, items, boosts })
+  const { items, boosts, forecastShortCount } = await productionPlan(day)
+  return response.json({ day, items, boosts, forecastShortCount })
 })
 
 // PATCH /api/inventory/:productId — a direct stock change, applied at once
