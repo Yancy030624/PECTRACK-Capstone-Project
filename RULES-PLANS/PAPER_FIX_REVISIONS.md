@@ -1048,3 +1048,28 @@ Paper:
   - define a "sale" for the model as a paid or completed order, dated by its pickup day.
 - Limitations (replace the forecast item): "The forecasting method is validated on assumed history. Its accuracy on Pecto's real sales will be measured once 56 days of real sales exist; the system then switches to them by itself. The accuracy figures shown (MAE, WAPE) describe the method on the assumed pattern, not the bakery's real demand."
 - Defense: when asked how accurate the forecast is, give the line above. Do not quote the backtest figures as the bakery's accuracy.
+
+### Reporting & Analytics screens (grilling session, 2026-10-25)
+
+Plan: RULES-PLANS/REPORTS_UI_PLAN.md (U1–U7). Migration 040.
+
+- **Sales report = the money received.** Since every order is paid first, "ordered" and "collected" were the same figure shown twice, and the bakery gives no refunds. The Sales tab now shows:
+  - four figures: **Sales** (money received, delivery fees not included), **Orders**, **Average order** (sales ÷ orders) and **Delivery fees**;
+  - a line for **cash orders not yet paid**;
+  - a chart with sales as a line and orders as bars;
+  - a table of **where the sales came from**: by payment method (Cash / GCash) and by order type (walk-in, online pickup, delivery).
+
+  The CSV export follows the same layout.
+- **Products report:** ranks best sellers by **pieces sold**, because the bakery plans in pieces. It has an **All / Soft / Hard** filter, and the table sorts by pieces or revenue.
+- **Inventory report:** shows activity in the chosen dates only: units lost, stock movements by reason, and ingredient activity. What is low right now stays on the Inventory screen and the Dashboard.
+- **Forecast tab:**
+  - On the assumed data the accuracy card reads **"Method test (practice data)"**, and says it is not the bakery's real accuracy.
+  - The day-by-day table shows the 10 busiest products, with an All / Soft / Hard filter and "Show all".
+  - A note says the forecast runs by itself every night.
+- **Export history** (formerly Report History) records every report that leaves the system, a CSV downloaded or a PDF printed, by the admin or the cashier, with the person and the time. Opening a report on screen is not recorded.
+- **Peak ordering periods** shows real orders unless "Include demo orders" is ticked.
+- Each tab shows only its own controls. The raw analytics CSV is no longer offered on screen.
+
+Paper:
+- Reports section (admin and cashier reports, pp. 16 and 41): describe the four sales figures, the two breakdowns, pieces-based product ranking with the bread-type filter, and the export history as the audit trail of reports.
+- Figures to retake: Sales tab (cards, chart, breakdown), Products tab (best sellers by pieces), Inventory tab, Forecast tab (the method-test card and table), Export history, and Payment & Billing → Payment log with Export PDF.
