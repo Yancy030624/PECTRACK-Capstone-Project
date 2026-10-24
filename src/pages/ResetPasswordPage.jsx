@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiPost } from '../api/client.js'
 import { passwordHint as describePassword, strongPasswordHint } from '../lib/password.js'
-import { PasswordInput } from '../components/ui/PasswordInput.jsx'
-import { AuthShell, authButtonClass, authInputClass } from './AuthShell.jsx'
+import { PasswordToggle } from '../components/PasswordToggle.jsx'
+import { AuthShell, authButtonClass, authErrorClass, authInputClass, authLinkClass, authSuccessClass } from './AuthShell.jsx'
 
 // Step two of email password recovery — reached only from the link in the
 // email. The same strength rules as registration apply (routes/auth.js
@@ -39,6 +39,8 @@ export function ResetPasswordPage() {
   const [message, setMessage] = useState('')
   const [done, setDone] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  // One eye for both fields, as on the log-in form (PasswordToggle).
+  const [shown, setShown] = useState(false)
 
   const passwordHint = describePassword(form.newPassword)
 
@@ -61,36 +63,43 @@ export function ResetPasswordPage() {
 
   if (!token) {
     return (
-      <AuthShell badge="Password Reset" title={<>This link is<br />incomplete</>}>
-        <p className="mt-6 text-xs text-stone-500">Open the reset link from your email, or request a new one.</p>
-        <Link to="/forgot-password" className="mt-4 block text-center py-2 text-xs font-bold text-green-700 hover:underline">Request a new link</Link>
+      <AuthShell title="This link is incomplete" subtitle="Open the reset link from your email, or request a new one.">
+        <div className="mt-6">
+          <Link to="/forgot-password" className={`${authButtonClass} block text-center`}>Request a new link</Link>
+        </div>
       </AuthShell>
     )
   }
 
   return (
-    <AuthShell badge="Password Reset" title={<>Choose a new<br />password</>}>
+    <AuthShell title={done ? 'Password changed' : 'Choose a new password'} subtitle={done ? 'You can log in with it now.' : 'Pick one you have not used anywhere else.'}>
       {done ? (
         <div className="mt-6 space-y-4">
-          <p role="status" className="rounded-lg bg-green-50 px-3 py-2 text-xs font-semibold text-green-800">{message}</p>
-          <Link to="/login" className={`${authButtonClass} block text-center`}>Sign in</Link>
+          <p role="status" className={authSuccessClass}>{message}</p>
+          <Link to="/login" className={`${authButtonClass} block text-center`}>Log in</Link>
         </div>
       ) : (
-        <form className="mt-6 space-y-3" onSubmit={handleSubmit} noValidate>
+        <form className="mt-6 space-y-4" onSubmit={handleSubmit} noValidate>
           <div>
             <label htmlFor="reset-password" className="mb-1.5 block text-xs font-bold">New password</label>
-            <PasswordInput id="reset-password" value={form.newPassword} onChange={(event) => setForm({ ...form, newPassword: event.target.value })} autoComplete="new-password" inputClassName={authInputClass} toggleClassName="text-green-800" aria-invalid={Boolean(errors.newPassword)} />
+            <div className="relative">
+              <input id="reset-password" type={shown ? 'text' : 'password'} value={form.newPassword} onChange={(event) => setForm({ ...form, newPassword: event.target.value })} autoComplete="new-password" autoFocus className={`${authInputClass} pr-11`} aria-invalid={Boolean(errors.newPassword)} />
+              <PasswordToggle shown={shown} onToggle={() => setShown(!shown)} />
+            </div>
             {errors.newPassword && <p className="mt-1 text-xs font-medium text-red-700">{errors.newPassword}</p>}
           </div>
           <div>
-            <label htmlFor="reset-confirm" className="mb-1.5 block text-xs font-bold">Confirm password</label>
-            <PasswordInput id="reset-confirm" value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} autoComplete="new-password" inputClassName={authInputClass} toggleClassName="text-green-800" aria-invalid={Boolean(errors.confirmPassword)} />
+            <label htmlFor="reset-confirm" className="mb-1.5 block text-xs font-bold">Confirm new password</label>
+            <div className="relative">
+              <input id="reset-confirm" type={shown ? 'text' : 'password'} value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} autoComplete="new-password" className={`${authInputClass} pr-11`} aria-invalid={Boolean(errors.confirmPassword)} />
+              <PasswordToggle shown={shown} onToggle={() => setShown(!shown)} />
+            </div>
             {errors.confirmPassword && <p className="mt-1 text-xs font-medium text-red-700">{errors.confirmPassword}</p>}
           </div>
-          <p className={`text-xs ${form.newPassword && passwordHint === strongPasswordHint ? 'text-green-700' : 'text-stone-500'}`}>{passwordHint}</p>
-          {message && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{message}</p>}
+          <p className={`text-xs ${form.newPassword && passwordHint === strongPasswordHint ? 'font-semibold text-green-700' : 'text-stone-500'}`}>{passwordHint}</p>
+          {message && <p role="alert" className={authErrorClass}>{message}</p>}
           <button type="submit" disabled={submitting} className={authButtonClass}>{submitting ? 'Saving…' : 'Set new password'}</button>
-          <Link to="/forgot-password" className="block text-center py-2 text-xs font-bold text-green-700 hover:underline">Link expired? Request a new one</Link>
+          <Link to="/forgot-password" className={authLinkClass}>Link expired? Request a new one</Link>
         </form>
       )}
     </AuthShell>

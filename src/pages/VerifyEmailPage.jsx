@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiPost } from '../api/client.js'
-import { AuthShell, authButtonClass } from './AuthShell.jsx'
+import { AuthShell, authButtonClass, authErrorClass, authSuccessClass } from './AuthShell.jsx'
 
 // Where the link in the confirmation email lands (migration 016).
 //
@@ -47,35 +47,35 @@ export function VerifyEmailPage({ onVerified }) {
 
   if (state === 'missing') {
     return (
-      <AuthShell badge="Email Confirmation" title={<>This link is<br />incomplete</>}>
-        <p className="mt-6 text-xs text-stone-500">Open the confirmation link from your email exactly as it was sent. If it has expired, sign in and request a new one from your account.</p>
-        <Link to="/menu" className={`${authButtonClass} mt-6 block text-center`}>Go to the menu</Link>
+      <AuthShell title="This link is incomplete" subtitle="Open the confirmation link from your email exactly as it was sent.">
+        <p className="mt-6 text-xs text-stone-500">If it has expired, log in and request a new one from your account.</p>
+        <Link to="/menu" className={`${authButtonClass} mt-5 block text-center`}>Go to the menu</Link>
       </AuthShell>
     )
   }
 
   if (state === 'working') {
     return (
-      <AuthShell badge="Email Confirmation" title={<>Confirming your<br />email…</>}>
-        <p role="status" className="mt-6 text-xs text-stone-500">One moment.</p>
+      <AuthShell title="Confirming your email…" subtitle="One moment.">
+        <span role="status" className="sr-only">Confirming your email</span>
       </AuthShell>
     )
   }
 
   if (state === 'failed') {
     return (
-      <AuthShell badge="Email Confirmation" title={<>This link did<br />not work</>}>
-        <p role="alert" className="mt-6 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{message}</p>
-        <p className="mt-4 text-xs text-stone-500">Links work once and expire after 24 hours. A newer link also replaces an older one — use the most recent email.</p>
-        <Link to="/account" className={`${authButtonClass} mt-6 block text-center`}>Request a new link</Link>
+      <AuthShell title="This link did not work" subtitle="Links work once and expire after 24 hours.">
+        <p role="alert" className={`mt-6 ${authErrorClass}`}>{message}</p>
+        <p className="mt-4 text-xs text-stone-500">A newer link also replaces an older one — use the most recent email.</p>
+        <Link to="/account" className={`${authButtonClass} mt-5 block text-center`}>Request a new link</Link>
       </AuthShell>
     )
   }
 
   return (
-    <AuthShell badge="Email Confirmation" title={<>Email<br />confirmed</>}>
-      <p role="status" className="mt-6 rounded-lg bg-green-50 px-3 py-2 text-xs font-semibold text-green-800">{message}</p>
-      <Link to="/menu" className={`${authButtonClass} mt-6 block text-center`}>Start ordering</Link>
+    <AuthShell title="Email confirmed" subtitle="Thank you — your account is ready.">
+      <p role="status" className={`mt-6 ${authSuccessClass}`}>{message}</p>
+      <Link to="/menu" className={`${authButtonClass} mt-5 block text-center`}>Start ordering</Link>
     </AuthShell>
   )
 }
