@@ -258,3 +258,25 @@
     box-shadow: none;
   }
 }
+
+/* Phones (the user, 2026-10-24).
+ *
+ * 1. Nothing may make the page wider than the screen. One element poking
+ *    2px past the edge made phone browsers zoom the WHOLE page out to fit
+ *    it ("the full size is not clearly visible") and let it wobble
+ *    sideways. `clip`, not `hidden`, so sticky headers keep working.
+ * 2. iPhones zoom in on any field with text under 16px when it is tapped,
+ *    and do not zoom back out. Fields are 16px on phones; larger ones
+ *    (the 6-digit code box) keep their size. Unlayered on purpose, so it
+ *    wins over the text-sm utility on the field. */
+html,
+body {
+  overflow-x: clip;
+}
+@media (max-width: 639px) {
+  input:not([type='checkbox']):not([type='radio']):not(.text-lg):not(.text-2xl),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}

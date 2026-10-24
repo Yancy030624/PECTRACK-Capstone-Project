@@ -381,7 +381,7 @@ function RecentOrders({ orders, canOpen, onOpen, onViewAll }) {
 function StatusTile({ tile, linkable, onOpen }) {
   const tone = TONES[tile.tone]
   const body = (
-    <div className="flex h-full min-h-32 flex-col">
+    <div className="flex h-full flex-col sm:min-h-32">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-medium text-ink-700">{tile.label}</p>
         <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${tone.pill}`}>
@@ -389,11 +389,11 @@ function StatusTile({ tile, linkable, onOpen }) {
           {tone.short}
         </span>
       </div>
-      <p className={`mt-3 text-3xl font-semibold tabular-nums ${tile.tone === 'attention' ? tone.text : 'text-ink-900'}`}>{tile.value}</p>
-      <p className="mt-auto pt-3 text-xs text-ink-500">{tile.note}{linkable ? <span className="font-semibold text-brand-700"> · View →</span> : null}</p>
+      <p className={`mt-1 text-2xl font-semibold tabular-nums sm:mt-3 sm:text-3xl ${tile.tone === 'attention' ? tone.text : 'text-ink-900'}`}>{tile.value}</p>
+      <p className="mt-auto pt-1 text-xs text-ink-500 sm:pt-3">{tile.note}{linkable ? <span className="font-semibold text-brand-700"> · View →</span> : null}</p>
     </div>
   )
-  const shell = `rounded-panel border-l-4 ${tone.edge} bg-surface p-5 text-left shadow-raised`
+  const shell = `rounded-panel border-l-4 ${tone.edge} bg-surface p-4 text-left shadow-raised sm:p-5`
   return linkable
     ? <button type="button" onClick={onOpen} className={`${shell} transition hover:bg-surface-sunk`} aria-label={`${tile.label}: ${tile.value}, ${tone.label}. Open.`}>{body}</button>
     : <div className={shell}>{body}</div>

@@ -182,7 +182,7 @@ export function HomePage() {
             <div className="overflow-hidden rounded-t-full rounded-b-4xl bg-cream-200 shadow-[0_20px_50px_-20px_rgb(58_35_20/0.45)] ring-4 ring-white">
               <img src={giantChef} alt="The giant Pecto's chef standing outside the bakery" loading="lazy" className="aspect-3/5 w-full object-cover object-top" />
             </div>
-            <span className="absolute -right-4 top-10 rotate-6 rounded-2xl bg-butter-400 px-4 py-2 font-display text-base font-bold text-cocoa-900 shadow-lg sm:-right-8">Say hi to our chef!</span>
+            <span className="absolute right-2 top-10 rotate-6 rounded-2xl bg-butter-400 px-4 py-2 font-display text-base font-bold text-cocoa-900 shadow-lg sm:-right-8">Say hi to our chef!</span>
           </figure>
           <div>
             <Eyebrow>Visit the bakery</Eyebrow>

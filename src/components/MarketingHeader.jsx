@@ -8,7 +8,7 @@ import { HeaderIcon } from './HeaderIcon.jsx'
 // a phone visitor can still reach every page.
 const links = [['/', 'Home', true], ['/menu', 'Menu'], ['/about', 'Our Story'], ['/contact', 'Visit Us']]
 const navLinkClass = ({ isActive }) => `relative inline-flex min-h-10 items-center font-display text-[1.05rem] font-semibold transition hover:text-crust-600 ${isActive ? 'text-crust-600 after:absolute after:inset-x-0 after:bottom-0.5 after:h-0.5 after:rounded-full after:bg-crust-500' : 'text-cocoa-900'}`
-const mobileLinkClass = ({ isActive }) => `whitespace-nowrap rounded-full px-4 py-2 text-sm font-bold transition ${isActive ? 'bg-crust-600 text-white' : 'bg-white text-cocoa-700 ring-1 ring-cream-300 hover:bg-cream-100'}`
+const mobileLinkClass = ({ isActive }) => `whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold min-[400px]:px-4 transition ${isActive ? 'bg-crust-600 text-white' : 'bg-white text-cocoa-700 ring-1 ring-cream-300 hover:bg-cream-100'}`
 
 const userIcon = <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="8" r="3.2" /><path d="M5 20c.8-3.4 3.1-5.1 7-5.1s6.2 1.7 7 5.1" /></svg>
 const iconCircle = 'grid h-10 w-10 place-items-center rounded-full bg-white text-cocoa-900 ring-1 ring-cream-300 transition hover:-translate-y-0.5 hover:bg-cream-100 hover:text-crust-600'
@@ -28,7 +28,7 @@ export function MarketingHeader({ user, onOpenLogin = () => {}, onOpenRegister =
     <header className="font-body">
       {/* A plain brown band above the cream bar — kept for the colour,
           without the old announcement text. */}
-      <div aria-hidden="true" className="h-9 bg-cocoa-900" />
+      <div aria-hidden="true" className="hidden h-9 bg-cocoa-900 sm:block" />
       <div className="border-b border-cream-200 bg-cream-50/95 backdrop-blur">
         <div className="mx-auto grid min-h-20 max-w-7xl grid-cols-[1fr_auto] items-center gap-4 px-4 py-3 sm:px-7 md:grid-cols-[1fr_auto_1fr]">
           <Link to="/" aria-label="Pecto's Bakery — home" className="flex items-center gap-3">
@@ -67,7 +67,7 @@ export function MarketingHeader({ user, onOpenLogin = () => {}, onOpenRegister =
             )}
           </div>
         </div>
-        <nav aria-label="Site" className="flex gap-2 overflow-x-auto px-4 pb-3 sm:px-7 md:hidden">
+        <nav aria-label="Site" className="flex gap-1.5 overflow-x-auto px-4 pb-3 sm:gap-2 sm:px-7 md:hidden">
           {links.map(([to, label, end]) => <NavLink key={to} to={to} end={end} className={mobileLinkClass}>{label}</NavLink>)}
         </nav>
       </div>

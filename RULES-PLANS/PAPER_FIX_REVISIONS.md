@@ -986,3 +986,12 @@ Update the inventory process description, the flowcharts and DFDs, the ERD (`pro
   - **Correct count:** the real amount after a stock check, for example "35 kg → 28 kg", with a confirmation.
   - **Details:** name, unit, minimum, and "no longer used".
   Correcting an ingredient count is admin-only, the same as products. Ingredient usage is not recorded day to day; the count is kept true by the admin's stock checks. Add a line to the limitations.
+
+### Phone layout (2026-10-24)
+
+- **The page never becomes wider than the screen.** A decorative badge on the home page made phone browsers zoom the whole page out. Checked at 360 px and 390 px wide on all 34 screens.
+- **Staff Menu:** staff screens on phones and tablets have a **☰ Menu** button and a header that stays at the top. The menu opens a drawer listing every module with its icon; it replaces the sideways strip where most modules were off the screen.
+- **No zoom when tapping a field:** text fields use 16 px text on phones, so iPhones do not zoom in when one is tapped.
+- **Less wasted space:** the Dashboard cards are more compact, the storefront's empty top band is hidden, and its four links fit a small phone.
+
+For the figures: phone screenshots of the Menu drawer and of the storefront are good examples of the responsive design.

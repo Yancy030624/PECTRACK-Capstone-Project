@@ -54,7 +54,18 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
   const openModule = (name, params = null) => {
     setActiveModule(name)
     setModuleParams(params)
+    setMenuOpen(false)
   }
+  // Phones and tablets (the user, 2026-10-24): every module in a drawer
+  // behind a Menu button, instead of a sideways-scrolling strip where most
+  // modules sat off the screen and nobody knew to swipe for them.
+  const [menuOpen, setMenuOpen] = useState(false)
+  useEffect(() => {
+    if (!menuOpen) return
+    const closeOnEscape = (event) => { if (event.key === 'Escape') setMenuOpen(false) }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [menuOpen])
   // The bell (NOTIFICATIONS_PLAN.md, N3): order news opens the order in
   // Order Management, delivery news opens Delivery Management, and a
   // driver's new assignment opens My Deliveries. `at` makes a second click
@@ -114,10 +125,16 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
   // ---------------------------------------------------------------------
   return (
     <div className="flex min-h-screen flex-col bg-surface-sunk text-ink-700 lg:h-screen lg:overflow-hidden print:block print:h-auto print:min-h-0 print:overflow-visible print:bg-white">
-      <header className="relative z-10 flex shrink-0 items-center justify-between bg-surface px-4 py-3 shadow-raised sm:px-7 print:hidden">
-        <Link to="/" aria-label="Go to home">
-          <Brand compact />
-        </Link>
+      {/* Sticky on phones, so the Menu and the bell are always one tap away. */}
+      <header className="sticky top-0 z-40 flex shrink-0 items-center justify-between gap-2 bg-surface px-3 py-2.5 shadow-raised sm:px-7 lg:relative lg:z-10 lg:py-3 print:hidden">
+        <div className="flex min-w-0 items-center gap-2">
+          <button type="button" onClick={() => setMenuOpen(true)} aria-label="Open the menu" aria-expanded={menuOpen} className="grid h-10 w-10 shrink-0 place-items-center rounded-control text-ink-700 hover:bg-surface-sunk lg:hidden">
+            <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+          </button>
+          <Link to="/" aria-label="Go to home" className="min-w-0">
+            <Brand compact />
+          </Link>
+        </div>
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">
           <NotificationBell user={user} onOpen={openNotified} />
           <span className="hidden text-right text-xs text-ink-500 sm:block">
@@ -175,25 +192,38 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
           </nav>
         </aside>
 
-        {/* Mobile module nav. Previously `absolute top-16.25` floating
-            free of the header's actual height (H6) — now an ordinary flex
-            child that sits between the header and the content in normal
-            flow, so it can never overlap anything regardless of header
-            height. */}
-        <div className="flex gap-2 overflow-x-auto bg-surface p-3 shadow-raised lg:hidden print:hidden">
-          {allowedModules.map((module) => (
-            <button
-              type="button"
-              key={module.name}
-              onClick={() => openModule(module.name)}
-              className={`inline-flex min-h-9 shrink-0 items-center rounded-full px-3 text-xs whitespace-nowrap ${
-                activeModule === module.name ? 'bg-brand-600 font-semibold text-white' : 'bg-brand-50 font-medium text-brand-700'
-              }`}
-            >
-              {module.name}
-            </button>
-          ))}
-        </div>
+        {/* Phones and tablets: the module drawer, opened from the header's
+            Menu button. Tapping a module, the backdrop, or Esc closes it. */}
+        {menuOpen && (
+          <div className="fixed inset-0 z-50 lg:hidden print:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+            <button type="button" aria-label="Close the menu" onClick={() => setMenuOpen(false)} className="absolute inset-0 bg-black/40" />
+            <nav className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col overflow-y-auto bg-surface p-4 shadow-2xl">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-[10px] font-semibold tracking-wide text-ink-500 uppercase">Main menu</p>
+                <button type="button" onClick={() => setMenuOpen(false)} aria-label="Close the menu" className="grid h-9 w-9 place-items-center rounded-control text-lg text-ink-500 hover:bg-surface-sunk">✕</button>
+              </div>
+              <div className="space-y-1">
+                {allowedModules.map((module) => (
+                  <button
+                    type="button"
+                    key={module.name}
+                    onClick={() => openModule(module.name)}
+                    aria-current={activeModule === module.name ? 'page' : undefined}
+                    className={`flex min-h-12 w-full items-center gap-3 rounded-control px-3 text-left text-base transition ${
+                      activeModule === module.name ? 'bg-brand-600 font-semibold text-white' : 'font-medium text-ink-700 hover:bg-brand-50'
+                    }`}
+                  >
+                    <ModuleIcon name={module.icon} />
+                    {module.name}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-auto border-t border-line-200 pt-3 text-xs text-ink-500">
+                Signed in as <strong className="font-semibold text-ink-900">{user.name}</strong> · {user.role}
+              </p>
+            </nav>
+          </div>
+        )}
 
         {/* <main> wraps the module content, not the whole shell — the
             header/sidebar/nav around it are chrome, not the page's main
