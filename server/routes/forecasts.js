@@ -57,7 +57,7 @@ async function loadRun(runId) {
 
   const [models, days] = await Promise.all([
     pool.query(
-      `SELECT m.*, p.product_name, p.variant
+      `SELECT m.*, p.product_name, p.variant, p.stock_type
          FROM forecast_models m JOIN products p ON p.product_id = m.product_id
         WHERE m.run_id = $1
         ORDER BY p.product_name, p.variant`,
@@ -81,7 +81,7 @@ async function loadRun(runId) {
   const products = []
   const skipped = []
   for (const model of models.rows) {
-    const base = { productId: model.product_id, name: model.product_name, variant: model.variant }
+    const base = { productId: model.product_id, name: model.product_name, variant: model.variant, stockType: model.stock_type }
     if (model.method === 'none') {
       skipped.push({ ...base, note: model.note })
       continue

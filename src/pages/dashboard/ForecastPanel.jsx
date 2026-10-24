@@ -48,12 +48,16 @@ const axisDay = (iso) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefin
 const longDay = (iso) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 const whole = (value) => Math.round(Number(value)).toLocaleString()
 
+const tableRows = 10
+
 export function ForecastPanel({ user, active }) {
   const isAdmin = user.role === 'ADMIN'
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
   const [source, setSource] = useState('ASSUMED')
+  const [breadType, setBreadType] = useState('')
+  const [showAll, setShowAll] = useState(false)
   const [running, setRunning] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
   const [chartData, setChartData] = useState(null)
@@ -165,6 +169,10 @@ export function ForecastPanel({ user, active }) {
   }
 
   const products = data?.products ? [...data.products].sort((a, b) => b.total - a.total) : []
+  // The day-by-day table (REPORTS_UI_PLAN.md U6): one bread type at a time
+  // if asked, and the ten busiest until "Show all".
+  const tableProducts = products.filter((product) => !breadType || product.stockType === breadType)
+  const shownProducts = showAll ? tableProducts : tableProducts.slice(0, tableRows)
   const selected = products.find((product) => product.productId === selectedId)
   const isAssumed = data?.run?.source === 'ASSUMED'
   const days = data?.dates ?? []
@@ -202,6 +210,7 @@ export function ForecastPanel({ user, active }) {
                 </Select>
               </Field>
               <Button type="button" size="sm" onClick={run} disabled={running}>{running ? 'Forecasting…' : 'Run forecast'}</Button>
+              <p className="basis-full text-xs text-ink-500">Runs automatically every night; use this to run one now.</p>
             </div>
           )}
         </div>
@@ -246,7 +255,13 @@ export function ForecastPanel({ user, active }) {
               <div className="mt-6 grid gap-4 sm:grid-cols-3">
                 <SummaryCard label="Expected to sell this week" value={`${whole(weekTotal)} items`} note={`Across ${products.length} products, next 7 days`} />
                 <SummaryCard label="Busiest day ahead" value={busiest ? busiest.label : '—'} note={busiest ? `About ${whole(busiest.total)} items expected` : 'No forecast yet'} />
-                <SummaryCard label="How accurate" value={accuracy == null ? 'Not tested yet' : `About ${accuracy}%`} note={accuracy == null ? 'Needs about eight weeks of history' : `Checked against past weeks it had not seen${scored ? ` · ${beatBaseline} of ${scored} products beat a simple average` : ''}`} />
+                {/* On practice data the backtest measures the method, not the
+                    bakery (ANALYTICS_PLAN.md, the defense wording): it says so. */}
+                <SummaryCard
+                  label={isAssumed ? 'Method test (practice data)' : 'How accurate'}
+                  value={accuracy == null ? 'Not tested yet' : `About ${accuracy}%`}
+                  note={accuracy == null ? 'Needs about eight weeks of history' : isAssumed ? 'How well the method fits the sample pattern — not Pecto\'s real sales' : `Checked against past weeks it had not seen${scored ? ` · ${beatBaseline} of ${scored} products beat a simple average` : ''}`}
+                />
               </div>
 
               {/* One bake list (RULES-PLANS/REPORTS_ALIGNMENT_ANALYSIS.md, D):
@@ -279,8 +294,17 @@ export function ForecastPanel({ user, active }) {
               </Card>
 
               <Card className="mt-6 p-6">
-                <h3 className="text-base font-semibold text-ink-900">Expected sales, day by day</h3>
-                <p className="mt-1 text-xs text-ink-500">How many of each product we expect to sell, busiest first. Tap a product to see its chart above.</p>
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="text-base font-semibold text-ink-900">Expected sales, day by day</h3>
+                    <p className="mt-1 text-xs text-ink-500">How many of each product we expect to sell, busiest first. Tap a product to see its chart above.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 print:hidden">
+                    {[['', 'All'], ['SOFT', 'Soft'], ['HARD', 'Hard']].map(([value, label]) => (
+                      <Button key={value || 'all'} type="button" size="sm" variant={breadType === value ? 'primary' : 'secondary'} onClick={() => setBreadType(value)}>{label}</Button>
+                    ))}
+                  </div>
+                </div>
                 <div className="mt-4">
                   <Table caption="Seven-day forecast by product">
                     <Thead>
@@ -291,7 +315,7 @@ export function ForecastPanel({ user, active }) {
                       </Tr>
                     </Thead>
                     <Tbody>
-                      {products.map((product) => (
+                      {shownProducts.map((product) => (
                         <Tr key={product.productId} onClick={() => setSelectedId(product.productId)} className={`cursor-pointer ${product.productId === selectedId ? 'bg-brand-50' : ''}`}>
                           <Td className="font-semibold text-ink-900">
                             <button type="button" onClick={() => setSelectedId(product.productId)} className="text-left hover:underline">{product.name}</button>
@@ -306,6 +330,11 @@ export function ForecastPanel({ user, active }) {
                     </Tbody>
                   </Table>
                 </div>
+                {tableProducts.length > tableRows && (
+                  <div className="mt-3 print:hidden">
+                    <Button type="button" size="sm" variant="secondary" onClick={() => setShowAll(!showAll)}>{showAll ? `Show the top ${tableRows}` : `Show all ${tableProducts.length}`}</Button>
+                  </div>
+                )}
               </Card>
             </>
           )}
