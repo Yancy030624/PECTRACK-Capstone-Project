@@ -47,7 +47,10 @@ predicted figure for that day) is compared with what is planned:
 
 When the forecast rounds above the planned figure, the product gets
 `forecastShort = forecast − planned`. Shortfalls only; the middle figure
-is used, not the upper range. `productionPlan` returns a `forecastShortCount`.
+is used, not the upper range. A product whose level is not set (soft: no
+standard; hard: no stop level) is not checked. Found in the browser check:
+26 of the 27 local soft breads have no standard yet, and every one of them
+flagged. `productionPlan` returns a `forecastShortCount`.
 `ProductionPanel.jsx` shows a "Forecast" column with "+N" in amber, and
 a line at the top: "Forecast says bake more: N products". It appears on
 the Production list only; the Dashboard is unchanged.

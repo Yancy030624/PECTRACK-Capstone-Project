@@ -115,7 +115,8 @@ export async function boostsFor(day) {
 // the standard plus advanced orders; hard: on hand plus what to bake — the
 // product carries forecastShort, how many more the forecast expects to
 // sell. Shortfalls only: the bakery would rather toast or reject than sell
-// out.
+// out. A product whose level is not set yet (no standard, no stop level)
+// is not checked: its plan is empty by omission, not by decision.
 export const forecastShortfall = (forecast, planned) => (forecast != null && forecast > planned ? forecast - planned : null)
 
 export async function productionFor(day) {
@@ -149,7 +150,7 @@ export async function productionFor(day) {
     if (row.stock_type === 'SOFT') {
       const standard = Math.round(row.standard_stock * boosts.soft.factor)
       const topUp = Math.max(standard - row.stock_quantity, 0)
-      return { ...base, standardStock: standard, boost: boosts.soft.reason, advanced: row.advanced, topUp, toBake: topUp + row.advanced, needed: topUp + row.advanced > 0, forecastShort: forecastShortfall(base.forecast, standard + row.advanced) }
+      return { ...base, standardStock: standard, boost: boosts.soft.reason, advanced: row.advanced, topUp, toBake: topUp + row.advanced, needed: topUp + row.advanced > 0, forecastShort: row.standard_stock > 0 ? forecastShortfall(base.forecast, standard + row.advanced) : null }
     }
     // Boosted (an event ahead, or the weekend): build up to stop level x
     // factor, whatever the minimum. Otherwise: make it at the minimum.
@@ -157,7 +158,7 @@ export async function productionFor(day) {
     const target = boosted ? Math.round(row.target_stock * boosts.hard.factor) : row.target_stock
     const needed = row.target_stock > 0 && (boosted ? row.stock_quantity < target : row.stock_quantity <= row.min_stock_level)
     const toBake = needed ? Math.max(target - row.stock_quantity, 0) : 0
-    return { ...base, minStockLevel: row.min_stock_level, targetStock: target, boost: boosted ? boosts.hard.reason : null, toBake, needed, forecastShort: forecastShortfall(base.forecast, row.stock_quantity + toBake) }
+    return { ...base, minStockLevel: row.min_stock_level, targetStock: target, boost: boosted ? boosts.hard.reason : null, toBake, needed, forecastShort: row.target_stock > 0 ? forecastShortfall(base.forecast, row.stock_quantity + toBake) : null }
   })
 }
 
