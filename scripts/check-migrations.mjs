@@ -31,6 +31,7 @@ const checks = [
   ['037_payment_mode', () => column('orders', 'payment_mode')],
   ['038_delivery_fee', () => column('orders', 'delivery_fee')],
   ['039_sales_view_real_sales', () => table('forecast_nightly_runs')],
+  ['040_export_history', () => column('report_logs', 'user_id')],
 ]
 
 const missing = []

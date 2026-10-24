@@ -20,6 +20,7 @@ import { requireAuth, requireRole } from '../lib/auth.js'
 import { addDays } from '../lib/forecasting.js'
 import { runForecast, SOURCE_SETS } from '../lib/forecastRun.js'
 import { normalize, parseId } from '../lib/validation.js'
+import { logExport } from '../lib/exportLog.js'
 
 const router = express.Router()
 
@@ -132,6 +133,7 @@ router.get('/latest', async (request, response) => {
   const data = await loadRun(latest.rows[0].run_id)
 
   if (normalize(request.query.format).toLowerCase() === 'csv') {
+    await logExport(request.user.id, 'FORECAST_CSV')
     const header = ['Product', 'Variant', 'Trained on', 'Method', 'Backtest MAE', 'Backtest WAPE', 'Date', 'Predicted', 'Low', 'High']
     const lines = [header.map(csvCell).join(',')]
     for (const product of data.products) {

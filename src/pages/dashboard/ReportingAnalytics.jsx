@@ -15,6 +15,7 @@ import { StockStatusPill } from '../../components/ui/StockStatusPill.jsx'
 import { PeakPeriods } from './PeakPeriods.jsx'
 import { PrintButton, PrintHeader } from '../../components/PrintReport.jsx'
 import { manilaDate, manilaDateFromToday } from '../../lib/dates.js'
+import { exportLabels, logPrint } from '../../lib/exportLog.js'
 import { cssVar } from '../../lib/theme.js'
 
 const logsLimit = 20
@@ -35,7 +36,11 @@ const logsLimit = 20
 // bake needs it; only an admin can start a new run (ForecastPanel.jsx).
 // No Transactions tab (DELIVERY_FEE_PLAN.md, D2): it listed the same
 // payments as Payment & Billing's Payment log, which now exports the PDF.
-const tabsFor = (role) => (role === 'ADMIN' ? ['Sales', 'Products', 'Inventory', 'Forecast', 'Report History'] : ['Sales', 'Products', 'Inventory', 'Forecast'])
+// Report History is now the Export history (REPORTS_UI_PLAN.md U2): only
+// reports that left the system, by admin or cashier.
+const tabsFor = (role) => (role === 'ADMIN' ? ['Sales', 'Products', 'Inventory', 'Forecast', 'Export history'] : ['Sales', 'Products', 'Inventory', 'Forecast'])
+// The PDF each tab's print is recorded as.
+const printTypes = { Sales: 'SALES_PDF', Products: 'PRODUCTS_PDF', Inventory: 'INVENTORY_PDF', Forecast: 'FORECAST_PDF' }
 
 // Stage 5.5 (RULES-PLANS/UI_AUDIT.md) — the largest dashboard screen and
 // the only one with Chart.js canvases, done last per the stage's own
@@ -51,7 +56,7 @@ const tabsFor = (role) => (role === 'ADMIN' ? ['Sales', 'Products', 'Inventory',
 // with two different treatments for "the first metric tile" would have
 // been worse than either extreme.
 //
-// tabsFor(role) is UNCHANGED: ADMIN gets 'Report History', CASHIER does
+// tabsFor(role): ADMIN gets 'Export history', CASHIER does
 // not, matching reports.js restricting GET /api/reports/logs to ADMIN.
 // generate and the logs effect build the exact same
 // request params as before — this is presentation only.
@@ -182,7 +187,7 @@ export function ReportingAnalytics({ user }) {
   const [logsMessage, setLogsMessage] = useState('')
 
   useEffect(() => {
-    if (user.role !== 'ADMIN' || activeTab !== 'Report History') return
+    if (user.role !== 'ADMIN' || activeTab !== 'Export history') return
     setLogsLoading(true)
     setLogsMessage('')
     apiGet(`/api/reports/logs?${new URLSearchParams({ limit: String(logsLimit), offset: String(logsOffset) })}`)
@@ -204,7 +209,7 @@ export function ReportingAnalytics({ user }) {
           heading, tabs and range form are hidden when printing. */}
       <PrintHeader
         title={`${activeTab} report`}
-        subtitle={appliedRange && activeTab !== 'Forecast' && activeTab !== 'Report History' ? `${formatDate(`${appliedRange.from}T00:00:00`)} – ${formatDate(`${appliedRange.to}T00:00:00`)}` : activeTab === 'Forecast' ? 'Next seven days' : undefined}
+        subtitle={appliedRange && activeTab !== 'Forecast' && activeTab !== 'Export history' ? `${formatDate(`${appliedRange.from}T00:00:00`)} – ${formatDate(`${appliedRange.to}T00:00:00`)}` : activeTab === 'Forecast' ? 'Next seven days' : undefined}
         user={user}
       />
       <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600 print:hidden">{user.role} PORTAL</p>
@@ -219,11 +224,11 @@ export function ReportingAnalytics({ user }) {
         ))}
         {/* Prints whichever tab is open: the others are `hidden`, so the
             printout is exactly the report on screen. */}
-        <span className="ml-auto"><PrintButton /></span>
+        <span className="ml-auto"><PrintButton onPrint={() => printTypes[activeTab] && logPrint(printTypes[activeTab])} /></span>
       </div>
       {/* The date-range form drives the historical reports only; a forecast
           looks forward from today and has no range to pick. */}
-      <div hidden={activeTab === 'Report History' || activeTab === 'Forecast'} className="print:hidden">
+      <div hidden={activeTab === 'Export history' || activeTab === 'Forecast'} className="print:hidden">
         <Card className="mt-6 p-6">
           <form onSubmit={generate} className="flex flex-wrap items-end gap-3">
             <Field label="From" error={errors.from}>
@@ -457,10 +462,10 @@ export function ReportingAnalytics({ user }) {
       </div>
 
       {user.role === 'ADMIN' && (
-        <div hidden={activeTab !== 'Report History'}>
+        <div hidden={activeTab !== 'Export history'}>
           <Card className="mt-6 p-6">
-            <h2 className="text-lg font-semibold text-ink-900">Report generation history</h2>
-            <p className="mt-1 text-xs text-ink-500">Every deliberate report generation — the Sales tab's own "Generate report" and CSV export — with who ran it and when. The ambient views (this screen's own live figures, the dashboard summary) are not reports and never appear here.</p>
+            <h2 className="text-lg font-semibold text-ink-900">Export history</h2>
+            <p className="mt-1 text-xs text-ink-500">Every report that left the system — a CSV downloaded or a PDF printed — with who made it and when. Opening a report on screen is not recorded.</p>
 
             {logsMessage && (
               <div className="mt-4">
@@ -471,23 +476,23 @@ export function ReportingAnalytics({ user }) {
             {logsLoading ? (
               <LoadingRows className="mt-4" />
             ) : logsMessage ? null : !logsResult || logsResult.logs.length === 0 ? (
-              <p className="mt-4 text-sm text-ink-500">No reports have been generated yet.</p>
+              <p className="mt-4 text-sm text-ink-500">Nothing has been exported yet.</p>
             ) : (
               <>
                 <div className="mt-4">
-                  <Table caption="Report generation history">
+                  <Table caption="Export history">
                     <Thead>
                       <Tr className="hover:bg-transparent">
-                        <Th>Report</Th>
-                        <Th>Generated by</Th>
+                        <Th>Export</Th>
+                        <Th>By</Th>
                         <Th>When</Th>
                       </Tr>
                     </Thead>
                     <Tbody>
                       {logsResult.logs.map((log) => (
                         <Tr key={log.id}>
-                          <Td className="font-semibold text-ink-900">{log.reportType}</Td>
-                          <Td>{log.generatedByName}</Td>
+                          <Td className="font-semibold text-ink-900">{exportLabels[log.reportType] ?? log.reportType}</Td>
+                          <Td>{log.generatedByName ?? '—'}{log.role && <span className="block text-xs text-ink-500">{log.role === 'ADMIN' ? 'Admin' : log.role === 'CASHIER' ? 'Cashier' : log.role}</span>}</Td>
                           <Td className="text-ink-500">{formatDateTime(log.generatedAt)}</Td>
                         </Tr>
                       ))}

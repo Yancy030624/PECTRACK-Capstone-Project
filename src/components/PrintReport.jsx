@@ -11,11 +11,13 @@ import { formatDateTime } from '../lib/format.js'
 // report it is, for what dates, printed by whom and when. The shell's
 // navigation and every control are hidden by `print:hidden` classes.
 
-export function PrintButton({ label = 'Print / Save as PDF' }) {
+// `onPrint` runs before the dialog opens: the export history
+// (lib/exportLog.js) records the print.
+export function PrintButton({ label = 'Print / Save as PDF', onPrint }) {
   return (
     <button
       type="button"
-      onClick={() => window.print()}
+      onClick={() => { onPrint?.(); window.print() }}
       className="inline-flex h-8 items-center gap-1.5 rounded-control border border-line-200 bg-surface px-3 text-xs font-medium text-ink-700 transition hover:bg-surface-sunk print:hidden"
     >
       <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -44,8 +46,9 @@ export function PrintHeader({ title, subtitle, user }) {
 // a pop-up over the page. The button marks <body>; index.css then shows
 // only the element with class "print-only-target" (and what is inside it)
 // for that print, and the mark is removed afterwards.
-export function PrintThisButton({ label = 'Print / Save as PDF' }) {
+export function PrintThisButton({ label = 'Print / Save as PDF', onPrint }) {
   const printThis = () => {
+    onPrint?.()
     document.body.classList.add('printing-one')
     const done = () => {
       document.body.classList.remove('printing-one')

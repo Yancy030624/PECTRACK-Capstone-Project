@@ -12,6 +12,7 @@ import { billingListSql } from '../lib/billing.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { bucketSql, csvRow, dateRangeSql, parseDateRange, parseGroupBy } from '../lib/reporting.js'
 import { normalize } from '../lib/validation.js'
+import { logExport, PRINT_TYPES } from '../lib/exportLog.js'
 
 const router = express.Router()
 
@@ -239,32 +240,10 @@ router.get('/sales', async (request, response) => {
     averagePayment: totalsRow.average_payment,
   }
 
-  // PHASE 8, DECISION 4 — report_logs records DELIBERATE generation, not
-  // page views. Every successful call here already supplied an explicit
-  // from/to (parseDateRange requires both), so reaching this line IS
-  // "asked for something specific" — the schema itself draws the rest of
-  // the line: generated_by REFERENCES admins(admin_id), so a CASHIER's
-  // request structurally cannot be logged. Not an error, not a silent
-  // failure — simply outside what this table can record. The export gets
-  // its own report_type (SALES_CSV) so the audit trail can tell a screen
-  // view apart from a file someone walked away with.
-  //
-  // A plain INSERT, outside any transaction, AFTER the report is already
-  // fully computed. This is an audit record of a read; if it fails, the
-  // report itself is still correct, so the try/catch below makes sure a
-  // logging problem can never take the response down with it.
-  if (request.user.role === 'ADMIN') {
-    try {
-      await pool.query(
-        `INSERT INTO report_logs (generated_by, report_type) SELECT admin_id, $1 FROM admins WHERE user_id = $2`,
-        [format === 'csv' ? 'SALES_CSV' : 'SALES', request.user.id],
-      )
-    } catch (error) {
-      console.error('Failed to record a report_logs row for a SALES report:', error)
-    }
-  }
-
+  // The export history (REPORTS_UI_PLAN.md U2): viewing the report is not
+  // logged; downloading its CSV is, for any role (lib/exportLog.js).
   if (format === 'csv') {
+    await logExport(request.user.id, 'SALES_CSV')
     // PATTERN K (lib/reporting.js) — every cell escaped, including
     // against formula injection, because this file is opened on the
     // owner's own machine, not the server's.
@@ -682,15 +661,27 @@ router.get('/analytics', async (request, response) => {
   return response.json({ from, to, rows })
 })
 
+// POST /api/reports/exports { type } — a PDF printed on the screen, which
+// the server never sees otherwise (REPORTS_UI_PLAN.md U2). Admin or cashier.
+router.post('/exports', async (request, response) => {
+  const type = normalize(request.body.type).toUpperCase()
+  if (!PRINT_TYPES.includes(type)) return response.status(422).json({ message: 'Unknown export type.', errors: { type: 'Unknown export type.' } })
+  await logExport(request.user.id, type)
+  return response.status(204).end()
+})
+
 router.get('/logs', requireRole('ADMIN'), async (request, response) => {
   const limit = parseLimit(request.query.limit, { defaultLimit: defaultLogsLimit, maxLimit: maxLogsLimit })
   const offset = Math.max(Math.trunc(Number(request.query.offset)) || 0, 0)
 
   const result = await pool.query(
-    `SELECT rl.report_id, rl.report_type, rl.generated_at, a.name AS generated_by_name,
+    `SELECT rl.report_id, rl.report_type, rl.generated_at, u.user_type,
+            COALESCE(a.name, c.name, u.username) AS generated_by_name,
             COUNT(*) OVER()::int AS full_count
        FROM report_logs rl
-       JOIN admins a ON a.admin_id = rl.generated_by
+       LEFT JOIN users u ON u.user_id = rl.user_id
+       LEFT JOIN admins a ON a.user_id = rl.user_id
+       LEFT JOIN cashiers c ON c.user_id = rl.user_id
       ORDER BY rl.generated_at DESC, rl.report_id DESC
       LIMIT $1 OFFSET $2`,
     [limit, offset],
@@ -708,7 +699,7 @@ router.get('/logs', requireRole('ADMIN'), async (request, response) => {
   }
 
   return response.json({
-    logs: result.rows.map((row) => ({ id: row.report_id, reportType: row.report_type, generatedAt: row.generated_at, generatedByName: row.generated_by_name })),
+    logs: result.rows.map((row) => ({ id: row.report_id, reportType: row.report_type, generatedAt: row.generated_at, generatedByName: row.generated_by_name, role: row.user_type })),
     total,
     hasMore: offset + result.rows.length < total,
   })

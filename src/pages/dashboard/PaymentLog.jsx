@@ -23,6 +23,7 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDateTime, formatPeso } from '../../lib/format.js'
 import { orderLabel } from '../../lib/orderNumber.js'
+import { logPrint } from '../../lib/exportLog.js'
 
 const pageSize = 25
 const emptyFilters = { from: '', to: '', method: '' }
@@ -109,6 +110,7 @@ export function PaymentLog({ user }) {
     }
     window.addEventListener('afterprint', done, { once: true })
     document.body.classList.add('printing-one')
+    logPrint('PAYMENT_LOG_PDF')
     window.print()
     return () => window.removeEventListener('afterprint', done)
   }, [printRows])

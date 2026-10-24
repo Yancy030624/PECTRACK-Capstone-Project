@@ -6,6 +6,7 @@ import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { manilaDateFromToday } from '../../lib/dates.js'
+import { logPrint } from '../../lib/exportLog.js'
 import { EventsCard } from './EventsCard.jsx'
 
 // Inventory → Production (RULES-PLANS/DAILY_STOCK_PLAN.md): what to bake
@@ -43,7 +44,7 @@ export function ProductionPanel({ user }) {
             <input type="date" value={day} min={manilaDateFromToday(0)} onChange={(event) => setDay(event.target.value || manilaDateFromToday(1))} className="h-9 rounded-control border border-line-200 bg-surface px-2 text-sm" />
           </label>
         </div>
-        <PrintThisButton label="Print production list" />
+        <PrintThisButton label="Print production list" onPrint={() => logPrint('PRODUCTION_PDF')} />
       </div>
 
       {error && <p className="mt-4 text-sm text-red-700">{error}</p>}

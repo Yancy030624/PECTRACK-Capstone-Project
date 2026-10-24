@@ -167,7 +167,7 @@ describe('reporting & analytics', () => {
   })
 
   after(async () => {
-    await pool.query('DELETE FROM report_logs WHERE generated_by = (SELECT admin_id FROM admins WHERE user_id = $1)', [adminUserId]).catch(() => {})
+    await pool.query('DELETE FROM report_logs WHERE user_id = ANY($1) OR generated_by = (SELECT admin_id FROM admins WHERE user_id = $2)', [createdUserIds, adminUserId]).catch(() => {})
     await pool.query('DELETE FROM deliveries WHERE order_id = ANY($1)', [createdOrderIds]).catch(() => {})
     await pool.query('DELETE FROM payments WHERE order_id = ANY($1)', [createdOrderIds]).catch(() => {})
     await pool.query('DELETE FROM inventory_movements WHERE order_id = ANY($1)', [createdOrderIds]).catch(() => {})
@@ -368,23 +368,20 @@ describe('reporting & analytics', () => {
   })
 
   // PHASE 8, DECISION 4 — deliberate generation vs. an ambient view.
-  test('an admin\'s request writes exactly one report_logs row; a cashier\'s identical request writes none', async () => {
-    const countLogs = async () => (await pool.query('SELECT COUNT(*)::int AS n FROM report_logs WHERE generated_by = (SELECT admin_id FROM admins WHERE user_id = $1)', [adminUserId])).rows[0].n
+  test('export history: viewing logs nothing; a CSV or a printed PDF is logged for admin and cashier alike (REPORTS_UI_PLAN U2)', async () => {
+    const logsFor = async (userIds) => (await pool.query('SELECT report_type FROM report_logs WHERE user_id = ANY($1) ORDER BY report_id', [userIds])).rows.map((row) => row.report_type)
+    const cashierUserId = createdUserIds[1]
+    const before = (await logsFor([adminUserId, cashierUserId])).length
 
-    const beforeAdmin = await countLogs()
-    const asAdmin = await getSales({ from: '2021-01-01', to: '2021-01-31' }, adminCookie)
-    assert.equal(asAdmin.status, 200)
-    const afterAdmin = await countLogs()
-    assert.equal(afterAdmin, beforeAdmin + 1, 'an admin\'s report generation must write exactly one row')
+    assert.equal((await getSales({ from: '2021-01-01', to: '2021-01-31' }, adminCookie)).status, 200)
+    assert.equal((await logsFor([adminUserId, cashierUserId])).length, before, 'opening the report is not an export')
 
-    const row = await pool.query('SELECT report_type FROM report_logs WHERE generated_by = (SELECT admin_id FROM admins WHERE user_id = $1) ORDER BY report_id DESC LIMIT 1', [adminUserId])
-    assert.equal(row.rows[0].report_type, 'SALES')
-
-    const beforeCashier = await countLogs()
-    const asCashier = await getSales({ from: '2021-01-01', to: '2021-01-31' }, cashierCookie)
-    assert.equal(asCashier.status, 200, 'a cashier can still generate the report')
-    const afterCashier = await countLogs()
-    assert.equal(afterCashier, beforeCashier, 'a cashier has no admin_id, so nothing is logged — not an error, just outside what report_logs can record')
+    assert.equal((await getSales({ from: '2021-01-01', to: '2021-01-31', format: 'csv' }, cashierCookie)).status, 200)
+    const printed = await fetch(`${baseUrl}/api/reports/exports`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ type: 'payment_log_pdf' }) })
+    assert.equal(printed.status, 204)
+    assert.deepEqual((await logsFor([cashierUserId])).slice(-2), ['SALES_CSV', 'PAYMENT_LOG_PDF'])
+    const unknown = await fetch(`${baseUrl}/api/reports/exports`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ type: 'SALES' }) })
+    assert.equal(unknown.status, 422)
   })
 
   // PATTERN K + the CSV/SALES_CSV half of Decision 4.
@@ -858,45 +855,40 @@ describe('reporting & analytics', () => {
       assert.equal((await fetch(`${baseUrl}/api/reports/logs`)).status, 401)
       // The router-wide requireRole('ADMIN', 'CASHIER') above admits a
       // cashier to every OTHER route in this file — this route's own
-      // requireRole('ADMIN') override is what stops it here, because
-      // report_logs.generated_by REFERENCES admins(admin_id): a cashier
-      // could never appear in this table no matter what they ask for.
+      // requireRole('ADMIN') override is what stops it here: the export
+      // history is the admin's to read, though it records cashiers too.
       assert.equal((await getLogs({}, cashierCookie)).status, 403)
       assert.equal((await getLogs({}, customerCookie)).status, 403)
       assert.equal((await getLogs({}, driverCookie)).status, 403)
     })
 
-    test('a deliberately generated report appears in the log, with its type and the generating admin\'s name', async () => {
+    test('an export appears in the log with its type, role and who made it; viewing a report does not (REPORTS_UI_PLAN U2)', async () => {
       const before = await (await getLogs({ limit: 1 })).json()
-
-      const salesResponse = await getSales({ from: '2022-06-01', to: '2022-06-30' })
-      assert.equal(salesResponse.status, 200)
-
-      const after = await (await getLogs({ limit: 1 })).json()
-      assert.equal(after.total, before.total + 1, 'exactly one new row for the one report just generated')
-      assert.equal(after.logs[0].reportType, 'SALES')
-      assert.equal(after.logs[0].generatedByName, 'Report Test Admin', 'the admin fixture\'s own name, from the before() hook above')
-      assert.ok(after.logs[0].generatedAt, 'must carry a timestamp')
-    })
-
-    test('the ambient view and a cashier\'s own report never appear here — neither has an admin_id to log', async () => {
-      const before = await (await getLogs({ limit: 1 })).json()
-
       await fetch(`${baseUrl}/api/reports/summary`, { headers: { Cookie: adminCookie } })
-      const asCashier = await getSales({ from: '2022-07-01', to: '2022-07-31' }, cashierCookie)
-      assert.equal(asCashier.status, 200, 'a cashier can still generate the report itself, same as always')
+      assert.equal((await getSales({ from: '2022-06-01', to: '2022-06-30' })).status, 200)
+      assert.equal((await (await getLogs({ limit: 1 })).json()).total, before.total, 'views are not exports')
 
-      const after = await (await getLogs({ limit: 1 })).json()
-      assert.equal(after.total, before.total, 'neither call had anything an admin_id could log')
+      assert.equal((await getSales({ from: '2022-06-01', to: '2022-06-30', format: 'csv' })).status, 200)
+      const afterAdmin = await (await getLogs({ limit: 1 })).json()
+      assert.equal(afterAdmin.total, before.total + 1)
+      assert.equal(afterAdmin.logs[0].reportType, 'SALES_CSV')
+      assert.equal(afterAdmin.logs[0].generatedByName, 'Report Test Admin', 'the admin fixture\'s own name, from the before() hook above')
+      assert.equal(afterAdmin.logs[0].role, 'ADMIN')
+      assert.ok(afterAdmin.logs[0].generatedAt, 'must carry a timestamp')
+
+      await fetch(`${baseUrl}/api/reports/exports`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ type: 'SALES_PDF' }) })
+      const afterCashier = await (await getLogs({ limit: 1 })).json()
+      assert.equal(afterCashier.logs[0].reportType, 'SALES_PDF')
+      assert.equal(afterCashier.logs[0].role, 'CASHIER', 'a cashier\'s export is recorded too')
     })
 
     test('rows come back most-recent-first, and pagination is exact — including an offset placed past the true end', async () => {
       const before = await (await getLogs({ limit: 1 })).json()
       const startTotal = before.total
 
-      // Three distinct, back-to-back report generations.
+      // Three distinct, back-to-back exports.
       for (const [from, to] of [['2022-08-01', '2022-08-05'], ['2022-08-06', '2022-08-10'], ['2022-08-11', '2022-08-15']]) {
-        const response = await getSales({ from, to })
+        const response = await getSales({ from, to, format: 'csv' })
         assert.equal(response.status, 200)
       }
 

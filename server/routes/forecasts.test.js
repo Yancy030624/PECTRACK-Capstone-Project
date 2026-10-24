@@ -91,7 +91,7 @@ describe('demand forecasting API', () => {
       await pool.query('DELETE FROM categories WHERE category_id = $1', [categoryId])
       await pool.query('DELETE FROM security_events WHERE user_id = ANY($1)', [userIds])
       // The sales-report checks ran as the admin, which logs a report.
-      await pool.query('DELETE FROM report_logs WHERE generated_by IN (SELECT admin_id FROM admins WHERE user_id = ANY($1))', [userIds])
+      await pool.query('DELETE FROM report_logs WHERE user_id = ANY($1) OR generated_by IN (SELECT admin_id FROM admins WHERE user_id = ANY($1))', [userIds])
       await pool.query('DELETE FROM customers WHERE user_id = ANY($1)', [userIds])
       await pool.query('DELETE FROM cashiers WHERE user_id = ANY($1)', [userIds])
       await pool.query('DELETE FROM admins WHERE user_id = ANY($1)', [userIds])
