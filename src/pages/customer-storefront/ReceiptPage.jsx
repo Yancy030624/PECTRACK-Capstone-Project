@@ -43,7 +43,7 @@ export function ReceiptPage({ user }) {
   // Came back from GCash without paying: check once, then ask what next.
   const backedOut = searchParams.get('cancelled') === '1'
   const [order, setOrder] = useState(null)
-  const [phase, setPhase] = useState('verifying') // verifying | paid | pending | unpaid | released | lateTaken | error
+  const [phase, setPhase] = useState('verifying') // verifying | paid | cashDue | pending | unpaid | released | lateTaken | error
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState('')
   const [message, setMessage] = useState('')
@@ -67,6 +67,9 @@ export function ReceiptPage({ user }) {
       if (current.status === 'CANCELLED' && current.payment.isFullyPaid) return setPhase('lateTaken')
       if (current.payment.isFullyPaid) return setPhase('paid')
       if (current.status === 'CANCELLED') return setPhase('released')
+      // A cash pickup is placed unpaid on purpose (SENIOR_CONSULT_PLAN.md,
+      // S3): it is paid at the counter when collected.
+      if (current.paymentMode === 'CASH') return setPhase('cashDue')
       const stillPending = current.payment.payments.some((payment) => payment.status === 'PENDING')
       if (stillPending && !backedOut) {
         // Keep the spinner up while there are tries left; after that,
@@ -124,10 +127,11 @@ export function ReceiptPage({ user }) {
   // Cancel the unpaid order: its stock goes back; nothing was charged.
   const cancelOrder = async () => {
     if (!window.confirm(`Cancel order ${orderLabel(order)}? Nothing has been charged.`)) return
+    const cashOrder = order.paymentMode === 'CASH'
     setBusy(true)
     setActionError('')
     try {
-      await apiPatch(`/api/orders/${order.id}`, { status: 'CANCELLED', note: 'Checkout cancelled by the customer.' })
+      await apiPatch(`/api/orders/${order.id}`, { status: 'CANCELLED', note: cashOrder ? 'Cash order cancelled by the customer.' : 'Checkout cancelled by the customer.' })
       setPhase('released')
       setOrder({ ...order, status: 'CANCELLED' })
     } catch (error) {
@@ -175,6 +179,25 @@ export function ReceiptPage({ user }) {
           </p>
           <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
             <Link to="/menu" className="rounded-full bg-crust-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-crust-700">Back to the menu</Link>
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  if (phase === 'cashDue') {
+    return (
+      <section className="mx-auto max-w-2xl px-4 py-14 text-center sm:px-7">
+        <div className="rounded-2xl border border-cream-200 bg-white p-8">
+          <h1 className="text-xl font-extrabold text-cocoa-900">Order {orderLabel(order)} is placed</h1>
+          <p className="mt-3 text-sm text-cocoa-500">
+            It is ready for pickup at the bakery{order.requestedFulfillmentTime ? ` on ${formatDateTime(order.requestedFulfillmentTime)}` : ''}. Pay <span className="font-bold text-cocoa-900">{formatPeso(order.payment.totalAmount)}</span> in cash when you pick it up.
+          </p>
+          <p className="mt-2 text-xs text-cocoa-500">Payment method: Cash · Not paid yet. An order not collected by the end of its day is cancelled.</p>
+          {actionError && <p role="alert" className="mt-2 text-xs font-semibold text-red-700">{actionError}</p>}
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
+            <Link to="/account?tab=orders" className="rounded-full bg-crust-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-crust-700">View My Orders</Link>
+            <button type="button" onClick={cancelOrder} disabled={busy} className="rounded-full border border-red-300 px-5 py-2.5 text-xs font-bold text-red-700 transition hover:bg-red-50 disabled:opacity-60">{busy ? 'Please wait…' : 'Cancel order'}</button>
           </div>
         </div>
       </section>

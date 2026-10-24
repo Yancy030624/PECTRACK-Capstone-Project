@@ -121,6 +121,9 @@ export async function closeStaleOrders({ onlyOrderIds = null } = {}) {
 //   payment at all is cancelled the same way: there are no unpaid orders
 //   any more. (One whose day has passed is closed by closeStaleOrders
 //   above instead, without returning baked stock.)
+// - A cash pickup (payment_mode CASH, SENIOR_CONSULT_PLAN.md S3) is unpaid
+//   on purpose until it is collected, so it is left alone here; if nobody
+//   comes, closeStaleOrders cancels it after its day.
 // ============================================================================
 export const holdMinutes = 15
 export const releasedNote = `Checkout not paid within ${holdMinutes} minutes — released.`
@@ -132,6 +135,7 @@ const unpaidOrdersQuery = `
      AND (
        (o.status = 'AWAITING_PAYMENT' AND o.order_date < CURRENT_TIMESTAMP - make_interval(mins => $1::int))
        OR (o.status IN ('PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP', 'READY_FOR_DELIVERY')
+           AND o.payment_mode IS DISTINCT FROM 'CASH'
            AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.order_id AND p.status IN ('PAID', 'PENDING')))
      )
      AND ($2::bigint[] IS NULL OR o.order_id = ANY($2::bigint[]))

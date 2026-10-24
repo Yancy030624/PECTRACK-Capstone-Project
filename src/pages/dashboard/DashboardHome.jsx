@@ -4,6 +4,7 @@ import { apiGet } from '../../api/client.js'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Card } from '../../components/ui/Card.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
+import { NotPaidTag } from '../../components/ui/PaymentStatus.jsx'
 import { formatPeso } from '../../lib/format.js'
 import { orderLabel } from '../../lib/orderNumber.js'
 import { STOCK_STATUSES, TONES, needsAttention, stockStatus } from '../../lib/stockHealth.js'
@@ -296,7 +297,7 @@ function NeededBy({ orders, canOpen, onOpen, onViewAll }) {
                 <span className="w-16 shrink-0 font-semibold text-ink-900 tabular-nums sm:w-20">{orderLabel(order)}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium text-ink-900">{order.customerName ?? 'Walk-in'}</span>
-                  <span className="block text-xs text-ink-500">{order.orderType === 'DELIVERY' ? 'Delivery' : 'Pickup'}</span>
+                  <span className="block text-xs text-ink-500">{order.orderType === 'DELIVERY' ? 'Delivery' : 'Pickup'}<NotPaidTag order={order} className="ml-1.5" /></span>
                 </span>
                 <span className={`shrink-0 text-right text-xs font-semibold ${late ? 'text-status-fail-fg' : 'text-ink-700'}`}>
                   {when ? (manilaDay(when) === today ? timeFormat.format(new Date(when)) : dayTimeFormat.format(new Date(when))) : 'As soon as ready'}
@@ -327,7 +328,7 @@ function paymentState(order) {
   if (order.status === 'CANCELLED') return { label: '—', tone: 'text-ink-500' }
   if (order.isFullyPaid) return { label: 'Paid', tone: 'text-status-done-fg' }
   if (order.hasPayments) return { label: `${formatPeso(order.balanceDue)} owed`, tone: 'text-status-wait-fg' }
-  return { label: 'Unpaid', tone: 'text-status-wait-fg' }
+  return { label: 'Not paid', tone: 'text-status-fail-fg' }
 }
 
 // The newest orders (CLIENT_REVISIONS_PLAN.md, R4). Each row opens the

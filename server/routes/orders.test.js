@@ -11,6 +11,7 @@ import { resetRateLimits } from '../lib/security.js'
 import { pool } from '../db.js'
 import { config } from '../config.js'
 import { checkOrderTime, manilaClock } from '../lib/orderHours.js'
+import { cancelUnpaidOrders } from '../lib/staleOrders.js'
 
 const runId = crypto.randomUUID().slice(0, 8)
 const randomContactNumber = () => `09${Math.floor(100000000 + Math.random() * 899999999)}`
@@ -735,6 +736,92 @@ describe('order management', () => {
 
     const cancelAttempt = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Test cancellation' }) })
     assert.equal(cancelAttempt.status, 409)
+  })
+
+  // SENIOR_CONSULT_PLAN.md, S3 — cash at pickup.
+  const placeCashOrder = async ({ cookie = customerCookie, orderType = 'PICKUP', extra = {} } = {}) => {
+    const response = await fetch(`${baseUrl}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ orderType, paymentMode: 'CASH', items: [{ productId: availableProductId, quantity: 1 }], ...extra }),
+    })
+    const body = await response.json()
+    if (body.order?.id) createdOrderIds.push(body.order.id)
+    return { status: response.status, body }
+  }
+
+  test('a cash pickup is placed unpaid and Ready for pickup, shown to staff with its mode, and left alone by the unpaid sweep', async () => {
+    const { status, body } = await placeCashOrder()
+    assert.equal(status, 201)
+    assert.equal(body.order.status, 'READY_FOR_PICKUP')
+    assert.equal(body.order.paymentMode, 'CASH')
+    const orderId = body.order.id
+    try {
+      const detail = await (await fetch(`${baseUrl}/api/orders/${orderId}`, { headers: { Cookie: cashierCookie } })).json()
+      assert.equal(detail.order.paymentMode, 'CASH')
+      assert.equal(Number(detail.order.payment.amountPaid), 0)
+      assert.equal(detail.order.statusHistory[0].note, 'Placed — pay in cash at pickup.')
+      const list = await (await fetch(`${baseUrl}/api/orders`, { headers: { Cookie: cashierCookie } })).json()
+      assert.equal(list.orders.find((order) => order.id === orderId)?.paymentMode, 'CASH', 'listed for staff although unpaid')
+      const movements = await pool.query(`SELECT quantity_change FROM inventory_movements WHERE order_id = $1 AND reason = 'ORDER_PLACED'`, [orderId])
+      assert.equal(movements.rows[0].quantity_change, -1, 'its stock is set aside')
+
+      await cancelUnpaidOrders({ onlyOrderIds: [orderId] })
+      assert.equal((await pool.query('SELECT status FROM orders WHERE order_id = $1', [orderId])).rows[0].status, 'READY_FOR_PICKUP')
+
+      // Not completed until paid; then paid at the counter and handed over.
+      const early = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'COMPLETED' }) })
+      assert.equal(early.status, 409)
+      await payInFull(orderId)
+      const done = await fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ status: 'COMPLETED' }) })
+      assert.equal(done.status, 200)
+    } finally {
+      await pool.query(`UPDATE orders SET status = 'COMPLETED' WHERE order_id = $1 AND status = 'READY_FOR_PICKUP'`, [orderId])
+    }
+  })
+
+  test('cash is for pickup only, and a customer has one unpaid cash order open at a time', async () => {
+    const delivery = await placeCashOrder({ orderType: 'DELIVERY', extra: { addressId: customerAddressId } })
+    assert.equal(delivery.status, 422)
+    assert.equal(delivery.body.errors.paymentMode, 'Delivery orders are paid with GCash.')
+    const bad = await placeCashOrder({ extra: { paymentMode: 'CHEQUE' } })
+    assert.equal(bad.status, 422)
+
+    const first = await placeCashOrder()
+    assert.equal(first.status, 201)
+    try {
+      const second = await placeCashOrder()
+      assert.equal(second.status, 409)
+      assert.equal(second.body.openOrderId, first.body.order.id)
+      // GCash is still open to them.
+      const gcash = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ paymentMode: 'GCASH', items: [{ productId: availableProductId, quantity: 1 }] }) })
+      assert.equal(gcash.status, 201)
+      const gcashBody = await gcash.json()
+      createdOrderIds.push(gcashBody.order.id)
+      assert.equal(gcashBody.order.status, 'AWAITING_PAYMENT')
+      // Another customer is not blocked by this one's open order.
+      const other = await placeCashOrder({ cookie: secondCustomerCookie })
+      assert.equal(other.status, 201)
+      await pool.query(`UPDATE orders SET status = 'COMPLETED' WHERE order_id = $1`, [other.body.order.id])
+    } finally {
+      await pool.query(`UPDATE orders SET status = 'COMPLETED' WHERE order_id = $1`, [first.body.order.id])
+    }
+  })
+
+  test('a customer may cancel their own unpaid cash pickup, but not once it is paid', async () => {
+    const cancel = (orderId) => fetch(`${baseUrl}/api/orders/${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ status: 'CANCELLED', note: 'Cancelled by customer: changed my mind' }) })
+    const unpaid = await placeCashOrder()
+    assert.equal((await cancel(unpaid.body.order.id)).status, 200)
+    const restored = await pool.query(`SELECT quantity_change FROM inventory_movements WHERE order_id = $1 AND reason = 'ORDER_CANCELLED'`, [unpaid.body.order.id])
+    assert.equal(restored.rows[0].quantity_change, 1, 'its stock goes back')
+
+    const paid = await placeCashOrder()
+    try {
+      await payInFull(paid.body.order.id)
+      assert.equal((await cancel(paid.body.order.id)).status, 409)
+    } finally {
+      await pool.query(`UPDATE orders SET status = 'COMPLETED' WHERE order_id = $1`, [paid.body.order.id])
+    }
   })
 
   test('PATCH /api/orders/:id blocks a customer from cancelling someone else\'s order', async () => {

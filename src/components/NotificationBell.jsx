@@ -8,6 +8,10 @@
 // last time this person opened the bell ON THIS DEVICE, kept in
 // localStorage — nothing is stored in the database for it.
 //
+// A product falling to its minimum (`low_stock`, the seniors 2026-10-24)
+// is a warning, not news: its toast is red, stays longer, has its own
+// lower tone, and can be closed.
+//
 // For each new item: a toast, an optional soft sound (muted per device),
 // a browser notification when the tab is in the background and the person
 // allowed them once, and a `pectrack:notifications` window event so the
@@ -19,6 +23,8 @@ import { orderLabel } from '../lib/orderNumber.js'
 
 const pollMs = 20_000
 const toastMs = 8_000
+const warningToastMs = 15_000
+const isWarning = (item) => item.type === 'low_stock'
 // The poll asks from a little before the newest item it already has. An
 // order's time is when its transaction began, so one that took longer can
 // commit after a newer one was already seen; the overlap catches it, and
@@ -37,7 +43,7 @@ const itemTime = (item) => item.at
 // How each kind of event reads, in the bell, the toast, and the browser
 // notification alike.
 const wording = {
-  order_placed: (item) => [`New order ${orderLabel(item)}`, `${item.customerName ?? 'Walk-in'}, ${item.orderType === 'DELIVERY' ? 'delivery' : 'pickup'}, ${formatPeso(item.totalAmount)}`],
+  order_placed: (item) => [`New order ${orderLabel(item)}`, `${item.customerName ?? 'Walk-in'}, ${item.orderType === 'DELIVERY' ? 'delivery' : 'pickup'}, ${formatPeso(item.totalAmount)}${item.unpaid && item.paymentMode === 'CASH' ? ' · cash, not paid' : ''}`],
   payment_received: (item) => [
     `Payment received for ${orderLabel(item)}`,
     `GCash ${formatPeso(item.amount)}${item.orderStatus === 'CANCELLED' ? ' — the order was cancelled; settle it with the customer' : ''}`,
@@ -47,6 +53,7 @@ const wording = {
   delivered: (item) => [`Order ${orderLabel(item)} delivered`, [`By ${item.actorName ?? 'the driver'}`, [item.recipientName, item.barangay].filter(Boolean).join(', ')].filter(Boolean).join(' · ')],
   delivery_failed: (item) => [`Delivery failed for ${orderLabel(item)}`, item.note || `By ${item.actorName ?? 'the driver'}`],
   assigned: (item) => [`New delivery ${orderLabel(item)}`, [item.customerName ?? 'Customer', item.barangay].filter(Boolean).join(', ')],
+  low_stock: (item) => [`Low stock: ${item.productName}`, `${item.stockQuantity} left (minimum ${item.minStockLevel}) — restock soon`],
   due_soon: (item) => [
     `Order ${orderLabel(item)} is due within the hour`,
     `${item.orderType === 'DELIVERY' ? 'Delivery' : 'Pickup'} · needed by ${new Intl.DateTimeFormat('en-PH', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' }).format(new Date(item.neededAt))} · ${item.customerName ?? 'Walk-in'}`,
@@ -56,13 +63,17 @@ const describe = (item) => (wording[item.type] ?? ((other) => [`Order ${orderLab
 const titleOf = (item) => describe(item)[0]
 const textOf = (item) => describe(item)[1]
 
-// A short two-note chime, made on the spot — no sound file to ship.
-function chime() {
+// A short two-note chime, made on the spot — no sound file to ship. The
+// warning tone falls instead of rising, so a low-stock alert is told
+// apart from a new order without looking.
+const chimeNotes = [[880, 0], [1320, 0.16]]
+const warningNotes = [[660, 0], [440, 0.2]]
+function chime(notes = chimeNotes) {
   try {
     const AudioContext = window.AudioContext || window.webkitAudioContext
     if (!AudioContext) return
     const context = new AudioContext()
-    ;[[880, 0], [1320, 0.16]].forEach(([frequency, start]) => {
+    notes.forEach(([frequency, start]) => {
       const oscillator = context.createOscillator()
       const gain = context.createGain()
       oscillator.type = 'sine'
@@ -100,9 +111,9 @@ export function NotificationBell({ user, onOpen }) {
   const announce = useCallback((fresh) => {
     setToasts((current) => [...fresh.map((item) => ({ key: `${item.key}-${Date.now()}`, item })), ...current].slice(0, 4))
     for (const item of fresh) {
-      window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.item.key !== item.key)), toastMs)
+      window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.item.key !== item.key)), isWarning(item) ? warningToastMs : toastMs)
     }
-    if (!mutedRef.current) chime()
+    if (!mutedRef.current) chime(fresh.some(isWarning) ? warningNotes : chimeNotes)
     if (document.hidden && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       for (const item of fresh) {
         try {
@@ -180,9 +191,10 @@ export function NotificationBell({ user, onOpen }) {
     }
     setOpen(!open)
   }
+  const dismiss = (item) => setToasts((current) => current.filter((toast) => toast.item.key !== item.key))
   const choose = (item) => {
     setOpen(false)
-    setToasts((current) => current.filter((toast) => toast.item.key !== item.key))
+    dismiss(item)
     onOpen(item)
   }
   const toggleMuted = () => {
@@ -231,8 +243,9 @@ export function NotificationBell({ user, onOpen }) {
                 <li key={item.key}>
                   <button type="button" onClick={() => choose(item)} className={`w-full px-4 py-2.5 text-left transition hover:bg-surface-sunk ${openedUnseen.has(item.key) ? 'bg-brand-50' : ''}`}>
                     <span className="flex items-center justify-between gap-2 text-sm font-semibold text-ink-900">
-                      {titleOf(item)}
+                      <span className={isWarning(item) ? 'text-red-700' : undefined}>{titleOf(item)}</span>
                       {openedUnseen.has(item.key) && <span className="rounded-full bg-red-600 px-1.5 text-[10px] font-bold uppercase text-white">New</span>}
+                      {!openedUnseen.has(item.key) && isWarning(item) && <span className="rounded-full bg-red-50 px-1.5 text-[10px] font-bold uppercase text-red-700 ring-1 ring-red-200">Low stock</span>}
                     </span>
                     <span className="block text-xs text-ink-500">{[textOf(item), formatDateTime(itemTime(item))].filter(Boolean).join(' · ')}</span>
                   </button>
@@ -250,9 +263,24 @@ export function NotificationBell({ user, onOpen }) {
         </div>
       )}
 
-      {/* Toasts: newest on top, each opens its order. */}
+      {/* Toasts: newest on top, each opens its order (a low-stock one
+          opens Inventory). Warnings are red and can be closed. */}
       <div aria-live="polite" className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2 print:hidden">
-        {toasts.map(({ key, item }) => (
+        {toasts.map(({ key, item }) => (isWarning(item) ? (
+          <div key={key} role="alert" className="pointer-events-auto flex items-start gap-3 rounded-panel border border-red-300 border-l-4 border-l-red-600 bg-red-50 px-4 py-3 shadow-raised">
+            <svg viewBox="0 0 24 24" className="mt-0.5 h-5 w-5 shrink-0 text-red-600" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+              <path d="M12 9v4M12 17h.01" />
+            </svg>
+            <button type="button" onClick={() => choose(item)} className="min-w-0 flex-1 text-left">
+              <span className="block text-sm font-bold text-red-800">{titleOf(item)}</span>
+              <span className="block text-xs text-red-700">{textOf(item)}</span>
+            </button>
+            <button type="button" onClick={() => dismiss(item)} aria-label="Close warning" className="-mr-1 -mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full text-red-700 transition hover:bg-red-100">
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+            </button>
+          </div>
+        ) : (
           <button
             type="button"
             key={key}
@@ -262,7 +290,7 @@ export function NotificationBell({ user, onOpen }) {
             <span className="block text-sm font-semibold text-ink-900">{titleOf(item)}</span>
             <span className="block text-xs text-ink-500">{textOf(item)}</span>
           </button>
-        ))}
+        )))}
       </div>
     </div>
   )

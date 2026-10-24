@@ -73,6 +73,8 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
   const openNotified = (item) => {
     if (item.type === 'assigned') openModule('My Deliveries')
     else if (['out_for_delivery', 'delivered', 'delivery_failed'].includes(item.type)) openModule('Delivery Management')
+    // A product running low (SENIOR_CONSULT_PLAN.md, S4): its stock.
+    else if (item.type === 'low_stock') openModule('Inventory Management')
     // Due within the hour: the order's receipt, where Needed by lives.
     else if (item.type === 'due_soon') openModule('Payment & Billing', { orderId: item.orderId, at: Date.now() })
     else openModule('Order Management', { orderId: item.orderId, at: Date.now() })

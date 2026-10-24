@@ -20,6 +20,7 @@ import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
+import { NotPaidTag, PaymentModeLine } from '../../components/ui/PaymentStatus.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
@@ -126,7 +127,7 @@ function OrderCardList({ orders, selectedOrderId, onOpen, showCustomer }) {
                 {showCustomer && <span className="font-normal text-ink-500"> · {order.customerName ?? 'Walk-in'}</span>}
                 {order.isReservation && <span className="ml-1.5 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700">Advanced order</span>}
               </span>
-              <StatusBadge status={order.status} />
+              <span className="flex items-center gap-1.5"><NotPaidTag order={order} /><StatusBadge status={order.status} /></span>
             </div>
             <div className="mt-1 flex items-center justify-between text-xs text-ink-500">
               <span>
@@ -334,6 +335,7 @@ function StaffOrderManagement({ user, params }) {
               </p>
             )}
             <p className="mt-1">Placed {formatDateTime(orderDetail.orderDate)}</p>
+            <PaymentModeLine order={orderDetail} className="mt-1" />
             {orderDetail.instructions && <p className="mt-1">Instructions: {orderDetail.instructions}</p>}
             {orderDetail.requestedFulfillmentTime && <p className="mt-1 font-semibold text-ink-900">Needed by: {formatDateTime(orderDetail.requestedFulfillmentTime)}</p>}
           </div>
@@ -523,7 +525,7 @@ function StaffOrderManagement({ user, params }) {
                         <Td priority="xl">{order.requestedFulfillmentTime ? formatDateTime(order.requestedFulfillmentTime) : <span className="text-ink-500">—</span>}</Td>
                         <Td numeric>{formatPeso(order.totalAmount)}</Td>
                         <Td>
-                          <StatusBadge status={order.status} />
+                          <span className="inline-flex flex-wrap items-center gap-1.5"><StatusBadge status={order.status} /><NotPaidTag order={order} /></span>
                         </Td>
                       </Tr>
                     ))}
@@ -609,6 +611,7 @@ function CustomerOrders({ user }) {
             </p>
             <StatusBadge status={orderDetail.status} />
           </div>
+          <PaymentModeLine order={orderDetail} />
           {orderDetail.instructions && <p className="text-xs text-ink-500">Instructions: {orderDetail.instructions}</p>}
           {orderDetail.requestedFulfillmentTime && <p className="text-xs text-ink-500">Needed by: <span className="font-semibold text-ink-900">{formatDateTime(orderDetail.requestedFulfillmentTime)}</span></p>}
           {/* Where a delivery order actually stands — deliveries.status,
@@ -620,6 +623,14 @@ function CustomerOrders({ user }) {
 
           {orderDetail.payment && orderDetail.status !== 'CANCELLED' && orderDetail.payment.isFullyPaid && (
             <p className="rounded-panel bg-surface-warm p-3 text-sm font-semibold text-status-done-fg">Paid</p>
+          )}
+          {/* A cash pickup not paid yet (SENIOR_CONSULT_PLAN.md, S3): its
+              receipt page is where it can be cancelled. */}
+          {orderDetail.paymentMode === 'CASH' && orderDetail.status === 'READY_FOR_PICKUP' && !orderDetail.payment?.isFullyPaid && (
+            <p className="rounded-panel bg-surface-warm p-3 text-sm text-ink-700">
+              Pay <span className="font-semibold text-ink-900 tabular-nums">{formatPeso(orderDetail.totalAmount)}</span> in cash when you pick it up.{' '}
+              <Link to={`/receipt/${orderDetail.id}`} className="font-semibold text-brand-700 hover:underline">Open order to cancel</Link>
+            </p>
           )}
 
         </div>

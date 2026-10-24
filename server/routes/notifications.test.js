@@ -189,6 +189,24 @@ describe('notification feed', () => {
     assert.equal(placed.key, `order_placed:${order.id}`)
   })
 
+  test('staff hear once when a product falls to its minimum (SENIOR_CONSULT_PLAN S4)', async () => {
+    const before = new Date(Date.now() - 1000).toISOString()
+    await pool.query('UPDATE inventory SET min_stock_level = 5000 WHERE product_id = $1', [productId])
+    try {
+      await placeOrder()
+      await placeOrder()
+      const { body } = await feed(cashierCookie, before)
+      const low = body.notifications.filter((event) => event.type === 'low_stock' && event.productId === productId)
+      assert.equal(low.length, 1, 'one alert for the low spell, not one per sale')
+      assert.equal(low[0].productName, `Notif Test Bread ${runId}`)
+      assert.equal(low[0].minStockLevel, 5000)
+      assert.match(low[0].key, /^low_stock:\d+$/)
+    } finally {
+      await pool.query('UPDATE inventory SET min_stock_level = 0 WHERE product_id = $1', [productId])
+      await pool.query(`UPDATE stock_alerts SET is_resolved = TRUE WHERE inventory_id = (SELECT inventory_id FROM inventory WHERE product_id = $1)`, [productId])
+    }
+  })
+
   test('since returns only newer events', async () => {
     const first = await placeOrder()
     const firstAt = eventsFor((await feed(adminCookie)).body, first.id)[0].at

@@ -7,7 +7,8 @@
 // notifications table and no write path that could forget to add a row.
 // "Seen" is kept per device by the bell, as CLIENT_REVISIONS_PLAN R4 chose.
 //
-// The admin and cashier hear about orders, online payments, and deliveries.
+// The admin and cashier hear about orders, online payments, deliveries,
+// and products running low.
 // A driver hears about the deliveries assigned to them. Customers are told
 // by email instead (lib/notices.js) and are refused here.
 //
@@ -53,7 +54,8 @@ const staffQueries = {
   // is paid — an online checkout's placed time becomes the time it was
   // paid — so a checkout still being paid, or one let go unpaid, is not.
   order_placed: `
-    SELECT ${orderColumns}, o.order_id AS source_id, o.order_date AS at
+    SELECT ${orderColumns}, o.order_id AS source_id, o.order_date AS at, o.payment_mode,
+           NOT EXISTS (SELECT 1 FROM payments pp WHERE pp.order_id = o.order_id AND pp.status = 'PAID') AS unpaid
       FROM orders o
       LEFT JOIN customers c ON c.customer_id = o.customer_id
       LEFT JOIN cashiers pc ON pc.cashier_id = o.processed_by
@@ -118,6 +120,19 @@ const staffQueries = {
        AND o.requested_fulfillment_time - INTERVAL '1 hour' <= CURRENT_TIMESTAMP
        AND ${after("o.requested_fulfillment_time - INTERVAL '1 hour'")} AND $2::bigint IS NOT NULL
      ORDER BY at DESC LIMIT $3`,
+  // A product at or below its minimum (the seniors, 2026-10-24), shown as
+  // a red toast. lib/inventory.js syncStockAlert keeps one open alert per
+  // low spell and only refreshes its message after that, so each spell is
+  // news once, when it opened. The viewer's own sale counts: a cashier who
+  // sold the last trays still needs the warning. Products only, not
+  // ingredients. $2 is not used here; it is cast like due_soon's.
+  low_stock: `
+    SELECT sa.alert_id AS source_id, sa.created_at AS at, p.product_id, p.product_name, i.stock_quantity, i.min_stock_level
+      FROM stock_alerts sa
+      JOIN inventory i ON i.inventory_id = sa.inventory_id
+      JOIN products p ON p.product_id = i.product_id
+     WHERE ${after('sa.created_at')} AND $2::bigint IS NOT NULL
+     ORDER BY at DESC LIMIT $3`,
 }
 
 // $1 since (or null), $2 the driver's delivery_personnel_id, $3 the limit.
@@ -156,6 +171,9 @@ function mapEvent(type, row) {
     ...(row.recipient_name !== undefined && { recipientName: row.recipient_name, barangay: row.barangay }),
     ...(row.note !== undefined && { note: type === 'delivery_failed' ? lastLine(row.note) : row.note }),
     ...(row.needed_at !== undefined && { neededAt: new Date(row.needed_at).toISOString() }),
+    // A cash pickup placed unpaid (SENIOR_CONSULT_PLAN.md, S3).
+    ...(row.unpaid !== undefined && { paymentMode: row.payment_mode, unpaid: row.unpaid }),
+    ...(row.product_name !== undefined && { productId: row.product_id, productName: row.product_name, stockQuantity: row.stock_quantity, minStockLevel: row.min_stock_level }),
   }
 }
 

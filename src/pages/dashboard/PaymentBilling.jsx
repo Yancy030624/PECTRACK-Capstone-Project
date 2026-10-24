@@ -22,6 +22,7 @@ import { Field } from '../../components/ui/Field.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
+import { NotPaidTag, PaymentModeLine } from '../../components/ui/PaymentStatus.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
@@ -212,6 +213,7 @@ export function PaymentBilling({ user, params }) {
               <strong className="text-ink-900">Order {orderLabel(orderDetail)}</strong> · {orderDetail.orderType} · <StatusBadge status={orderDetail.status} />
             </p>
             <p className="mt-1">Customer: {orderDetail.customerName ?? 'Walk-in'} · placed {formatDate(orderDetail.orderDate)}</p>
+            <PaymentModeLine order={orderDetail} className="mt-1" />
           </div>
 
           <div>
@@ -358,6 +360,7 @@ export function PaymentBilling({ user, params }) {
                           <span className="text-sm font-semibold text-ink-900">
                             Order {orderLabel(order, { numberOnly: true })}
                             {isStaff && <span className="font-normal text-ink-500"> · {order.customerName ?? 'Walk-in'}</span>}
+                            <NotPaidTag order={order} className="ml-1.5" />
                           </span>
                           <span className="text-sm font-medium text-ink-900 tabular-nums">{formatPeso(order.totalAmount)}</span>
                         </div>
@@ -397,7 +400,7 @@ export function PaymentBilling({ user, params }) {
                               {orderLabel(order, { numberOnly: true })}
                             </button>
                           </Td>
-                          {isStaff && <Td>{order.customerName ?? 'Walk-in'}</Td>}
+                          {isStaff && <Td>{order.customerName ?? 'Walk-in'}<NotPaidTag order={order} className="ml-1.5" /></Td>}
                           <Td priority="xl">{formatDate(order.orderDate)}</Td>
                           {showNeededBy && <Td>{order.requestedFulfillmentTime ? formatDateTime(order.requestedFulfillmentTime) : <span className="text-ink-500">As soon as ready</span>}</Td>}
                           <Td numeric>{formatPeso(order.totalAmount)}</Td>

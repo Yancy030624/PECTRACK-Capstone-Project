@@ -44,6 +44,18 @@ const nonTerminalStatuses = [...validStatuses].filter((status) => !terminalStatu
 // (or an unpaid order from before payment first). A paid order cannot be
 // cancelled by anyone (R2, no refunds).
 const customerClaimableStatuses = ['AWAITING_PAYMENT', 'PLACED']
+// A cash pickup is placed unpaid and ready (SENIOR_CONSULT_PLAN.md, S3), so
+// its customer may also cancel it from READY_FOR_PICKUP while nothing is
+// paid. The no-refunds check in PATCH /:id still refuses it once paid.
+const customerCashClaimableStatuses = [...customerClaimableStatuses, 'READY_FOR_PICKUP']
+const customerClaimableFor = (order) => (order.payment_mode === 'CASH' ? customerCashClaimableStatuses : customerClaimableStatuses)
+// One unpaid cash pickup open per customer at a time: unpaid orders are
+// what invited trolls before payment first (the user, 2026-10-24).
+const openCashOrderSql = `
+  SELECT o.order_id FROM orders o
+   WHERE o.customer_id = $1 AND o.payment_mode = 'CASH' AND o.status = 'READY_FOR_PICKUP'
+     AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.order_id AND p.status = 'PAID')
+   LIMIT 1`
 // Where each status sits on the order's forward path. A transition must
 // move to a HIGHER rank (CANCELLED is the one exception: reachable from
 // any non-terminal state). Skipping ahead is allowed — a walk-in that is
@@ -91,6 +103,9 @@ const mapOrderSummary = (row) => ({
   customerName: row.customer_name,
   orderType: row.order_type,
   isReservation: row.is_reservation,
+  // How it is paid for: CASH (at pickup) or GCASH; null on older rows
+  // (SENIOR_CONSULT_PLAN.md, S3, migration 037).
+  paymentMode: row.payment_mode,
   status: row.status,
   totalAmount: row.total_amount,
   orderDate: row.order_date,
@@ -107,7 +122,7 @@ const mapOrderSummary = (row) => ({
   ...mapBillingColumns(row),
 })
 
-const orderSummarySelectQuery = `SELECT o.order_id, o.daily_number, o.order_day, o.customer_id, COALESCE(c.name, o.guest_name) AS customer_name, o.order_type, o.status, o.total_amount, o.order_date, o.requested_fulfillment_time, o.is_reservation,
+const orderSummarySelectQuery = `SELECT o.order_id, o.daily_number, o.order_day, o.customer_id, COALESCE(c.name, o.guest_name) AS customer_name, o.order_type, o.status, o.total_amount, o.order_date, o.requested_fulfillment_time, o.is_reservation, o.payment_mode,
             ${billingListSql.columns}
      FROM orders o
      LEFT JOIN customers c ON c.customer_id = o.customer_id
@@ -177,7 +192,7 @@ router.get('/:id', async (request, response) => {
   const orderResult = await pool.query(
     `SELECT o.order_id, o.daily_number, o.order_day, o.customer_id, COALESCE(c.name, o.guest_name) AS customer_name, o.processed_by, ca.name AS cashier_name,
             o.order_type, o.status, o.instructions, o.requested_fulfillment_time,
-            o.total_amount, o.order_date, o.is_reservation, o.guest_contact, o.guest_email, o.guest_contact_verified_at
+            o.total_amount, o.order_date, o.is_reservation, o.guest_contact, o.guest_email, o.guest_contact_verified_at, o.payment_mode
      FROM orders o
      LEFT JOIN customers c ON c.customer_id = o.customer_id
      LEFT JOIN cashiers ca ON ca.cashier_id = o.processed_by
@@ -264,6 +279,7 @@ router.get('/:id', async (request, response) => {
       ...(order.is_reservation && { guestContact: order.guest_contact, guestEmail: order.guest_email, guestContactVerified: Boolean(order.guest_contact_verified_at) }),
       orderType: order.order_type,
       status: order.status,
+      paymentMode: order.payment_mode,
       instructions: order.instructions,
       requestedFulfillmentTime: order.requested_fulfillment_time,
       totalAmount: order.total_amount,
@@ -414,6 +430,17 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     staffPayment = { method, gatewayReference, amountTendered }
   }
 
+  // How an online order is paid for (SENIOR_CONSULT_PLAN.md, S3): a pickup
+  // in cash when it is collected, or GCash now; a delivery with GCash only
+  // (no cash on delivery). A staff order's mode is the payment just taken.
+  let paymentMode = staffPayment?.method ?? 'GCASH'
+  if (request.user.role === 'CUSTOMER' && request.body.paymentMode != null) {
+    paymentMode = normalize(request.body.paymentMode).toUpperCase()
+    if (paymentMode !== 'CASH' && paymentMode !== 'GCASH') return response.status(422).json({ message: 'Choose cash or GCash.', errors: { paymentMode: 'Choose cash or GCash.' } })
+    if (paymentMode === 'CASH' && orderType !== 'PICKUP') return response.status(422).json({ message: 'Delivery orders are paid with GCash.', errors: { paymentMode: 'Delivery orders are paid with GCash.' } })
+  }
+  const payAtPickup = request.user.role === 'CUSTOMER' && paymentMode === 'CASH'
+
   // PHASE 7, DECISION 7 — a DELIVERY order needs somewhere to send it, and
   // addresses hang off customers: a walk-in order has customerId null (the
   // guest-order design), so it has no addresses to choose from and cannot
@@ -439,6 +466,19 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
+
+    // One open cash pickup per customer. The customer row is locked first
+    // so two cash checkouts at once cannot both see "none open"; "unpaid"
+    // lives in payments, which no partial unique index on orders can see.
+    if (payAtPickup) {
+      await client.query('SELECT customer_id FROM customers WHERE customer_id = $1 FOR UPDATE', [customerId])
+      const open = await client.query(openCashOrderSql, [customerId])
+      if (open.rows[0]) {
+        await client.query('ROLLBACK')
+        const message = `You already have a cash order waiting for pickup (#${open.rows[0].order_id}). Pay for or collect it first, or pay this one with GCash.`
+        return response.status(409).json({ message, errors: { paymentMode: message }, openOrderId: open.rows[0].order_id })
+      }
+    }
 
     // Look up every product in one query, confirm each is available, and
     // snapshot its CURRENT price — later price changes must never affect
@@ -476,18 +516,23 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     // is a hold: hidden from staff and reports, its stock set aside, and
     // cancelled by the system if not paid with GCash within 15 minutes
     // (lib/staleOrders.js).
-    const initialStatus = 'AWAITING_PAYMENT'
+    //
+    // A cash pickup (SENIOR_CONSULT_PLAN.md, S3) is the exception: it is
+    // paid at the counter when collected, so it is ready at once, unpaid.
+    // An unpaid cash order whose day has passed is cancelled by
+    // closeStaleOrders; cancelUnpaidOrders leaves it alone.
+    const initialStatus = payAtPickup ? 'READY_FOR_PICKUP' : 'AWAITING_PAYMENT'
     // A reservation's receipt link: the token goes in the email, only its
     // hash is kept (GET /api/receipts/:token).
     const receiptToken = guest?.isReservation ? crypto.randomBytes(24).toString('base64url') : null
     const orderResult = await client.query(
       `INSERT INTO orders (customer_id, processed_by, order_type, address_id, instructions, requested_fulfillment_time, status,
-                           guest_name, guest_contact, guest_email, is_reservation, receipt_token_hash)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                           guest_name, guest_contact, guest_email, is_reservation, receipt_token_hash, payment_mode)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING order_id, daily_number, order_day`,
       [customerId, processedBy, orderType, addressId, instructions, fulfillment.value, initialStatus,
         guest?.name ?? null, guest?.phone ?? null, guest?.email ?? null, guest?.isReservation ?? false,
-        receiptToken ? crypto.createHash('sha256').update(receiptToken).digest('hex') : null],
+        receiptToken ? crypto.createHash('sha256').update(receiptToken).digest('hex') : null, paymentMode],
     )
     const orderId = orderResult.rows[0].order_id
 
@@ -589,6 +634,12 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     // ready at once. gateway_reference is UNIQUE: the same GCash receipt
     // recorded twice would credit money that arrived once.
     let status = initialStatus
+    if (payAtPickup) {
+      await client.query(
+        'INSERT INTO order_status_history (order_id, updated_by, status, note) VALUES ($1, $2, $3, $4)',
+        [orderId, request.user.id, status, 'Placed — pay in cash at pickup.'],
+      )
+    }
     if (staffPayment) {
       if (staffPayment.amountTendered != null && staffPayment.amountTendered < Number(totalAmount)) {
         await client.query('ROLLBACK')
@@ -615,8 +666,8 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     const receiptUrl = receiptToken ? `${config.clientOrigin}/r/${receiptToken}` : null
     if (receiptUrl) sendReservationNotices({ orderId, receiptUrl })
     return response.status(201).json({
-      message: guest?.isReservation ? `Advanced order placed and paid. The order number is on its way by SMS${guest.email ? ', and the receipt by email' : ''}.` : staffPayment ? 'Order placed and paid.' : 'Order saved. Pay with GCash within 15 minutes to place it.',
-      order: { id: orderId, orderNumber, orderDay, status, totalAmount, orderType, isReservation: guest?.isReservation ?? false, receiptUrl },
+      message: guest?.isReservation ? `Advanced order placed and paid. The order number is on its way by SMS${guest.email ? ', and the receipt by email' : ''}.` : staffPayment ? 'Order placed and paid.' : payAtPickup ? 'Order placed. Pay in cash when you pick it up.' : 'Order saved. Pay with GCash within 15 minutes to place it.',
+      order: { id: orderId, orderNumber, orderDay, status, totalAmount, orderType, paymentMode, isReservation: guest?.isReservation ?? false, receiptUrl },
     })
   } catch (error) {
     await client.query('ROLLBACK')
@@ -633,7 +684,7 @@ router.patch('/:id', async (request, response) => {
   const status = request.body.status
   if (!validStatuses.has(status)) return response.status(422).json({ message: 'Enter a valid order status.', errors: { status: 'Enter a valid order status.' } })
 
-  const current = await pool.query('SELECT order_id, customer_id, status FROM orders WHERE order_id = $1', [orderId])
+  const current = await pool.query('SELECT order_id, customer_id, status, payment_mode FROM orders WHERE order_id = $1', [orderId])
   const order = current.rows[0]
   if (!order) return response.status(404).json({ message: 'Order not found.' })
 
@@ -645,7 +696,7 @@ router.patch('/:id', async (request, response) => {
     // cancellation is blocked (staff can still cancel it via their own
     // broader status permissions below).
     if (status !== 'CANCELLED') return response.status(403).json({ message: 'You can only cancel your own order.' })
-    if (!customerClaimableStatuses.includes(order.status)) return response.status(409).json({ message: 'This order has been paid, so it can no longer be cancelled. For any problem with it, please contact the bakery.' })
+    if (!customerClaimableFor(order).includes(order.status)) return response.status(409).json({ message: 'This order has been paid, so it can no longer be cancelled. For any problem with it, please contact the bakery.' })
   }
 
   // A friendly pre-check for the terminal case. It is NOT what enforces
@@ -746,7 +797,7 @@ router.patch('/:id', async (request, response) => {
     // The allowed source states are role-scoped, so this also re-enforces
     // the customer's narrower "only from PLACED" rule under concurrency
     // rather than trusting the stale read for it.
-    const claimable = request.user.role === 'CUSTOMER' ? customerClaimableStatuses : nonTerminalStatuses
+    const claimable = request.user.role === 'CUSTOMER' ? customerClaimableFor(order) : nonTerminalStatuses
     const claimed = await client.query(
       `UPDATE orders
           SET status = $1

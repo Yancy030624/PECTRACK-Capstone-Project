@@ -24,6 +24,10 @@ export function CheckoutPage({ user }) {
   const [addingAddress, setAddingAddress] = useState(false)
 
   const [orderType, setOrderType] = useState('PICKUP')
+  // Cash or GCash for pickup (SENIOR_CONSULT_PLAN.md, S3). Delivery is
+  // GCash only, so the choice is only offered for pickup.
+  const [pickupPayment, setPickupPayment] = useState('CASH')
+  const paymentMode = orderType === 'PICKUP' ? pickupPayment : 'GCASH'
   const [addressId, setAddressId] = useState(null)
   const [instructions, setInstructions] = useState('')
   // When it is needed: a Manila date and time, both blank for "as soon as
@@ -91,6 +95,7 @@ export function CheckoutPage({ user }) {
       if (instructions.trim()) body.instructions = instructions.trim()
       if (neededDate) body.requestedFulfillmentTime = toRequestedTime(neededDate, neededTime)
       if (orderType === 'DELIVERY') body.addressId = addressId
+      body.paymentMode = paymentMode
 
       // Payment first (RULES-PLANS/PAYMENT_FIRST_PLAN.md): the order is held
       // for 15 minutes, hidden from the bakery, while the customer pays with
@@ -98,6 +103,11 @@ export function CheckoutPage({ user }) {
       // opened, the receipt page offers to try again or cancel.
       const data = await apiPost('/api/orders', body)
       clear()
+      // Cash: placed and ready, paid at the counter. The receipt says so.
+      if (paymentMode === 'CASH') {
+        navigate(`/receipt/${data.order.id}`)
+        return
+      }
       try {
         const intent = await apiPost('/api/payments/intent', { orderId: data.order.id })
         window.location.href = intent.checkoutUrl
@@ -105,7 +115,9 @@ export function CheckoutPage({ user }) {
         navigate(`/receipt/${data.order.id}?cancelled=1`)
       }
     } catch (error) {
-      if (error.status === 409 || (error.status === 422 && error.errors?.items)) {
+      // A 409 is usually stock; one about the payment mode is the "one
+      // cash order at a time" rule and is shown as it is.
+      if (!error.errors?.paymentMode && (error.status === 409 || (error.status === 422 && error.errors?.items))) {
         setMessage('Some items in your cart are no longer available, or do not have enough stock right now. Please review the quantities below and try again.')
         setMessageFailed(true)
         apiGet('/api/products').then((data) => setProducts(data.products)).catch(() => {})
@@ -149,16 +161,31 @@ export function CheckoutPage({ user }) {
           <div className="rounded-2xl border border-cream-200 bg-white p-5">
             <h2 className="text-sm font-bold text-cocoa-900">How would you like your order?</h2>
             <div className="mt-3 flex gap-3">
-              <button type="button" onClick={() => setOrderType('PICKUP')} className={`flex-1 rounded-xl border px-4 py-3 text-xs font-bold transition ${orderType === 'PICKUP' ? 'border-crust-600 bg-cream-100 text-crust-700' : 'border-cream-300 text-cocoa-500'}`}>Pickup at the bakery</button>
-              <button type="button" onClick={() => setOrderType('DELIVERY')} className={`flex-1 rounded-xl border px-4 py-3 text-xs font-bold transition ${orderType === 'DELIVERY' ? 'border-crust-600 bg-cream-100 text-crust-700' : 'border-cream-300 text-cocoa-500'}`}>Delivery</button>
+              <button type="button" onClick={() => { setOrderType('PICKUP'); setErrors({}); setMessage('') }} className={`flex-1 rounded-xl border px-4 py-3 text-xs font-bold transition ${orderType === 'PICKUP' ? 'border-crust-600 bg-cream-100 text-crust-700' : 'border-cream-300 text-cocoa-500'}`}>Pickup at the bakery</button>
+              <button type="button" onClick={() => { setOrderType('DELIVERY'); setErrors({}); setMessage('') }} className={`flex-1 rounded-xl border px-4 py-3 text-xs font-bold transition ${orderType === 'DELIVERY' ? 'border-crust-600 bg-cream-100 text-crust-700' : 'border-cream-300 text-cocoa-500'}`}>Delivery</button>
             </div>
+          </div>
+
+          <div className="rounded-2xl border border-cream-200 bg-white p-5">
+            <h2 className="text-sm font-bold text-cocoa-900">Payment method</h2>
+            {orderType === 'PICKUP' ? (
+              <>
+                <div className="mt-3 flex gap-3">
+                  <button type="button" aria-pressed={pickupPayment === 'CASH'} onClick={() => { setPickupPayment('CASH'); setErrors({}) }} className={`flex-1 rounded-xl border px-4 py-3 text-xs font-bold transition ${pickupPayment === 'CASH' ? 'border-crust-600 bg-cream-100 text-crust-700' : 'border-cream-300 text-cocoa-500'}`}>Cash</button>
+                  <button type="button" aria-pressed={pickupPayment === 'GCASH'} onClick={() => { setPickupPayment('GCASH'); setErrors({}) }} className={`flex-1 rounded-xl border px-4 py-3 text-xs font-bold transition ${pickupPayment === 'GCASH' ? 'border-crust-600 bg-cream-100 text-crust-700' : 'border-cream-300 text-cocoa-500'}`}>GCash</button>
+                </div>
+                <p className="mt-2 text-xs text-cocoa-500">{pickupPayment === 'CASH' ? 'Pay at the counter when you pick it up. One cash order at a time.' : 'You pay with GCash right away.'}</p>
+              </>
+            ) : (
+              // NO_COD_PLAN — the bakery sends a delivery out only once it
+              // is paid; said before the customer commits to it.
+              <p className="mt-2 rounded-xl bg-butter-100 p-3 text-xs font-semibold text-cocoa-700">GCash only — delivery orders are paid first. There is no cash on delivery.</p>
+            )}
+            {errors.paymentMode && <p className="mt-2 text-xs font-medium text-red-700">{errors.paymentMode}</p>}
           </div>
 
           {orderType === 'DELIVERY' && (
             <div className="rounded-2xl border border-cream-200 bg-white p-5">
-              {/* NO_COD_PLAN — the bakery bakes a delivery order only once it
-                  is paid; say so before the customer commits to it. */}
-              <p className="mb-4 rounded-xl bg-butter-100 p-3 text-xs font-semibold text-cocoa-700">Every order is paid first with GCash — there is no cash on delivery.</p>
               <h2 className="text-sm font-bold text-cocoa-900">Delivery address</h2>
               {addresses.length === 0 && !addingAddress && (
                 <div className="mt-3">
@@ -226,8 +253,8 @@ export function CheckoutPage({ user }) {
               <span className="font-bold">Confirm your email to place this order.</span> Open the link we sent to {user.email} — your cart is kept, and this page updates when you come back.
             </p>
           )}
-          <p className="text-center text-xs text-cocoa-500">You pay with GCash right away. Your order is placed once it is paid; an unpaid order is let go after 15 minutes.</p>
-          <button type="button" onClick={handleSubmit} disabled={submitting || needsVerification} className="w-full rounded-2xl bg-crust-600 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-crust-700 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Opening GCash…' : needsVerification ? 'Confirm your email first' : 'Place Order'}</button>
+          <p className="text-center text-xs text-cocoa-500">{paymentMode === 'CASH' ? 'Your order is placed now and set aside for you. Pay in cash when you pick it up.' : 'You pay with GCash right away. Your order is placed once it is paid; an unpaid order is let go after 15 minutes.'}</p>
+          <button type="button" onClick={handleSubmit} disabled={submitting || needsVerification} className="w-full rounded-2xl bg-crust-600 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-crust-700 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? (paymentMode === 'CASH' ? 'Placing order…' : 'Opening GCash…') : needsVerification ? 'Confirm your email first' : 'Place Order'}</button>
         </div>
 
         {/* order-first below lg: on a phone the summary used to render
