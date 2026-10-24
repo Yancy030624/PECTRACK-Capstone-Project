@@ -85,6 +85,10 @@ export function ReportingAnalytics({ user }) {
   const [toInput, setToInput] = useState(() => manilaDate())
   const [groupBy, setGroupBy] = useState('day')
   const [productLimit, setProductLimit] = useState('10')
+  // Products tab (REPORTS_UI_PLAN.md U4): which bread type, and what ranks
+  // the list — pieces sold by default, since the bakery plans in pieces.
+  const [productType, setProductType] = useState('')
+  const [productSort, setProductSort] = useState('quantity')
 
   const [sales, setSales] = useState(null)
   const [products, setProducts] = useState(null)
@@ -94,6 +98,7 @@ export function ReportingAnalytics({ user }) {
   const [errors, setErrors] = useState({})
   const [message, setMessage] = useState('')
 
+  const productsQuery = (range) => new URLSearchParams({ ...range, limit: productLimit, sort: productSort, ...(productType && { type: productType }) })
   const generate = async (event) => {
     event?.preventDefault()
     setGenerating(true)
@@ -103,7 +108,7 @@ export function ReportingAnalytics({ user }) {
       const range = { from: fromInput, to: toInput }
       const [salesData, productsData, inventoryData] = await Promise.all([
         apiGet(`/api/reports/sales?${new URLSearchParams({ ...range, groupBy })}`),
-        apiGet(`/api/reports/products?${new URLSearchParams({ ...range, limit: productLimit })}`),
+        apiGet(`/api/reports/products?${productsQuery(range)}`),
         apiGet(`/api/reports/inventory?${new URLSearchParams(range)}`),
       ])
       setSales(salesData)
@@ -159,24 +164,35 @@ export function ReportingAnalytics({ user }) {
     return () => chart.destroy()
   }, [sales])
 
+  useEffect(() => {
+    if (!appliedRange) return
+    apiGet(`/api/reports/products?${productsQuery({ from: appliedRange.from, to: appliedRange.to })}`).then(setProducts).catch((error) => setMessage(error.message))
+    // Only a change of type or ranking reloads here; the range reloads
+    // through Generate report.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productType, productSort])
+
   const productsCanvasRef = useRef(null)
   useEffect(() => {
     if (!products || !productsCanvasRef.current) return
     const inkColor = cssVar('--color-ink-700')
     const gridColor = cssVar('--color-line-200')
+    // Pieces sold, as horizontal bars so the product names stay readable on
+    // a phone (REPORTS_UI_PLAN.md U4).
     const chart = new Chart(productsCanvasRef.current, {
       type: 'bar',
       data: {
         labels: products.products.map((product) => product.variant ? `${product.productName} (${product.variant})` : product.productName),
-        datasets: [{ label: 'Revenue', data: products.products.map((product) => Number(product.revenue)), backgroundColor: cssVar('--color-brand-600') }],
+        datasets: [{ label: 'Pieces sold', data: products.products.map((product) => product.quantitySold), backgroundColor: cssVar('--color-brand-600') }],
       },
       options: {
+        indexAxis: 'y',
         responsive: true,
         maintainAspectRatio: false,
         plugins: { legend: { display: false } },
         scales: {
-          x: { ticks: { color: inkColor }, grid: { color: gridColor } },
-          y: { beginAtZero: true, ticks: { color: inkColor }, grid: { color: gridColor } },
+          x: { beginAtZero: true, ticks: { color: inkColor, precision: 0 }, grid: { color: gridColor }, title: { display: true, text: 'Pieces sold', color: inkColor } },
+          y: { ticks: { color: inkColor, autoSkip: false }, grid: { display: false } },
         },
       },
     })
@@ -331,25 +347,36 @@ export function ReportingAnalytics({ user }) {
       </div>
 
       <div hidden={activeTab !== 'Products'}>
+        {/* Soft and hard breads are stocked differently (the client,
+            2026-10-23), so the report can show one kind at a time. */}
+        <div className="mt-6 flex flex-wrap items-center gap-2 print:hidden">
+          {[['', 'All breads'], ['SOFT', 'Soft breads'], ['HARD', 'Hard breads']].map(([value, label]) => (
+            <Button key={value || 'all'} type="button" size="sm" variant={productType === value ? 'primary' : 'secondary'} onClick={() => setProductType(value)}>{label}</Button>
+          ))}
+        </div>
         {products ? (
           <>
-            <Card className="mt-6 p-6">
-              <h2 className="text-lg font-semibold text-ink-900">Product performance</h2>
-              {products.products.length === 0 ? <p className="mt-4 text-sm text-ink-500">No sales in this range.</p> : <div className="relative mt-4 h-72"><canvas ref={productsCanvasRef} /></div>}
+            <Card className="mt-4 p-6">
+              <h2 className="text-lg font-semibold text-ink-900">Best sellers by pieces</h2>
+              {products.products.length === 0 ? <p className="mt-4 text-sm text-ink-500">No sales in this range.</p> : (
+                <div className="relative mt-4" style={{ height: `${Math.max(240, products.products.length * 32)}px` }}><canvas ref={productsCanvasRef} role="img" aria-label="Pieces sold per product" /></div>
+              )}
             </Card>
             <div className="mt-6">
               <Table caption="Product performance">
                 <Thead>
                   <Tr className="hover:bg-transparent">
                     <Th>Product</Th>
-                    <Th align="right">Quantity sold</Th>
-                    <Th align="right">Revenue</Th>
+                    <Th priority="md">Type</Th>
+                    <Th align="right"><SortHeader label="Pieces" active={productSort === 'quantity'} onClick={() => setProductSort('quantity')} /></Th>
+                    <Th align="right"><SortHeader label="Revenue" active={productSort === 'revenue'} onClick={() => setProductSort('revenue')} /></Th>
                   </Tr>
                 </Thead>
                 <Tbody>
                   {products.products.map((product) => (
                     <Tr key={product.productId}>
                       <Td className="font-semibold text-ink-900">{product.productName}{product.variant ? ` (${product.variant})` : ''}</Td>
+                      <Td priority="md" className="text-ink-500">{product.stockType === 'HARD' ? 'Hard' : 'Soft'}</Td>
                       <Td numeric>{product.quantitySold}</Td>
                       <Td numeric>{formatPeso(product.revenue)}</Td>
                     </Tr>
@@ -542,5 +569,15 @@ function BreakdownTable({ caption, rows, names, total }) {
         ))}
       </Tbody>
     </Table>
+  )
+}
+
+// A column header that ranks the table by that column, descending.
+function SortHeader({ label, active, onClick }) {
+  return (
+    <button type="button" onClick={onClick} aria-pressed={active} className={`inline-flex items-center gap-1 uppercase ${active ? 'text-ink-900' : 'hover:text-ink-900'}`}>
+      {label}
+      <span aria-hidden="true">{active ? '▼' : '↕'}</span>
+    </button>
   )
 }

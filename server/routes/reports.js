@@ -320,30 +320,42 @@ const maxProductsLimit = 50
 // sold would contradict both.
 router.get('/products', async (request, response) => {
   const { from, to, errors } = parseDateRange(request.query)
+  // REPORTS_UI_PLAN.md U4: soft and hard breads are stocked differently, so
+  // the report can show one kind; and the bakery plans in pieces, so the
+  // default ranking is pieces sold, revenue on request.
+  const type = normalize(request.query.type).toUpperCase()
+  if (type && type !== 'SOFT' && type !== 'HARD') errors.type = 'type must be SOFT or HARD.'
+  const sort = normalize(request.query.sort).toLowerCase() || 'quantity'
+  if (sort !== 'quantity' && sort !== 'revenue') errors.sort = 'sort must be quantity or revenue.'
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
   const limit = parseLimit(request.query.limit, { defaultLimit: defaultProductsLimit, maxLimit: maxProductsLimit })
+  const orderBy = sort === 'revenue' ? 'revenue DESC, quantity_sold DESC' : 'quantity_sold DESC, revenue DESC'
 
   const result = await pool.query(
-    `SELECT p.product_id, p.product_name, p.variant,
+    `SELECT p.product_id, p.product_name, p.variant, p.stock_type,
             SUM(od.quantity)::int AS quantity_sold,
             SUM(od.quantity * od.unit_price)::numeric(12,2) AS revenue
        FROM order_details od
        JOIN orders o ON o.order_id = od.order_id
        JOIN products p ON p.product_id = od.product_id
       WHERE o.data_source = 'RECORDED' AND o.status NOT IN ('CANCELLED', 'AWAITING_PAYMENT') AND ${dateRangeSql('o.order_date')}
-      GROUP BY p.product_id, p.product_name, p.variant
-      ORDER BY revenue DESC, quantity_sold DESC
+        AND ($4::text IS NULL OR p.stock_type::text = $4)
+      GROUP BY p.product_id, p.product_name, p.variant, p.stock_type
+      ORDER BY ${orderBy}
       LIMIT $3`,
-    [from, to, limit],
+    [from, to, limit, type || null],
   )
 
   return response.json({
     from,
     to,
+    type: type || null,
+    sort,
     products: result.rows.map((row) => ({
       productId: row.product_id,
       productName: row.product_name,
       variant: row.variant,
+      stockType: row.stock_type,
       quantitySold: row.quantity_sold,
       revenue: row.revenue,
     })),

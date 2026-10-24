@@ -690,6 +690,23 @@ describe('reporting & analytics', () => {
       assert.ok(!response.products.some((p) => p.productId === productId), 'a cancelled order must contribute no quantitySold or revenue')
     })
 
+    test('filters by bread type, ranks by pieces by default, and carries each product type (REPORTS_UI_PLAN U4)', async () => {
+      await placeOrderAt('2023-03-15 10:00:00+08')
+      const all = await (await getProducts({ from: '2023-03-15', to: '2023-03-15' })).json()
+      assert.equal(all.sort, 'quantity')
+      const entry = all.products.find((p) => p.productId === productId)
+      assert.ok(entry, 'the test product sold that day')
+      assert.ok(['SOFT', 'HARD'].includes(entry.stockType))
+      const other = entry.stockType === 'SOFT' ? 'HARD' : 'SOFT'
+      const same = await (await getProducts({ from: '2023-03-15', to: '2023-03-15', type: entry.stockType })).json()
+      assert.ok(same.products.some((p) => p.productId === productId))
+      const different = await (await getProducts({ from: '2023-03-15', to: '2023-03-15', type: other })).json()
+      assert.ok(!different.products.some((p) => p.productId === productId))
+      assert.equal((await getProducts({ from: '2023-03-15', to: '2023-03-15', type: 'CAKE' })).status, 422)
+      assert.equal((await getProducts({ from: '2023-03-15', to: '2023-03-15', sort: 'price' })).status, 422)
+      assert.equal((await (await getProducts({ from: '2023-03-15', to: '2023-03-15', sort: 'revenue' })).json()).sort, 'revenue')
+    })
+
     test('limit is honoured up to the cap, and an out-of-range limit is capped rather than rejected', async () => {
       const withinRange = await getProducts({ from: '2023-01-01', to: '2023-01-01', limit: 5 })
       assert.equal(withinRange.status, 200)
