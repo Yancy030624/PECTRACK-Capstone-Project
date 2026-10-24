@@ -160,7 +160,16 @@ router.get('/history/:productId', async (request, response) => {
   const run = latest.rows[0]
   if (!run) return response.json({ history: [], forecast: [] })
   const sources = run.sources.replace(/[{}]/g, '').split(',').filter(Boolean)
-  const to = run.history_to
+  // The chart ends where THIS product's history ends, never later: a run's
+  // history_to is its latest day across every product, and a product whose
+  // generated history stops a day earlier would otherwise show a false drop
+  // to zero just before its forecast.
+  const ownLast = await pool.query(
+    `SELECT MAX(local_date)::text AS last FROM forecast_training_data
+      WHERE product_id = $1 AND data_source = ANY($2::data_source[]) AND local_date <= $3::date`,
+    [productId, sources, run.history_to],
+  )
+  const to = sources.includes('ASSUMED') ? (ownLast.rows[0].last ?? run.history_to) : run.history_to
   if (!to) return response.json({ history: [], forecast: [] })
   const from = addDays(to, -(days - 1))
 

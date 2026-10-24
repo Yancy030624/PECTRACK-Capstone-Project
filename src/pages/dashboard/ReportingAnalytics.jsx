@@ -145,7 +145,7 @@ export function ReportingAnalytics({ user }) {
       data: {
         labels: sales.buckets.map((bucket) => bucket.period),
         datasets: [
-          { type: 'line', label: 'Sales (₱)', data: sales.buckets.map((bucket) => Number(bucket.sales)), borderColor: salesColor, backgroundColor: salesColor, borderWidth: 2, tension: 0.2, yAxisID: 'y', order: 1 },
+          { type: 'line', label: 'Sales (₱)', data: sales.buckets.map((bucket) => Number(bucket.sales)), borderColor: salesColor, backgroundColor: salesColor, borderWidth: 2, tension: 0, yAxisID: 'y', order: 1 },
           { type: 'bar', label: 'Orders', data: sales.buckets.map((bucket) => bucket.orders), backgroundColor: `${ordersColor}33`, borderColor: ordersColor, borderWidth: 1, yAxisID: 'orders', order: 2 },
         ],
       },
