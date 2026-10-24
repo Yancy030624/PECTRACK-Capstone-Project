@@ -58,6 +58,26 @@ export function timeLimits(day, now = new Date()) {
   return { min: earliest, max: closingTime }
 }
 
+// The times the picker offers for a chosen day (the seniors, 2026-10-24):
+// every 30 minutes from 5:00 AM to 10:00 PM, and only those still ahead
+// when the day is today. A time outside the hours is never listed, the
+// way the date picker never offers a day outside its range.
+export const slotMinutes = 30
+export function timeSlots(day, now = new Date()) {
+  if (!day) return []
+  const { min, max } = timeLimits(day, now)
+  const toMinutes = (time) => { const [hours, minutes] = time.split(':').map(Number); return hours * 60 + minutes }
+  const slots = []
+  for (let total = toMinutes(openingTime); total <= toMinutes(max); total += slotMinutes) {
+    const value = `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+    if (value < min) continue
+    const hours = Math.floor(total / 60)
+    const label = `${hours % 12 === 0 ? 12 : hours % 12}:${String(total % 60).padStart(2, '0')} ${hours < 12 ? 'AM' : 'PM'}`
+    slots.push({ value, label })
+  }
+  return slots
+}
+
 // What the server is sent for a picked date and time.
 export const toRequestedTime = (day, time) => `${day}T${time}:00+08:00`
 
