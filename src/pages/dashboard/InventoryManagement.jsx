@@ -322,7 +322,7 @@ function ProductStock({ user, params }) {
                   <Th priority="lg">Category</Th>
                   <Th align="right">Stock</Th>
                   <Th align="right" priority="md">Level</Th>
-                  <Th>Status</Th>
+                  <Th priority="md">Status</Th>
                   <Th>Actions</Th>
                 </Tr>
               </Thead>
@@ -334,7 +334,7 @@ function ProductStock({ user, params }) {
                     // moment a column was hidden on a narrow screen: the
                     // "Min level" input vanished with its column. One cell, one stacked form, every size.
                     <Tr key={item.productId}>
-                      <td colSpan={6} className="px-3 py-3 text-sm text-ink-700">
+                      <td colSpan={6} className="px-3 py-3 text-sm text-ink-700"><div className="row-form">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <p className="font-semibold text-ink-900">{item.productName}{item.variant ? ` (${item.variant})` : ''}</p>
                           {isAdmin && !confirming && (
@@ -416,13 +416,16 @@ function ProductStock({ user, params }) {
                             </div>
                           </form>
                         )}
-                      </td>
+                      </div></td>
                     </Tr>
                   ) : (
                     <Tr key={item.productId}>
                       <Td className="font-semibold text-ink-900">
                         {item.productName}
                         {item.variant && <span className="block text-xs font-normal text-ink-500">{item.variant}</span>}
+                        {/* On a phone the Status column is hidden, so the
+                            table fits the screen; the pill sits here. */}
+                        <span className="mt-1 block md:hidden"><StockStatusPill status={stockStatus(item)} /></span>
                       </Td>
                       <Td priority="lg">{item.categoryName}</Td>
                       <Td numeric>{item.stockQuantity}</Td>
@@ -431,7 +434,7 @@ function ProductStock({ user, params }) {
                           ? <span title="Produce at the minimum, stop at the stop level">{item.minStockLevel} → {item.targetStock || '—'}</span>
                           : <span title="Daily standard (5:00 AM top-up)">{item.standardStock ? `${item.standardStock}/day` : '—'}</span>}
                       </Td>
-                      <Td>
+                      <Td priority="md">
                         <StockStatusPill status={stockStatus(item)} />
                       </Td>
                       <Td>

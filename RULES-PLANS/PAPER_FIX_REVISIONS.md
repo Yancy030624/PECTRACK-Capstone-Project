@@ -995,3 +995,9 @@ Update the inventory process description, the flowcharts and DFDs, the ERD (`pro
 - **Less wasted space:** the Dashboard cards are more compact, the storefront's empty top band is hidden, and its four links fit a small phone.
 
 For the figures: phone screenshots of the Menu drawer and of the storefront are good examples of the responsive design.
+- **Phone fixes, round 2 (2026-10-24):**
+  - Cards never grow past the screen; long rows (Running out, Needed by) wrap inside the card.
+  - Wide tables slide sideways, with a fade and a "Slide sideways to see more" hint.
+  - Edit forms opened inside a table row (Inventory, Ingredients, Customers, Staff) stay pinned to the visible part of the screen.
+  - The products table shows the status pill under the product name on phones, so it fits.
+  - On the narrowest phones the header shows the logo alone.

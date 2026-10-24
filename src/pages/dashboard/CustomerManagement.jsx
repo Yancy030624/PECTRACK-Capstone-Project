@@ -143,7 +143,7 @@ export function CustomerManagement({ user, embedded = false }) {
                   // One cell spanning the row: a stacked form survives
                   // whichever columns the current width has dropped.
                   <Tr key={customer.id}>
-                    <td colSpan={6} className="px-3 py-3 text-sm text-ink-700">
+                    <td colSpan={6} className="px-3 py-3 text-sm text-ink-700"><div className="row-form">
                       <p className="text-xs text-ink-500">Editing {customer.username}</p>
                       <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         <Field label="First name" error={editErrors.firstName}>
@@ -163,7 +163,7 @@ export function CustomerManagement({ user, embedded = false }) {
                         <Button size="sm" onClick={(event) => saveEdit(event, customer.id)} disabled={editSubmitting}>{editSubmitting ? 'Saving…' : 'Save'}</Button>
                         <Button size="sm" variant="secondary" onClick={cancelEdit}>Cancel</Button>
                       </div>
-                    </td>
+                    </div></td>
                   </Tr>
                 ) : (
                   <Tr key={customer.id}>

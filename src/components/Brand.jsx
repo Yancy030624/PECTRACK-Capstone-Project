@@ -5,8 +5,10 @@ import logoMark from '../assets/logo-mark.png'
 
 export function Brand({ compact = false }) {
   return (
-    <div className="flex items-center gap-2.5">
-      <span className={`grid overflow-hidden rounded-full bg-white shadow-md ring-1 ring-black/5 ${compact ? 'h-12 w-12' : 'h-24 w-24 sm:h-28 sm:w-28'}`}>
+    <div className="flex min-w-0 items-center gap-2.5">
+      {/* shrink-0: on a narrow phone header the logo kept its circle while
+          the name gave way, instead of the logo being squeezed to a line. */}
+      <span className={`grid shrink-0 overflow-hidden rounded-full bg-white shadow-md ring-1 ring-black/5 ${compact ? 'h-12 w-12' : 'h-24 w-24 sm:h-28 sm:w-28'}`}>
         {/* object-contain, and no scale: the artwork is a circle that
             already fills its square canvas, so zooming it inside a round
             frame cropped the green banner off the top and BAKERY off the
@@ -14,7 +16,7 @@ export function Brand({ compact = false }) {
             the frame. */}
         <img src={logoMark} alt="Pecto's Bakery logo" className="h-full w-full rounded-full object-contain" />
       </span>
-      <span className={`${compact ? 'text-xl' : 'text-2xl'} font-display font-bold tracking-tight text-crust-700`}>PECTRACK</span>
+      <span className={`${compact ? 'hidden text-lg min-[360px]:inline min-[380px]:text-xl' : 'text-2xl'} truncate font-display font-bold tracking-tight text-crust-700`}>PECTRACK</span>
     </div>
   )
 }

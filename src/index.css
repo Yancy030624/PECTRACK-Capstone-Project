@@ -280,3 +280,25 @@ body {
     font-size: 16px;
   }
 }
+
+/* 3. A grid's items may always shrink to their column (the user's iPhone,
+ *    2026-10-24). By default a grid item is at least as wide as its widest
+ *    line, so one long row — a name, a time and a status pill side by side —
+ *    pushed a whole card past the screen, where the clip above then cut it
+ *    off. With this, the row wraps or truncates inside the card instead. */
+.grid > * {
+  min-width: 0;
+}
+
+/* 4. A form opened inside a table row (Edit on Inventory, Ingredients,
+ *    Customers, Staff) stays on screen on a phone. The table itself may be
+ *    wider than the screen and slide sideways; the form is pinned to the
+ *    visible part instead of stretching across the whole table, where its
+ *    right side (the Correct count switch) was off the screen. */
+@media (max-width: 639px) {
+  .row-form {
+    position: sticky;
+    left: 0.75rem;
+    width: calc(100vw - 6.5rem);
+  }
+}

@@ -276,7 +276,7 @@ export function StaffManagement({ embedded = false } = {}) {
                 {staff.map((person) =>
                   editingId === person.id ? (
                     <Tr key={person.id}>
-                      <td colSpan={7} className="px-3 py-3 text-sm text-ink-700">
+                      <td colSpan={7} className="px-3 py-3 text-sm text-ink-700"><div className="row-form">
                         <p className="text-xs text-ink-500">Editing {person.username} · {roleLabels[person.role] ?? person.role}</p>
                         <div className="mt-2 grid gap-3 sm:grid-cols-3">
                           <Field label="Name" error={editErrors.name}>
@@ -293,7 +293,7 @@ export function StaffManagement({ embedded = false } = {}) {
                           <Button type="button" size="sm" onClick={(event) => saveEdit(event, person.id)} disabled={editSubmitting}>{editSubmitting ? 'Saving…' : 'Save'}</Button>
                           <Button type="button" size="sm" variant="secondary" onClick={cancelEdit}>Cancel</Button>
                         </div>
-                      </td>
+                      </div></td>
                     </Tr>
                   ) : (
                     <Tr key={person.id}>

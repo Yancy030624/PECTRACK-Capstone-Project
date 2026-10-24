@@ -185,13 +185,13 @@ export function DashboardHome({ user, onNavigate }) {
         <Legend />
       </div>
       {!loaded ? (
-        <div className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-32 animate-pulse rounded-panel bg-surface-sunk" />)}
         </div>
       ) : actionTiles.length === 0 ? (
         <p className="mt-3 rounded-panel border-l-4 border-l-emerald-500 bg-surface p-4 shadow-raised text-sm text-ink-700 shadow-raised">Nothing needs action right now.</p>
       ) : (
-        <div className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {actionTiles.map((tile) => <StatusTile key={tile.label} tile={tile} linkable={allowed.has(tile.to[0])} onOpen={() => onNavigate(...tile.to)} />)}
         </div>
       )}
@@ -202,7 +202,9 @@ export function DashboardHome({ user, onNavigate }) {
         </p>
       )}
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+      {/* grid-cols-1, not no columns: an implicit column sizes itself to its
+          widest row, which pushed these two cards past a phone's edge. */}
+      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <RestockFirst loaded={loaded} lowItems={lowItems} canOpen={allowed.has('Inventory Management')} onViewAll={() => onNavigate('Inventory Management', { stockFilter: 'LOW' })} />
         <NeededBy orders={dueOrders} canOpen={allowed.has('Payment & Billing')} onOpen={(order) => onNavigate('Payment & Billing', { orderId: order.id, at: Date.now() })} onViewAll={() => onNavigate('Payment & Billing')} />
       </div>
@@ -241,12 +243,12 @@ function RestockFirst({ loaded, lowItems, canOpen, onViewAll }) {
           {lowItems.slice(0, restockRows).map((item) => {
             const status = stockStatus(item)
             return (
-              <li key={item.productId} className="flex items-center justify-between gap-4 py-2.5 text-sm">
-                <span className="min-w-0">
+              <li key={item.productId} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2.5 text-sm">
+                <span className="min-w-0 flex-1">
                   <span className="font-semibold text-ink-900">{item.productName}</span>
                   {item.variant && <span className="text-ink-500"> · {item.variant}</span>}
                 </span>
-                <span className="flex shrink-0 items-center gap-3">
+                <span className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1">
                   <span className="text-xs text-ink-500 tabular-nums">{item.stockQuantity} left · min {item.minStockLevel}</span>
                   <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${TONES[STOCK_STATUSES[status].tone].pill}`}>{STOCK_STATUSES[status].label}</span>
                 </span>
@@ -296,7 +298,7 @@ function NeededBy({ orders, canOpen, onOpen, onViewAll }) {
             const tone = dueTone(order, now)
             const row = (
               <>
-                <span className="w-20 shrink-0 font-semibold text-ink-900 tabular-nums">{orderLabel(order)}</span>
+                <span className="w-16 shrink-0 font-semibold text-ink-900 tabular-nums sm:w-20">{orderLabel(order)}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium text-ink-900">{order.customerName ?? 'Walk-in'}</span>
                   <span className="block text-xs text-ink-500">{order.orderType === 'DELIVERY' ? 'Delivery' : 'Pickup'}</span>
@@ -305,7 +307,7 @@ function NeededBy({ orders, canOpen, onOpen, onViewAll }) {
                   {when ? (manilaDay(when) === today ? timeFormat.format(new Date(when)) : dayTimeFormat.format(new Date(when))) : 'As soon as ready'}
                   {late && <span className="block font-normal">late</span>}
                 </span>
-                <span className={`inline-flex w-32 shrink-0 items-center justify-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${TONES[tone].pill}`}>
+                <span className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold sm:w-32 ${TONES[tone].pill}`}>
                   <span className={`h-2 w-2 rounded-full ${TONES[tone].dot}`} aria-hidden="true" />
                   {dueToneLabel[tone]}
                 </span>

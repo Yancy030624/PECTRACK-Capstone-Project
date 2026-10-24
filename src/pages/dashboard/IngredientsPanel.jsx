@@ -301,7 +301,7 @@ export function IngredientsPanel({ user, initialFilter }) {
               {visible.map((ingredient) => (
                 openRow?.id === ingredient.id ? (
                   <Tr key={ingredient.id}>
-                    <td colSpan={5} className="px-3 py-3 text-sm text-ink-700">
+                    <td colSpan={5} className="px-3 py-3 text-sm text-ink-700"><div className="row-form">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <p className="font-semibold text-ink-900">{ingredient.name} <span className="font-normal text-ink-500">· {formatQuantity(ingredient.stockQuantity, ingredient.unit)} on hand</span></p>
                         {isAdmin && !confirming && (
@@ -390,7 +390,7 @@ export function IngredientsPanel({ user, initialFilter }) {
                           </div>
                         </form>
                       )}
-                    </td>
+                    </div></td>
                   </Tr>
                 ) : (
                   <Tr key={ingredient.id}>

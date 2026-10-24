@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 // Table parts, not one monolithic component — each screen still decides
 // its own columns and content, but stops re-deriving the wrapper, header,
 // row, and cell styles that UI_AUDIT.md found duplicated across all 12
@@ -21,13 +22,39 @@ const PRIORITY_CLASSES = {
 }
 const priorityClass = (priority) => (priority ? PRIORITY_CLASSES[priority] ?? '' : '')
 
+// A table wider than the screen slides sideways (the user, 2026-10-24).
+// When it does, a small "Slide sideways to see more" line shows under it,
+// and a soft fade on the right edge hints there is more — until the end is
+// reached.
 export function Table({ caption, children, className = '' }) {
+  const scrollerRef = useRef(null)
+  const [more, setMore] = useState(false)
+  useEffect(() => {
+    const scroller = scrollerRef.current
+    if (!scroller) return undefined
+    const check = () => setMore(scroller.scrollWidth - scroller.clientWidth - scroller.scrollLeft > 4)
+    check()
+    scroller.addEventListener('scroll', check, { passive: true })
+    const observer = new ResizeObserver(check)
+    observer.observe(scroller)
+    if (scroller.firstElementChild) observer.observe(scroller.firstElementChild)
+    return () => {
+      scroller.removeEventListener('scroll', check)
+      observer.disconnect()
+    }
+  }, [])
   return (
-    <div className="overflow-x-auto rounded-panel bg-surface">
-      <table className={`w-full text-left text-sm ${className}`}>
-        {caption && <caption className="sr-only">{caption}</caption>}
-        {children}
-      </table>
+    <div>
+      <div className="relative">
+        <div ref={scrollerRef} className="overflow-x-auto overscroll-x-contain rounded-panel bg-surface">
+          <table className={`w-full text-left text-sm ${className}`}>
+            {caption && <caption className="sr-only">{caption}</caption>}
+            {children}
+          </table>
+        </div>
+        {more && <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-8 rounded-r-panel bg-linear-to-l from-surface to-transparent print:hidden" />}
+      </div>
+      {more && <p className="mt-1.5 text-right text-[11px] font-medium text-ink-500 print:hidden">Slide sideways to see more →</p>}
     </div>
   )
 }
