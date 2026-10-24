@@ -196,6 +196,27 @@ describe('demand forecasting API', () => {
     assert.equal(csv.includes(`Forecast Bun`), false)
   })
 
+  test('the sales the forecast learns from: paid or completed orders only, on their own day (ANALYTICS_PLAN A2)', async () => {
+    // A held checkout never paid, and a paid order booked on May 1 for May 10.
+    const place = async (status, orderDate, requested) => (await pool.query(
+      `INSERT INTO orders (order_type, status, order_date, requested_fulfillment_time) VALUES ('PICKUP', $1, $2, $3) RETURNING order_id`,
+      [status, orderDate, requested],
+    )).rows[0].order_id
+    const hold = await place('AWAITING_PAYMENT', '2021-05-01 09:00:00+08', null)
+    const booked = await place('READY_FOR_PICKUP', '2021-05-01 09:00:00+08', '2021-05-10 08:00:00+08')
+    const orderIds = [hold, booked]
+    try {
+      for (const orderId of orderIds) await pool.query('INSERT INTO order_details (order_id, product_id, quantity, unit_price) VALUES ($1, $2, 3, 10)', [orderId, productId])
+      await pool.query(`INSERT INTO payments (order_id, payment_method, amount, status, payment_date) VALUES ($1, 'CASH', 30, 'PAID', '2021-05-01 09:05:00+08')`, [booked])
+      const rows = (await pool.query(`SELECT local_date::text AS day, units_sold FROM analytics_daily_sales WHERE product_id = $1 ORDER BY local_date`, [productId])).rows
+      assert.deepEqual(rows, [{ day: '2021-05-10', units_sold: 3 }], 'only the paid order, on its pickup day')
+    } finally {
+      await pool.query('DELETE FROM payments WHERE order_id = ANY($1)', [orderIds])
+      await pool.query('DELETE FROM order_details WHERE order_id = ANY($1)', [orderIds])
+      await pool.query('DELETE FROM orders WHERE order_id = ANY($1)', [orderIds])
+    }
+  })
+
   test('restock recommendations: the out-of-stock test product runs out today and gets a bake quantity', async () => {
     assert.equal((await json(adminCookie, 'POST', '/api/forecasts/run', { source: 'ASSUMED' })).status, 201, 'the run itself must succeed')
     const latest = await (await json(cashierCookie, 'GET', '/api/forecasts/latest')).json()
