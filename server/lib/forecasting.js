@@ -185,7 +185,19 @@ export function holtWinters(train) {
 // Features: intercept, trend (in years), a flag for each weekday except
 // Sunday (Sunday is the baseline the others are measured against), payday,
 // holiday eve, holiday. Ten columns.
-export const REGRESSION_FEATURES = ['intercept', 'trend', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'payday', 'holiday_eve', 'holiday']
+export const REGRESSION_FEATURES = ['intercept', 'trend', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'payday', 'holiday_eve', 'holiday', 'event']
+
+// The bakery's events (migration 036, the client 2026-10-24): Holy Week,
+// Pahiyas, Christmas, New Year, long weekends. Their days are one more
+// calendar fact the regression learns a weight for — how much an event
+// day sells over an ordinary one. Set by the caller before a run (the
+// routes read the calendar); empty, the column is all zeros and the ridge
+// term gives it no weight, which is also what the tests rely on.
+let eventDays = new Set()
+export function useEventCalendar(days) {
+  eventDays = new Set(days)
+}
+export const isEventDay = (iso) => eventDays.has(iso)
 
 function featureRow(iso, originIso) {
   const weekday = dayOfWeek(iso)
@@ -202,6 +214,7 @@ function featureRow(iso, originIso) {
     isPayday(iso) ? 1 : 0,
     holiday === 'eve' ? 1 : 0,
     holiday === 'holiday' ? 1 : 0,
+    eventDays.has(iso) ? 1 : 0,
   ]
 }
 

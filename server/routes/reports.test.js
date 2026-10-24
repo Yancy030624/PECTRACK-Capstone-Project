@@ -772,7 +772,9 @@ describe('reporting & analytics', () => {
       assert.equal(reported.RESTOCK, 50)
       assert.equal(reported.REJECT, -8)
       assert.equal(reported.CORRECTION, -2)
-      assert.equal(response.lossUnits, 8, 'lossUnits is the positive magnitude')
+      // The bakery keeps no rejects list now (2026-10-23): a count corrected
+      // DOWN is bread lost too, so the -2 correction is counted with the -8.
+      assert.equal(response.lossUnits, 10, 'lossUnits is the positive magnitude of rejects and counts corrected down')
 
       // Reconciliation: sum of what the report shows for THIS product's
       // movements must equal the ledger's own signed SUM for those same

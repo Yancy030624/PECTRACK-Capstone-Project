@@ -37,14 +37,17 @@ export async function runDailyStockReset(now = new Date(), { onlyProductIds = nu
       return null
     }
     // Locked in product_id order, the order every stock change uses.
+    // A soft-bread event (set by the admin to soft or both) raises today's
+    // standard by its multiplier; by default there is none.
+    const softFactor = (await boostsFor(day)).soft.factor
     const soft = await client.query(
-      `SELECT i.inventory_id, i.product_id, i.stock_quantity, i.standard_stock, i.min_stock_level
+      `SELECT i.inventory_id, i.product_id, i.stock_quantity, ROUND(i.standard_stock * $2::numeric)::int AS standard_stock, i.min_stock_level
          FROM inventory i JOIN products p ON p.product_id = i.product_id
-        WHERE p.stock_type = 'SOFT' AND i.standard_stock > i.stock_quantity
+        WHERE p.stock_type = 'SOFT' AND ROUND(i.standard_stock * $2::numeric) > i.stock_quantity
           AND ($1::bigint[] IS NULL OR i.product_id = ANY($1::bigint[]))
         ORDER BY i.product_id
         FOR UPDATE OF i`,
-      [onlyProductIds],
+      [onlyProductIds, softFactor],
     )
     for (const row of soft.rows) {
       const bake = row.standard_stock - row.stock_quantity
@@ -66,6 +69,39 @@ export async function runDailyStockReset(now = new Date(), { onlyProductIds = nu
   }
 }
 
+// Events and weekends (migration 036, the client 2026-10-24): how much more
+// to make on `day`, for each bread type, and why.
+//   HARD  the biggest of: an event's multiplier from its lead days (default
+//         a week) through its last day, and x2 for the weekend from
+//         Thursday to Sunday — hard breads keep, so they are built up ahead.
+//   SOFT  an event's multiplier on the event days themselves, only for an
+//         event the admin set to soft or both — soft breads keep ~3 days and
+//         barely sell more on these days, so by default nothing changes.
+export const weekendBoost = { factor: 2, from: 4 } // Thursday (0 = Sunday)
+const weekendDays = new Set([4, 5, 6, 0])
+
+export async function boostsFor(day) {
+  const events = (await pool.query(
+    `SELECT name, multiplier::float AS multiplier, applies_to, starts_on, ends_on,
+            ($1::date BETWEEN starts_on AND ends_on) AS during,
+            ($1::date BETWEEN starts_on - lead_days AND ends_on) AS ahead
+       FROM events
+      WHERE $1::date BETWEEN starts_on - lead_days AND ends_on
+      ORDER BY multiplier DESC, starts_on`,
+    [day],
+  )).rows
+  let hard = { factor: 1, reason: null }
+  let soft = { factor: 1, reason: null }
+  const dow = new Date(`${day}T12:00:00Z`).getUTCDay()
+  if (weekendDays.has(dow)) hard = { factor: weekendBoost.factor, reason: `Weekend x${weekendBoost.factor}` }
+  for (const event of events) {
+    const label = `${event.name} x${Number(event.multiplier)}`
+    if (event.applies_to !== 'SOFT' && event.ahead && event.multiplier > hard.factor) hard = { factor: event.multiplier, reason: label }
+    if (event.applies_to !== 'HARD' && event.during && event.multiplier > soft.factor) soft = { factor: event.multiplier, reason: label }
+  }
+  return { hard, soft, events: events.map((event) => ({ name: event.name, multiplier: Number(event.multiplier), appliesTo: event.applies_to, startsOn: event.starts_on, endsOn: event.ends_on })) }
+}
+
 // What to bake on `day` ('YYYY-MM-DD', a Manila day), per product.
 //   SOFT  standard − what is on the shelf now (the top-up, if nothing more
 //         sells today) + pieces in advanced orders picked up that day,
@@ -73,6 +109,7 @@ export async function runDailyStockReset(now = new Date(), { onlyProductIds = nu
 //   HARD  at or under the minimum: target − stock. Otherwise not needed.
 //         (Hard-bread advanced orders already came off the shelf.)
 export async function productionFor(day) {
+  const boosts = await boostsFor(day)
   const rows = await pool.query(
     `SELECT p.product_id, p.product_name, p.variant, p.stock_type, c.category_name,
             i.stock_quantity, i.standard_stock, i.min_stock_level, i.target_stock,
@@ -100,10 +137,21 @@ export async function productionFor(day) {
       forecast: row.forecast == null ? null : Math.round(Number(row.forecast)),
     }
     if (row.stock_type === 'SOFT') {
-      const topUp = Math.max(row.standard_stock - row.stock_quantity, 0)
-      return { ...base, standardStock: row.standard_stock, advanced: row.advanced, topUp, toBake: topUp + row.advanced, needed: topUp + row.advanced > 0 }
+      const standard = Math.round(row.standard_stock * boosts.soft.factor)
+      const topUp = Math.max(standard - row.stock_quantity, 0)
+      return { ...base, standardStock: standard, boost: boosts.soft.reason, advanced: row.advanced, topUp, toBake: topUp + row.advanced, needed: topUp + row.advanced > 0 }
     }
-    const needed = row.target_stock > 0 && row.stock_quantity <= row.min_stock_level
-    return { ...base, minStockLevel: row.min_stock_level, targetStock: row.target_stock, toBake: needed ? Math.max(row.target_stock - row.stock_quantity, 0) : 0, needed }
+    // Boosted (an event ahead, or the weekend): build up to stop level x
+    // factor, whatever the minimum. Otherwise: make it at the minimum.
+    const boosted = boosts.hard.factor > 1 && row.target_stock > 0
+    const target = boosted ? Math.round(row.target_stock * boosts.hard.factor) : row.target_stock
+    const needed = row.target_stock > 0 && (boosted ? row.stock_quantity < target : row.stock_quantity <= row.min_stock_level)
+    return { ...base, minStockLevel: row.min_stock_level, targetStock: target, boost: boosted ? boosts.hard.reason : null, toBake: needed ? Math.max(target - row.stock_quantity, 0) : 0, needed }
   })
+}
+
+// The production list with the reasons the day is boosted.
+export async function productionPlan(day) {
+  const [items, boosts] = await Promise.all([productionFor(day), boostsFor(day)])
+  return { items, boosts }
 }

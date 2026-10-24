@@ -41,8 +41,15 @@ const BASE_SCALE = 60
 // only to keep one cheap product from looking exactly like another.
 const POPULARITY_SPREAD = 0.3
 
-// Day of week: weekends busier, Monday quieter. 0 = Sunday.
+// Day of week: weekends busier, Monday quieter. 0 = Sunday. Soft breads.
 const WEEKDAY_MULTIPLIER = [1.25, 0.9, 1.0, 1.0, 1.0, 1.0, 1.25]
+// Hard breads (the client, 2026-10-24): about twice as much sells on
+// Saturday and Sunday — tourists buying pasalubong — and on an event day
+// (Holy Week, Pahiyas, Christmas, New Year, long weekends, from the events
+// calendar, migration 036) about four times. Soft breads keep ~3 days and
+// barely move on those days.
+const HARD_WEEKDAY_MULTIPLIER = [2, 0.9, 1.0, 1.0, 1.0, 1.0, 2]
+const HARD_EVENT_MULTIPLIER_DEFAULT = 4
 
 // Semi-monthly payday (the 15th and the last day, and the day after each).
 const PAYDAY_MULTIPLIER = 1.15
@@ -110,8 +117,16 @@ async function main() {
   const yesterday = (await pool.query(`SELECT ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date - 1)::text AS d`)).rows[0].d
   const firstDay = addDays(yesterday, -(HISTORY_DAYS - 1))
 
+  // Event days from the calendar, with each one's multiplier.
+  const eventMultiplier = new Map((await pool.query(
+    `SELECT to_char(day, 'YYYY-MM-DD') AS day, MAX(multiplier)::float AS multiplier
+       FROM events, generate_series(starts_on, ends_on, INTERVAL '1 day') AS day
+      WHERE applies_to <> 'SOFT'
+      GROUP BY day`,
+  ).catch(() => ({ rows: [] }))).rows.map((row) => [row.day, row.multiplier]))
+
   const products = (await pool.query(
-    `SELECT p.product_id, p.product_name, p.variant, p.price,
+    `SELECT p.product_id, p.product_name, p.variant, p.price, p.stock_type,
             COALESCE((SELECT SUM(s.units_sold) FROM analytics_daily_sales s
                        WHERE s.product_id = p.product_id AND s.data_source = 'ASSUMED'), 0)::int AS seed_units
        FROM products p
@@ -139,8 +154,10 @@ async function main() {
     for (let dayIndex = 0; dayIndex < HISTORY_DAYS; dayIndex += 1) {
       const date = addDays(firstDay, dayIndex)
       const holiday = holidayKind(date)
+      const hard = product.stock_type === 'HARD'
       let expected = base
-        * WEEKDAY_MULTIPLIER[dayOfWeek(date)]
+        * (hard ? HARD_WEEKDAY_MULTIPLIER : WEEKDAY_MULTIPLIER)[dayOfWeek(date)]
+        * (hard && eventMultiplier.has(date) ? (eventMultiplier.get(date) || HARD_EVENT_MULTIPLIER_DEFAULT) : 1)
         * (isPayday(date) ? PAYDAY_MULTIPLIER : 1)
         * (holiday === 'eve' ? HOLIDAY_EVE_MULTIPLIER : holiday === 'holiday' ? HOLIDAY_MULTIPLIER : 1)
         * (1 + ANNUAL_GROWTH * (dayIndex / 365))

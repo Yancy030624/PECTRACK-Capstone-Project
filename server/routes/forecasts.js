@@ -17,7 +17,7 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
-import { addDays, daysBetween, forecastProduct } from '../lib/forecasting.js'
+import { addDays, daysBetween, forecastProduct, useEventCalendar } from '../lib/forecasting.js'
 import { restockForRun } from '../lib/restock.js'
 import { normalize, parseId } from '../lib/validation.js'
 
@@ -107,6 +107,11 @@ router.post('/run', requireRole('ADMIN'), async (request, response) => {
   // with the missing days in between filled as zero. Starting from the
   // product's OWN first day stops a product added last month looking like
   // it sold nothing all year.
+  // Every event day (migration 036) becomes the regression's "event"
+  // variable, past ones for learning and coming ones for the forecast.
+  const eventRows = await pool.query(`SELECT to_char(day, 'YYYY-MM-DD') AS day FROM events, generate_series(starts_on, ends_on, INTERVAL '1 day') AS day`)
+  useEventCalendar(eventRows.rows.map((row) => row.day))
+
   let results = []
   for (const product of products) {
     const rows = byProduct.get(product.product_id) ?? []

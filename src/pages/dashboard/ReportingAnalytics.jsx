@@ -12,6 +12,7 @@ import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDate, formatDateTime, formatPeso, formatQuantity } from '../../lib/format.js'
 import { orderLabel } from '../../lib/orderNumber.js'
 import { ForecastPanel } from './ForecastPanel.jsx'
+import { StockStatusPill } from '../../components/ui/StockStatusPill.jsx'
 import { PeakPeriods } from './PeakPeriods.jsx'
 import { PrintButton, PrintHeader } from '../../components/PrintReport.jsx'
 import { manilaDate, manilaDateFromToday } from '../../lib/dates.js'
@@ -62,8 +63,9 @@ const movementReasonLabels = {
   ORDER_PLACED: 'Sold (order placed)',
   ORDER_CANCELLED: 'Returned (order cancelled)',
   RESTOCK: 'Restock',
+  DAILY_STOCK: '5:00 AM top-up (soft breads)',
   REJECT: 'Reject',
-  CORRECTION: 'Correction (recount)',
+  CORRECTION: 'Count corrected',
   PRODUCTION: 'Production',
   SPOILAGE: 'Spoilage (before rejects)',
   PRODUCTION_LOSS: 'Production loss (before rejects)',
@@ -393,8 +395,8 @@ export function ReportingAnalytics({ user }) {
         {inventory ? (
           <>
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Units lost</p><p className="mt-3 text-4xl font-semibold text-ink-900">{inventory.lossUnits}</p></Card>
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Low stock now</p><p className="mt-3 text-4xl font-semibold text-ink-900">{inventory.lowStockAlertsTotal}</p></Card>
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Units lost</p><p className="mt-3 text-4xl font-semibold text-ink-900">{inventory.lossUnits}</p><p className="mt-1 text-xs text-ink-500">Counts corrected down, in this range</p></Card>
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Needs attention now</p><p className="mt-3 text-4xl font-semibold text-ink-900">{inventory.attention.length}</p></Card>
             </div>
 
             <Card className="mt-6 p-6">
@@ -424,19 +426,19 @@ export function ReportingAnalytics({ user }) {
 
             <Card className="mt-6 p-6">
               <h2 className="text-lg font-semibold text-ink-900">Needs attention</h2>
-              {inventory.lowStockAlerts.length === 0 ? <p className="mt-4 text-sm text-ink-500">No product is at or under its minimum.</p> : (
-                <>
-                  <div className="mt-4 divide-y divide-line-100">
-                    {inventory.lowStockAlerts.map((alert) => (
-                      <div key={alert.id} className="flex items-center justify-between gap-4 py-4 text-sm text-ink-700">
-                        <span className="flex items-center gap-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-status-wait-bg text-status-wait-fg">!</span>{alert.productName}{alert.variant ? ` (${alert.variant})` : ''} — {alert.alertMessage}</span>
-                      </div>
-                    ))}
-                  </div>
-                  {inventory.lowStockAlertsTotal > inventory.lowStockAlerts.length && (
-                    <p className="mt-4 text-xs font-medium text-status-wait-fg">Showing the {inventory.lowStockAlerts.length} furthest under their minimum, of {inventory.lowStockAlertsTotal} — Inventory Management lists them all.</p>
-                  )}
-                </>
+              {/* Same statuses as Inventory and the Dashboard (stockHealth.js). */}
+              {inventory.attention.length === 0 ? <p className="mt-4 text-sm text-ink-500">Nothing is low, selling out, or sold out.</p> : (
+                <div className="mt-4 divide-y divide-line-100">
+                  {inventory.attention.map((item) => (
+                    <div key={item.productId} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3 text-sm text-ink-700">
+                      <span className="min-w-0 flex-1">
+                        <span className="font-semibold text-ink-900">{item.productName}</span>{item.variant ? ` (${item.variant})` : ''}
+                        <span className="block text-xs text-ink-500">{item.stockType === 'HARD' ? `Hard bread · ${item.stockQuantity} left · produce at ${item.minStockLevel}` : `Soft bread · ${item.stockQuantity} left${item.standardStock ? ` of ${item.standardStock} today` : ''}`}</span>
+                      </span>
+                      <StockStatusPill status={item.status} />
+                    </div>
+                  ))}
+                </div>
               )}
             </Card>
 

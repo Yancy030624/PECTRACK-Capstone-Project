@@ -135,14 +135,9 @@ export function DashboardHome({ user, onNavigate }) {
       note: summary.deliveriesNeedingAttention > 0 ? 'Waiting for a driver' : 'All assigned',
       to: ['Delivery Management', { focus: 'toAssign' }],
     },
-    summary.likelySellOut && {
-      label: 'Likely to sell out',
-      goodLabel: 'the sell-out forecast',
-      value: summary.likelySellOut.count,
-      tone: summary.likelySellOut.count > 0 ? 'okay' : 'good',
-      note: summary.likelySellOut.assumed ? 'By tomorrow · assumed demand' : 'By tomorrow',
-      to: ['Reporting & Analytics'],
-    },
+    // No "Likely to sell out" tile any more: a soft bread is meant to sell
+    // out daily, and what to bake is Inventory → Production
+    // (RULES-PLANS/REPORTS_ALIGNMENT_ANALYSIS.md, D).
   ].filter(Boolean) : []
 
   const attentionCount = tiles.filter((tile) => tile.tone === 'attention').length

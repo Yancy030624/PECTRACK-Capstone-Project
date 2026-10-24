@@ -31,7 +31,7 @@ const METHOD_LABELS = {
 const METHOD_HELP = {
   seasonal_naive: 'The average of the last four of the same weekday. The simple yardstick every other method has to beat.',
   holt_winters: 'Follows the recent level, trend and weekly pattern, giving the latest days more weight.',
-  regression: 'Learns how much each weekday, payday, holiday and the overall trend raises or lowers sales.',
+  regression: 'Learns how much each weekday, payday, holiday, event (Pahiyas, Holy Week…) and the overall trend raises or lowers sales.',
 }
 
 const withAlpha = (hex, alpha) => {
@@ -180,15 +180,18 @@ export function ForecastPanel({ user, active }) {
   const weightedError = scoredProducts.reduce((sum, product) => sum + Number(product.wape) * Number(product.total), 0)
   const scoredTotal = scoredProducts.reduce((sum, product) => sum + Number(product.total), 0)
   const accuracy = scoredTotal > 0 ? Math.max(0, Math.round((1 - weightedError / scoredTotal) * 100)) : null
-  const toBakeNow = (data?.restock ?? []).filter((item) => item.recommended > 0)
+  // The day the forecast expects the most sales, across all products.
+  const dayTotals = days.map((date) => ({ date, total: products.reduce((sum, product) => sum + Number(product.days?.find((day) => day.date === date)?.predicted ?? 0), 0) }))
+  const busiestDay = dayTotals.reduce((best, day) => (!best || day.total > best.total ? day : best), null)
+  const busiest = busiestDay && busiestDay.total > 0 ? { ...busiestDay, label: new Intl.DateTimeFormat('en-PH', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'Asia/Manila' }).format(new Date(`${busiestDay.date}T12:00:00+08:00`)) } : null
 
   return (
     <div>
       <Card className="mt-6 p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            <h2 className="text-lg font-semibold text-ink-900">Sales forecast — what to bake this week</h2>
-            <p className="mt-1 max-w-2xl text-sm text-ink-500">PECTRACK studies past daily sales and predicts how many of each product will sell over the next 7 days, then compares that with what is on the shelf — so the bakery bakes enough, not too much.</p>
+            <h2 className="text-lg font-semibold text-ink-900">Sales forecast — the next 7 days</h2>
+            <p className="mt-1 max-w-2xl text-sm text-ink-500">PECTRACK studies past daily sales — weekdays, paydays, holidays and events like Pahiyas — and predicts how many of each product will sell over the next 7 days. Use it to set each soft bread&apos;s daily standard and each hard bread&apos;s levels; the day&apos;s bake list itself is Inventory → Production.</p>
           </div>
           {isAdmin && (
             <div className="flex flex-wrap items-end gap-2 print:hidden">
@@ -242,11 +245,15 @@ export function ForecastPanel({ user, active }) {
             <>
               <div className="mt-6 grid gap-4 sm:grid-cols-3">
                 <SummaryCard label="Expected to sell this week" value={`${whole(weekTotal)} items`} note={`Across ${products.length} products, next 7 days`} />
-                <SummaryCard label="Need baking now" value={`${toBakeNow.length} product${toBakeNow.length === 1 ? '' : 's'}`} note="Not enough on the shelf for today and tomorrow" tone={toBakeNow.length > 0 ? 'attention' : 'good'} />
+                <SummaryCard label="Busiest day ahead" value={busiest ? busiest.label : '—'} note={busiest ? `About ${whole(busiest.total)} items expected` : 'No forecast yet'} />
                 <SummaryCard label="How accurate" value={accuracy == null ? 'Not tested yet' : `About ${accuracy}%`} note={accuracy == null ? 'Needs about eight weeks of history' : `Checked against past weeks it had not seen${scored ? ` · ${beatBaseline} of ${scored} products beat a simple average` : ''}`} />
               </div>
 
-              <RestockCard restock={data.restock ?? []} dates={days} isAssumed={isAssumed} onSelect={setSelectedId} />
+              {/* One bake list (RULES-PLANS/REPORTS_ALIGNMENT_ANALYSIS.md, D):
+                  Inventory → Production, by the bakery's own rule — daily
+                  standards, hard-bread levels, weekends and events. The
+                  forecast informs those levels; it no longer has a second,
+                  different "what to bake" of its own. */}
 
               <Card className="mt-6 break-inside-avoid p-6">
                 <div className="flex flex-wrap items-end justify-between gap-3">
@@ -349,77 +356,6 @@ function SummaryCard({ label, value, note, tone }) {
       <p className="flex items-center gap-2 text-sm font-medium text-ink-500">{dot && <span className={`h-2.5 w-2.5 rounded-full ${dot}`} aria-hidden="true" />}{label}</p>
       <p className="mt-2 text-2xl font-semibold text-ink-900 tabular-nums">{value}</p>
       <p className="mt-1 text-xs text-ink-500">{note}</p>
-    </Card>
-  )
-}
-
-// PHASE10 B1 — the paper's "Automated Inventory": which products will run
-// out, and how many to bake. The forecast says how many will SELL; this
-// sets that against what is on the shelf now. Only products that need
-// baking are listed — the covered ones are counted in one line, so the
-// list stays the size of tonight's job.
-function RestockCard({ restock, dates, isAssumed, onSelect }) {
-  // Only what needs baking now. A product that runs out on Thursday but is
-  // covered for today and tomorrow is not a task yet — listing it as
-  // "Bake 0" beside a sell-out date read as a contradiction.
-  const needed = restock.filter((item) => item.recommended > 0)
-  const later = restock.filter((item) => item.recommended === 0 && item.sellsOutOn)
-  const covered = restock.length - needed.length - later.length
-  const whenLabel = (date) => {
-    if (!date) return 'Covered all week'
-    if (date === dates[0]) return 'Today'
-    if (date === dates[1]) return 'Tomorrow'
-    return dayLabel(date)
-  }
-  return (
-    <Card className="mt-6 p-6">
-      <h3 className="text-base font-semibold text-ink-900">What to bake</h3>
-      <p className="mt-1 max-w-3xl text-sm text-ink-500">
-        Enough to cover expected sales today and tomorrow, plus a little extra for a busy day, minus what is already on the shelf. Soonest to run out first.
-        {isAssumed && <span className="font-semibold text-status-wait-fg"> Practice mode: expected sales come from sample data; the shelf counts are real.</span>}
-      </p>
-      {needed.length === 0 ? (
-        <p className="mt-4 text-sm text-ink-500">Nothing needs baking — the shelf covers today and tomorrow.</p>
-      ) : (
-        <div className="mt-4">
-          <Table caption="Restock recommendations">
-            <Thead>
-              <Tr className="hover:bg-transparent">
-                <Th>Product</Th>
-                <Th align="right">On the shelf</Th>
-                <Th>Runs out</Th>
-                <Th align="right">Bake</Th>
-              </Tr>
-            </Thead>
-            <Tbody>
-              {needed.map((item) => {
-                const urgent = item.sellsOutOn && (item.sellsOutOn === dates[0] || item.sellsOutOn === dates[1])
-                return (
-                  <Tr key={item.productId} onClick={() => onSelect(item.productId)} className="cursor-pointer">
-                    <Td className="font-semibold text-ink-900">
-                      {item.name}
-                      {item.variant && <span className="block text-xs font-normal text-ink-500">{item.variant}</span>}
-                    </Td>
-                    <Td numeric>{whole(item.stock)}</Td>
-                    <Td>
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${urgent ? 'bg-status-fail-bg text-status-fail-fg' : item.sellsOutOn ? 'bg-status-wait-bg text-status-wait-fg' : 'bg-status-done-bg text-status-done-fg'}`}>
-                        {whenLabel(item.sellsOutOn)}
-                      </span>
-                    </Td>
-                    <Td numeric className="font-semibold text-ink-900">{whole(item.recommended)}</Td>
-                  </Tr>
-                )
-              })}
-            </Tbody>
-          </Table>
-        </div>
-      )}
-      {later.length > 0 && (
-        <p className="mt-3 text-xs text-ink-500">
-          {later.length} more run{later.length === 1 ? 's' : ''} out later this week but {later.length === 1 ? 'is' : 'are'} covered for today and tomorrow: {later.map((item) => `${item.name}${item.variant ? ` (${item.variant})` : ''} ${dayLabel(item.sellsOutOn)}`).join(', ')}.
-        </p>
-      )}
-      {covered > 0 && <p className="mt-1 text-xs text-ink-500">{covered} other product{covered === 1 ? ' has' : 's have'} enough stock for the week.</p>}
     </Card>
   )
 }

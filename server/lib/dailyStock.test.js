@@ -78,8 +78,15 @@ describe('soft and hard breads', () => {
     assert.equal(await stockOf(soft), 320)
   })
 
+  // A Monday far from any event: no boost.
+  const plainMonday = () => {
+    const date = new Date(Date.UTC(2090, 0, 1) + offset * 86400000)
+    while (date.getUTCDay() !== 1) date.setUTCDate(date.getUTCDate() + 1)
+    return date.toISOString().slice(0, 10)
+  }
+
   test('the production list: soft = top-up + advanced orders that day; hard = target − stock at or under the minimum', async () => {
-    const day = futureDay(2)
+    const day = plainMonday()
     await pool.query('UPDATE inventory SET stock_quantity = 50 WHERE product_id = $1', [soft])
     const order = (await pool.query(
       `INSERT INTO orders (order_type, status, is_reservation, requested_fulfillment_time, guest_name, guest_contact) VALUES ('PICKUP', 'READY_FOR_PICKUP', TRUE, $1, 'Test', '09171234567') RETURNING order_id`,
@@ -100,6 +107,34 @@ describe('soft and hard breads', () => {
     await pool.query('UPDATE inventory SET stock_quantity = 550 WHERE product_id = $1', [hard])
     const later = (await productionFor(day)).find((item) => String(item.productId) === String(hard))
     assert.equal(later.needed, false, 'above the minimum: not needed')
+  })
+
+  test('events and weekends raise hard breads only: x2 from Thursday, an event x4 from a week before', async () => {
+    await pool.query('UPDATE inventory SET stock_quantity = 150 WHERE product_id = $1', [hard])
+    await pool.query('UPDATE inventory SET stock_quantity = 50 WHERE product_id = $1', [soft])
+    const monday = plainMonday()
+    const thursday = new Date(`${monday}T12:00:00Z`); thursday.setUTCDate(thursday.getUTCDate() + 3)
+    const thursdayIso = thursday.toISOString().slice(0, 10)
+    const line = async (day, id) => (await productionFor(day)).find((item) => String(item.productId) === String(id))
+
+    const weekendHard = await line(thursdayIso, hard)
+    assert.equal(weekendHard.boost, 'Weekend x2')
+    assert.equal(weekendHard.toBake, 1050, '600 x 2 − 150')
+    assert.equal((await line(thursdayIso, soft)).standardStock, 300, 'soft breads unchanged on weekends')
+
+    // An event the following Monday, x4: from a week ahead (the Monday
+    // before is inside its lead days) hard breads build up to 600 x 4.
+    const eventDay = new Date(`${monday}T12:00:00Z`); eventDay.setUTCDate(eventDay.getUTCDate() + 7)
+    const eventIso = eventDay.toISOString().slice(0, 10)
+    const event = (await pool.query(`INSERT INTO events (name, starts_on, ends_on) VALUES ($1, $2, $2) RETURNING event_id`, [`Test event ${runId}`, eventIso])).rows[0].event_id
+    try {
+      const ahead = await line(monday, hard)
+      assert.equal(ahead.boost, `Test event ${runId} x4`)
+      assert.equal(ahead.toBake, 2250, '600 x 4 − 150')
+      assert.equal((await line(monday, soft)).standardStock, 300, 'a hard-bread event leaves soft breads alone')
+    } finally {
+      await pool.query('DELETE FROM events WHERE event_id = $1', [event])
+    }
   })
 
   test('cancelling gives back only what an order took off the shelf', async () => {

@@ -1001,3 +1001,27 @@ For the figures: phone screenshots of the Menu drawer and of the storefront are 
   - Edit forms opened inside a table row (Inventory, Ingredients, Customers, Staff) stay pinned to the visible part of the screen.
   - The products table shows the status pill under the product name on phones, so it fits.
   - On the narrowest phones the header shows the logo alone.
+
+### Events, weekends and the forecast (client, 2026-10-24)
+
+Plan: RULES-PLANS/REPORTS_ALIGNMENT_ANALYSIS.md §6. Migration 036.
+
+- **Events calendar** (Inventory → Production → Events): each event has a name, dates, a multiplier (default **x4**), which breads it applies to (default **hard breads**) and its lead days (default **7**, a week before).
+  - It is pre-filled with Christmas, New Year, Holy Week and Pahiyas.
+  - The admin adds long weekends as they are proclaimed.
+- **Hard breads** (pasalubong) are built up ahead:
+  - **x2 for the weekend, from Thursday**;
+  - **x the event's multiplier from a week before an event** through its last day.
+
+  The production list shows why (for example "Pahiyas Festival x4", "Weekend x2"), and "Make up to" becomes the stop level × that factor.
+- **Soft breads** do not change for events or weekends; they keep about 3 days and barely sell more. If the admin sets an event to soft breads, the 5:00 AM top-up uses the standard × multiplier on the event days.
+- **Forecast:** the regression now has an **"event"** variable alongside weekday, payday and holiday, learned from the events calendar. The generator for the assumed history now models hard breads at x2 on weekends and x4 on events; it is applied when the assumed data is re-generated.
+- **One bake list:** the Forecast tab no longer gives its own "what to bake". It predicts sales for the next 7 days and the busiest day ahead, to guide the daily standards and hard-bread levels. **Inventory → Production** is the bake list. The Dashboard's "Likely to sell out" tile is removed, since soft breads are meant to sell out daily.
+- **Inventory report:**
+  - "Units lost" counts counts corrected down, since the bakery keeps no rejects list;
+  - the 5:00 AM top-up is labelled;
+  - "Needs attention" uses the same statuses as Inventory and the Dashboard.
+
+Paper:
+- Methodology: add the event and weekend factors to the predictive model's variables, and the events calendar to the inventory process.
+- Limitations: real event effects are assumed until a real Pahiyas or Holy Week has been recorded.

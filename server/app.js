@@ -10,6 +10,7 @@ import addressesRouter from './routes/addresses.js'
 import authRouter from './routes/auth.js'
 import categoriesRouter from './routes/categories.js'
 import customersRouter from './routes/customers.js'
+import eventsRouter from './routes/events.js'
 import deliveriesRouter from './routes/deliveries.js'
 import forecastsRouter from './routes/forecasts.js'
 import ingredientsRouter from './routes/ingredients.js'
@@ -111,6 +112,7 @@ app.use('/api/notifications', notificationsRouter)
 app.use('/api/reports', reportsRouter)
 app.use('/api/forecasts', forecastsRouter)
 app.use('/api/phone-verification', phoneVerificationRouter)
+app.use('/api/events', eventsRouter)
 app.use('/api/receipts', receiptsRouter)
 
 // An /api path no route answered: JSON, like every other API reply — not

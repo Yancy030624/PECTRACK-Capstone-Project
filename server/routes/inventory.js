@@ -19,7 +19,7 @@ import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
 import { syncStockAlert } from '../lib/inventory.js'
 import { normalize, parseId } from '../lib/validation.js'
-import { productionFor } from '../lib/dailyStock.js'
+import { productionPlan } from '../lib/dailyStock.js'
 
 const router = express.Router()
 
@@ -78,7 +78,8 @@ router.get('/production', async (request, response) => {
   const day = /^\d{4}-\d{2}-\d{2}$/.test(asked)
     ? asked
     : (await pool.query(`SELECT ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date + 1)::text AS day`)).rows[0].day
-  return response.json({ day, items: await productionFor(day) })
+  const { items, boosts } = await productionPlan(day)
+  return response.json({ day, items, boosts })
 })
 
 // PATCH /api/inventory/:productId — a direct stock change, applied at once

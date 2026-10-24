@@ -27,6 +27,7 @@ const checks = [
   ['033_trusted_devices', () => table('trusted_devices')],
   ['034_cash_tendered', () => column('payments', 'amount_tendered')],
   ['035_soft_hard_breads', () => column('products', 'stock_type')],
+  ['036_events', () => table('events')],
 ]
 
 const missing = []

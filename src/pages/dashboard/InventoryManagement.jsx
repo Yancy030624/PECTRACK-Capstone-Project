@@ -74,7 +74,7 @@ export function InventoryManagement({ user, params }) {
         ))}
       </div>
       {tab === 'Products' && <ProductStock user={user} params={params} />}
-      {tab === 'Production' && <ProductionPanel />}
+      {tab === 'Production' && <ProductionPanel user={user} />}
       {tab === 'Ingredients' && <IngredientsPanel user={user} initialFilter={params?.tab === 'Ingredients' ? params.stockFilter : undefined} />}
       {tab === 'Edit Products' && <ProductManagement />}
     </section>
