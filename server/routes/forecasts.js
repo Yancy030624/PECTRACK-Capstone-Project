@@ -28,9 +28,10 @@ const sourceKindOf = (sources) => (sources.includes('ASSUMED') ? 'ASSUMED' : 'RE
 
 const round = (value, places = 2) => (value == null ? null : Number(Number(value).toFixed(places)))
 
-// Viewing is ADMIN and CASHIER — a cashier planning the morning bake needs
-// the numbers. Starting a run is ADMIN only (below).
-router.use(requireAuth, requireRole('ADMIN', 'CASHIER'))
+// ADMIN only: the Forecast tab is in Reporting & Analytics, which is the
+// admin's (the user, 2026-10-25). The cashier still sees each product's
+// forecast on the Production list, which reads the forecasts table itself.
+router.use(requireAuth, requireRole('ADMIN'))
 
 // POST /api/forecasts/run  { source: 'ASSUMED' | 'REAL' } — the admin's
 // own run. The system also runs one every night (lib/forecastRun.js).

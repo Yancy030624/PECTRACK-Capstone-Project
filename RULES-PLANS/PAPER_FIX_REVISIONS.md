@@ -1073,3 +1073,5 @@ Plan: RULES-PLANS/REPORTS_UI_PLAN.md (U1–U7). Migration 040.
 Paper:
 - Reports section (admin and cashier reports, pp. 16 and 41): describe the four sales figures, the two breakdowns, pieces-based product ranking with the bread-type filter, and the export history as the audit trail of reports.
 - Figures to retake: Sales tab (cards, chart, breakdown), Products tab (best sellers by pieces), Inventory tab, Forecast tab (the method-test card and table), Export history, and Payment & Billing → Payment log with Export PDF.
+- **Admin only (2026-10-25):** Reporting & Analytics is now the admin's alone. The cashier keeps the Dashboard, the Payment log (with its PDF) and the Production list, which shows each product's forecast. **Revise the paper** wherever it gives the cashier reports (p. 41, and the use-case and access tables).
+- **Demo data switch:** for demonstration, the admin can tick "Demo data" to add about 60 days of practice orders, marked as assumed. The screen says "Includes demo data" while it is on, and real figures never include them. Mention this in the methodology alongside the assumed forecast history.

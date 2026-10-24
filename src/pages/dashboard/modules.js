@@ -72,7 +72,9 @@ export const modules = [
   { name: 'My Deliveries', icon: 'deliveries', roles: ['DELIVERY PERSONNEL'] },
   // Product Management is now the Edit Products tab of Inventory
   // Management (the user, 2026-10-16), admin only there as before.
-  { name: 'Reporting & Analytics', icon: 'reports', roles: ['ADMIN', 'CASHIER'] },
+  // Admin only (the user, 2026-10-25). The cashier's Dashboard still reads
+  // /api/reports/summary, and their Payment log prints are still recorded.
+  { name: 'Reporting & Analytics', icon: 'reports', roles: ['ADMIN'] },
   // Customer Management and Staff Management in one module (the user,
   // 2026-10-16): a Customers tab and a Staff tab. Admin only since the
   // seniors' consultation (SENIOR_CONSULT_PLAN.md, S5); the cashier's

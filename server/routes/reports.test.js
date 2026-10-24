@@ -245,6 +245,11 @@ describe('reporting & analytics', () => {
     assert.equal(body.totals.sales, '0.00')
     const log = await (await fetch(`${baseUrl}/api/payments?from=2021-08-08&to=2021-08-08&status=PAID`, { headers: { Cookie: adminCookie } })).json()
     assert.ok(!log.payments.some((payment) => payment.id === paymentId), 'not in the Payment log')
+    // With the Demo data switch on, it is shown, and the report says so.
+    const demo = await (await getSales({ from: '2021-08-08', to: '2021-08-08', includeDemo: 'true' })).json()
+    assert.equal(demo.includeDemo, true)
+    assert.equal(demo.totals.orders, 1)
+    assert.equal(demo.totals.sales, '100.00')
   })
 
   test('only PAID payments count — PENDING and FAILED do not', async () => {
@@ -333,10 +338,12 @@ describe('reporting & analytics', () => {
     assert.equal((await getSales({ from: '2021-01-01', to: '2021-01-31' }, adminCookie)).status, 200)
     assert.equal((await logsFor([adminUserId, cashierUserId])).length, before, 'opening the report is not an export')
 
-    assert.equal((await getSales({ from: '2021-01-01', to: '2021-01-31', format: 'csv' }, cashierCookie)).status, 200)
+    assert.equal((await getSales({ from: '2021-01-01', to: '2021-01-31', format: 'csv' }, cashierCookie)).status, 403, 'the reports are the admin\'s (2026-10-25)')
     const printed = await fetch(`${baseUrl}/api/reports/exports`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ type: 'payment_log_pdf' }) })
     assert.equal(printed.status, 204)
-    assert.deepEqual((await logsFor([cashierUserId])).slice(-2), ['SALES_CSV', 'PAYMENT_LOG_PDF'])
+    assert.equal((await getSales({ from: '2021-01-01', to: '2021-01-31', format: 'csv' }, adminCookie)).status, 200)
+    assert.deepEqual((await logsFor([cashierUserId])).slice(-1), ['PAYMENT_LOG_PDF'], 'a cashier\'s Payment log print is still recorded')
+    assert.deepEqual((await logsFor([adminUserId])).slice(-1), ['SALES_CSV'])
     const unknown = await fetch(`${baseUrl}/api/reports/exports`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ type: 'SALES' }) })
     assert.equal(unknown.status, 422)
   })

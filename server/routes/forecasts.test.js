@@ -104,11 +104,11 @@ describe('demand forecasting API', () => {
 
   beforeEach(resetRateLimits)
 
-  test('only an admin may start a run; a cashier may read; a customer and a guest may do neither', async () => {
+  test('only an admin may start or read a forecast; a cashier, a customer and a guest may not', async () => {
     assert.equal((await json(cashierCookie, 'POST', '/api/forecasts/run', { source: 'ASSUMED' })).status, 403)
     assert.equal((await json(customerCookie, 'POST', '/api/forecasts/run', { source: 'ASSUMED' })).status, 403)
     assert.equal((await json(null, 'POST', '/api/forecasts/run', { source: 'ASSUMED' })).status, 401)
-    assert.equal((await json(cashierCookie, 'GET', '/api/forecasts/latest')).status, 200)
+    assert.equal((await json(cashierCookie, 'GET', '/api/forecasts/latest')).status, 403, 'Reporting & Analytics is the admin\'s (2026-10-25)')
     assert.equal((await json(customerCookie, 'GET', '/api/forecasts/latest')).status, 403)
   })
 
@@ -120,7 +120,7 @@ describe('demand forecasting API', () => {
     const run = await json(adminCookie, 'POST', '/api/forecasts/run', { source: 'ASSUMED' })
     assert.equal(run.status, 201)
 
-    const latest = await (await json(cashierCookie, 'GET', '/api/forecasts/latest')).json()
+    const latest = await (await json(adminCookie, 'GET', '/api/forecasts/latest')).json()
     assert.equal(latest.run.source, 'ASSUMED')
     assert.deepEqual(latest.run.sources, ['ASSUMED'])
     assert.ok(latest.run.daysBySource.ASSUMED >= 70)
@@ -240,7 +240,7 @@ describe('demand forecasting API', () => {
 
   test('the chart history comes from the same source as the run, with quiet days filled', async () => {
     await json(adminCookie, 'POST', '/api/forecasts/run', { source: 'ASSUMED' })
-    const chart = await (await json(cashierCookie, 'GET', `/api/forecasts/history/${productId}?days=28`)).json()
+    const chart = await (await json(adminCookie, 'GET', `/api/forecasts/history/${productId}?days=28`)).json()
     assert.equal(chart.history.length, 28)
     assert.equal(chart.history.at(-1).date, yesterday)
     assert.equal(chart.forecast.length, 7)

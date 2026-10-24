@@ -53,9 +53,10 @@ function BarChart({ labels, values, label, color, highlight }) {
   return <canvas ref={ref} role="img" aria-label={label} />
 }
 
-export function PeakPeriods({ range }) {
-  // Real orders by default, like every report (REPORTS_UI_PLAN.md U1).
-  const [includeAssumed, setIncludeAssumed] = useState(false)
+// `includeDemo` is the report screen's Demo data switch: real orders by
+// default, like every report (REPORTS_UI_PLAN.md U1).
+export function PeakPeriods({ range, includeDemo = false }) {
+  const includeAssumed = includeDemo
   const [data, setData] = useState(null)
   const [message, setMessage] = useState('')
 
@@ -80,10 +81,6 @@ export function PeakPeriods({ range }) {
           <h2 className="text-lg font-semibold text-ink-900">Peak ordering periods</h2>
           <p className="mt-1 text-xs text-ink-500">When orders are placed, in Philippine time — for staffing the counter and timing the bake. Cancelled orders are left out.</p>
         </div>
-        <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-ink-700 print:hidden">
-          <input type="checkbox" checked={includeAssumed} onChange={(event) => setIncludeAssumed(event.target.checked)} className="h-4 w-4 accent-brand-600" />
-          Include demo orders
-        </label>
       </div>
 
       {message && <p className="mt-3 text-xs text-status-fail-fg">{message}</p>}

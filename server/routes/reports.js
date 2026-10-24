@@ -84,6 +84,18 @@ const defaultLogsLimit = 20
 const maxLogsLimit = 100
 
 router.use(requireAuth, requireRole('ADMIN', 'CASHIER'))
+// Reporting & Analytics is the admin's (the user, 2026-10-25). The cashier
+// keeps only GET /summary (their Dashboard) and POST /exports (a Payment
+// log or Production list print is still recorded).
+const adminOnly = requireRole('ADMIN')
+
+// The "Demo data" switch (the user, 2026-10-25): every report shows real
+// data only (ANALYTICS_PLAN.md A1) unless ?includeDemo=true, which adds the
+// practice (ASSUMED) rows — the demo seed and scripts/generate-demo-
+// reports.mjs — so the screens can be shown with data. The response says
+// so, and the screen labels it. The Dashboard's summary never includes them.
+const includeDemoOf = (query) => String(query.includeDemo ?? query.includeAssumed ?? 'false') === 'true'
+const sourceSql = (alias, includeDemo) => (includeDemo ? `${alias}.data_source IN ('RECORDED', 'ASSUMED')` : `${alias}.data_source = 'RECORDED'`)
 
 // GET /api/reports/sales?from=&to=&groupBy=day|week|month[&format=csv]
 //
@@ -107,15 +119,15 @@ router.use(requireAuth, requireRole('ADMIN', 'CASHIER'))
 // order, and still fair for an older one paid in parts. Every figure is
 // computed in Postgres NUMERIC. Practice orders (ASSUMED) never count
 // (ANALYTICS_PLAN.md A1).
-const paidInRangeSql = (range) => `
+const paidInRangeSql = (range, includeDemo) => `
   SELECT p.payment_id, p.payment_date, p.payment_method, o.order_id, o.order_type, o.processed_by,
          p.amount * o.delivery_fee / NULLIF(o.total_amount, 0) AS fee_share,
          p.amount - COALESCE(p.amount * o.delivery_fee / NULLIF(o.total_amount, 0), 0) AS goods
     FROM payments p JOIN orders o ON o.order_id = p.order_id
-   WHERE o.data_source = 'RECORDED' AND p.status = 'PAID' AND ${range}`
+   WHERE ${sourceSql('o', includeDemo)} AND p.status = 'PAID' AND ${range}`
 const orderKindSql = `CASE WHEN order_type = 'DELIVERY' THEN 'DELIVERY' WHEN processed_by IS NOT NULL THEN 'WALK_IN' ELSE 'PICKUP' END`
 
-router.get('/sales', async (request, response) => {
+router.get('/sales', adminOnly, async (request, response) => {
   const { from, to, errors: dateErrors } = parseDateRange(request.query)
   const { groupBy, error: groupByError } = parseGroupBy(request.query.groupBy)
   const errors = { ...dateErrors }
@@ -124,7 +136,8 @@ router.get('/sales', async (request, response) => {
   if (format !== 'json' && format !== 'csv') errors.format = 'format must be json or csv.'
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
 
-  const paid = paidInRangeSql(dateRangeSql('p.payment_date'))
+  const includeDemo = includeDemoOf(request.query)
+  const paid = paidInRangeSql(dateRangeSql('p.payment_date'), includeDemo)
   const [bucketsResult, totalsResult, methodResult, typeResult, unpaidResult] = await Promise.all([
     pool.query(
       `SELECT ${bucketSql('payment_date', groupBy)} AS period,
@@ -157,7 +170,7 @@ router.get('/sales', async (request, response) => {
     pool.query(
       `SELECT COUNT(*)::int AS orders, COALESCE(SUM(o.total_amount), 0)::numeric(12,2) AS amount
          FROM orders o
-        WHERE o.data_source = 'RECORDED' AND o.payment_mode = 'CASH' AND o.status NOT IN ('CANCELLED', 'COMPLETED', 'AWAITING_PAYMENT')
+        WHERE ${sourceSql('o', includeDemo)} AND o.payment_mode = 'CASH' AND o.status NOT IN ('CANCELLED', 'COMPLETED', 'AWAITING_PAYMENT')
           AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.order_id AND p.status = 'PAID')
           AND ${dateRangeSql('o.order_date')}`,
       [from, to],
@@ -212,7 +225,7 @@ router.get('/sales', async (request, response) => {
     return response.send(lines.join('\r\n'))
   }
 
-  return response.json({ from, to, groupBy, buckets, totals, byMethod, byType })
+  return response.json({ from, to, groupBy, includeDemo, buckets, totals, byMethod, byType })
 })
 
 // GET /api/reports/summary — the live dashboard's ambient view. No date
@@ -318,7 +331,7 @@ const maxProductsLimit = 50
 // price. Cancelled orders are excluded, same reasoning as /sales: their
 // stock was restored and any payment refunded, so counting their items as
 // sold would contradict both.
-router.get('/products', async (request, response) => {
+router.get('/products', adminOnly, async (request, response) => {
   const { from, to, errors } = parseDateRange(request.query)
   // REPORTS_UI_PLAN.md U4: soft and hard breads are stocked differently, so
   // the report can show one kind; and the bakery plans in pieces, so the
@@ -330,6 +343,7 @@ router.get('/products', async (request, response) => {
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
   const limit = parseLimit(request.query.limit, { defaultLimit: defaultProductsLimit, maxLimit: maxProductsLimit })
   const orderBy = sort === 'revenue' ? 'revenue DESC, quantity_sold DESC' : 'quantity_sold DESC, revenue DESC'
+  const includeDemo = includeDemoOf(request.query)
 
   const result = await pool.query(
     `SELECT p.product_id, p.product_name, p.variant, p.stock_type,
@@ -338,7 +352,7 @@ router.get('/products', async (request, response) => {
        FROM order_details od
        JOIN orders o ON o.order_id = od.order_id
        JOIN products p ON p.product_id = od.product_id
-      WHERE o.data_source = 'RECORDED' AND o.status NOT IN ('CANCELLED', 'AWAITING_PAYMENT') AND ${dateRangeSql('o.order_date')}
+      WHERE ${sourceSql('o', includeDemo)} AND o.status NOT IN ('CANCELLED', 'AWAITING_PAYMENT') AND ${dateRangeSql('o.order_date')}
         AND ($4::text IS NULL OR p.stock_type::text = $4)
       GROUP BY p.product_id, p.product_name, p.variant, p.stock_type
       ORDER BY ${orderBy}
@@ -351,6 +365,7 @@ router.get('/products', async (request, response) => {
     to,
     type: type || null,
     sort,
+    includeDemo,
     products: result.rows.map((row) => ({
       productId: row.product_id,
       productName: row.product_name,
@@ -381,10 +396,11 @@ const addedReasons = ['RESTOCK', 'DAILY_STOCK', 'PRODUCTION']
 const soldReasons = ['ORDER_PLACED', 'ORDER_CANCELLED']
 const lostReasons = ['REJECT', 'SPOILAGE', 'PRODUCTION_LOSS', 'EXPIRED', 'DAMAGED']
 
-router.get('/inventory', async (request, response) => {
+router.get('/inventory', adminOnly, async (request, response) => {
   const { from, to, errors } = parseDateRange(request.query)
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
 
+  const includeDemo = includeDemoOf(request.query)
   const [productsResult, lowStockAlerts] = await Promise.all([
     pool.query(
       `SELECT p.product_id, p.product_name, p.variant, p.stock_type,
@@ -394,7 +410,7 @@ router.get('/inventory', async (request, response) => {
          FROM inventory_movements im
          JOIN inventory i ON i.inventory_id = im.inventory_id
          JOIN products p ON p.product_id = i.product_id
-        WHERE im.data_source = 'RECORDED' AND ${dateRangeSql('im.created_at')}
+        WHERE ${sourceSql('im', includeDemo)} AND ${dateRangeSql('im.created_at')}
         GROUP BY p.product_id, p.product_name, p.variant, p.stock_type
         ORDER BY p.stock_type, p.product_name, p.variant`,
       [from, to, addedReasons, soldReasons, lostReasons],
@@ -419,6 +435,7 @@ router.get('/inventory', async (request, response) => {
   return response.json({
     from,
     to,
+    includeDemo,
     totals: { added: sum('added'), sold: sum('sold'), lost: sum('lost') },
     products,
     lowStockAlerts: lowStockAlerts.alerts,
@@ -461,10 +478,10 @@ router.get('/inventory', async (request, response) => {
 // many, so the screen can label the chart the way the forecast is labelled.
 // (Until 2026-10-25 they were counted by default, when the system held two
 // days of real orders.)
-router.get('/peak', async (request, response) => {
+router.get('/peak', adminOnly, async (request, response) => {
   const { from, to, errors } = parseDateRange(request.query)
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
-  const includeAssumed = String(request.query.includeAssumed ?? 'false') === 'true'
+  const includeAssumed = includeDemoOf(request.query)
 
   const result = await pool.query(
     `SELECT EXTRACT(HOUR FROM o.order_date AT TIME ZONE 'Asia/Manila')::int AS hour,
@@ -511,7 +528,7 @@ router.get('/peak', async (request, response) => {
 // views joined by (date, product): sales (with the stockout flag) and
 // waste, one row per product per day, data_source carried through.
 // This is the file a notebook reads; nothing here predicts anything.
-router.get('/analytics', async (request, response) => {
+router.get('/analytics', adminOnly, async (request, response) => {
   const { from, to, errors } = parseDateRange(request.query)
   const format = normalize(request.query.format).toLowerCase() || 'json'
   if (format !== 'json' && format !== 'csv') errors.format = 'format must be json or csv.'
@@ -581,7 +598,7 @@ router.post('/exports', async (request, response) => {
   return response.status(204).end()
 })
 
-router.get('/logs', requireRole('ADMIN'), async (request, response) => {
+router.get('/logs', adminOnly, async (request, response) => {
   const limit = parseLimit(request.query.limit, { defaultLimit: defaultLogsLimit, maxLimit: maxLogsLimit })
   const offset = Math.max(Math.trunc(Number(request.query.offset)) || 0, 0)
 

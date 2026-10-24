@@ -80,7 +80,12 @@ export function ReportingAnalytics({ user }) {
   const [errors, setErrors] = useState({})
   const [message, setMessage] = useState('')
 
-  const productsQuery = (range) => new URLSearchParams({ ...range, limit: productLimit, sort: productSort, ...(productType && { type: productType }) })
+  // The "Demo data" switch (the user, 2026-10-25): practice rows from
+  // scripts/generate-demo-reports.mjs and the demo seed, shown only when
+  // asked, and labelled. Real data only by default.
+  const [includeDemo, setIncludeDemo] = useState(false)
+  const demoParam = includeDemo ? { includeDemo: 'true' } : {}
+  const productsQuery = (range) => new URLSearchParams({ ...range, limit: productLimit, sort: productSort, ...(productType && { type: productType }), ...demoParam })
   const generate = async (event) => {
     event?.preventDefault()
     setGenerating(true)
@@ -89,14 +94,14 @@ export function ReportingAnalytics({ user }) {
     try {
       const range = { from: fromInput, to: toInput }
       const [salesData, productsData, inventoryData] = await Promise.all([
-        apiGet(`/api/reports/sales?${new URLSearchParams({ ...range, groupBy })}`),
+        apiGet(`/api/reports/sales?${new URLSearchParams({ ...range, groupBy, ...demoParam })}`),
         apiGet(`/api/reports/products?${productsQuery(range)}`),
-        apiGet(`/api/reports/inventory?${new URLSearchParams(range)}`),
+        apiGet(`/api/reports/inventory?${new URLSearchParams({ ...range, ...demoParam })}`),
       ])
       setSales(salesData)
       setProducts(productsData)
       setInventory(inventoryData)
-      setAppliedRange({ from: fromInput, to: toInput, groupBy })
+      setAppliedRange({ from: fromInput, to: toInput, groupBy, includeDemo })
     } catch (error) {
       setErrors(error.errors ?? {})
       setMessage(error.message)
@@ -111,8 +116,9 @@ export function ReportingAnalytics({ user }) {
   // pressing the button they would otherwise press immediately.
   useEffect(() => {
     generate()
+    // Opened, and again whenever the Demo data switch changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [includeDemo])
 
   const salesCanvasRef = useRef(null)
   useEffect(() => {
@@ -198,7 +204,7 @@ export function ReportingAnalytics({ user }) {
       .finally(() => setLogsLoading(false))
   }, [user.role, activeTab, logsOffset])
 
-  const csvHref = appliedRange ? `/api/reports/sales?${new URLSearchParams({ ...appliedRange, format: 'csv' })}` : null
+  const csvHref = appliedRange ? `/api/reports/sales?${new URLSearchParams({ from: appliedRange.from, to: appliedRange.to, groupBy: appliedRange.groupBy, ...(appliedRange.includeDemo && { includeDemo: 'true' }), format: 'csv' })}` : null
   // The analytics export (GET /api/reports/analytics) is no longer offered
   // here: it is a raw developer file (REPORTS_UI_PLAN.md U1).
 
@@ -208,7 +214,7 @@ export function ReportingAnalytics({ user }) {
           heading, tabs and range form are hidden when printing. */}
       <PrintHeader
         title={`${activeTab} report`}
-        subtitle={appliedRange && activeTab !== 'Forecast' && activeTab !== 'Export history' ? `${formatDate(`${appliedRange.from}T00:00:00`)} – ${formatDate(`${appliedRange.to}T00:00:00`)}` : activeTab === 'Forecast' ? 'Next seven days' : undefined}
+        subtitle={appliedRange && activeTab !== 'Forecast' && activeTab !== 'Export history' ? `${formatDate(`${appliedRange.from}T00:00:00`)} – ${formatDate(`${appliedRange.to}T00:00:00`)}${appliedRange.includeDemo ? ' · includes demo data' : ''}` : activeTab === 'Forecast' ? 'Next seven days' : undefined}
         user={user}
       />
       <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600 print:hidden">{user.role} PORTAL</p>
@@ -262,12 +268,22 @@ export function ReportingAnalytics({ user }) {
               </a>
             )}
           </form>
+          <label className="mt-4 flex w-fit cursor-pointer items-center gap-2 text-sm font-medium text-ink-700">
+            <input type="checkbox" checked={includeDemo} onChange={(event) => setIncludeDemo(event.target.checked)} className="h-4 w-4 accent-brand-600" />
+            Demo data
+            <span className="text-xs font-normal text-ink-500">— add the practice orders, to show how the reports work</span>
+          </label>
           {message && (
             <div className="mt-4">
               <Alert variant="error">{message}</Alert>
             </div>
           )}
         </Card>
+        {appliedRange?.includeDemo && (
+          <p role="status" className="mt-4 rounded-control border border-status-wait-fg/20 bg-status-wait-bg px-3 py-2 text-sm text-status-wait-fg">
+            <span className="font-semibold">Includes demo data.</span> These figures add practice orders that never happened; turn Demo data off for the bakery&apos;s real figures.
+          </p>
+        )}
       </div>
 
       <div hidden={activeTab !== 'Sales'}>
@@ -325,7 +341,7 @@ export function ReportingAnalytics({ user }) {
           </>
         ) : <p className="mt-6 text-sm text-ink-500">Loading the sales report…</p>}
         {/* PHASE10 B2 — driven by the same applied date range. */}
-        <PeakPeriods range={appliedRange} />
+        <PeakPeriods range={appliedRange} includeDemo={Boolean(appliedRange?.includeDemo)} />
       </div>
 
       <div hidden={activeTab !== 'Products'}>

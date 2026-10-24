@@ -95,3 +95,18 @@ A PAPER_FIX_REVISIONS.md section and the list of report figures to retake.
 
 ## Deploy
 The user runs migration 040 on Railway; then push.
+
+## Later changes (the user, 2026-10-25)
+- **Demo data switch.** `scripts/generate-demo-reports.mjs [--railway] [--clear]`
+  writes about 60 days of practice orders, payments, deliveries and stock
+  movements, all marked ASSUMED with the marker `[demo-reports]`.
+  - Each day's stock movements net to zero per product, so shelf stock and
+    the real stock-out history are left untouched.
+  - The reports take `?includeDemo=true`. The screen has a "Demo data"
+    checkbox that drives Sales, Products, Inventory and Peak periods, and
+    shows a yellow "Includes demo data" banner when it is on.
+  - The Payment log, the Dashboard and the forecast never include it.
+- **Admin only.** Reporting & Analytics, `/api/reports/*` (except `/summary`
+  for the cashier's Dashboard and `POST /exports`) and `/api/forecasts` are
+  now admin only. This reverses Q1 of the grilling. The paper's cashier
+  reports (p. 41) must be revised to match.
