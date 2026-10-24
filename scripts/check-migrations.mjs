@@ -29,6 +29,7 @@ const checks = [
   ['035_soft_hard_breads', () => column('products', 'stock_type')],
   ['036_events', () => table('events')],
   ['037_payment_mode', () => column('orders', 'payment_mode')],
+  ['038_delivery_fee', () => column('orders', 'delivery_fee')],
 ]
 
 const missing = []

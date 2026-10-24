@@ -26,6 +26,9 @@ export const bakery = {
 // Delivery covers this town only (PHASE10 B7); the server enforces it
 // (routes/orders.js) and checkout uses this to grey out other addresses.
 export const deliveryTown = 'Lucban'
+// The flat fee on a delivery order, in pesos (RULES-PLANS/DELIVERY_FEE_PLAN.md).
+// Shown at checkout; the server's config.orders.deliveryFee is what is charged.
+export const deliveryFee = 50
 export const isDeliverable = (address) => address?.municipality?.trim().toLowerCase() === deliveryTown.toLowerCase()
 
 export const bakeryAddress = `${bakery.street}, ${bakery.town}`

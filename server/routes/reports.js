@@ -103,6 +103,10 @@ router.use(requireAuth, requireRole('ADMIN', 'CASHIER'))
 // SUM(total_amount) the moment an order holds more than one payment row —
 // exactly the fan-out this shape avoids by never joining the two tables
 // against each other at all.
+//
+// The delivery fee (DELIVERY_FEE_PLAN.md, D1) is kept apart: ORDERED is the
+// goods alone, total_amount minus delivery_fee, and deliveryFees is its own
+// figure. COLLECTED stays every peso received, fees included.
 router.get('/sales', async (request, response) => {
   const { from, to, errors: dateErrors } = parseDateRange(request.query)
   const { groupBy, error: groupByError } = parseGroupBy(request.query.groupBy)
@@ -130,7 +134,8 @@ router.get('/sales', async (request, response) => {
     `WITH ordered_buckets AS (
        SELECT ${bucketSql('o.order_date', groupBy)} AS period,
               COUNT(*)::int AS orders_placed,
-              COALESCE(SUM(o.total_amount), 0)::numeric(12,2) AS ordered
+              COALESCE(SUM(o.total_amount - o.delivery_fee), 0)::numeric(12,2) AS ordered,
+              COALESCE(SUM(o.delivery_fee), 0)::numeric(12,2) AS delivery_fees
          FROM orders o
         WHERE o.status NOT IN ('CANCELLED', 'AWAITING_PAYMENT') AND ${orderedRange}
         GROUP BY 1
@@ -157,6 +162,7 @@ router.get('/sales', async (request, response) => {
      SELECT COALESCE(ob.period, cb.period, rb.period) AS period,
             COALESCE(ob.orders_placed, 0) AS orders_placed,
             COALESCE(ob.ordered, 0)::numeric(12,2) AS ordered,
+            COALESCE(ob.delivery_fees, 0)::numeric(12,2) AS delivery_fees,
             COALESCE(cb.collected, 0)::numeric(12,2) AS collected,
             COALESCE(rb.refunded, 0)::numeric(12,2) AS refunded
        FROM ordered_buckets ob
@@ -189,7 +195,8 @@ router.get('/sales', async (request, response) => {
   // so their quotient describes no period at all.
   const totalsResult = await pool.query(
     `WITH ordered_totals AS (
-       SELECT COUNT(*)::int AS orders_placed, COALESCE(SUM(o.total_amount), 0)::numeric(12,2) AS ordered
+       SELECT COUNT(*)::int AS orders_placed, COALESCE(SUM(o.total_amount - o.delivery_fee), 0)::numeric(12,2) AS ordered,
+              COALESCE(SUM(o.delivery_fee), 0)::numeric(12,2) AS delivery_fees
          FROM orders o
         WHERE o.status NOT IN ('CANCELLED', 'AWAITING_PAYMENT') AND ${orderedRange}
      ),
@@ -203,7 +210,7 @@ router.get('/sales', async (request, response) => {
          FROM payments p
         WHERE p.status = 'REFUNDED' AND ${refundedRange}
      )
-     SELECT ot.orders_placed, ot.ordered, ct.collected,
+     SELECT ot.orders_placed, ot.ordered, ot.delivery_fees, ct.collected,
             COALESCE(ct.collected / NULLIF(ct.paid_count, 0), 0)::numeric(12,2) AS average_payment,
             rt.refunded
        FROM ordered_totals ot, collected_totals ct, refunded_totals rt`,
@@ -215,12 +222,14 @@ router.get('/sales', async (request, response) => {
     period: row.period,
     ordersPlaced: row.orders_placed,
     ordered: row.ordered,
+    deliveryFees: row.delivery_fees,
     collected: row.collected,
     refunded: row.refunded,
   }))
   const totals = {
     ordersPlaced: totalsRow.orders_placed,
     ordered: totalsRow.ordered,
+    deliveryFees: totalsRow.delivery_fees,
     collected: totalsRow.collected,
     refunded: totalsRow.refunded,
     averagePayment: totalsRow.average_payment,
@@ -273,10 +282,10 @@ router.get('/sales', async (request, response) => {
     // reader does with two adjacent money columns. Naming the column
     // 'Refunded' invited exactly that; naming it this way forecloses it.
     const lines = [
-      csvRow([`Period (${groupBy})`, 'Orders placed', 'Ordered', 'Collected', 'Refunds issued (already excluded from Collected)']),
-      ...buckets.map((bucket) => csvRow([bucket.period, bucket.ordersPlaced, bucket.ordered, bucket.collected, bucket.refunded])),
+      csvRow([`Period (${groupBy})`, 'Orders placed', 'Ordered (goods)', 'Delivery fees', 'Collected (incl. delivery fees)', 'Refunds issued (already excluded from Collected)']),
+      ...buckets.map((bucket) => csvRow([bucket.period, bucket.ordersPlaced, bucket.ordered, bucket.deliveryFees, bucket.collected, bucket.refunded])),
       '',
-      csvRow(['Totals', totals.ordersPlaced, totals.ordered, totals.collected, totals.refunded]),
+      csvRow(['Totals', totals.ordersPlaced, totals.ordered, totals.deliveryFees, totals.collected, totals.refunded]),
       csvRow(['Average payment', totals.averagePayment]),
     ]
     response.type('text/csv')
@@ -310,7 +319,8 @@ router.get('/summary', async (_request, response) => {
                ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date + 1)::timestamp AT TIME ZONE 'Asia/Manila' AS ends_at
       ),
       today_orders AS (
-        SELECT COUNT(*)::int AS orders_placed, COALESCE(SUM(o.total_amount), 0)::numeric(12,2) AS ordered
+        SELECT COUNT(*)::int AS orders_placed, COALESCE(SUM(o.total_amount - o.delivery_fee), 0)::numeric(12,2) AS ordered,
+              COALESCE(SUM(o.delivery_fee), 0)::numeric(12,2) AS delivery_fees
           FROM orders o, today_range tr
          WHERE o.status NOT IN ('CANCELLED', 'AWAITING_PAYMENT') AND o.order_date >= tr.starts_at AND o.order_date < tr.ends_at
       ),

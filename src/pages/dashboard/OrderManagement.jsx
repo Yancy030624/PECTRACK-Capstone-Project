@@ -160,6 +160,7 @@ function OrderItems({ order }) {
           </li>
         ))}
       </ul>
+      {Number(order.deliveryFee) > 0 && <p className="mt-1.5 text-right text-xs text-ink-700 tabular-nums">Delivery fee: {formatPeso(order.deliveryFee)}</p>}
       <p className="mt-1.5 text-right text-sm font-semibold text-ink-900 tabular-nums">Total: {formatPeso(order.totalAmount)}</p>
     </div>
   )

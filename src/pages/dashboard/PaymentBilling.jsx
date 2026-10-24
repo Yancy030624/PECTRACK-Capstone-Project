@@ -232,6 +232,12 @@ export function PaymentBilling({ user, params }) {
           </div>
 
           <div className="rounded-panel bg-surface-warm p-4 text-sm text-ink-900">
+            {Number(orderDetail.deliveryFee) > 0 && (
+              <div className="mb-1 flex items-center justify-between text-ink-700">
+                <span>Delivery fee</span>
+                <span className="tabular-nums">{formatPeso(orderDetail.deliveryFee)}</span>
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <span>Total</span>
               <span className="font-semibold tabular-nums">{formatPeso(orderDetail.payment.totalAmount)}</span>

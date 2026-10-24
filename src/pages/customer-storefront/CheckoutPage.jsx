@@ -4,7 +4,7 @@ import { apiGet, apiPost } from '../../api/client.js'
 import { AddressForm } from '../../components/AddressForm.jsx'
 import { useCart } from '../../cart/CartContext.jsx'
 import { formatPeso } from '../../lib/format.js'
-import { isDeliverable } from '../../lib/bakery.js'
+import { deliveryFee, isDeliverable } from '../../lib/bakery.js'
 import { NeededByFields } from '../../components/NeededByFields.jsx'
 import { checkPicked, toRequestedTime } from '../../lib/orderHours.js'
 
@@ -179,7 +179,7 @@ export function CheckoutPage({ user }) {
             ) : (
               // NO_COD_PLAN — the bakery sends a delivery out only once it
               // is paid; said before the customer commits to it.
-              <p className="mt-2 rounded-xl bg-butter-100 p-3 text-xs font-semibold text-cocoa-700">GCash only — delivery orders are paid first. There is no cash on delivery.</p>
+              <p className="mt-2 rounded-xl bg-butter-100 p-3 text-xs font-semibold text-cocoa-700">GCash only — delivery orders are paid first, with a {formatPeso(deliveryFee)} delivery fee. There is no cash on delivery.</p>
             )}
             {errors.paymentMode && <p className="mt-2 text-xs font-medium text-red-700">{errors.paymentMode}</p>}
           </div>
@@ -270,9 +270,15 @@ export function CheckoutPage({ user }) {
               </div>
             ))}
           </div>
+          {orderType === 'DELIVERY' && (
+            <div className="mt-3 space-y-1 border-t border-cream-300 pt-3 text-xs text-cocoa-700">
+              <div className="flex items-center justify-between"><span>Subtotal</span><span className="font-bold text-cocoa-900">{formatPeso(subtotal)}</span></div>
+              <div className="flex items-center justify-between"><span>Delivery fee</span><span className="font-bold text-cocoa-900">{formatPeso(deliveryFee)}</span></div>
+            </div>
+          )}
           <div className="mt-3 flex items-center justify-between border-t border-cream-300 pt-3 text-sm font-extrabold text-crust-700">
             <span>Estimated total</span>
-            <span>{formatPeso(subtotal)}</span>
+            <span>{formatPeso(subtotal + (orderType === 'DELIVERY' ? deliveryFee : 0))}</span>
           </div>
           <Link to="/cart" className="mt-3 block py-2 text-center text-xs font-bold text-crust-600 hover:underline">Edit cart</Link>
         </div>

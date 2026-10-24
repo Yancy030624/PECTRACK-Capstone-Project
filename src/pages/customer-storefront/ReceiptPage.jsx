@@ -277,6 +277,12 @@ export function ReceiptPage({ user }) {
             ))}
           </tbody>
           <tfoot>
+            {Number(order.deliveryFee) > 0 && (
+              <tr>
+                <th scope="row" colSpan={3} className="pt-3 text-right text-xs font-semibold text-cocoa-700">Delivery fee</th>
+                <td className="pt-3 text-right font-semibold tabular-nums text-cocoa-900">{formatPeso(order.deliveryFee)}</td>
+              </tr>
+            )}
             <tr>
               <th scope="row" colSpan={3} className="pt-3 text-right text-sm text-cocoa-900">Total</th>
               <td className="pt-3 text-right text-base font-extrabold tabular-nums text-cocoa-900">{formatPeso(order.payment.totalAmount)}</td>

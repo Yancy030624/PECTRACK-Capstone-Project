@@ -106,6 +106,8 @@ const mapOrderSummary = (row) => ({
   // How it is paid for: CASH (at pickup) or GCASH; null on older rows
   // (SENIOR_CONSULT_PLAN.md, S3, migration 037).
   paymentMode: row.payment_mode,
+  // Flat fee on a delivery order, inside totalAmount (migration 038).
+  deliveryFee: row.delivery_fee,
   status: row.status,
   totalAmount: row.total_amount,
   orderDate: row.order_date,
@@ -122,7 +124,7 @@ const mapOrderSummary = (row) => ({
   ...mapBillingColumns(row),
 })
 
-const orderSummarySelectQuery = `SELECT o.order_id, o.daily_number, o.order_day, o.customer_id, COALESCE(c.name, o.guest_name) AS customer_name, o.order_type, o.status, o.total_amount, o.order_date, o.requested_fulfillment_time, o.is_reservation, o.payment_mode,
+const orderSummarySelectQuery = `SELECT o.order_id, o.daily_number, o.order_day, o.customer_id, COALESCE(c.name, o.guest_name) AS customer_name, o.order_type, o.status, o.total_amount, o.order_date, o.requested_fulfillment_time, o.is_reservation, o.payment_mode, o.delivery_fee,
             ${billingListSql.columns}
      FROM orders o
      LEFT JOIN customers c ON c.customer_id = o.customer_id
@@ -192,7 +194,7 @@ router.get('/:id', async (request, response) => {
   const orderResult = await pool.query(
     `SELECT o.order_id, o.daily_number, o.order_day, o.customer_id, COALESCE(c.name, o.guest_name) AS customer_name, o.processed_by, ca.name AS cashier_name,
             o.order_type, o.status, o.instructions, o.requested_fulfillment_time,
-            o.total_amount, o.order_date, o.is_reservation, o.guest_contact, o.guest_email, o.guest_contact_verified_at, o.payment_mode
+            o.total_amount, o.order_date, o.is_reservation, o.guest_contact, o.guest_email, o.guest_contact_verified_at, o.payment_mode, o.delivery_fee
      FROM orders o
      LEFT JOIN customers c ON c.customer_id = o.customer_id
      LEFT JOIN cashiers ca ON ca.cashier_id = o.processed_by
@@ -280,6 +282,7 @@ router.get('/:id', async (request, response) => {
       orderType: order.order_type,
       status: order.status,
       paymentMode: order.payment_mode,
+      deliveryFee: order.delivery_fee,
       instructions: order.instructions,
       requestedFulfillmentTime: order.requested_fulfillment_time,
       totalAmount: order.total_amount,
@@ -527,12 +530,14 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     const receiptToken = guest?.isReservation ? crypto.randomBytes(24).toString('base64url') : null
     const orderResult = await client.query(
       `INSERT INTO orders (customer_id, processed_by, order_type, address_id, instructions, requested_fulfillment_time, status,
-                           guest_name, guest_contact, guest_email, is_reservation, receipt_token_hash, payment_mode)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                           guest_name, guest_contact, guest_email, is_reservation, receipt_token_hash, payment_mode, delivery_fee)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING order_id, daily_number, order_day`,
       [customerId, processedBy, orderType, addressId, instructions, fulfillment.value, initialStatus,
         guest?.name ?? null, guest?.phone ?? null, guest?.email ?? null, guest?.isReservation ?? false,
-        receiptToken ? crypto.createHash('sha256').update(receiptToken).digest('hex') : null, paymentMode],
+        receiptToken ? crypto.createHash('sha256').update(receiptToken).digest('hex') : null, paymentMode,
+        // The delivery fee (DELIVERY_FEE_PLAN.md, D1): flat, delivery only.
+        orderType === 'DELIVERY' ? config.orders.deliveryFee : 0],
     )
     const orderId = orderResult.rows[0].order_id
 
@@ -618,9 +623,12 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     // actual order_details rows means they cannot: whatever was really
     // written is what gets charged. When order editing arrives, re-running
     // exactly this statement is all that's needed to keep it true.
+    //
+    // A delivery order's flat fee is added on top (DELIVERY_FEE_PLAN.md,
+    // D1), so the GCash payment for the balance covers it too.
     const totalResult = await client.query(
       `UPDATE orders
-       SET total_amount = (SELECT COALESCE(SUM(quantity * unit_price), 0) FROM order_details WHERE order_id = $1)
+       SET total_amount = (SELECT COALESCE(SUM(quantity * unit_price), 0) FROM order_details WHERE order_id = $1) + delivery_fee
        WHERE order_id = $1
        RETURNING total_amount`,
       [orderId],

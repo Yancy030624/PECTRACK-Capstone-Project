@@ -309,6 +309,10 @@ describe('order management', () => {
     assert.equal(body.order.status, 'AWAITING_PAYMENT')
     const detail = await fetch(`${baseUrl}/api/orders/${deliveryOrderId}`, { headers: { Cookie: customerCookie } }).then((r) => r.json())
     assert.equal(detail.order.orderType, 'DELIVERY')
+    // DELIVERY_FEE_PLAN D1: the flat fee is on the order and in its total,
+    // so the payment below covers it.
+    assert.equal(Number(detail.order.deliveryFee), config.orders.deliveryFee)
+    assert.equal(Number(body.order.totalAmount), 45.5 * 2 + config.orders.deliveryFee)
     const unpaid = await pool.query('SELECT COUNT(*)::int AS n FROM deliveries WHERE order_id = $1', [deliveryOrderId])
     assert.equal(unpaid.rows[0].n, 0, 'no delivery row while unpaid')
 
@@ -420,7 +424,7 @@ describe('order management', () => {
     })
     const orderId = (await response.json()).order.id
     createdOrderIds.push(orderId)
-    const paid = await fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ orderId, method: 'CASH', amount: 45.5 }) })
+    const paid = await fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ orderId, method: 'CASH', amount: 45.5 + config.orders.deliveryFee }) })
     assert.equal(paid.status, 201)
 
     const tooEarly = await patchStatus(orderId, 'COMPLETED')
@@ -644,7 +648,7 @@ describe('order management', () => {
     })
     assert.equal(response.status, 201)
     const body = await response.json()
-    assert.equal(body.order.totalAmount, '136.50') // 45.50 * 3
+    assert.equal(body.order.totalAmount, '136.50') // 45.50 * 3, no delivery fee on a pickup
     assert.equal(body.order.status, 'AWAITING_PAYMENT', 'an online order is held until it is paid')
     customerOrderId = body.order.id
     createdOrderIds.push(customerOrderId)

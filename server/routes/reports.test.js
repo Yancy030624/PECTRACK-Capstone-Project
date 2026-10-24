@@ -214,7 +214,7 @@ describe('reporting & analytics', () => {
     assert.equal(response.status, 200)
     const body = await response.json()
     assert.deepEqual(body.buckets, [])
-    assert.deepEqual(body.totals, { ordersPlaced: 0, ordered: '0.00', collected: '0.00', refunded: '0.00', averagePayment: '0.00' })
+    assert.deepEqual(body.totals, { ordersPlaced: 0, ordered: '0.00', deliveryFees: '0.00', collected: '0.00', refunded: '0.00', averagePayment: '0.00' })
   })
 
   test('a sale at 2pm on the `to` date is included — the half-open range, where BETWEEN would drop it', async () => {
@@ -223,6 +223,16 @@ describe('reporting & analytics', () => {
     const body = await response.json()
     assert.equal(body.totals.ordersPlaced, 1)
     assert.equal(body.totals.ordered, '100.00')
+  })
+
+  test('a delivery fee is kept apart: ordered is the goods, deliveryFees the fees (DELIVERY_FEE_PLAN D1)', async () => {
+    const orderId = await placeOrderAt('2021-07-07 10:00:00+08')
+    // A ₱100 order carrying a ₱50 fee, as a delivery order is stored.
+    await pool.query('UPDATE orders SET delivery_fee = 50, total_amount = total_amount + 50 WHERE order_id = $1', [orderId])
+    const body = await (await getSales({ from: '2021-07-07', to: '2021-07-07' })).json()
+    assert.equal(body.totals.ordered, '100.00')
+    assert.equal(body.totals.deliveryFees, '50.00')
+    assert.equal(body.buckets[0].deliveryFees, '50.00')
   })
 
   test('cancelled orders appear in neither ordersPlaced nor ordered', async () => {
@@ -384,7 +394,7 @@ describe('reporting & analytics', () => {
     // refunded money (status = 'PAID'), so `Collected - Refunds` subtracts
     // it a second time — the one arithmetic every reader will reach for,
     // and the one the plain label 'Refunded' silently invited.
-    assert.match(text, /"Period \(day\)","Orders placed","Ordered","Collected","Refunds issued \(already excluded from Collected\)"/)
+    assert.match(text, /"Period \(day\)","Orders placed","Ordered \(goods\)","Delivery fees","Collected \(incl\. delivery fees\)","Refunds issued \(already excluded from Collected\)"/)
     assert.match(text, /100\.00/, 'the ₱100 order placed above must appear in the CSV body')
     assert.match(text, /"Average payment"/, 'the CSV must use the same honest label as the API')
 

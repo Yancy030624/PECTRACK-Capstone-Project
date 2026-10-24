@@ -10,6 +10,7 @@ import app from '../app.js'
 import { resetRateLimits } from '../lib/security.js'
 import { pool } from '../db.js'
 import { filePath } from '../lib/storage.js'
+import { config } from '../config.js'
 
 const runId = crypto.randomUUID().slice(0, 8)
 const randomContactNumber = () => `09${Math.floor(100000000 + Math.random() * 899999999)}`
@@ -83,6 +84,12 @@ describe('delivery management', () => {
 
   const setStatus = (deliveryId, status, cookie, note) =>
     fetch(`${baseUrl}/api/deliveries/${deliveryId}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ status, note }) })
+
+  // The money amounts below are the goods alone; the delivery fee
+  // (DELIVERY_FEE_PLAN.md) is proven in orders.test.js, so it is off here.
+  const savedDeliveryFee = config.orders.deliveryFee
+  before(() => { config.orders.deliveryFee = 0 })
+  after(() => { config.orders.deliveryFee = savedDeliveryFee })
 
   before(async () => {
     server = app.listen(0)
