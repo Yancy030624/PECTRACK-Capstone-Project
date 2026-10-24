@@ -10,6 +10,7 @@ import { after, before, beforeEach, describe, test } from 'node:test'
 import bcrypt from 'bcrypt'
 import app from '../app.js'
 import { pool } from '../db.js'
+import { nightlySourceFor, runNightlyForecast } from '../lib/forecastRun.js'
 import { resetRateLimits } from '../lib/security.js'
 import { addDays } from '../lib/forecasting.js'
 
@@ -194,6 +195,26 @@ describe('demand forecasting API', () => {
     assert.equal(report.products.some((product) => product.productId === productId), false)
     const csv = await (await json(adminCookie, 'GET', `/api/reports/analytics?from=${from}&to=${yesterday}&format=csv`)).text()
     assert.equal(csv.includes(`Forecast Bun`), false)
+  })
+
+  test('the nightly run: from 12:05 AM Manila, once a day, on assumed history until 56 real days (ANALYTICS_PLAN A4)', async () => {
+    assert.equal(nightlySourceFor(55), 'ASSUMED')
+    assert.equal(nightlySourceFor(56), 'REAL')
+    // A far-off day, so it never meets a real nightly claim.
+    const day = '2099-01-01'
+    await pool.query('DELETE FROM forecast_nightly_runs WHERE day = $1', [day])
+    try {
+      assert.equal(await runNightlyForecast(new Date('2099-01-01T00:04:00+08:00')), null, 'not before 12:05 AM')
+      const run = await runNightlyForecast(new Date('2099-01-01T00:10:00+08:00'))
+      assert.ok(run?.id, 'runs once the time has come')
+      assert.equal(run.source, 'ASSUMED')
+      const stored = await pool.query('SELECT run_by, sources FROM forecast_runs WHERE run_id = $1', [run.id])
+      assert.equal(stored.rows[0].run_by, null, 'a system run has no user')
+      assert.equal(await runNightlyForecast(new Date('2099-01-01T03:00:00+08:00')), null, 'never twice on one day')
+      await pool.query('DELETE FROM forecast_runs WHERE run_id = $1', [run.id])
+    } finally {
+      await pool.query('DELETE FROM forecast_nightly_runs WHERE day = $1', [day])
+    }
   })
 
   test('the sales the forecast learns from: paid or completed orders only, on their own day (ANALYTICS_PLAN A2)', async () => {

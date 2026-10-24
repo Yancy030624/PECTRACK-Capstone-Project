@@ -219,7 +219,7 @@ export function ForecastPanel({ user, active }) {
                 {isAssumed ? 'Practice data (assumed)' : 'Real sales'}
               </span>
               <span>
-                Updated {formatDateTime(data.run.createdAt)}{data.run.runByName ? ` by ${data.run.runByName}` : ''}
+                Updated {formatDateTime(data.run.createdAt)}{data.run.runByName ? ` by ${data.run.runByName}` : ' automatically (nightly run)'}
                 {data.run.historyFrom && <> · learned from {longDay(data.run.historyFrom)} – {longDay(data.run.historyTo)}</>}
               </span>
             </div>

@@ -3,6 +3,7 @@ import app from './app.js'
 import { pruneExpiredAuthRows } from './lib/auth.js'
 import { cancelUnpaidOrders, closeStaleOrders } from './lib/staleOrders.js'
 import { runDailyStockReset } from './lib/dailyStock.js'
+import { runNightlyForecast } from './lib/forecastRun.js'
 
 // Expired sessions and old OTP codes are already ignored wherever they're
 // read, so this is housekeeping rather than a correctness fix — but neither
@@ -38,6 +39,10 @@ async function closeStaleOrdersQuietly() {
     // Soft breads back up to their standard at 5:00 AM (lib/dailyStock.js).
     const toppedUp = await runDailyStockReset()
     if (toppedUp != null) console.log(`5:00 AM top-up: ${toppedUp} soft bread(s) back to their standard stock.`)
+    // The nightly forecast from 12:05 AM (lib/forecastRun.js,
+    // ANALYTICS_PLAN.md A4), once per Manila day.
+    const forecast = await runNightlyForecast()
+    if (forecast) console.log(`Nightly forecast run ${forecast.id} on ${forecast.source} history: ${forecast.productsForecast} product(s).`)
   } catch (error) {
     // Like the pruning above: a failed run is retried on the next one and
     // never takes the API down.

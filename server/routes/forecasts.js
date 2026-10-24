@@ -17,19 +17,13 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
-import { addDays, daysBetween, forecastProduct, useEventCalendar } from '../lib/forecasting.js'
+import { addDays } from '../lib/forecasting.js'
+import { runForecast, SOURCE_SETS } from '../lib/forecastRun.js'
 import { restockForRun } from '../lib/restock.js'
 import { normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
 
-// Decision 1 of the plan: a bakery plans a day to a week ahead, and
-// accuracy falls off quickly beyond that.
-const HORIZON_DAYS = 7
-const SOURCE_SETS = {
-  ASSUMED: ['ASSUMED'],
-  REAL: ['RECORDED', 'IMPORTED'],
-}
 const sourceKindOf = (sources) => (sources.includes('ASSUMED') ? 'ASSUMED' : 'REAL')
 
 const round = (value, places = 2) => (value == null ? null : Number(Number(value).toFixed(places)))
@@ -38,158 +32,13 @@ const round = (value, places = 2) => (value == null ? null : Number(Number(value
 // the numbers. Starting a run is ADMIN only (below).
 router.use(requireAuth, requireRole('ADMIN', 'CASHIER'))
 
-// Today and yesterday on the Manila calendar, from the database clock so
-// every part of the system agrees on what "today" is.
-async function manilaDays() {
-  const result = await pool.query(`SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date::text AS today`)
-  const today = result.rows[0].today
-  return { today, yesterday: addDays(today, -1) }
-}
-
-// POST /api/forecasts/run  { source: 'ASSUMED' | 'REAL' }
+// POST /api/forecasts/run  { source: 'ASSUMED' | 'REAL' } — the admin's
+// own run. The system also runs one every night (lib/forecastRun.js).
 router.post('/run', requireRole('ADMIN'), async (request, response) => {
   const kind = normalize(request.body.source).toUpperCase() || 'ASSUMED'
-  const sources = SOURCE_SETS[kind]
-  if (!sources) return response.status(422).json({ message: 'Choose which history to train on: ASSUMED or REAL.', errors: { source: 'Choose ASSUMED or REAL.' } })
-
-  const { today, yesterday } = await manilaDays()
-
-  // Today is excluded from training: it is not over, and a half-day of
-  // sales would read as a slump.
-  const history = await pool.query(
-    `SELECT local_date::text AS date, product_id, SUM(units)::int AS units, BOOL_OR(stocked_out) AS censored
-       FROM forecast_training_data
-      WHERE data_source = ANY($1::data_source[]) AND local_date <= $2::date
-      GROUP BY local_date, product_id
-      ORDER BY product_id, local_date`,
-    [sources, yesterday],
-  )
-  const products = (await pool.query(
-    'SELECT product_id, product_name, variant FROM products WHERE availability_status = TRUE ORDER BY product_name, variant',
-  )).rows
-
-  const byProduct = new Map()
-  for (const row of history.rows) {
-    const list = byProduct.get(row.product_id) ?? []
-    list.push(row)
-    byProduct.set(row.product_id, list)
-  }
-
-  // Distinct days of each source actually used — the answer to "what was
-  // this trained on?" that the run carries forever.
-  const coverage = await pool.query(
-    `SELECT data_source, COUNT(DISTINCT local_date)::int AS days, MIN(local_date)::text AS first, MAX(local_date)::text AS last
-       FROM forecast_training_data
-      WHERE data_source = ANY($1::data_source[]) AND local_date <= $2::date
-      GROUP BY data_source`,
-    [sources, yesterday],
-  )
-  const daysBySource = Object.fromEntries(coverage.rows.map((row) => [row.data_source, row.days]))
-  const historyFrom = coverage.rows.map((row) => row.first).sort()[0] ?? null
-  const historyTo = coverage.rows.map((row) => row.last).sort().at(-1) ?? null
-
-  // Where each product's series ends.
-  //
-  // REAL sales run to yesterday: the system records every sale, so a day
-  // with no row genuinely sold nothing and counts as zero.
-  //
-  // ASSUMED history is a generated year that stops on the day it was
-  // generated. The days after that are not "sold nothing" — they are not
-  // in the data at all. Filling them with zeros taught every method that
-  // sales had collapsed (forecasts near zero, accuracy around 20%), so the
-  // series ends where the generated history ends, and the forecast is
-  // projected forward from there to today and the week after. The
-  // generator writes a row for every product-day, zeros included, so a
-  // product's own last row is where its generated history ends.
-  const seriesEndFor = (rows) => (kind === 'ASSUMED' && rows.at(-1).date < yesterday ? rows.at(-1).date : yesterday)
-
-  // Each product's series runs from its first recorded day to seriesEnd,
-  // with the missing days in between filled as zero. Starting from the
-  // product's OWN first day stops a product added last month looking like
-  // it sold nothing all year.
-  // Every event day (migration 036) becomes the regression's "event"
-  // variable, past ones for learning and coming ones for the forecast.
-  const eventRows = await pool.query(`SELECT to_char(day, 'YYYY-MM-DD') AS day FROM events, generate_series(starts_on, ends_on, INTERVAL '1 day') AS day`)
-  useEventCalendar(eventRows.rows.map((row) => row.day))
-
-  let results = []
-  for (const product of products) {
-    const rows = byProduct.get(product.product_id) ?? []
-    if (rows.length === 0) {
-      results.push({ product, outcome: { skipped: 'No history for this product in the chosen data.' } })
-      continue
-    }
-    const known = new Map(rows.map((row) => [row.date, row]))
-    const first = rows[0].date
-    const seriesEnd = seriesEndFor(rows)
-    const length = daysBetween(first, seriesEnd) + 1
-    const series = Array.from({ length }, (_, index) => {
-      const date = addDays(first, index)
-      const row = known.get(date)
-      return { date, units: row?.units ?? 0, censored: row?.censored ?? false }
-    })
-    const outcome = forecastProduct(series, { horizon: daysBetween(seriesEnd, today) + HORIZON_DAYS - 1 })
-    // Keep only today and the six days after it — the days the bakery can
-    // still act on.
-    if (!outcome.skipped) outcome.forecast = outcome.forecast.filter((day) => day.date >= today).slice(0, HORIZON_DAYS)
-    results.push({ product, outcome })
-  }
-
-  let forecast = results.filter((result) => !result.outcome.skipped)
-  const client = await pool.connect()
-  let runId
-  try {
-    await client.query('BEGIN')
-    // Training takes seconds, and a product can be deleted meanwhile.
-    // Lock the ones still here against deletion until this commits (KEY
-    // SHARE blocks a DELETE, not ordinary edits), and leave out any that
-    // are gone — otherwise one missing product fails the whole run on its
-    // foreign key.
-    const stillThere = new Set((await client.query(
-      'SELECT product_id FROM products WHERE product_id = ANY($1::bigint[]) FOR KEY SHARE',
-      [results.map((result) => result.product.product_id)],
-    )).rows.map((row) => row.product_id))
-    results = results.filter((result) => stillThere.has(result.product.product_id))
-    forecast = results.filter((result) => !result.outcome.skipped)
-    const run = await client.query(
-      `INSERT INTO forecast_runs (run_by, horizon_days, sources, history_from, history_to, days_by_source, products_forecast, products_skipped)
-       VALUES ($1, $2, $3::data_source[], $4, $5, $6, $7, $8) RETURNING run_id`,
-      [request.user.id, HORIZON_DAYS, sources, historyFrom, historyTo, JSON.stringify(daysBySource), forecast.length, results.length - forecast.length],
-    )
-    runId = run.rows[0].run_id
-
-    for (const { product, outcome } of results) {
-      if (outcome.skipped) {
-        await client.query(
-          `INSERT INTO forecast_models (run_id, product_id, method, history_days, note) VALUES ($1, $2, 'none', 0, $3)`,
-          [runId, product.product_id, outcome.skipped],
-        )
-        continue
-      }
-      await client.query(
-        `INSERT INTO forecast_models (run_id, product_id, method, mae, wape, baseline_mae, history_days, candidates, note)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [runId, product.product_id, outcome.method, round(outcome.mae, 3), round(outcome.wape, 4), round(outcome.baselineMae, 3), outcome.historyDays,
-          JSON.stringify(outcome.candidates.map((candidate) => ({ method: candidate.method, mae: round(candidate.mae, 3), wape: round(candidate.wape, 4) }))), outcome.note],
-      )
-      await client.query(
-        `INSERT INTO forecasts (run_id, product_id, forecast_date, predicted, low, high)
-         SELECT $1, $2, d, p, l, h FROM unnest($3::date[], $4::numeric[], $5::numeric[], $6::numeric[]) AS t(d, p, l, h)`,
-        [runId, product.product_id, outcome.forecast.map((day) => day.date), outcome.forecast.map((day) => round(day.predicted)),
-          outcome.forecast.map((day) => round(day.low)), outcome.forecast.map((day) => round(day.high))],
-      )
-    }
-    await client.query('COMMIT')
-  } catch (error) {
-    await client.query('ROLLBACK')
-    throw error
-  } finally {
-    client.release()
-  }
-
-  return response.status(201).json({
-    run: { id: runId, source: kind, productsForecast: forecast.length, productsSkipped: results.length - forecast.length, daysBySource },
-  })
+  if (!SOURCE_SETS[kind]) return response.status(422).json({ message: 'Choose which history to train on: ASSUMED or REAL.', errors: { source: 'Choose ASSUMED or REAL.' } })
+  const run = await runForecast({ kind, runBy: request.user.id })
+  return response.status(201).json({ run })
 })
 
 // The latest run, whole: products with their seven days, the skipped ones

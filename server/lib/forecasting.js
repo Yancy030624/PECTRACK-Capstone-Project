@@ -194,7 +194,7 @@ export const REGRESSION_FEATURES = ['intercept', 'trend', 'monday', 'tuesday', '
 // routes read the calendar); empty, the column is all zeros and the ridge
 // term gives it no weight, which is also what the tests rely on.
 let eventDays = new Set()
-export function useEventCalendar(days) {
+export function setEventCalendar(days) {
   eventDays = new Set(days)
 }
 export const isEventDay = (iso) => eventDays.has(iso)
