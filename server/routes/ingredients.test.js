@@ -176,7 +176,7 @@ describe('ingredient stock', () => {
     const report = await (await fetch(`${baseUrl}/api/reports/inventory?from=${today}&to=${today}`, { headers: { Cookie: adminCookie } })).json()
     const flour = report.ingredients.movements.find((row) => row.ingredientId === flourId)
     assert.deepEqual([flour.restocked, flour.used, flour.rejected, flour.corrected].map(Number), [50, 72.25, 0.25, 22.5])
-    assert.ok(report.ingredients.low.some((row) => row.ingredientId === flourId), '0 kg against a minimum of 10 is low')
+    assert.equal(report.ingredients.low, undefined, 'what is low now is the Ingredients screen\'s, not the report\'s (REPORTS_UI_PLAN U5)')
   })
 })
 

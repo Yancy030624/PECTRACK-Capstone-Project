@@ -382,7 +382,7 @@ router.get('/inventory', async (request, response) => {
   const { from, to, errors } = parseDateRange(request.query)
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
 
-  const [movementsResult, lossResult, attentionResult, lowStockAlerts, ingredientResult, lowIngredientResult] = await Promise.all([
+  const [movementsResult, lossResult, lowStockAlerts, ingredientResult] = await Promise.all([
     pool.query(
       `SELECT im.reason, COALESCE(SUM(im.quantity_change), 0)::int AS net_change
          FROM inventory_movements im
@@ -403,24 +403,10 @@ router.get('/inventory', async (request, response) => {
           AND ${dateRangeSql('im.created_at')}`,
       [from, to],
     ),
-    // What needs attention now, by the same rule as Inventory and the
-    // Dashboard (src/lib/stockHealth.js): a hard bread at or under its
-    // minimum (time to produce); a soft bread sold out today, or under a
-    // fifth of its daily standard (about to be sold out).
-    pool.query(
-      `SELECT p.product_id, p.product_name, p.variant, p.stock_type, i.stock_quantity, i.min_stock_level, i.standard_stock,
-              CASE WHEN p.stock_type = 'SOFT' AND i.stock_quantity <= 0 THEN 'SOLD_OUT'
-                   WHEN p.stock_type = 'SOFT' THEN 'SELLING_OUT'
-                   ELSE 'LOW' END AS status
-         FROM products p JOIN inventory i ON i.product_id = p.product_id
-        WHERE p.availability_status
-          AND CASE WHEN p.stock_type = 'SOFT'
-                   THEN i.stock_quantity <= 0 OR (CASE WHEN i.standard_stock > 0 THEN i.stock_quantity < i.standard_stock / 5.0 ELSE i.stock_quantity <= i.min_stock_level END)
-                   ELSE i.stock_quantity <= i.min_stock_level END
-        ORDER BY p.stock_type, i.stock_quantity, p.product_name`,
-    ),
     // The stock-alert rows (lib/inventory.js), kept in the reply for the
-    // older readers; the screen shows `attention` above.
+    // older readers. What is low NOW is not part of this report any more
+    // (REPORTS_UI_PLAN.md U5): a report covers the range asked for, and the
+    // live state is the Inventory screen's and the Dashboard's.
     getLowStockAlerts(),
     // Ingredients (CLIENT_REVISIONS_PLAN.md, R5): what came in, was used,
     // was thrown out, or was corrected by a recount in the range, per
@@ -439,13 +425,6 @@ router.get('/inventory', async (request, response) => {
         ORDER BY i.name`,
       [from, to],
     ),
-    // Low right now, not in the range: a shelf figure, like low stock.
-    pool.query(
-      `SELECT ingredient_id, name, unit, stock_quantity, min_stock_level
-         FROM ingredients
-        WHERE is_active AND stock_quantity <= min_stock_level
-        ORDER BY stock_quantity - min_stock_level, name`,
-    ),
   ])
 
   return response.json({
@@ -455,10 +434,8 @@ router.get('/inventory', async (request, response) => {
     lossUnits: lossResult.rows[0].lost_units,
     lowStockAlerts: lowStockAlerts.alerts,
     lowStockAlertsTotal: lowStockAlerts.total,
-    attention: attentionResult.rows.map((row) => ({ productId: row.product_id, productName: row.product_name, variant: row.variant, stockType: row.stock_type, status: row.status, stockQuantity: row.stock_quantity, minStockLevel: row.min_stock_level, standardStock: row.standard_stock })),
     ingredients: {
       movements: ingredientResult.rows.map((row) => ({ ingredientId: row.ingredient_id, name: row.name, unit: row.unit, restocked: row.restocked, used: row.used, rejected: row.rejected, corrected: row.corrected })),
-      low: lowIngredientResult.rows.map((row) => ({ ingredientId: row.ingredient_id, name: row.name, unit: row.unit, stockQuantity: row.stock_quantity, minStockLevel: row.min_stock_level })),
     },
   })
 })

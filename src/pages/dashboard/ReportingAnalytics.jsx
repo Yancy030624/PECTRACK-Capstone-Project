@@ -11,7 +11,6 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDate, formatDateTime, formatPeso, formatQuantity } from '../../lib/format.js'
 import { ForecastPanel } from './ForecastPanel.jsx'
-import { StockStatusPill } from '../../components/ui/StockStatusPill.jsx'
 import { PeakPeriods } from './PeakPeriods.jsx'
 import { PrintButton, PrintHeader } from '../../components/PrintReport.jsx'
 import { manilaDate, manilaDateFromToday } from '../../lib/dates.js'
@@ -391,9 +390,10 @@ export function ReportingAnalytics({ user }) {
       <div hidden={activeTab !== 'Inventory'}>
         {inventory ? (
           <>
+            {/* Activity in the range only (REPORTS_UI_PLAN.md U5): what is low
+                right now is on the Inventory screen and the Dashboard. */}
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Units lost</p><p className="mt-3 text-4xl font-semibold text-ink-900">{inventory.lossUnits}</p><p className="mt-1 text-xs text-ink-500">Counts corrected down, in this range</p></Card>
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Needs attention now</p><p className="mt-3 text-4xl font-semibold text-ink-900">{inventory.attention.length}</p></Card>
             </div>
 
             <Card className="mt-6 p-6">
@@ -421,30 +421,11 @@ export function ReportingAnalytics({ user }) {
               )}
             </Card>
 
-            <Card className="mt-6 p-6">
-              <h2 className="text-lg font-semibold text-ink-900">Needs attention</h2>
-              {/* Same statuses as Inventory and the Dashboard (stockHealth.js). */}
-              {inventory.attention.length === 0 ? <p className="mt-4 text-sm text-ink-500">Nothing is low, selling out, or sold out.</p> : (
-                <div className="mt-4 divide-y divide-line-100">
-                  {inventory.attention.map((item) => (
-                    <div key={item.productId} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3 text-sm text-ink-700">
-                      <span className="min-w-0 flex-1">
-                        <span className="font-semibold text-ink-900">{item.productName}</span>{item.variant ? ` (${item.variant})` : ''}
-                        <span className="block text-xs text-ink-500">{item.stockType === 'HARD' ? `Hard bread · ${item.stockQuantity} left · produce at ${item.minStockLevel}` : `Soft bread · ${item.stockQuantity} left${item.standardStock ? ` of ${item.standardStock} today` : ''}`}</span>
-                      </span>
-                      <StockStatusPill status={item.status} />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-
             {/* Ingredients (CLIENT_REVISIONS_PLAN.md, R5): what came in,
-                was used, and was thrown out in the range, and what is low
-                now. */}
+                was used, and was thrown out in the range. */}
             {inventory.ingredients && (
               <Card className="mt-6 p-6">
-                <h2 className="text-lg font-semibold text-ink-900">Ingredients</h2>
+                <h2 className="text-lg font-semibold text-ink-900">Ingredient activity</h2>
                 {inventory.ingredients.movements.length === 0 ? <p className="mt-4 text-sm text-ink-500">No ingredient changes in this range.</p> : (
                   <div className="mt-4">
                     <Table caption="Ingredient movements in the range">
@@ -470,17 +451,6 @@ export function ReportingAnalytics({ user }) {
                       </Tbody>
                     </Table>
                   </div>
-                )}
-                <h3 className="mt-6 text-sm font-semibold text-ink-900">Low now</h3>
-                {inventory.ingredients.low.length === 0 ? <p className="mt-2 text-sm text-ink-500">No ingredient is at or under its minimum.</p> : (
-                  <ul className="mt-2 divide-y divide-line-100 text-sm">
-                    {inventory.ingredients.low.map((row) => (
-                      <li key={row.ingredientId} className="flex items-center justify-between gap-4 py-2.5">
-                        <span className="font-medium text-ink-900">{row.name}</span>
-                        <span className="text-xs text-ink-500 tabular-nums">{formatQuantity(row.stockQuantity, row.unit)} left · min {formatQuantity(row.minStockLevel, row.unit)}</span>
-                      </li>
-                    ))}
-                  </ul>
                 )}
               </Card>
             )}
