@@ -22,7 +22,18 @@
 // Usage (database reachable; the API server need not run):
 //   node scripts/generate-assumed-demand.mjs           generate (replaces)
 //   node scripts/generate-assumed-demand.mjs --clear   remove it all
-import { pool } from '../server/db.js'
+//   add --railway to either to write to the live database instead, named
+//   by RAILWAY_DATABASE_URL in .env (never printed) — the user runs this
+//   in the VS Code terminal (RULES-PLANS/ANALYTICS_PLAN.md, A6).
+import 'dotenv/config'
+import pg from 'pg'
+
+const onRailway = process.argv.includes('--railway')
+if (onRailway && !process.env.RAILWAY_DATABASE_URL) throw new Error('RAILWAY_DATABASE_URL is not set in .env.')
+const pool = onRailway
+  ? new pg.Pool({ connectionString: process.env.RAILWAY_DATABASE_URL, ssl: { rejectUnauthorized: false } })
+  : (await import('../server/db.js')).pool
+if (onRailway) console.log('Writing to the Railway database.')
 import { addDays, dayOfWeek, holidayKind, isPayday } from '../server/lib/forecasting.js'
 
 const GENERATOR_VERSION = 'v2-2026-10-24' // v2: hard breads x2 weekends, x(event) on events
