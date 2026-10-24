@@ -132,13 +132,17 @@ export function ReportingAnalytics({ user }) {
     if (!sales || !salesCanvasRef.current) return
     const inkColor = cssVar('--color-ink-700')
     const gridColor = cssVar('--color-line-200')
+    // Sales (money) as a line on the left axis, orders as bars on the
+    // right (REPORTS_UI_PLAN.md U3) — two different things, in two clearly
+    // different colours, never two near-identical lines on one scale.
+    const salesColor = cssVar('--color-brand-600')
+    const ordersColor = cssVar('--color-status-active-fg')
     const chart = new Chart(salesCanvasRef.current, {
-      type: sales.groupBy === 'day' ? 'line' : 'bar',
       data: {
         labels: sales.buckets.map((bucket) => bucket.period),
         datasets: [
-          { label: 'Ordered', data: sales.buckets.map((bucket) => Number(bucket.ordered)), backgroundColor: cssVar('--color-brand-600'), borderColor: cssVar('--color-brand-600') },
-          { label: 'Collected', data: sales.buckets.map((bucket) => Number(bucket.collected)), backgroundColor: cssVar('--color-accent-600'), borderColor: cssVar('--color-accent-600') },
+          { type: 'line', label: 'Sales (₱)', data: sales.buckets.map((bucket) => Number(bucket.sales)), borderColor: salesColor, backgroundColor: salesColor, borderWidth: 2, tension: 0.2, yAxisID: 'y', order: 1 },
+          { type: 'bar', label: 'Orders', data: sales.buckets.map((bucket) => bucket.orders), backgroundColor: `${ordersColor}33`, borderColor: ordersColor, borderWidth: 1, yAxisID: 'orders', order: 2 },
         ],
       },
       options: {
@@ -146,8 +150,9 @@ export function ReportingAnalytics({ user }) {
         maintainAspectRatio: false,
         plugins: { legend: { position: 'bottom', labels: { color: inkColor } } },
         scales: {
-          x: { ticks: { color: inkColor }, grid: { color: gridColor } },
-          y: { beginAtZero: true, ticks: { color: inkColor }, grid: { color: gridColor } },
+          x: { ticks: { color: inkColor, maxRotation: 0, autoSkip: true }, grid: { color: gridColor } },
+          y: { beginAtZero: true, position: 'left', ticks: { color: inkColor }, grid: { color: gridColor }, title: { display: true, text: 'Sales (₱)', color: inkColor } },
+          orders: { beginAtZero: true, position: 'right', ticks: { color: inkColor, precision: 0 }, grid: { display: false }, title: { display: true, text: 'Orders', color: inkColor } },
         },
       },
     })
@@ -177,10 +182,6 @@ export function ReportingAnalytics({ user }) {
     })
     return () => chart.destroy()
   }, [products])
-  const [summary, setSummary] = useState(null)
-  useEffect(() => {
-    apiGet('/api/reports/summary').then(setSummary).catch(() => setSummary(null))
-  }, [])
   const [logsOffset, setLogsOffset] = useState(0)
   const [logsResult, setLogsResult] = useState(null)
   const [logsLoading, setLogsLoading] = useState(false)
@@ -274,27 +275,21 @@ export function ReportingAnalytics({ user }) {
       <div hidden={activeTab !== 'Sales'}>
         {sales ? (
           <>
+            {/* The money the bakery received (REPORTS_UI_PLAN.md U3). */}
             <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Orders placed</p><p className="mt-3 text-4xl font-semibold text-ink-900">{sales.totals.ordersPlaced}</p></Card>
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Ordered</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.ordered)}</p><p className="mt-2 text-xs text-ink-500">Value of the goods ordered in this range</p></Card>
-              {/* Kept apart from bread sales (DELIVERY_FEE_PLAN.md, D1). */}
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Delivery fees</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.deliveryFees)}</p><p className="mt-2 text-xs text-ink-500">On delivery orders placed in this range</p></Card>
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Collected</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.collected)}</p><p className="mt-2 text-xs text-ink-500">Money received in this range, delivery fees included</p></Card>
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Sales</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.sales)}</p><p className="mt-2 text-xs text-ink-500">Money received, delivery fees not included</p></Card>
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Orders</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{sales.totals.orders}</p><p className="mt-2 text-xs text-ink-500">Paid in this range</p></Card>
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Average order</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.averageOrder)}</p><p className="mt-2 text-xs text-ink-500">Sales ÷ orders</p></Card>
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Delivery fees</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.deliveryFees)}</p><p className="mt-2 text-xs text-ink-500">Received with delivery orders</p></Card>
             </div>
-            <p className="mt-3 text-xs text-ink-500">
-              Average payment: {formatPeso(sales.totals.averagePayment)}
-              <span className="text-ink-500"> — per payment received, not per order.</span>
+            <p className={`mt-3 text-xs ${sales.totals.unpaidCash.orders > 0 ? 'font-medium text-status-wait-fg' : 'text-ink-500'}`}>
+              Cash orders not yet paid: {sales.totals.unpaidCash.orders > 0 ? <>{sales.totals.unpaidCash.orders} ({formatPeso(sales.totals.unpaidCash.amount)})</> : 'none'}
+              <span className="font-normal text-ink-500"> — cash pickups placed in this range, paid when collected.</span>
             </p>
-            {summary && (
-              <p className="mt-1 text-xs font-medium text-status-wait-fg">
-                Still unpaid across all open orders today: {formatPeso(summary.outstanding)}
-                <span className="font-normal text-ink-500"> — every unpaid balance on the books, regardless of the date range above.</span>
-              </p>
-            )}
 
             <Card className="mt-6 p-6">
               <h2 className="text-lg font-semibold text-ink-900">Sales over time</h2>
-              {sales.buckets.length === 0 ? <p className="mt-4 text-sm text-ink-500">No activity in this range.</p> : <div className="relative mt-4 h-72"><canvas ref={salesCanvasRef} /></div>}
+              {sales.buckets.length === 0 ? <p className="mt-4 text-sm text-ink-500">No sales in this range.</p> : <div className="relative mt-4 h-72"><canvas ref={salesCanvasRef} role="img" aria-label="Sales and orders over time" /></div>}
             </Card>
 
             <div className="mt-6">
@@ -302,25 +297,33 @@ export function ReportingAnalytics({ user }) {
                 <Thead>
                   <Tr className="hover:bg-transparent">
                     <Th>Period</Th>
-                    <Th>Orders placed</Th>
-                    <Th align="right">Ordered</Th>
-                    <Th align="right">Delivery fees</Th>
-                    <Th align="right">Collected</Th>
+                    <Th align="right">Orders</Th>
+                    <Th align="right">Sales</Th>
+                    <Th align="right" priority="md">Delivery fees</Th>
                   </Tr>
                 </Thead>
                 <Tbody>
                   {sales.buckets.map((bucket) => (
                     <Tr key={bucket.period}>
                       <Td className="font-semibold text-ink-900">{bucket.period}</Td>
-                      <Td>{bucket.ordersPlaced}</Td>
-                      <Td numeric>{formatPeso(bucket.ordered)}</Td>
-                      <Td numeric>{formatPeso(bucket.deliveryFees)}</Td>
-                      <Td numeric>{formatPeso(bucket.collected)}</Td>
+                      <Td numeric>{bucket.orders}</Td>
+                      <Td numeric>{formatPeso(bucket.sales)}</Td>
+                      <Td numeric priority="md">{formatPeso(bucket.deliveryFees)}</Td>
                     </Tr>
                   ))}
                 </Tbody>
               </Table>
             </div>
+
+            {/* What the cashier checks at closing, and how much of the
+                business comes online (REPORTS_UI_PLAN.md U3). */}
+            <Card className="mt-6 p-6">
+              <h2 className="text-lg font-semibold text-ink-900">Where the sales came from</h2>
+              <div className="mt-4 grid gap-6 lg:grid-cols-2">
+                <BreakdownTable caption="By payment method" rows={sales.byMethod} names={{ CASH: 'Cash', GCASH: 'GCash' }} total={sales.totals.sales} />
+                <BreakdownTable caption="By order type" rows={sales.byType} names={{ WALK_IN: 'Walk-in / counter', PICKUP: 'Online pickup', DELIVERY: 'Delivery' }} total={sales.totals.sales} />
+              </div>
+            </Card>
           </>
         ) : <p className="mt-6 text-sm text-ink-500">Loading the sales report…</p>}
         {/* PHASE10 B2 — driven by the same applied date range. */}
@@ -512,5 +515,32 @@ export function ReportingAnalytics({ user }) {
         </div>
       )}
     </section>
+  )
+}
+
+// A small "where from" table: orders, sales and share of the total.
+function BreakdownTable({ caption, rows, names, total }) {
+  const totalNumber = Number(total)
+  return (
+    <Table caption={caption}>
+      <Thead>
+        <Tr className="hover:bg-transparent">
+          <Th>{caption}</Th>
+          <Th align="right">Orders</Th>
+          <Th align="right">Sales</Th>
+          <Th align="right">Share</Th>
+        </Tr>
+      </Thead>
+      <Tbody>
+        {rows.map((row) => (
+          <Tr key={row.key}>
+            <Td className="font-semibold text-ink-900">{names[row.key] ?? row.key}</Td>
+            <Td numeric>{row.orders}</Td>
+            <Td numeric>{formatPeso(row.sales)}</Td>
+            <Td numeric className="text-ink-500">{totalNumber > 0 ? `${Math.round((Number(row.sales) / totalNumber) * 100)}%` : '—'}</Td>
+          </Tr>
+        ))}
+      </Tbody>
+    </Table>
   )
 }

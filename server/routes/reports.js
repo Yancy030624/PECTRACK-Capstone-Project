@@ -85,33 +85,36 @@ const maxLogsLimit = 100
 
 router.use(requireAuth, requireRole('ADMIN', 'CASHIER'))
 
-// GET /api/reports/sales?from=&to=&groupBy=day|week|month
+// GET /api/reports/sales?from=&to=&groupBy=day|week|month[&format=csv]
 //
-// PHASE 8, DECISION 2 — "sales" is reported as two different, both
-// defensible numbers, never conflated into one: ORDERED (what customers
-// asked for, SUM(orders.total_amount), dated by order_date) and COLLECTED
-// (what actually arrived, SUM(payments.amount) WHERE status = 'PAID',
-// dated by payment_date). They diverge by design — a pickup order can be
-// paid at the counter days after it was placed, and an order placed in
-// one month can be paid in the next.
+// The money the bakery received (RULES-PLANS/REPORTS_UI_PLAN.md, U3, the
+// user 2026-10-25). Since payment first, an order is paid in full when it is
+// placed or collected, so "ordered" and "collected" were the same figure
+// drawn twice; and there are no refunds (CLIENT_REVISIONS_PLAN.md R2). The
+// report is now one thing: PAID payments, dated by payment_date.
 //
-// Computed as three INDEPENDENT aggregates (orders, PAID payments,
-// REFUNDED payments), each bucketed by its OWN date column, then combined
-// with FULL OUTER JOIN on the bucket key. This is deliberate, not
-// incidental complexity: joining orders directly to payments would
-// multiply order rows by however many payments each one has, corrupting
-// SUM(total_amount) the moment an order holds more than one payment row —
-// exactly the fan-out this shape avoids by never joining the two tables
-// against each other at all.
+//   sales         money received, delivery fees taken out
+//   orders        orders that received money in the range
+//   averageOrder  sales ÷ orders
+//   deliveryFees  the fees inside that money (DELIVERY_FEE_PLAN.md)
+//   unpaidCash    cash pickups placed in the range and still not paid
+//   byMethod      sales and orders by payment method (CASH, GCASH)
+//   byType        by kind of order: WALK_IN (rung up at the counter, an
+//                 advanced order included), PICKUP (online), DELIVERY
 //
-// Practice orders (data_source ASSUMED) never count as money in any figure
-// here — ordered, collected, refunded, or the summary's today and
-// outstanding (ANALYTICS_PLAN.md, A1). They stay in the database for the
-// forecast and the delivery-history demo.
-//
-// The delivery fee (DELIVERY_FEE_PLAN.md, D1) is kept apart: ORDERED is the
-// goods alone, total_amount minus delivery_fee, and deliveryFees is its own
-// figure. COLLECTED stays every peso received, fees included.
+// A payment's share of the fee is delivery_fee × amount ÷ total_amount:
+// exact for an order paid in one payment, which payment first makes every
+// order, and still fair for an older one paid in parts. Every figure is
+// computed in Postgres NUMERIC. Practice orders (ASSUMED) never count
+// (ANALYTICS_PLAN.md A1).
+const paidInRangeSql = (range) => `
+  SELECT p.payment_id, p.payment_date, p.payment_method, o.order_id, o.order_type, o.processed_by,
+         p.amount * o.delivery_fee / NULLIF(o.total_amount, 0) AS fee_share,
+         p.amount - COALESCE(p.amount * o.delivery_fee / NULLIF(o.total_amount, 0), 0) AS goods
+    FROM payments p JOIN orders o ON o.order_id = p.order_id
+   WHERE o.data_source = 'RECORDED' AND p.status = 'PAID' AND ${range}`
+const orderKindSql = `CASE WHEN order_type = 'DELIVERY' THEN 'DELIVERY' WHEN processed_by IS NOT NULL THEN 'WALK_IN' ELSE 'PICKUP' END`
+
 router.get('/sales', async (request, response) => {
   const { from, to, errors: dateErrors } = parseDateRange(request.query)
   const { groupBy, error: groupByError } = parseGroupBy(request.query.groupBy)
@@ -121,124 +124,61 @@ router.get('/sales', async (request, response) => {
   if (format !== 'json' && format !== 'csv') errors.format = 'format must be json or csv.'
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
 
-  // Each date column gets its own range filter, but all three are bound to
-  // the SAME requested [from, to] — dateRangeSql defaults to $1/$2, and
-  // every query below passes exactly [from, to] as its parameters, so an
-  // order dated inside the range and a payment dated inside the range are
-  // both asking "does THIS row's own date fall in what was requested",
-  // never comparing one row's order_date against another's payment_date.
-  const orderedRange = dateRangeSql('o.order_date')
-  const collectedRange = dateRangeSql('p.payment_date')
-  const refundedRange = dateRangeSql('p.refunded_at')
-
-  // PHASE 8, DECISION 6 — an order counts once it is PLACED and NOT
-  // CANCELLED. A cancelled order had its stock restored (Phase 5) and any
-  // payment refunded (Phase 6); counting it as ordered volume would
-  // contradict both of those.
-  const bucketsResult = await pool.query(
-    `WITH ordered_buckets AS (
-       SELECT ${bucketSql('o.order_date', groupBy)} AS period,
-              COUNT(*)::int AS orders_placed,
-              COALESCE(SUM(o.total_amount - o.delivery_fee), 0)::numeric(12,2) AS ordered,
-              COALESCE(SUM(o.delivery_fee), 0)::numeric(12,2) AS delivery_fees
+  const paid = paidInRangeSql(dateRangeSql('p.payment_date'))
+  const [bucketsResult, totalsResult, methodResult, typeResult, unpaidResult] = await Promise.all([
+    pool.query(
+      `SELECT ${bucketSql('payment_date', groupBy)} AS period,
+              COUNT(DISTINCT order_id)::int AS orders,
+              COALESCE(SUM(goods), 0)::numeric(12,2) AS sales,
+              COALESCE(SUM(fee_share), 0)::numeric(12,2) AS delivery_fees
+         FROM (${paid}) paid
+        GROUP BY 1 ORDER BY 1`,
+      [from, to],
+    ),
+    pool.query(
+      `SELECT COUNT(DISTINCT order_id)::int AS orders,
+              COALESCE(SUM(goods), 0)::numeric(12,2) AS sales,
+              COALESCE(SUM(fee_share), 0)::numeric(12,2) AS delivery_fees,
+              COALESCE(SUM(goods) / NULLIF(COUNT(DISTINCT order_id), 0), 0)::numeric(12,2) AS average_order
+         FROM (${paid}) paid`,
+      [from, to],
+    ),
+    pool.query(
+      `SELECT payment_method AS key, COUNT(DISTINCT order_id)::int AS orders, COALESCE(SUM(goods), 0)::numeric(12,2) AS sales
+         FROM (${paid}) paid GROUP BY 1 ORDER BY 1`,
+      [from, to],
+    ),
+    pool.query(
+      `SELECT ${orderKindSql} AS key, COUNT(DISTINCT order_id)::int AS orders, COALESCE(SUM(goods), 0)::numeric(12,2) AS sales
+         FROM (${paid}) paid GROUP BY 1 ORDER BY 1`,
+      [from, to],
+    ),
+    // Cash at pickup (SENIOR_CONSULT_PLAN.md S3): placed, ready, not paid.
+    pool.query(
+      `SELECT COUNT(*)::int AS orders, COALESCE(SUM(o.total_amount), 0)::numeric(12,2) AS amount
          FROM orders o
-        WHERE o.data_source = 'RECORDED' AND o.status NOT IN ('CANCELLED', 'AWAITING_PAYMENT') AND ${orderedRange}
-        GROUP BY 1
-     ),
-     collected_buckets AS (
-       SELECT ${bucketSql('p.payment_date', groupBy)} AS period,
-              COALESCE(SUM(p.amount), 0)::numeric(12,2) AS collected
-         FROM payments p JOIN orders o ON o.order_id = p.order_id
-        WHERE o.data_source = 'RECORDED' AND p.status = 'PAID' AND ${collectedRange}
-        GROUP BY 1
-     ),
-     -- PHASE 8, DECISION 3 — a refund is dated by WHEN IT WAS ISSUED
-     -- (refunded_at), not the period the original payment fell in. Reports
-     -- are "as things stand now" snapshots: refunding an August payment in
-     -- September changes August's COLLECTED figure (status = 'PAID'
-     -- excludes it) but the refund itself shows up here, in September.
-     refunded_buckets AS (
-       SELECT ${bucketSql('p.refunded_at', groupBy)} AS period,
-              COALESCE(SUM(p.amount), 0)::numeric(12,2) AS refunded
-         FROM payments p JOIN orders o ON o.order_id = p.order_id
-        WHERE o.data_source = 'RECORDED' AND p.status = 'REFUNDED' AND ${refundedRange}
-        GROUP BY 1
-     )
-     SELECT COALESCE(ob.period, cb.period, rb.period) AS period,
-            COALESCE(ob.orders_placed, 0) AS orders_placed,
-            COALESCE(ob.ordered, 0)::numeric(12,2) AS ordered,
-            COALESCE(ob.delivery_fees, 0)::numeric(12,2) AS delivery_fees,
-            COALESCE(cb.collected, 0)::numeric(12,2) AS collected,
-            COALESCE(rb.refunded, 0)::numeric(12,2) AS refunded
-       FROM ordered_buckets ob
-       FULL OUTER JOIN collected_buckets cb ON cb.period = ob.period
-       FULL OUTER JOIN refunded_buckets rb ON rb.period = COALESCE(ob.period, cb.period)
-      ORDER BY 1`,
-    [from, to],
-  )
+        WHERE o.data_source = 'RECORDED' AND o.payment_mode = 'CASH' AND o.status NOT IN ('CANCELLED', 'COMPLETED', 'AWAITING_PAYMENT')
+          AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.order_id AND p.status = 'PAID')
+          AND ${dateRangeSql('o.order_date')}`,
+      [from, to],
+    ),
+  ])
 
-  // The SAME three aggregates, unbucketed, for the headline totals row —
-  // computed in Postgres (Decision 9), never by summing the bucket rows
-  // above in JavaScript, which would just be the same NUMERIC-as-string
-  // reduction lib/billing.js already explains is the wrong habit to form.
-  //
-  // averagePayment is the average PAID payment amount (collected / how
-  // many payments made it up) — PATTERN J's own worked example, computed
-  // here exactly as documented: COALESCE(x / NULLIF(count, 0), 0) so a
-  // quiet period returns '0.00', never a division-by-zero 500.
-  //
-  // Named for what it measures. It was called averageSale until the Phase
-  // 8 review, which is wrong whenever an order is settled in instalments:
-  // a single ₱100 order paid in two ₱50 parts reported an "average sale"
-  // of ₱50, half the value of the only sale in the period. Decision 2's
-  // own rule — never let a money field stand there without saying which
-  // money it is — applies to this field as much as to `sales`.
-  //
-  // Renaming rather than recomputing is the fix, deliberately: dividing
-  // collected by ordersPlaced would look more like an "average sale", but
-  // those two are dated by DIFFERENT columns (payment_date vs order_date),
-  // so their quotient describes no period at all.
-  const totalsResult = await pool.query(
-    `WITH ordered_totals AS (
-       SELECT COUNT(*)::int AS orders_placed, COALESCE(SUM(o.total_amount - o.delivery_fee), 0)::numeric(12,2) AS ordered,
-              COALESCE(SUM(o.delivery_fee), 0)::numeric(12,2) AS delivery_fees
-         FROM orders o
-        WHERE o.data_source = 'RECORDED' AND o.status NOT IN ('CANCELLED', 'AWAITING_PAYMENT') AND ${orderedRange}
-     ),
-     collected_totals AS (
-       SELECT COUNT(*)::int AS paid_count, COALESCE(SUM(p.amount), 0)::numeric(12,2) AS collected
-         FROM payments p JOIN orders o ON o.order_id = p.order_id
-        WHERE o.data_source = 'RECORDED' AND p.status = 'PAID' AND ${collectedRange}
-     ),
-     refunded_totals AS (
-       SELECT COALESCE(SUM(p.amount), 0)::numeric(12,2) AS refunded
-         FROM payments p JOIN orders o ON o.order_id = p.order_id
-        WHERE o.data_source = 'RECORDED' AND p.status = 'REFUNDED' AND ${refundedRange}
-     )
-     SELECT ot.orders_placed, ot.ordered, ot.delivery_fees, ct.collected,
-            COALESCE(ct.collected / NULLIF(ct.paid_count, 0), 0)::numeric(12,2) AS average_payment,
-            rt.refunded
-       FROM ordered_totals ot, collected_totals ct, refunded_totals rt`,
-    [from, to],
-  )
+  const buckets = bucketsResult.rows.map((row) => ({ period: row.period, orders: row.orders, sales: row.sales, deliveryFees: row.delivery_fees }))
   const totalsRow = totalsResult.rows[0]
-
-  const buckets = bucketsResult.rows.map((row) => ({
-    period: row.period,
-    ordersPlaced: row.orders_placed,
-    ordered: row.ordered,
-    deliveryFees: row.delivery_fees,
-    collected: row.collected,
-    refunded: row.refunded,
-  }))
   const totals = {
-    ordersPlaced: totalsRow.orders_placed,
-    ordered: totalsRow.ordered,
+    sales: totalsRow.sales,
+    orders: totalsRow.orders,
+    averageOrder: totalsRow.average_order,
     deliveryFees: totalsRow.delivery_fees,
-    collected: totalsRow.collected,
-    refunded: totalsRow.refunded,
-    averagePayment: totalsRow.average_payment,
+    unpaidCash: { orders: unpaidResult.rows[0].orders, amount: unpaidResult.rows[0].amount },
   }
+  const breakdown = (rows, keys) => keys.map((key) => {
+    const row = rows.find((entry) => entry.key === key)
+    return { key, orders: row?.orders ?? 0, sales: row?.sales ?? '0.00' }
+  })
+  const byMethod = breakdown(methodResult.rows, ['CASH', 'GCASH'])
+  const byType = breakdown(typeResult.rows, ['WALK_IN', 'PICKUP', 'DELIVERY'])
 
   // The export history (REPORTS_UI_PLAN.md U2): viewing the report is not
   // logged; downloading its CSV is, for any role (lib/exportLog.js).
@@ -249,34 +189,30 @@ router.get('/sales', async (request, response) => {
     // owner's own machine, not the server's.
     //
     // The Period column names its own grouping rather than the file
-    // carrying a title block above the table. A bare '2026-08-31' in a
-    // first column is ambiguous between one day and the Monday that opens
-    // a week bucket, and once the file is on someone's laptop the request
-    // that produced it is gone. Naming the unit in the header keeps the
-    // table importable as-is — a preamble would push the real header off
-    // row 1 and break a plain spreadsheet import. The date range travels
-    // in the filename below.
-    //
-    // The refunds column carries its own warning, in the header, because
-    // the header is the only thing that stays attached to the file once it
-    // is on someone's laptop. `Collected` already excludes refunded money
-    // (it counts status = 'PAID' only), so `Collected - Refunds` subtracts
-    // the same money twice — and that subtraction is the first thing any
-    // reader does with two adjacent money columns. Naming the column
-    // 'Refunded' invited exactly that; naming it this way forecloses it.
+    // carrying a title block above the table: a bare '2026-08-31' is
+    // ambiguous between one day and the Monday that opens a week bucket,
+    // and a preamble would push the real header off row 1 and break a
+    // plain spreadsheet import. The date range travels in the filename.
+    const typeNames = { WALK_IN: 'Walk-in / counter', PICKUP: 'Online pickup', DELIVERY: 'Delivery' }
     const lines = [
-      csvRow([`Period (${groupBy})`, 'Orders placed', 'Ordered (goods)', 'Delivery fees', 'Collected (incl. delivery fees)', 'Refunds issued (already excluded from Collected)']),
-      ...buckets.map((bucket) => csvRow([bucket.period, bucket.ordersPlaced, bucket.ordered, bucket.deliveryFees, bucket.collected, bucket.refunded])),
+      csvRow([`Period (${groupBy})`, 'Orders', 'Sales (excl. delivery fees)', 'Delivery fees']),
+      ...buckets.map((bucket) => csvRow([bucket.period, bucket.orders, bucket.sales, bucket.deliveryFees])),
       '',
-      csvRow(['Totals', totals.ordersPlaced, totals.ordered, totals.deliveryFees, totals.collected, totals.refunded]),
-      csvRow(['Average payment', totals.averagePayment]),
+      csvRow(['Totals', totals.orders, totals.sales, totals.deliveryFees]),
+      csvRow(['Average order', totals.averageOrder]),
+      '',
+      csvRow(['By payment method', 'Orders', 'Sales']),
+      ...byMethod.map((row) => csvRow([row.key === 'GCASH' ? 'GCash' : 'Cash', row.orders, row.sales])),
+      '',
+      csvRow(['By order type', 'Orders', 'Sales']),
+      ...byType.map((row) => csvRow([typeNames[row.key], row.orders, row.sales])),
     ]
     response.type('text/csv')
     response.set('Content-Disposition', `attachment; filename="sales-${from}-to-${to}.csv"`)
     return response.send(lines.join('\r\n'))
   }
 
-  return response.json({ from, to, groupBy, buckets, totals })
+  return response.json({ from, to, groupBy, buckets, totals, byMethod, byType })
 })
 
 // GET /api/reports/summary — the live dashboard's ambient view. No date

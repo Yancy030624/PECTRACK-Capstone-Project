@@ -96,14 +96,6 @@ describe('reporting & analytics', () => {
     return body.payment.id
   }
 
-  // Flips an existing PAID payment to REFUNDED at a controlled instant —
-  // direct SQL, not the real cancel-and-refund workflow (PHASE6_PLAN.md,
-  // Decision 8), because that transition is orders.test.js's job to prove
-  // correct. This file only needs a REFUNDED row with a known refunded_at
-  // to prove the report reads it right.
-  const refundAt = (paymentId, instant) =>
-    pool.query(`UPDATE payments SET status = 'REFUNDED', refunded_at = $1, refunded_by = $2, refund_reason = 'test refund' WHERE payment_id = $3`, [instant, adminUserId, paymentId])
-
   const getSales = (query, cookie = adminCookie) => fetch(`${baseUrl}/api/reports/sales?${new URLSearchParams(query)}`, { headers: { Cookie: cookie } })
 
   before(async () => {
@@ -208,31 +200,40 @@ describe('reporting & analytics', () => {
     assert.equal((await getSales({ from: '2020-01-01', to: '2021-06-01' })).status, 422) // > 366 days
   })
 
+  // REPORTS_UI_PLAN.md U3 — the report is the money received: PAID
+  // payments dated by payment_date, delivery fees taken out.
   test('an empty period returns zeros formatted to two decimals, not null and not a 500', async () => {
     // 2015 — nothing in this suite, or any other, ever writes here.
     const response = await getSales({ from: '2015-01-01', to: '2015-01-31' })
     assert.equal(response.status, 200)
     const body = await response.json()
     assert.deepEqual(body.buckets, [])
-    assert.deepEqual(body.totals, { ordersPlaced: 0, ordered: '0.00', deliveryFees: '0.00', collected: '0.00', refunded: '0.00', averagePayment: '0.00' })
+    assert.deepEqual(body.totals, { sales: '0.00', orders: 0, averageOrder: '0.00', deliveryFees: '0.00', unpaidCash: { orders: 0, amount: '0.00' } })
+    assert.deepEqual(body.byMethod, [{ key: 'CASH', orders: 0, sales: '0.00' }, { key: 'GCASH', orders: 0, sales: '0.00' }])
+    assert.deepEqual(body.byType.map((row) => row.key), ['WALK_IN', 'PICKUP', 'DELIVERY'])
   })
 
-  test('a sale at 2pm on the `to` date is included — the half-open range, where BETWEEN would drop it', async () => {
-    await placeOrderAt('2021-06-05 14:00:00+08')
-    const response = await getSales({ from: '2021-06-05', to: '2021-06-05' })
-    const body = await response.json()
-    assert.equal(body.totals.ordersPlaced, 1)
-    assert.equal(body.totals.ordered, '100.00')
+  test('a payment at 2pm on the `to` date is included — the half-open range, where BETWEEN would drop it', async () => {
+    const orderId = await placeOrderAt('2021-06-05 13:00:00+08')
+    await payInFullAt(orderId, '2021-06-05 14:00:00+08')
+    const body = await (await getSales({ from: '2021-06-05', to: '2021-06-05' })).json()
+    assert.equal(body.totals.orders, 1)
+    assert.equal(body.totals.sales, '100.00')
+    assert.equal(body.totals.averageOrder, '100.00')
   })
 
-  test('a delivery fee is kept apart: ordered is the goods, deliveryFees the fees (DELIVERY_FEE_PLAN D1)', async () => {
+  test('a delivery fee is taken out of sales and shown as its own figure (DELIVERY_FEE_PLAN D1)', async () => {
     const orderId = await placeOrderAt('2021-07-07 10:00:00+08')
-    // A ₱100 order carrying a ₱50 fee, as a delivery order is stored.
+    // A ₱100 order carrying a ₱50 fee, as a delivery order is stored, paid in full.
     await pool.query('UPDATE orders SET delivery_fee = 50, total_amount = total_amount + 50 WHERE order_id = $1', [orderId])
+    const paid = await fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ orderId, method: 'GCASH', amount: 150, gatewayReference: `report-fee-${runId}` }) })
+    assert.equal(paid.status, 201)
+    await pool.query('UPDATE payments SET payment_date = $1 WHERE order_id = $2', ['2021-07-07 10:05:00+08', orderId])
     const body = await (await getSales({ from: '2021-07-07', to: '2021-07-07' })).json()
-    assert.equal(body.totals.ordered, '100.00')
+    assert.equal(body.totals.sales, '100.00')
     assert.equal(body.totals.deliveryFees, '50.00')
     assert.equal(body.buckets[0].deliveryFees, '50.00')
+    assert.deepEqual(body.byMethod.find((row) => row.key === 'GCASH'), { key: 'GCASH', orders: 1, sales: '100.00' })
   })
 
   test('a practice (ASSUMED) order never counts as money, in the report or the payment log (ANALYTICS_PLAN A1)', async () => {
@@ -240,90 +241,67 @@ describe('reporting & analytics', () => {
     const paymentId = await payInFullAt(orderId, '2021-08-08 10:30:00+08')
     await pool.query(`UPDATE orders SET data_source = 'ASSUMED' WHERE order_id = $1`, [orderId])
     const body = await (await getSales({ from: '2021-08-08', to: '2021-08-08' })).json()
-    assert.equal(body.totals.ordersPlaced, 0)
-    assert.equal(body.totals.ordered, '0.00')
-    assert.equal(body.totals.collected, '0.00')
+    assert.equal(body.totals.orders, 0)
+    assert.equal(body.totals.sales, '0.00')
     const log = await (await fetch(`${baseUrl}/api/payments?from=2021-08-08&to=2021-08-08&status=PAID`, { headers: { Cookie: adminCookie } })).json()
     assert.ok(!log.payments.some((payment) => payment.id === paymentId), 'not in the Payment log')
   })
 
-  test('cancelled orders appear in neither ordersPlaced nor ordered', async () => {
-    const orderId = await placeOrderAt('2021-07-10 09:00:00+08')
-    const cancel = await cancelOrder(orderId)
-    assert.equal(cancel.status, 200)
-
-    const response = await getSales({ from: '2021-07-10', to: '2021-07-10' })
-    const body = await response.json()
-    assert.equal(body.totals.ordersPlaced, 0, 'a cancelled order must not count as ordered volume')
-    assert.equal(body.totals.ordered, '0.00')
-  })
-
-  test('only PAID payments count as collected — PENDING and FAILED do not', async () => {
+  test('only PAID payments count — PENDING and FAILED do not', async () => {
     const orderId = await placeOrderAt('2021-08-01 10:00:00+08')
-    // A PayMongo intent creates a PENDING row; simulate one directly rather
-    // than needing real gateway credentials, then flip it to FAILED —
-    // neither status should ever reach `collected`.
     const pending = await pool.query(
       `INSERT INTO payments (order_id, recorded_by, payment_method, amount, status, gateway_reference, payment_date)
        VALUES ($1, $2, 'GCASH', 100, 'PENDING', $3, '2021-08-01 10:05:00+08') RETURNING payment_id`,
       [orderId, adminUserId, `report-test-pending-${runId}`],
     )
+    const before = await (await getSales({ from: '2021-08-01', to: '2021-08-01' })).json()
+    assert.equal(before.totals.sales, '0.00', 'a PENDING payment is not money received')
     await pool.query(`UPDATE payments SET status = 'FAILED' WHERE payment_id = $1`, [pending.rows[0].payment_id])
-
-    const response = await getSales({ from: '2021-08-01', to: '2021-08-01' })
-    const body = await response.json()
-    assert.equal(body.totals.collected, '0.00', 'a FAILED payment must not count as collected')
-    assert.equal(body.totals.ordersPlaced, 1, 'the order itself still counts as ordered volume')
+    const after = await (await getSales({ from: '2021-08-01', to: '2021-08-01' })).json()
+    assert.equal(after.totals.sales, '0.00', 'nor is a FAILED one')
+    assert.equal(after.totals.orders, 0)
   })
 
-  test('a refunded payment is excluded from collected and appears in refunded, dated by refunded_at', async () => {
-    const orderId = await placeOrderAt('2021-09-01 09:00:00+08')
-    const paymentId = await payInFullAt(orderId, '2021-09-01 09:05:00+08')
-    // Refunded in a DIFFERENT month than it was paid.
-    await refundAt(paymentId, '2021-10-15 11:00:00+08')
-
-    const septemberReport = await (await getSales({ from: '2021-09-01', to: '2021-09-30' })).json()
-    assert.equal(septemberReport.totals.collected, '0.00', 'a refunded payment must not count as collected in the month it was PAID')
-    assert.equal(septemberReport.totals.refunded, '0.00', 'nor does the refund show up in the month it was paid')
-
-    const octoberReport = await (await getSales({ from: '2021-10-01', to: '2021-10-31' })).json()
-    assert.equal(octoberReport.totals.refunded, '100.00', 'the refund is dated by refunded_at — Decision 3')
-  })
-
-  // PHASE 8, DECISION 2 — an order placed in one month and paid the next
-  // contributes ORDERED volume to the first bucket and COLLECTED revenue
-  // to the second. This looks like a bug without the plan open, hence the
-  // comment pointing here.
-  test('an order placed in one month and paid the next splits ordered and collected across the two months', async () => {
+  test('an order is counted when its money arrives: placed in November, paid in December, it is December\'s', async () => {
     const orderId = await placeOrderAt('2021-11-28 16:00:00+08')
     await payInFullAt(orderId, '2021-12-03 10:00:00+08')
-
     const november = await (await getSales({ from: '2021-11-01', to: '2021-11-30' })).json()
-    assert.equal(november.totals.ordersPlaced, 1)
-    assert.equal(november.totals.ordered, '100.00')
-    assert.equal(november.totals.collected, '0.00', 'not yet paid when November ends')
-
+    assert.equal(november.totals.sales, '0.00')
     const december = await (await getSales({ from: '2021-12-01', to: '2021-12-31' })).json()
-    assert.equal(december.totals.ordersPlaced, 0, 'the order was PLACED in November, not December')
-    assert.equal(december.totals.collected, '100.00', 'the payment landed in December')
+    assert.equal(december.totals.sales, '100.00')
+    assert.equal(december.totals.orders, 1)
+  })
+
+  test('cash pickups placed and not yet paid are counted apart (SENIOR_CONSULT_PLAN S3)', async () => {
+    const orderId = await placeOrderAt('2021-07-12 09:00:00+08')
+    await pool.query(`UPDATE orders SET payment_mode = 'CASH' WHERE order_id = $1`, [orderId])
+    const unpaid = await (await getSales({ from: '2021-07-12', to: '2021-07-12' })).json()
+    assert.deepEqual(unpaid.totals.unpaidCash, { orders: 1, amount: '100.00' })
+    assert.equal(unpaid.totals.sales, '0.00')
+    await payInFullAt(orderId, '2021-07-12 15:00:00+08')
+    const paid = await (await getSales({ from: '2021-07-12', to: '2021-07-12' })).json()
+    assert.deepEqual(paid.totals.unpaidCash, { orders: 0, amount: '0.00' })
+    assert.equal(paid.totals.sales, '100.00')
+    assert.equal(paid.byType.find((row) => row.key === 'PICKUP').orders, 1, 'an online pickup')
   })
 
   test('groupBy=day, week, and month bucket the same data differently', async () => {
-    await placeOrderAt('2022-03-02 10:00:00+08') // a Wednesday
-    await placeOrderAt('2022-03-04 10:00:00+08') // the same ISO week (Mon 2022-02-28 - Sun 2022-03-06)
-    await placeOrderAt('2022-03-20 10:00:00+08') // a different week, same month
+    for (const day of ['2022-03-02', '2022-03-04', '2022-03-20']) {
+      const orderId = await placeOrderAt(`${day} 10:00:00+08`)
+      await payInFullAt(orderId, `${day} 10:30:00+08`)
+    }
 
     const byDay = await (await getSales({ from: '2022-03-01', to: '2022-03-31', groupBy: 'day' })).json()
-    assert.equal(byDay.buckets.filter((b) => b.ordersPlaced > 0).length, 3, 'three distinct days')
+    assert.equal(byDay.buckets.filter((b) => b.orders > 0).length, 3, 'three distinct days')
 
     const byWeek = await (await getSales({ from: '2022-03-01', to: '2022-03-31', groupBy: 'week' })).json()
     const marchTwoAndFour = byWeek.buckets.find((b) => b.period === '2022-02-28')
-    assert.equal(marchTwoAndFour?.ordersPlaced, 2, 'the 2nd and 4th fall in the same ISO week')
+    assert.equal(marchTwoAndFour?.orders, 2, 'the 2nd and 4th fall in the same ISO week')
 
     const byMonth = await (await getSales({ from: '2022-03-01', to: '2022-03-31', groupBy: 'month' })).json()
     assert.equal(byMonth.buckets.length, 1)
     assert.equal(byMonth.buckets[0].period, '2022-03-01')
-    assert.equal(byMonth.buckets[0].ordersPlaced, 3)
+    assert.equal(byMonth.buckets[0].orders, 3)
   })
 
   test('rejects an invalid groupBy', async () => {
@@ -331,40 +309,19 @@ describe('reporting & analytics', () => {
     assert.equal(response.status, 422)
   })
 
-  test('averagePayment is the average PAID payment amount, zero on a quiet period', async () => {
-    const orderA = await placeOrderAt('2022-05-01 09:00:00+08')
-    await payInFullAt(orderA, '2022-05-01 09:10:00+08')
-    const orderB = await placeOrderAt('2022-05-02 09:00:00+08')
-    await payInFullAt(orderB, '2022-05-02 09:10:00+08')
-
-    const response = await (await getSales({ from: '2022-05-01', to: '2022-05-31' })).json()
-    assert.equal(response.totals.collected, '200.00')
-    assert.equal(response.totals.averagePayment, '100.00', 'two ₱100 payments average to ₱100')
-  })
-
-  // The field is named for what it MEASURES, not for what a reader might
-  // wish it measured. It divides collected money by the number of PAYMENT
-  // rows, so an order settled in instalments contributes one figure per
-  // instalment — and calling that "average sale" (as this did until the
-  // Phase 8 review) reports half the value of the only sale in the period.
-  //
-  // Renaming rather than recomputing is deliberate: collected/ordersPlaced
-  // would look like the fix, but those two are dated by DIFFERENT columns
-  // (payment_date vs order_date, Decision 2), so dividing one by the other
-  // produces a figure that belongs to no period at all.
-  test('averagePayment measures payments, not orders — an instalment-paid order proves which', async () => {
+  // Average ORDER, not average payment: an order settled in two parts is
+  // one sale, so ₱100 paid as ₱50 + ₱50 averages ₱100.
+  test('averageOrder divides sales by orders, so an order paid in parts is still one order', async () => {
     const order = await placeOrderAt('2022-07-14 09:00:00+08')
-    // One ₱100 order, settled as two ₱50 instalments: one sale, two payments.
-    const halfA = await fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ orderId: order, method: 'CASH', amount: 50 }) })
-    assert.equal(halfA.status, 201)
-    const halfB = await fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ orderId: order, method: 'CASH', amount: 50 }) })
-    assert.equal(halfB.status, 201)
+    for (let part = 0; part < 2; part += 1) {
+      const half = await fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ orderId: order, method: 'CASH', amount: 50 }) })
+      assert.equal(half.status, 201)
+    }
     await pool.query('UPDATE payments SET payment_date = $1 WHERE order_id = $2', ['2022-07-14 09:10:00+08', order])
-
-    const response = await (await getSales({ from: '2022-07-14', to: '2022-07-14' })).json()
-    assert.equal(response.totals.ordersPlaced, 1, 'one order was placed')
-    assert.equal(response.totals.collected, '100.00', 'and it was collected in full')
-    assert.equal(response.totals.averagePayment, '50.00', 'two ₱50 payments average to ₱50 — which is why this is not called "average sale"')
+    const body = await (await getSales({ from: '2022-07-14', to: '2022-07-14' })).json()
+    assert.equal(body.totals.orders, 1)
+    assert.equal(body.totals.sales, '100.00')
+    assert.equal(body.totals.averageOrder, '100.00')
   })
 
   // PHASE 8, DECISION 4 — deliberate generation vs. an ambient view.
@@ -385,8 +342,9 @@ describe('reporting & analytics', () => {
   })
 
   // PATTERN K + the CSV/SALES_CSV half of Decision 4.
-  test('format=csv returns an escaped CSV file and logs SALES_CSV, not SALES', async () => {
-    await placeOrderAt('2021-04-05 10:00:00+08')
+  test('format=csv returns an escaped CSV file and logs SALES_CSV', async () => {
+    const csvOrder = await placeOrderAt('2021-04-05 10:00:00+08')
+    await payInFullAt(csvOrder, '2021-04-05 10:30:00+08')
 
     const response = await getSales({ from: '2021-04-01', to: '2021-04-30', format: 'csv' })
     assert.equal(response.status, 200)
@@ -394,24 +352,20 @@ describe('reporting & analytics', () => {
     assert.match(response.headers.get('content-disposition'), /attachment/)
 
     const text = await response.text()
-    // The Period column names its own grouping. Without it a first column
-    // reading '2021-04-05' is ambiguous between a single day and the
-    // Monday that opens a week bucket, and the file carries no other
-    // record of which one was asked for.
-    // The refunds column says, in the header that travels with the file,
-    // that it is NOT deducted from Collected. Collected already excludes
-    // refunded money (status = 'PAID'), so `Collected - Refunds` subtracts
-    // it a second time — the one arithmetic every reader will reach for,
-    // and the one the plain label 'Refunded' silently invited.
-    assert.match(text, /"Period \(day\)","Orders placed","Ordered \(goods\)","Delivery fees","Collected \(incl\. delivery fees\)","Refunds issued \(already excluded from Collected\)"/)
-    assert.match(text, /100\.00/, 'the ₱100 order placed above must appear in the CSV body')
-    assert.match(text, /"Average payment"/, 'the CSV must use the same honest label as the API')
+    // The Period column names its own grouping: a bare '2021-04-05' is
+    // ambiguous between a day and the Monday that opens a week bucket.
+    assert.match(text, /"Period \(day\)","Orders","Sales \(excl\. delivery fees\)","Delivery fees"/)
+    assert.match(text, /100\.00/, 'the ₱100 payment above must appear in the CSV body')
+    assert.match(text, /"Average order"/)
+    assert.match(text, /"By payment method"/)
+    assert.match(text, /"By order type"/)
+    assert.ok(!/Refund/i.test(text), 'there are no refunds, so the file never mentions them')
 
     const weekly = await getSales({ from: '2021-04-01', to: '2021-04-30', groupBy: 'week', format: 'csv' })
     assert.match(await weekly.text(), /"Period \(week\)"/, 'a week-grouped export must say so in the column it groups by')
 
     const row = await pool.query('SELECT report_type FROM report_logs WHERE generated_by = (SELECT admin_id FROM admins WHERE user_id = $1) ORDER BY report_id DESC LIMIT 1', [adminUserId])
-    assert.equal(row.rows[0].report_type, 'SALES_CSV', 'the export must be logged distinctly from a plain SALES view')
+    assert.equal(row.rows[0].report_type, 'SALES_CSV', 'the download is logged in the export history')
   })
 
   // The actual security property Pattern K exists for: a cell that looks
