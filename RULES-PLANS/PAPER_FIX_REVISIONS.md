@@ -1025,3 +1025,26 @@ Plan: RULES-PLANS/REPORTS_ALIGNMENT_ANALYSIS.md §6. Migration 036.
 Paper:
 - Methodology: add the event and weekend factors to the predictive model's variables, and the events calendar to the inventory process.
 - Limitations: real event effects are assumed until a real Pahiyas or Holy Week has been recorded.
+
+### Reporting and predictive analytics (grilling session, 2026-10-25)
+
+Plan: RULES-PLANS/ANALYTICS_PLAN.md (A1–A7). Migration 039.
+
+- **The forecast checks the bake list.** The production list is still worked out from the bakery's own rules: daily standards, minimum and stop levels, and the weekend and event factors. Beside each product, the forecast's expected sales for that day are compared with what the plan will have:
+  - soft bread: the standard plus advanced orders;
+  - hard bread: on hand plus what to bake.
+
+  When the forecast is higher, the list shows "+N more", with a count at the top ("Forecast says bake more: 3 products"). It warns about shortfalls only, because the bakery would rather toast or reject leftovers than sell out. This is where the prediction meets the automated inventory.
+- **The forecast runs by itself every night** at 12:05 AM, once the day's sales are complete, so the morning bake always has a fresh forecast. The admin can still run one by hand.
+- **The system switches to real sales on its own.** The nightly run trains on the assumed history until the bakery has **56 days** of real sales, which is the shortest history whose accuracy can be measured (28 days to learn from plus 4 test weeks). From then on it trains on real sales. The Forecast tab says which data the latest run used, and whether it ran automatically.
+- **The forecast learns from real sales only, on the right day.** An order counts once it is paid or completed. An advanced order counts on its pickup day, not the day it was booked. Unpaid online checkouts and uncollected cash orders do not count.
+- **Assumed data never counts as money.** The demonstration orders made for the assumed history are left out of every sales figure, the product report, the Dashboard's figures and the Payment log. They remain in the database, marked ASSUMED, for the forecast and the delivery-history demonstration.
+- **Holidays:** Christmas Eve and Day and New Year's Eve and Day are fixed holiday variables. Every other event (Holy Week, Pahiyas, long weekends) comes from the bakery's own events calendar.
+- **Report History** records each sales report and CSV export an admin generates, as before.
+
+Paper:
+- Methodology (predictive analytics):
+  - add the nightly run, the 56-day switch to real sales, and the forecast check on the production list;
+  - define a "sale" for the model as a paid or completed order, dated by its pickup day.
+- Limitations (replace the forecast item): "The forecasting method is validated on assumed history. Its accuracy on Pecto's real sales will be measured once 56 days of real sales exist; the system then switches to them by itself. The accuracy figures shown (MAE, WAPE) describe the method on the assumed pattern, not the bakery's real demand."
+- Defense: when asked how accurate the forecast is, give the line above. Do not quote the backtest figures as the bakery's accuracy.
