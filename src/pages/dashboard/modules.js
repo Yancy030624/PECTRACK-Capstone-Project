@@ -74,8 +74,9 @@ export const modules = [
   // Management (the user, 2026-10-16), admin only there as before.
   { name: 'Reporting & Analytics', icon: 'reports', roles: ['ADMIN', 'CASHIER'] },
   // Customer Management and Staff Management in one module (the user,
-  // 2026-10-16): a Customers tab, read-only for a cashier as before
-  // (customers.js backs that up), and a Staff tab for the admin only.
-  { name: 'User Management', icon: 'staff', roles: ['ADMIN', 'CASHIER'] },
+  // 2026-10-16): a Customers tab and a Staff tab. Admin only since the
+  // seniors' consultation (SENIOR_CONSULT_PLAN.md, S5); the cashier's
+  // walk-in form still reads /api/customers.
+  { name: 'User Management', icon: 'staff', roles: ['ADMIN'] },
   { name: 'My Profile', icon: 'profile', roles: ['ADMIN', 'CASHIER', 'DELIVERY PERSONNEL'] },
 ]
