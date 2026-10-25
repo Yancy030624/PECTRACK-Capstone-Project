@@ -250,19 +250,25 @@ router.get('/summary', async (_request, response) => {
                (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date::timestamp AT TIME ZONE 'Asia/Manila' AS starts_at,
                ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date + 1)::timestamp AT TIME ZONE 'Asia/Manila' AS ends_at
       ),
-      today_orders AS (
-        SELECT COUNT(*)::int AS orders_placed, COALESCE(SUM(o.total_amount - o.delivery_fee), 0)::numeric(12,2) AS ordered,
-              COALESCE(SUM(o.delivery_fee), 0)::numeric(12,2) AS delivery_fees
-          FROM orders o, today_range tr
-         WHERE o.data_source = 'RECORDED' AND o.status NOT IN ('CANCELLED', 'AWAITING_PAYMENT') AND o.order_date >= tr.starts_at AND o.order_date < tr.ends_at
-      ),
-      today_payments AS (
-        SELECT COALESCE(SUM(p.amount), 0)::numeric(12,2) AS collected
+      -- Today in the Sales report's own terms (REPORTS_UI_PLAN.md U3, the
+      -- user 2026-10-25): orders that received money today, and that
+      -- money with the delivery fees taken out.
+      today_paid AS (
+        SELECT COUNT(DISTINCT o.order_id)::int AS orders,
+               COALESCE(SUM(p.amount - COALESCE(p.amount * o.delivery_fee / NULLIF(o.total_amount, 0), 0)), 0)::numeric(12,2) AS sales
           FROM payments p JOIN orders o ON o.order_id = p.order_id, today_range tr
          WHERE o.data_source = 'RECORDED' AND p.status = 'PAID' AND p.payment_date >= tr.starts_at AND p.payment_date < tr.ends_at
+      ),
+      -- Cash pickups still waiting to be paid at the counter, whatever
+      -- day they were placed (SENIOR_CONSULT_PLAN.md S3).
+      unpaid_cash AS (
+        SELECT COUNT(*)::int AS orders, COALESCE(SUM(o.total_amount), 0)::numeric(12,2) AS amount
+          FROM orders o
+         WHERE o.data_source = 'RECORDED' AND o.payment_mode = 'CASH' AND o.status NOT IN ('CANCELLED', 'COMPLETED', 'AWAITING_PAYMENT')
+           AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.order_id AND p.status = 'PAID')
       )
-      SELECT tr.local_date, tord.orders_placed, tord.ordered, tpay.collected
-        FROM today_range tr, today_orders tord, today_payments tpay
+      SELECT tr.local_date, tp.orders, tp.sales, uc.orders AS unpaid_cash_orders, uc.amount AS unpaid_cash_amount
+        FROM today_range tr, today_paid tp, unpaid_cash uc
     `),
     // Total outstanding — lib/billing.js's own definition of what an order
     // owes, spliced in rather than restated (Decision 2's "one definition"
@@ -305,9 +311,9 @@ router.get('/summary', async (_request, response) => {
   return response.json({
     today: {
       date: todayRow.local_date,
-      ordersPlaced: todayRow.orders_placed,
-      ordered: todayRow.ordered,
-      collected: todayRow.collected,
+      orders: todayRow.orders,
+      sales: todayRow.sales,
+      unpaidCash: { orders: todayRow.unpaid_cash_orders, amount: todayRow.unpaid_cash_amount },
     },
     outstanding: outstandingResult.rows[0].outstanding,
     // Low stock is not here: the Dashboard reads it from

@@ -459,7 +459,7 @@ describe('reporting & analytics', () => {
     // the report, just this test sampling an instant that another file
     // perturbed. Retrying re-samples a fresh before/after pair, which only
     // fails again if that same cross-file race recurs on every attempt.
-    test('placing and paying an order today moves ordersPlaced/ordered/collected by at least that amount', async () => {
+    test('paying an order today moves orders and sales by at least that amount', async () => {
       let lastError
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
@@ -473,9 +473,9 @@ describe('reporting & analytics', () => {
           assert.equal(payResponse.status, 201)
 
           const after = await (await fetch(`${baseUrl}/api/reports/summary`, { headers: { Cookie: adminCookie } })).json()
-          assert.ok(after.today.ordersPlaced >= before.today.ordersPlaced + 1, 'ordersPlaced must reflect the order just placed')
-          assert.ok(Number(after.today.ordered) >= Number(before.today.ordered) + 100, 'ordered must reflect the ₱100 order just placed')
-          assert.ok(Number(after.today.collected) >= Number(before.today.collected) + 100, 'collected must reflect the ₱100 payment just recorded')
+          assert.ok(after.today.orders >= before.today.orders + 1, 'orders must count the order just paid')
+          assert.ok(Number(after.today.sales) >= Number(before.today.sales) + 100, 'sales must reflect the ₱100 payment just recorded')
+          assert.ok(Number.isInteger(after.today.unpaidCash.orders))
           return
         } catch (error) {
           lastError = error

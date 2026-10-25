@@ -168,9 +168,12 @@ export function DashboardHome({ user, onNavigate }) {
         {/* Today at a glance: plain figures, no colour — they are facts,
             not problems. */}
         <div className="grid w-full grid-cols-3 gap-4 rounded-panel bg-surface px-4 py-3 shadow-raised sm:w-auto sm:gap-8 sm:px-5">
-          <TodayFigure label="Orders today" value={summary ? summary.today.ordersPlaced : '—'} />
-          <TodayFigure label="Ordered" value={summary ? formatPeso(summary.today.ordered) : '—'} />
-          <TodayFigure label="Collected" value={summary ? formatPeso(summary.today.collected) : '—'} />
+          {/* The Sales report's terms (REPORTS_UI_PLAN.md U3): orders paid
+              today, their sales without delivery fees, and the cash
+              pickups still to be paid at the counter. */}
+          <TodayFigure label="Orders today" value={summary ? summary.today.orders : '—'} />
+          <TodayFigure label="Sales today" value={summary ? formatPeso(summary.today.sales) : '—'} />
+          <TodayFigure label="Cash not yet paid" value={summary ? summary.today.unpaidCash.orders : '—'} />
         </div>
       </div>
 
