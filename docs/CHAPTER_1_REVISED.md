@@ -124,7 +124,7 @@ The Login Module secures the system by verifying user identity before granting a
 - The administrator may mark the device as trusted for 30 days, after which signing in on that device needs only the password. Changing the password removes every trusted device.
 - Once verified, the administrator is taken to the Dashboard, with full access to all modules.
 
-**Cashiers** are taken to the Dashboard, with access to the operational features: orders, walk-in and advanced orders, inventory, payments, deliveries, reports, and customer look-up.
+**Cashiers** are taken to the Dashboard, with access to the operational features: orders, walk-in and advanced orders, inventory and production, payments and the payment log, and deliveries. User Management and Reporting and Analytics are for the administrator only.
 
 **Customers** are taken to the online Menu, where they browse products, place orders, pay, and follow their orders.
 
@@ -133,7 +133,7 @@ The Login Module secures the system by verifying user identity before granting a
 ### Dashboard Module
 
 The Dashboard gives the admin and cashier an overview of what needs attention at a glance:
-- a "Today" row with the number of orders, the amount ordered, and the amount collected;
+- a "Today" row with the orders paid today, today's sales (delivery fees not included), and the cash orders not yet paid;
 - colour-coded status tiles (green for Good, yellow for Okay, red for Needs attention) for soft breads about to be sold out, hard breads low on stock, ingredients low on stock, today's orders, and deliveries waiting for a rider;
 - a **Running out** list of products running low;
 - a **Needed by** list of paid orders still to be picked up or delivered, each marked by how close its time is;
@@ -143,26 +143,27 @@ Selecting a tile opens the module already filtered to the problem.
 
 ### User Management Module
 
-The User Management Module keeps the records of the people who use the system. It has two tabs.
+The User Management Module keeps the records of the people who use the system. It is for the administrator only and has two tabs.
 
 **Customers**
 - Customers create their own accounts through registration.
 - The admin can search the customer list, correct a customer's details, and deactivate or reactivate an account.
-- The cashier can search and view customer records but cannot change them.
 - Customers manage their own profile, saved delivery addresses, and password from their account page.
 - Registration refuses a username, email address, or contact number already in use.
 
-**Staff** (admin only)
+**Staff**
 - The admin creates and manages the accounts of cashiers and delivery personnel, edits their details, resets their passwords, and deactivates or reactivates them.
 
 ### Order Management Module
 
 The Order Management Module oversees each order from placement to completion.
 
-**Payment first**
-- Every order is paid before it is prepared. Once paid, an order becomes **Ready for pickup** or **Ready for delivery**, then **Out for delivery** (for deliveries), and finally **Completed**.
-- An online order is held for 15 minutes while the customer pays with GCash; if it is not paid in time, the system releases it and returns its stock.
-- Paid orders cannot be cancelled, as the bakery gives no refunds.
+**Paid before release**
+- Every order is paid before it is handed over. An order becomes **Ready for pickup** or **Ready for delivery**, then **Out for delivery** (for deliveries), and finally **Completed**.
+- **GCash:** an online order paid with GCash is held for 15 minutes while the customer pays. If it is not paid in time, the system releases it and returns its stock.
+- **Cash at pickup:** a pickup order can instead be paid in cash at the counter. It is placed at once as **Ready for pickup** and marked **Not paid** until the cashier records the cash; the order details show its payment method. A customer can have only one unpaid cash order at a time, and one not collected by the end of its day is cancelled automatically.
+- **Delivery:** delivery orders are paid with GCash only, and carry a delivery fee of ₱50.
+- Paid orders cannot be cancelled, as the bakery gives no refunds. A customer may cancel their own unpaid cash order.
 
 **Orders list**
 - Staff see the orders for **Today**, the **Upcoming** ones, or any chosen date, filtered by status and searchable by order number or customer.
@@ -181,12 +182,13 @@ The Order Management Module oversees each order from placement to completion.
 To add products, the cashier types the first letters of a product's name and picks it from the matching list. Quantities can be typed directly.
 
 **Online orders** (customer)
-- Customers browse the Menu, add items to the cart, choose pickup or delivery and a date and time, and pay with GCash.
-- Orders are accepted from 5:00 AM to 10:00 PM and up to 30 days ahead.
+- Customers browse the Menu, add items to the cart, and choose pickup or delivery. They may leave the time blank for "as soon as it's ready", or choose a date and one of the available times. Times are offered every 30 minutes from 5:00 AM to 10:00 PM, up to 30 days ahead.
+- **Payment method:** a pickup is paid in cash at the counter or with GCash right away; a delivery is paid with GCash, with the ₱50 delivery fee added to the total.
+- **Delivery address:** saved addresses are always in Lucban, Quezon; the customer enters the street, barangay, and similar details.
 
 ### Inventory Management Module
 
-The Inventory Management Module keeps the stock of every product current. Stock is deducted automatically when an order is paid and returned automatically when an unpaid online order is released. The module follows the bakery's two ways of stocking.
+The Inventory Management Module keeps the stock of every product current. Stock is deducted automatically when an order is placed (an online GCash order's stock is set aside while it is being paid) and returned automatically when an unpaid order is released or cancelled. The module follows the bakery's two ways of stocking.
 
 **Soft breads**
 - Each soft bread has a **daily standard** stock.
@@ -208,6 +210,7 @@ The Inventory Management Module keeps the stock of every product current. Stock 
 - For a soft bread, it is the standard less what is on the shelf, plus advanced orders for that day.
 - For a hard bread at its minimum, it is the stop level less what is on hand. Hard breads are automatically built up to twice the stop level from Thursday for the weekend, and to the event's multiplier (four times by default) from a week before an event.
 - The admin keeps an **Events** calendar (Holy Week, the Pahiyas Festival, Christmas, New Year, and long weekends), and the list shows which event or weekend raised the amount.
+- **Forecast check:** beside each product, the list shows the forecast's expected sales for that day. When the forecast expects more than the plan will have, it shows how many more (for example "+20 more"), with a count at the top of the list. The rules above still decide what to bake; the forecast warns before a product sells out.
 - The list can be printed.
 
 **Ingredients and products**
@@ -217,11 +220,11 @@ The Inventory Management Module keeps the stock of every product current. Stock 
 ### Payment and Billing Module
 
 The Payment and Billing Module processes and records every payment.
-- **Counter:** the cashier records cash, with the amount received and the change computed, or GCash, with its reference number.
+- **Counter:** the cashier records cash, with the amount received and the change computed, or GCash, with its reference number. Cash pickups ordered online are paid here when they are collected.
 - **Online:** orders are paid through the PayMongo payment gateway using GCash, and the system confirms the payment automatically.
-- **Delivery orders** are paid in full beforehand; cash on delivery is not offered.
+- **Delivery orders** are paid in full beforehand, delivery fee included; cash on delivery is not offered.
 
-Each paid order has a digital receipt showing the items, the total, the amount received, and the change. Staff see the orders ready for pickup or delivery and the completed ones, and a payment log of all paid payments. Customers see their own receipts and payments.
+Each paid order has a digital receipt showing the items, the delivery fee if any, the total, the amount received, and the change. Staff see the orders ready for pickup or delivery and the completed ones, each with its payment method and whether it is paid. The **Payment log** lists every payment received, filtered by date and payment method, and can be exported as a PDF. Customers see their own receipts and payments.
 
 ### Delivery Management Module
 
@@ -235,27 +238,30 @@ The Delivery Management Module manages deliveries within Lucban.
 
 The system keeps users informed:
 - **In-app:** a notification bell for staff and riders (new orders, payments, deliveries, and orders due within the hour).
+- **Low-stock warning:** when a product falls to its minimum, the admin and cashier see a red warning with its own sound, which opens the Inventory module.
 - **By email:** customers (order ready, out for delivery, delivered) and riders (new assignment).
 - **By SMS:** the order number of an advanced order is sent to the customer.
 
 ### Reporting and Analytics Module
 
-The Reporting and Analytics Module transforms the bakery's recorded data into reports and forecasts. Every report can be printed or saved as PDF, and sales data can be exported as CSV.
+The Reporting and Analytics Module transforms the bakery's recorded data into reports and forecasts. It is for the administrator only. Every report can be printed or saved as PDF, and the sales report and the forecast can be exported as CSV.
 
 | Tab | What it shows |
 |---|---|
-| Sales | Totals by day, week, or month, a sales chart, and the peak ordering periods by hour and day of the week |
-| Products | The best-selling products |
-| Inventory | Stock movements, including the 5:00 AM top-ups and counts corrected down; the products needing attention now; ingredient movements |
+| Sales | Sales (money received, delivery fees not included), number of orders, average order, and delivery fees for any date range, by day, week, or month; a chart of sales and orders; where the sales came from (cash or GCash; walk-in, online pickup, or delivery); the cash orders not yet paid; and the peak ordering periods by hour and day of the week |
+| Products | The best sellers by pieces sold, for all breads or only soft or hard breads, with revenue |
+| Inventory | For the chosen dates, how many pieces of each product were baked or added, sold, and lost (rejects and counts corrected down) |
 | Forecast | The expected sales of each product for the next seven days and the busiest day ahead |
-| Transactions | The payment log, filterable by date and payment method |
-| Report History | Admin only |
+| Export history | Every report downloaded or printed, by whom and when |
+
+The payment log is in the Payment and Billing Module. Reports show the bakery's real transactions; a **Demo data** switch adds the practice orders used to demonstrate the reports, and the screen says so while it is on.
 
 **Predictive analytics (Forecast)**
 - The forecast uses three methods: a seasonal-naïve baseline, Holt-Winters exponential smoothing, and a multiple linear regression.
 - The regression is a supervised machine-learning model that learns from the daily sales history how much each day of the week, payday, holiday, and bakery event raises or lowers sales.
 - The three methods are compared for each product on a rolling four-week backtest, and the most accurate one is used.
-- The forecast guides the daily standards and the hard-bread levels used by the Production list.
+- The forecast runs automatically every night after the day's sales are complete. It learns from the assumed sales history until the bakery has 56 days of real sales, and from the real sales after that. The administrator can also run one at any time.
+- The forecast guides the daily standards and the hard-bread levels, and the Production list's forecast check warns when a product is expected to sell more than the plan.
 
 Each of these modules works together to create an integrated system that supports the operational needs of the business. The system is designed with simplicity and ease of use as primary considerations, so that staff and customers can use its features without extensive technical knowledge. By integrating these modules into a single web-based platform, the system provides a structured, reliable, and efficient approach to order and business management.
 
@@ -282,7 +288,7 @@ The general objective of this study is to design, develop, and implement PECTRAC
    Through these measures, the system safeguards sensitive business data such as customer information, order records, and inventory details from unauthorized access, ensuring confidentiality and data privacy.
 
 4. **To automate the bakery's inventory.**
-   The system updates stock automatically as orders are paid, and releases the stock of unpaid online orders. Every morning it tops soft breads up to their daily standard, and it signals when hard breads should be produced. It also builds hard breads up ahead of weekends and events, giving the bakery an accurate, current view of its stock without manual counting after every sale.
+   The system deducts stock automatically as orders are placed, and returns the stock of unpaid orders that are released or cancelled. Every morning it tops soft breads up to their daily standard, and it signals when hard breads should be produced. It also builds hard breads up ahead of weekends and events, giving the bakery an accurate, current view of its stock without manual counting after every sale.
 
 5. **To create a reporting and predictive analytics module for the bakery.**
    The system generates reports on sales, best-selling products, peak ordering periods, inventory movements, and payment transactions. It also forecasts the next seven days' sales of each product using a machine-learning regression model compared against simpler methods. This enables the bakery to make informed decisions on production, identify trends, and develop strategies that support the growth of Pecto's Bakery in Lucban, Quezon.
@@ -305,7 +311,11 @@ The target users and beneficiaries of this study are:
 
 The log-in pop-up shows the bakery logo, a short welcome line, the Customer / Admin switch, the username or email and password fields, "Keep me logged in", "Forgot password?", and one Log in button. Customers also see "Create an account". For the administrator, a second step asks for the emailed code, with the option to trust the device for 30 days.
 
-> *Figure 1.1 Create account* — retake screenshot.
+> *Figure 1.1 Forgot password* — new screenshot.
+
+"Forgot password?" opens a page in the same style as the log-in, where the user enters their email address to receive a reset link. The link opens a page to choose a new password.
+
+> *Figure 1.2 Create account* — retake screenshot.
 
 Registration asks for the customer's first and last name, username, contact number, email address, password, and password confirmation, and requires agreement to the Terms of Service and Privacy Policy.
 - **Password:** at least 12 characters long, with uppercase and lowercase letters, a number, and a symbol; common passwords are refused.
@@ -313,7 +323,7 @@ Registration asks for the customer's first and last name, username, contact numb
 - **Duplicates:** a username, email address, or contact number already in use is refused.
 - **Email:** after registering, the customer confirms the email address through a link before placing an order.
 
-> *Figure 1.2 Home page* — retake screenshot.
+> *Figure 1.3 Home page* — retake screenshot.
 
 The home page presents the bakery in its own colours and photographs, with links to Home, Menu, Our Story, and Visit Us, and the bakery's history since 1947.
 
@@ -321,7 +331,7 @@ The home page presents the bakery in its own colours and photographs, with links
 
 > *Figure 2. Admin dashboard*, *Figure 2.1 Cashier dashboard* — retake screenshots.
 
-The dashboard opens with a greeting that states how many things need attention, followed by the Today row, the status tiles, and the Running out, Needed by, and Recent orders lists.
+The dashboard opens with a greeting that states how many things need attention, followed by the Today row (orders today, sales today, cash not yet paid), the status tiles, and the Running out, Needed by, and Recent orders lists.
 
 > *Figure 2.2 My Deliveries (delivery personnel)* — retake screenshot.
 
@@ -335,9 +345,9 @@ There is no map or GPS tracking; delivery is a status checklist.
 
 **User Management Module**
 
-> *Figure 3. User Management — Customers (admin)*, *Figure 4. User Management — Customers (cashier)*, *Figure 4.1 User Management — Staff (admin)* — retake screenshots.
+> *Figure 3. User Management — Customers*, *Figure 4. User Management — Staff* — retake screenshots.
 
-The Customers tab lists every registered customer with their name, username, contact number, email address, and account status, with a search box. The admin can edit or deactivate an account; the cashier can only view. The Staff tab, for the admin only, creates and manages cashier and delivery personnel accounts.
+The Customers tab lists every registered customer with their name, username, contact number, email address, and account status, with a search box, and the admin can edit or deactivate an account. The Staff tab creates and manages cashier and delivery personnel accounts. Both are for the admin only.
 
 > *Figure 5. Customer account*, *Figure 5.1 My Profile*, *Figure 5.2 Change password* — retake screenshots.
 
@@ -350,7 +360,7 @@ The customer's account page has three tabs:
 
 > *Figure 6. Order Management — Orders*, *Figure 7. Walk-in / Advanced order (cashier)*, *Figure 7.1 Walk-in receipt* — retake screenshots.
 
-The Orders tab shows the orders for Today, Upcoming, or a chosen date, with their status and the customer. The order detail shows the items, requested time, payment (including the cash received and the change), and, for a delivery waiting for a rider, an Assign rider control. The Walk-in tab switches between Walk-in and Advanced order as described in the Purpose and Description.
+The Orders tab shows the orders for Today, Upcoming, or a chosen date, with their status, the customer, and a "Not paid" tag on cash orders still to be paid. The order detail shows the items, the requested time, the payment method and whether it is paid (including the cash received and the change), and, for a delivery waiting for a rider, an Assign rider control. The Walk-in tab switches between Walk-in and Advanced order as described in the Purpose and Description.
 
 > *Figure 8. Delivery in progress (delivery personnel)* — retake screenshot.
 
@@ -362,19 +372,19 @@ The Menu shows the bakery's products grouped by category, with a search box. Eac
 
 **Inventory Management Module**
 
-> *Figure 10. Inventory — Products (soft and hard breads)*, *Figure 10.1 Edit (Add stock / Correct count)*, *Figure 10.2 Production and Events*, *Figure 11. Ingredients*, *Figure 11.1 Edit Products* — retake screenshots.
+> *Figure 10. Inventory — Products (soft and hard breads)*, *Figure 10.1 Edit (Add stock / Correct count)*, *Figure 10.2 Production and Events, with the forecast check*, *Figure 10.3 Low-stock warning*, *Figure 11. Ingredients*, *Figure 11.1 Edit Products* — retake screenshots.
 
-The Products tab lists soft breads and hard breads separately, each with its own status filters and category filters. The Edit button opens Add stock and, for the administrator, Correct count, each with a confirmation. The Production tab lists what to bake for a chosen day, with the Events calendar below it. The Ingredients tab monitors ingredient stock. Edit Products maintains the product catalogue.
+The Products tab lists soft breads and hard breads separately, each with its own status filters and category filters. The Edit button opens Add stock and, for the administrator, Correct count, each with a confirmation. The Production tab lists what to bake for a chosen day, with the forecast for each product and the Events calendar below it. The Ingredients tab monitors ingredient stock. Edit Products maintains the product catalogue.
 
 **Payment and Billing Module**
 
-> *Figure 12. Payment & Billing — Billing*, *Figure 13. Payment log* — retake screenshots.
+> *Figure 12. Payment & Billing — Billing*, *Figure 13. Payment log and its PDF* — retake screenshots.
 
-The Billing tab lists the orders ready for pickup, ready for delivery, and completed, with each order's receipt. The Payment log lists every paid payment.
+The Billing tab lists the orders ready for pickup, ready for delivery, and completed, with each order's receipt, payment method, and a "Not paid" tag on cash orders still to be paid. The Payment log lists every payment received and exports it as a PDF with the total.
 
 > *Figure 15. Checkout (customer)* — retake screenshot.
 
-At checkout the customer chooses pickup or delivery, the date and time, and, for delivery, a saved address within Lucban, then pays with GCash.
+At checkout the customer chooses pickup or delivery, the date and an available time, and, for delivery, a saved address in Lucban. A pickup is paid in cash at the counter or with GCash; a delivery is paid with GCash, and the summary shows the ₱50 delivery fee in the total.
 
 **Delivery Management Module**
 
@@ -384,16 +394,16 @@ Staff see the deliveries to assign, assigned, out for delivery, and delivered, a
 
 **Reporting and Analytics Module**
 
-> *Figure 16. Sales*, *Figure 16.1 Forecast*, *Figure 17. Transactions*, *Figure 18. Delivery history (delivery personnel)* — retake screenshots.
+> *Figure 16. Sales*, *Figure 16.1 Products*, *Figure 16.2 Inventory*, *Figure 16.3 Forecast*, *Figure 17. Export history*, *Figure 18. Delivery history (delivery personnel)* — retake screenshots.
 
-The module has the Sales, Products, Inventory, Forecast, Transactions, and Report History tabs described in the Purpose and Description. The cashier sees the same reports as the admin except Report History. Delivery personnel see their own delivery history over a chosen date range.
+The module has the Sales, Products, Inventory, Forecast, and Export history tabs described in the Purpose and Description, for the admin only. Delivery personnel see their own delivery history over a chosen date range.
 
 ### Limitations
 
 1. **Prototype and Data Exclusivity for Pecto's Bakery only.**
    - **Tailored to Pecto's:** the PECTRACK system is developed for, and tailored to, the operational needs of Pecto's Bakery in Lucban, Quezon. All modules, workflows, and database structures follow the bakery's existing business processes.
    - **Data ownership:** all data stored, processed, and generated within the system belongs to Pecto's Bakery. This includes product information, customer records, transaction histories, inventory data, and reports, which are used solely for the purpose of this capstone project.
-   - **Delivery and payment:** delivery is limited to the municipality of Lucban, Quezon. Delivery orders must be paid in full beforehand, through GCash online or at the counter; the system does not offer cash on delivery, and paid orders are not refunded.
+   - **Delivery and payment:** delivery is limited to the municipality of Lucban, Quezon, for a flat delivery fee of ₱50. Delivery orders must be paid in full beforehand with GCash; the system does not offer cash on delivery. Cash is accepted only at the counter, including for online pickup orders paid when collected. Paid orders are not refunded.
 
 2. **Internet Dependency.** As a web-based platform, the system requires a stable internet connection. Any network interruption on the part of the cashier, delivery personnel, or customers may disrupt order placement, status updates, and payment processing.
 
@@ -404,7 +414,10 @@ The module has the Sales, Products, Inventory, Forecast, Transactions, and Repor
    - about four times the usual on events, mainly in hard breads;
    - payday effects.
 
-   The assumed data is labelled as such and is kept out of the sales reports. The forecast becomes more accurate as real sales are recorded. On days when a product sells out, the true demand is not known, so those days are left out of the forecast's learning.
+   The assumed data is labelled as such and is kept out of the sales reports.
+   - **Accuracy:** the forecasting method is validated on the assumed history. The accuracy figure on screen, labelled "Method test (practice data)", shows how well the method fits the assumed pattern, not the bakery's real demand. Its accuracy on Pecto's real sales will be measured once 56 days of real sales exist; the system then switches to them by itself.
+   - **Demonstration orders:** to show the reports working, practice orders can be added. They are marked as practice data and appear only when the Demo data switch is on.
+   - **Sold-out days:** on days when a product sells out, the true demand is not known, so those days are left out of the forecast's learning.
 
 5. **Ingredient Monitoring Only.** Ingredient stock is monitored, not automated. Ingredients are not deducted when bread is baked, because the system does not store recipes, so ingredient counts are kept current by recorded deliveries and the administrator's stock checks.
 
@@ -435,4 +448,16 @@ The module has the Sales, Products, Inventory, Forecast, Transactions, and Repor
   - the "unpaid order is not cancelled automatically" line.
 - **Objectives:** now five instead of four. *To automate the bakery's inventory* was added so that both parts of the title have an objective. Check with your adviser whether five is acceptable.
 - **Figures:** every figure needs a new screenshot; the captions above say what each should show. Figure numbers follow the old order where possible; renumber after retaking.
-- **Mock defense:** be ready to explain the 5:00 AM top-up, the production list with weekends and events, and the forecast method (three methods, backtest, regression with an event variable).
+- **Updated 2026-10-25, to match the system after the seniors' consultation and the reports review:**
+  - cashier access: no reports, no User Management;
+  - "Paid before release": cash at pickup, GCash for delivery, the ₱50 delivery fee, time slots, and the fixed Lucban address;
+  - stock is deducted when an order is placed;
+  - the Reporting and Analytics module, rewritten: admin only, the new tabs, Export history, the Demo data switch, and the nightly forecast with the switch to real sales;
+  - the Production forecast check;
+  - the low-stock warning;
+  - the Dashboard's Today row;
+  - Limitation 4 (accuracy wording);
+  - the figure list.
+
+  Other chapters need the same changes; see docs/PAPER_CHANGES_FOR_MOCK_DEFENSE.md.
+- **Mock defense:** be ready to explain the 5:00 AM top-up, the production list with weekends and events, and the forecast method (three methods, backtest, regression with an event variable). On accuracy, say: "the method is validated on assumed history; real accuracy is measured after 56 days of real sales, when the system switches to them by itself." Do not quote the practice-data figure as the bakery's accuracy.
