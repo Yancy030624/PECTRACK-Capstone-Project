@@ -199,6 +199,19 @@ export function ForecastPanel({ user, active }) {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <h2 className="text-lg font-semibold text-ink-900">Sales forecast — the next 7 days</h2>
+            {/* The run's source and date sit under the title, beside the
+                controls, rather than in a row of their own below them. */}
+            {!loading && data?.run && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink-500">
+                <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${isAssumed ? 'bg-status-wait-bg text-status-wait-fg' : 'bg-status-done-bg text-status-done-fg'}`}>
+                  {isAssumed ? 'Practice data (assumed)' : 'Real sales'}
+                </span>
+                <span>
+                  Updated {formatDateTime(data.run.createdAt)}{data.run.runByName ? ` by ${data.run.runByName}` : ' automatically (nightly run)'}
+                  {data.run.historyFrom && <> · learned from {longDay(data.run.historyFrom)} – {longDay(data.run.historyTo)}</>}
+                </span>
+              </div>
+            )}
           </div>
           {isAdmin && (
             <div className="flex flex-wrap items-end gap-2 print:hidden">
@@ -218,20 +231,8 @@ export function ForecastPanel({ user, active }) {
 
         {loading ? (
           <LoadingRows className="mt-5" />
-        ) : !data?.run ? (
+        ) : !data?.run && (
           <EmptyState title="No forecast yet" description={isAdmin ? 'Choose what to train on and press Run forecast.' : 'An admin has not run a forecast yet.'} />
-        ) : (
-          <div className="mt-5 space-y-3">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-ink-500">
-              <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${isAssumed ? 'bg-status-wait-bg text-status-wait-fg' : 'bg-status-done-bg text-status-done-fg'}`}>
-                {isAssumed ? 'Practice data (assumed)' : 'Real sales'}
-              </span>
-              <span>
-                Updated {formatDateTime(data.run.createdAt)}{data.run.runByName ? ` by ${data.run.runByName}` : ' automatically (nightly run)'}
-                {data.run.historyFrom && <> · learned from {longDay(data.run.historyFrom)} – {longDay(data.run.historyTo)}</>}
-              </span>
-            </div>
-          </div>
         )}
       </Card>
 
