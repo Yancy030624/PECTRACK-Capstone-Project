@@ -92,8 +92,8 @@ Use this when the panel asks about reports or the forecast, or when you show the
 
 | Tab | What it does | How it works | Problem it solves |
 |---|---|---|---|
-| **Sales** | Money received, number of orders, average order and delivery fees, by day, week or month, plus peak hours and days | Totals the **paid** payments in the date range; unpaid orders do not count | The bakery had no record of what it earned |
-| **Products** | Best sellers by **pieces sold** | Counts the pieces in paid orders for each product | Nobody knew which breads actually sell |
+| **Sales** | Money received, number of orders and delivery fees, by day, week or month, plus peak hours and days | Totals the **paid** payments in the date range; unpaid orders do not count | The bakery had no record of what it earned |
+| **Products** | Best sellers by **pieces sold** | Counts the pieces in the orders placed in the range; cancelled orders and unpaid GCash checkouts are left out | Nobody knew which breads actually sell |
 | **Inventory** | Baked or added, sold, and corrected count for each product | Reads the stock record, where every change is logged with who made it and when. Added − sold − corrected equals the real change in stock | Stock was counted by hand, so nobody could see where bread went |
 | **Forecast** | Expected sales of each product for the next 7 days | See below | Production was planned from memory |
 | **Export history** | Every report downloaded or printed, with who and when | Logged each time someone exports | Accountability for the bakery's data |

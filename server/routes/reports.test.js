@@ -363,7 +363,7 @@ describe('reporting & analytics', () => {
     // ambiguous between a day and the Monday that opens a week bucket.
     assert.match(text, /"Period \(day\)","Orders","Sales \(excl\. delivery fees\)","Delivery fees"/)
     assert.match(text, /100\.00/, 'the ₱100 payment above must appear in the CSV body')
-    assert.match(text, /"Average order"/)
+    assert.ok(!/Average order/.test(text), 'the Sales tab shows no average order (the user, 2026-10-26), so neither does its CSV')
     assert.match(text, /"By payment method"/)
     assert.match(text, /"By order type"/)
     assert.ok(!/Refund/i.test(text), 'there are no refunds, so the file never mentions them')

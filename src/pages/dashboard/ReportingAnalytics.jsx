@@ -290,10 +290,9 @@ export function ReportingAnalytics({ user }) {
         {sales ? (
           <>
             {/* The money the bakery received (REPORTS_UI_PLAN.md U3). */}
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="mt-6 grid gap-4 sm:grid-cols-3">
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Sales</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.sales)}</p><p className="mt-2 text-xs text-ink-500">Money received, delivery fees not included</p></Card>
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Orders</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{sales.totals.orders}</p><p className="mt-2 text-xs text-ink-500">Paid in this range</p></Card>
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Average order</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.averageOrder)}</p><p className="mt-2 text-xs text-ink-500">Sales ÷ orders</p></Card>
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Delivery fees</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.deliveryFees)}</p><p className="mt-2 text-xs text-ink-500">Received with delivery orders</p></Card>
             </div>
             <p className={`mt-3 text-xs ${sales.totals.unpaidCash.orders > 0 ? 'font-medium text-status-wait-fg' : 'text-ink-500'}`}>

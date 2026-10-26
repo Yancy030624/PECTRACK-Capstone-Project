@@ -212,7 +212,6 @@ router.get('/sales', adminOnly, async (request, response) => {
       ...buckets.map((bucket) => csvRow([bucket.period, bucket.orders, bucket.sales, bucket.deliveryFees])),
       '',
       csvRow(['Totals', totals.orders, totals.sales, totals.deliveryFees]),
-      csvRow(['Average order', totals.averageOrder]),
       '',
       csvRow(['By payment method', 'Orders', 'Sales']),
       ...byMethod.map((row) => csvRow([row.key === 'GCASH' ? 'GCash' : 'Cash', row.orders, row.sales])),

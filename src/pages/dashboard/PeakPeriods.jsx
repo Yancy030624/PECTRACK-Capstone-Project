@@ -69,10 +69,10 @@ export function PeakPeriods({ range, includeDemo = false }) {
   if (!range) return null
   const brand = cssVar('--color-brand-600')
 
-  // Only the bakery's opening hours are charted — midnight to 5 AM would be
-  // a row of empty bars pushing the real ones off a phone screen. Hours
-  // outside that window that DID have orders are still included.
-  const hours = data ? data.byHour.filter((row) => (row.hour >= 5 && row.hour <= 21) || row.orders > 0) : []
+  // Only the bakery's opening hours are charted, 5 AM to 10 PM — the same
+  // window as the order time slots (the user, 2026-10-26). When the bars are
+  // too narrow for every label, the chart skips some.
+  const hours = data ? data.byHour.filter((row) => row.hour >= 5 && row.hour <= 22) : []
 
   return (
     <Card className="mt-6 p-6">
