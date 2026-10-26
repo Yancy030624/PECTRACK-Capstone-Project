@@ -97,7 +97,10 @@ export function ForecastPanel({ user, active }) {
 
   useEffect(() => {
     if (!chartData || !canvasRef.current || !active) return
-    const brand = cssVar('--color-brand-600')
+    // Sales in a dark neutral, the forecast in the accent colour: in the
+    // bakery theme brand and accent are the same crust brown, so drawing
+    // sales in brand made the two lines indistinguishable.
+    const sold = cssVar('--color-ink-500')
     const accent = cssVar('--color-accent-600')
     const fail = cssVar('--color-status-fail-fg')
     const ink = cssVar('--color-ink-700')
@@ -118,7 +121,7 @@ export function ForecastPanel({ user, active }) {
       data: {
         labels,
         datasets: [
-          { label: 'Sold', data: gap(history.map((point) => point.units)), borderColor: brand, backgroundColor: brand, borderWidth: 2, pointRadius: 0, tension: 0.2 },
+          { label: 'Sold', data: gap(history.map((point) => point.units)), borderColor: sold, backgroundColor: sold, borderWidth: 2, pointRadius: 0, tension: 0.2 },
           { label: 'Sold out that day', data: gap(history.map((point) => (point.censored ? point.units : null))), borderColor: fail, backgroundColor: fail, showLine: false, pointRadius: 4, pointStyle: 'triangle' },
           { label: 'Likely low', data: ahead(forecast.map((point) => point.low)), borderColor: 'transparent', pointRadius: 0, fill: false },
           { label: 'Likely range', data: ahead(forecast.map((point) => point.high)), borderColor: 'transparent', backgroundColor: withAlpha(accent, 0.18), pointRadius: 0, fill: '-1' },
@@ -285,7 +288,7 @@ export function ForecastPanel({ user, active }) {
                 <div className="relative mt-4 h-72">
                   <canvas ref={canvasRef} role="img" aria-label={selected ? `Last eight weeks of sales and the next seven days' forecast for ${selected.name}` : 'Sales and forecast chart'} />
                 </div>
-                <p className="mt-2 text-xs text-ink-500"><span className="font-semibold text-ink-700">Green line</span>: what actually sold. <span className="font-semibold text-ink-700">Orange dots</span>: what we expect to sell. <span className="font-semibold text-ink-700">Shaded band</span>: the likely range. <span className="font-semibold text-ink-700">Red triangles</span>: days it sold out — ignored when learning, because sales stopped only because the shelf was empty.</p>
+                <p className="mt-2 text-xs text-ink-500"><span className="font-semibold text-ink-700">Solid grey line</span>: what actually sold. <span className="font-semibold text-ink-700">Dashed line with dots</span>: what we expect to sell. <span className="font-semibold text-ink-700">Shaded band</span>: the likely range. <span className="font-semibold text-ink-700">Red triangles</span>: days it sold out — ignored when learning, because sales stopped only because the shelf was empty.</p>
               </Card>
 
               <Card className="mt-6 p-6">
