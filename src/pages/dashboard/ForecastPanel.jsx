@@ -199,7 +199,6 @@ export function ForecastPanel({ user, active }) {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <h2 className="text-lg font-semibold text-ink-900">Sales forecast — the next 7 days</h2>
-            <p className="mt-1 max-w-2xl text-sm text-ink-500">PECTRACK studies past daily sales — weekdays, paydays, holidays and events like Pahiyas — and predicts how many of each product will sell over the next 7 days. Use it to set each soft bread&apos;s daily standard and each hard bread&apos;s levels; the day&apos;s bake list itself is Inventory → Production.</p>
           </div>
           {isAdmin && (
             <div className="flex flex-wrap items-end gap-2 print:hidden">
@@ -232,11 +231,6 @@ export function ForecastPanel({ user, active }) {
                 {data.run.historyFrom && <> · learned from {longDay(data.run.historyFrom)} – {longDay(data.run.historyTo)}</>}
               </span>
             </div>
-            {isAssumed && (
-              <p className="rounded-control border border-status-wait-fg/20 bg-status-wait-bg/60 px-3 py-2 text-xs text-status-wait-fg">
-                <span className="font-semibold">Practice mode.</span> The bakery&apos;s own sales records are still too short to learn from, so this forecast learned from a year of sample (assumed) sales built from the bakery&apos;s usual patterns — busier weekends, paydays and holidays. It shows how the feature works; switch to <span className="font-semibold">Real sales</span> once enough real history is recorded.
-              </p>
-            )}
           </div>
         )}
       </Card>
