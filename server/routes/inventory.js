@@ -16,8 +16,9 @@
 // inventory_change_requests table stays, as the history of past requests.
 import express from 'express'
 import { pool } from '../db.js'
-import { requireAuth, requireRole } from '../lib/auth.js'
+import { backgroundRequestHeader, requireAuth, requireRole } from '../lib/auth.js'
 import { syncStockAlert } from '../lib/inventory.js'
+import { openStockStream } from '../lib/liveStock.js'
 import { normalize, parseId } from '../lib/validation.js'
 import { productionPlan } from '../lib/dailyStock.js'
 
@@ -64,7 +65,22 @@ const inventorySelectQuery = `SELECT i.inventory_id, i.product_id, p.product_nam
      JOIN products p ON p.product_id = i.product_id
      JOIN categories c ON c.category_id = p.category_id`
 
+// The live stream is opened by the screen, not by a person, so — like the
+// Dashboard's self-refresh — it must not count as activity and keep an idle
+// staff session alive. EventSource cannot send headers, so the mark is set
+// here, before requireAuth reads it.
+router.use('/live', (request, _response, next) => {
+  request.headers[backgroundRequestHeader] = '1'
+  next()
+})
+
 router.use(requireAuth, requireRole('ADMIN', 'CASHIER'))
+
+// GET /api/inventory/live — Server-Sent Events (RULES-PLANS/LIVE_STOCK_PLAN.md).
+// Stays open; sends `event: stock` with 'inventory' or 'ingredients' each
+// time the database announces a stock change. The screen then re-reads the
+// list through GET / (or the ingredients and production routes).
+router.get('/live', openStockStream)
 
 router.get('/', async (_request, response) => {
   const result = await pool.query(`${inventorySelectQuery} ORDER BY p.product_name`)

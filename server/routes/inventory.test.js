@@ -7,6 +7,7 @@ import { after, before, beforeEach, describe, test } from 'node:test'
 import bcrypt from 'bcrypt'
 import app from '../app.js'
 import { resetRateLimits } from '../lib/security.js'
+import { openStreamCount, stopListening } from '../lib/liveStock.js'
 import { pool } from '../db.js'
 
 const runId = crypto.randomUUID().slice(0, 8)
@@ -98,7 +99,55 @@ describe('inventory list', () => {
     await pool.query('DELETE FROM customers WHERE user_id = ANY($1)', [createdUserIds])
     await pool.query('DELETE FROM admins WHERE user_id = ANY($1)', [createdUserIds])
     await pool.query('DELETE FROM users WHERE user_id = ANY($1)', [createdUserIds])
+    await stopListening()
     await new Promise((resolve) => server.close(resolve))
+  })
+
+  // RULES-PLANS/LIVE_STOCK_PLAN.md — the live stream. Migration 041's
+  // trigger announces the change; the server pushes it to the open stream.
+  test('GET /api/inventory/live is for staff only', async () => {
+    assert.equal((await fetch(`${baseUrl}/api/inventory/live`)).status, 401)
+    assert.equal((await fetch(`${baseUrl}/api/inventory/live`, { headers: { Cookie: customerCookie } })).status, 403)
+  })
+
+  test('a stock change reaches an open live stream, without the stock figures', async () => {
+    const abort = new AbortController()
+    const stream = await fetch(`${baseUrl}/api/inventory/live`, { headers: { Cookie: cashierCookie }, signal: abort.signal })
+    assert.equal(stream.status, 200)
+    assert.match(stream.headers.get('content-type'), /text\/event-stream/)
+    const reader = stream.body.getReader()
+    const decoder = new TextDecoder()
+    let received = ''
+    // One read is kept pending across polls, so a chunk that arrives after
+    // a poll gives up is still collected by the next one, never lost.
+    let pending = null
+    const readUntil = async (pattern) => {
+      const deadline = Date.now() + 5000
+      while (!pattern.test(received)) {
+        if (Date.now() > deadline) throw new Error(`no ${pattern} on the stream; got: ${received}`)
+        pending ??= reader.read()
+        const result = await Promise.race([pending, new Promise((resolve) => setTimeout(() => resolve(null), 250))])
+        if (!result) continue
+        pending = null
+        if (result.done) throw new Error('the stream closed')
+        received += decoder.decode(result.value, { stream: true })
+      }
+    }
+    try {
+      // The stream is open and the server is listening before the change.
+      await readUntil(/retry: \d+/)
+      for (let tries = 0; openStreamCount() === 0 && tries < 20; tries += 1) await new Promise((resolve) => setTimeout(resolve, 50))
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      const add = await fetch(`${baseUrl}/api/inventory/${inStockProductId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ addQuantity: 3 }) })
+      assert.equal(add.status, 200)
+      await readUntil(/event: stock\ndata: inventory\n\n/)
+      assert.ok(!/stock_quantity|stockQuantity|\b53\b/.test(received), 'the event says only which table changed, never the figures')
+    } finally {
+      abort.abort()
+      // Back to the fixture's 50, which the stock-figures test below reads.
+      await pool.query('UPDATE inventory SET stock_quantity = 50 WHERE product_id = $1', [inStockProductId])
+    }
   })
 
   test('GET /api/inventory rejects an unauthenticated request', async () => {

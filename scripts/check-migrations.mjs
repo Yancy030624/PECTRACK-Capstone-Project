@@ -32,6 +32,7 @@ const checks = [
   ['038_delivery_fee', () => column('orders', 'delivery_fee')],
   ['039_sales_view_real_sales', () => table('forecast_nightly_runs')],
   ['040_export_history', () => column('report_logs', 'user_id')],
+  ['041_live_stock', () => exists(`SELECT 1 FROM pg_trigger WHERE tgname = 'inventory_stock_changed'`)],
 ]
 
 const missing = []

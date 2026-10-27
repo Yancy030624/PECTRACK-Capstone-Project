@@ -7,6 +7,7 @@ import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { manilaDateFromToday } from '../../lib/dates.js'
 import { logPrint } from '../../lib/exportLog.js'
+import { useLiveStock } from '../../lib/useLiveStock.js'
 import { EventsCard } from './EventsCard.jsx'
 
 // Inventory → Production (RULES-PLANS/DAILY_STOCK_PLAN.md): what to bake
@@ -29,6 +30,11 @@ export function ProductionPanel({ user }) {
     setData(null)
     apiGet(`/api/inventory/production?day=${day}`).then(setData).catch((failure) => setError(failure.message))
   }, [day, reload])
+  // Live stock (RULES-PLANS/LIVE_STOCK_PLAN.md): "To bake" follows the
+  // shelf, so it is re-read in place whenever stock changes.
+  useLiveStock('inventory', () => {
+    apiGet(`/api/inventory/production?day=${day}`, { background: true }).then(setData).catch(() => {})
+  })
 
   const soft = data?.items.filter((item) => item.stockType === 'SOFT') ?? []
   const hard = data?.items.filter((item) => item.stockType === 'HARD') ?? []

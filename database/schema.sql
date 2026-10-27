@@ -643,6 +643,27 @@ CREATE TRIGGER ingredients_set_updated_at
   BEFORE UPDATE ON ingredients
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+-- Live stock (migration 041, RULES-PLANS/LIVE_STOCK_PLAN.md): every change
+-- to a stock row sends NOTIFY stock_changed with the table's name; the
+-- server pushes it to open Inventory screens. Delivered on COMMIT only.
+CREATE FUNCTION notify_stock_changed() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND OLD IS NOT DISTINCT FROM NEW THEN
+    RETURN NULL;
+  END IF;
+  PERFORM pg_notify('stock_changed', TG_TABLE_NAME);
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER inventory_stock_changed
+  AFTER INSERT OR UPDATE OR DELETE ON inventory
+  FOR EACH ROW EXECUTE FUNCTION notify_stock_changed();
+
+CREATE TRIGGER ingredients_stock_changed
+  AFTER INSERT OR UPDATE OR DELETE ON ingredients
+  FOR EACH ROW EXECUTE FUNCTION notify_stock_changed();
+
 -- Analytics views (migration 014; the costing and production views were
 -- removed with production batches in migration 022). Views, not tables —
 -- nothing to keep in sync. Every date is the Asia/Manila calendar day.

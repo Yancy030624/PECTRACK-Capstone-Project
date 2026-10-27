@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { apiGet, apiPatch } from '../../api/client.js'
 import { StockStatusPill } from '../../components/ui/StockStatusPill.jsx'
 import { STOCK_STATUSES, TONES, stockStatus } from '../../lib/stockHealth.js'
+import { useLiveStock } from '../../lib/useLiveStock.js'
 import { ProductionPanel } from './ProductionPanel.jsx'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Button } from '../../components/ui/Button.jsx'
@@ -113,21 +114,28 @@ function ProductStock({ user, params }) {
   const [countedQuantity, setCountedQuantity] = useState('')
 
 
-  const loadInventory = async () => {
-    setLoading(true)
+  // `quiet`: a live update (below) re-reads in place, without the loading
+  // skeleton, and as a background request that does not count as activity.
+  const loadInventory = async ({ quiet = false } = {}) => {
+    if (!quiet) setLoading(true)
     try {
-      const data = await apiGet('/api/inventory')
+      const data = await apiGet('/api/inventory', { background: quiet })
       setInventory(data.inventory)
     } catch (error) {
       setMessage(error.message)
     } finally {
-      setLoading(false)
+      if (!quiet) setLoading(false)
     }
   }
 
   useEffect(() => {
     loadInventory()
   }, [])
+
+  // Live stock (RULES-PLANS/LIVE_STOCK_PLAN.md): an order, a cancellation,
+  // the 5:00 AM top-up or another person's Add changes the counts here
+  // without a refresh.
+  useLiveStock('inventory', () => loadInventory({ quiet: true }))
 
   const startCount = (item) => {
     setEditingProductId(item.productId)

@@ -20,6 +20,7 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDateTime, formatQuantity } from '../../lib/format.js'
 import { STOCK_STATUSES, TONES, stockStatus } from '../../lib/stockHealth.js'
+import { useLiveStock } from '../../lib/useLiveStock.js'
 
 // "Add" (the adviser, 2026-10-23), the same as product stock: the amount
 // typed is ADDED to what is on hand and saved as a restock, after a
@@ -82,6 +83,13 @@ export function IngredientsPanel({ user, initialFilter }) {
     load()
     loadHistory()
   }, [])
+
+  // Live stock (RULES-PLANS/LIVE_STOCK_PLAN.md): another person's restock
+  // or count shows here, with its history line, without a refresh.
+  useLiveStock('ingredients', () => {
+    load()
+    loadHistory()
+  })
 
   // One "Edit" button per ingredient (the user, 2026-10-23), the same as
   // product stock: it opens on Add stock; the admin also has Correct count
