@@ -38,18 +38,41 @@ export function MyProfile({ user, onUserUpdated, onLogout }) {
 
   return (
     <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      {/* The account page already says whose it is; the portal label is for staff. */}
-      {user.role !== 'CUSTOMER' && <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>}
-      <h1 className="mt-1 text-2xl font-semibold text-ink-900">My Profile</h1>
-      <p className="mt-2 text-sm text-ink-500">{isCustomer ? 'Your details, saved addresses, and password — all in one place.' : 'Update your own name, email, and contact number.'}</p>
+      {/* The customer's account page already has a header with the name
+          (the user, 2026-10-28), so the title is staff-only there. */}
+      {!isCustomer && (
+        <>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
+          <h1 className="mt-1 text-2xl font-semibold text-ink-900">My Profile</h1>
+          <p className="mt-2 text-sm text-ink-500">Update your own name, email, and contact number.</p>
+        </>
+      )}
 
-      <div className="mt-6 flex gap-2">
-        {tabs.map((tab) => (
-          <Button type="button" key={tab} size="sm" variant={activeTab === tab ? 'primary' : 'secondary'} onClick={() => setActiveTab(tab)}>
-            {tab}
-          </Button>
-        ))}
-      </div>
+      {isCustomer ? (
+        // A segmented control, as account pages usually have.
+        <div role="tablist" aria-label="Profile sections" className="mt-4 inline-flex rounded-full bg-cream-200/70 p-1">
+          {tabs.map((tab) => (
+            <button
+              type="button"
+              key={tab}
+              role="tab"
+              aria-selected={activeTab === tab}
+              onClick={() => setActiveTab(tab)}
+              className={`min-h-9 rounded-full px-4 text-sm font-semibold transition ${activeTab === tab ? 'bg-white text-cocoa-900 shadow-sm' : 'text-cocoa-500 hover:text-cocoa-900'}`}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-6 flex gap-2">
+          {tabs.map((tab) => (
+            <Button type="button" key={tab} size="sm" variant={activeTab === tab ? 'primary' : 'secondary'} onClick={() => setActiveTab(tab)}>
+              {tab}
+            </Button>
+          ))}
+        </div>
+      )}
 
       {activeTab === 'Profile' && <ProfileTab user={user} onUserUpdated={onUserUpdated} />}
       {activeTab === 'Addresses' && isCustomer && <AddressesTab />}

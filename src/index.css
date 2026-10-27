@@ -128,6 +128,13 @@
   }
 }
 
+/* A short side-to-side shake for a wrong code (RegisterForm's code boxes). */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
+
 @layer base {
   :focus-visible {
     outline: 2px solid var(--color-brand-600);

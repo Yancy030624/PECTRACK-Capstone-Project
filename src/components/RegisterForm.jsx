@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { apiPost } from '../api/client.js'
 import logoMark from '../assets/logo-mark.png'
 import { PasswordToggle } from './PasswordToggle.jsx'
@@ -210,7 +210,6 @@ export function RegisterForm({ onSwitchToLogin }) {
                 <RequiredLabel htmlFor="contact-number">Contact number</RequiredLabel>
                 <input id="contact-number" maxLength={11} value={form.contactNumber} onChange={(event) => updateField('contactNumber', digitsOnly(event.target.value))} autoComplete="tel" inputMode="tel" placeholder="09XXXXXXXXX" className={fieldClass('contactNumber')} {...fieldProps('contactNumber')} />
                 <FieldError id="contactNumber-error" message={errors.contactNumber} />
-                {phone.required && <p className="mt-1 text-[11px] text-stone-500">We text a code to this number when you create the account.</p>}
               </div>
             </div>
             <div>
@@ -243,40 +242,150 @@ export function RegisterForm({ onSwitchToLogin }) {
             <button type="submit" disabled={submitting || codeOpen} className="w-full rounded-2xl bg-crust-600 py-2.5 text-sm font-bold text-white shadow-lg shadow-crust-600/25 transition hover:bg-crust-700 focus:ring-4 focus:ring-cream-200 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Checking…' : 'Create account'}</button>
           </form>
           {codeOpen && (
-            // The texted code, in a pop-up over the form (M4). A correct code
-            // creates the account; Cancel goes back to the form as it was.
-            <div className="fixed inset-0 z-[60] grid place-items-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="code-heading">
-              <div className="w-full max-w-sm rounded-[22px] bg-[#fffedc] p-6 shadow-2xl">
-                <h3 id="code-heading" className="font-display text-xl font-bold text-crust-700">Enter the code</h3>
-                <p className="mt-1 text-xs text-stone-600">We texted a 6-digit code to <span className="font-semibold">{form.contactNumber}</span>.</p>
-                <input
-                  autoFocus
-                  value={phone.code}
-                  onChange={(event) => phone.setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-                  onKeyDown={(event) => { if (event.key === 'Enter' && phone.code.length === 6) phone.check() }}
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  placeholder="6-digit code"
-                  aria-label="Code from the text"
-                  className={`mt-4 w-full rounded-2xl border bg-white px-4 py-2.5 text-center text-lg tracking-[0.4em] shadow-sm outline-none transition focus:ring-4 ${phone.error ? 'border-red-500 focus:border-red-500 focus:ring-red-100' : 'border-stone-200 focus:border-sky-500 focus:ring-sky-100'}`}
-                />
-                {phone.info && <p className="mt-2 text-xs text-stone-500">{phone.info}</p>}
-                {phone.error && <p className="mt-2 text-xs font-medium text-red-700">{phone.error}</p>}
-                <button type="button" onClick={phone.check} disabled={phone.busy || submitting || phone.code.length !== 6} className="mt-4 w-full rounded-2xl bg-crust-600 py-2.5 text-sm font-bold text-white transition hover:bg-crust-700 disabled:cursor-not-allowed disabled:opacity-60">
-                  {submitting ? 'Creating account…' : phone.busy ? 'Checking…' : 'Verify and create account'}
-                </button>
-                <div className="mt-3 flex justify-between text-xs">
-                  <button type="button" onClick={() => phone.send(form.contactNumber)} disabled={phone.busy || submitting} className="font-bold text-crust-600 hover:underline disabled:opacity-60">Send the code again</button>
-                  <button type="button" onClick={() => { setCodeOpen(false); phone.reset() }} disabled={submitting} className="font-bold text-stone-500 hover:underline">Cancel</button>
-                </div>
-              </div>
-            </div>
+            <VerifyCodeDialog
+              phone={phone}
+              number={form.contactNumber}
+              creating={submitting}
+              onResend={() => phone.send(form.contactNumber)}
+              onCancel={() => { setCodeOpen(false); phone.reset() }}
+            />
           )}
           <p className="mt-5 border-t border-stone-200 pt-4 text-center text-xs text-stone-500">
             Already have an account? <button type="button" onClick={onSwitchToLogin} className="font-bold text-crust-600 hover:underline">Log in</button>
           </p>
         </>
       )}
+    </div>
+  )
+}
+
+// "0917 ••• 4567": enough to recognise the number, not to read it out.
+const maskNumber = (number) => (number.length >= 7 ? `${number.slice(0, 4)} ••• ${number.slice(-4)}` : number)
+const codeLength = 6
+const resendAfterSeconds = 30
+
+// The texted code (MINOR_REVISIONS_PLAN.md M4, restyled 2026-10-28): six
+// boxes, one digit each, as sign-ups usually ask. Typing moves to the next
+// box, Backspace to the previous, and a pasted code fills them all. The
+// code is checked as soon as the sixth digit is in, and a correct one
+// creates the account. "Resend" waits 30 seconds after each text.
+function VerifyCodeDialog({ phone, number, creating, onResend, onCancel }) {
+  const boxes = useRef([])
+  const [secondsLeft, setSecondsLeft] = useState(resendAfterSeconds)
+  const triedCode = useRef('')
+  const digits = Array.from({ length: codeLength }, (_, index) => phone.code[index] ?? '')
+
+  useEffect(() => {
+    boxes.current[Math.min(phone.code.length, codeLength - 1)]?.focus()
+    // Focus once, on open; later moves are made by the handlers below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (secondsLeft <= 0) return undefined
+    const timer = window.setTimeout(() => setSecondsLeft((left) => left - 1), 1000)
+    return () => window.clearTimeout(timer)
+  }, [secondsLeft])
+
+  // A full code is checked at once — but the same wrong code only once, so
+  // a mistake waits for the customer to change it.
+  useEffect(() => {
+    if (phone.code.length === codeLength && !phone.busy && !phone.verified && triedCode.current !== phone.code) {
+      triedCode.current = phone.code
+      phone.check()
+    }
+  }, [phone])
+
+  useEffect(() => {
+    const onKey = (event) => { if (event.key === 'Escape' && !creating) onCancel() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [creating, onCancel])
+
+  const setDigits = (next) => phone.setCode(next.join('').replace(/\D/g, '').slice(0, codeLength))
+  const typeAt = (index, value) => {
+    const typed = value.replace(/\D/g, '')
+    if (!typed) return
+    // A paste or an autofilled code arrives as several digits at once.
+    const next = [...digits]
+    typed.slice(0, codeLength - index).split('').forEach((digit, offset) => { next[index + offset] = digit })
+    setDigits(next)
+    boxes.current[Math.min(index + typed.length, codeLength - 1)]?.focus()
+  }
+  const onKeyDown = (index, event) => {
+    if (event.key === 'Backspace') {
+      event.preventDefault()
+      const next = [...digits]
+      if (next[index]) next[index] = ''
+      else if (index > 0) { next[index - 1] = ''; boxes.current[index - 1]?.focus() }
+      setDigits(next)
+    } else if (event.key === 'ArrowLeft' && index > 0) boxes.current[index - 1]?.focus()
+    else if (event.key === 'ArrowRight' && index < codeLength - 1) boxes.current[index + 1]?.focus()
+  }
+  const resend = () => {
+    triedCode.current = ''
+    setSecondsLeft(resendAfterSeconds)
+    onResend()
+    boxes.current[0]?.focus()
+  }
+
+  const wrong = Boolean(phone.error)
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-cocoa-900/40 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="code-heading" aria-describedby="code-help">
+      <div className="relative w-full max-w-sm rounded-3xl bg-white p-6 text-center shadow-2xl ring-1 ring-black/5 sm:p-7">
+        <button type="button" onClick={onCancel} disabled={creating} aria-label="Close" className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full text-stone-400 transition hover:bg-stone-100 hover:text-stone-700 disabled:opacity-40">✕</button>
+        <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-cream-100 text-crust-600">
+          <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="6" y="2" width="12" height="20" rx="2.5" />
+            <path d="M10 18h4" />
+          </svg>
+        </div>
+        <h3 id="code-heading" className="mt-4 font-display text-2xl font-bold text-cocoa-900">Verify your number</h3>
+        <p id="code-help" className="mt-1.5 text-sm text-stone-500">
+          Enter the 6-digit code we sent to <span className="font-semibold text-cocoa-900">{maskNumber(number)}</span>
+        </p>
+
+        <div className={`mt-6 flex justify-center gap-2 ${wrong ? 'animate-[shake_0.3s_ease-in-out]' : ''}`}>
+          {digits.map((digit, index) => (
+            <input
+              key={index}
+              ref={(element) => { boxes.current[index] = element }}
+              value={digit}
+              onChange={(event) => typeAt(index, event.target.value)}
+              onKeyDown={(event) => onKeyDown(index, event)}
+              onFocus={(event) => event.target.select()}
+              inputMode="numeric"
+              autoComplete={index === 0 ? 'one-time-code' : 'off'}
+              maxLength={codeLength}
+              disabled={creating || phone.verified}
+              aria-label={`Digit ${index + 1} of ${codeLength}`}
+              className={`h-12 w-10 rounded-xl border-2 bg-white text-center text-xl font-bold text-cocoa-900 outline-none transition sm:h-14 sm:w-12 ${
+                wrong ? 'border-red-500 focus:ring-4 focus:ring-red-100' : digit ? 'border-sky-500' : 'border-stone-200 focus:border-sky-500 focus:ring-4 focus:ring-sky-100'
+              }`}
+            />
+          ))}
+        </div>
+
+        <div className="mt-3 min-h-5 text-xs" aria-live="polite">
+          {phone.error ? <p className="font-medium text-red-700">{phone.error}</p>
+            : creating || phone.verified ? <p className="font-medium text-leaf-600">Number verified — creating your account…</p>
+              : phone.busy ? <p className="text-stone-500">Checking…</p>
+                : phone.info ? <p className="text-stone-500">{phone.info}</p> : null}
+        </div>
+
+        <button type="button" onClick={phone.check} disabled={phone.busy || creating || phone.code.length !== codeLength} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-crust-600 py-3 text-sm font-bold text-white shadow-lg shadow-crust-600/25 transition hover:bg-crust-700 disabled:cursor-not-allowed disabled:opacity-60">
+          {(phone.busy || creating) && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden="true" />}
+          {creating ? 'Creating account…' : 'Verify'}
+        </button>
+
+        <p className="mt-4 text-xs text-stone-500">
+          Didn't get a code?{' '}
+          {secondsLeft > 0
+            ? <span className="font-semibold tabular-nums text-stone-400">Resend in 0:{String(secondsLeft).padStart(2, '0')}</span>
+            : <button type="button" onClick={resend} disabled={phone.busy || creating} className="font-bold text-crust-600 hover:underline disabled:opacity-60">Resend code</button>}
+        </p>
+        <button type="button" onClick={onCancel} disabled={creating} className="mt-2 text-xs font-semibold text-stone-500 hover:text-stone-800 hover:underline disabled:opacity-40">Change number</button>
+      </div>
     </div>
   )
 }

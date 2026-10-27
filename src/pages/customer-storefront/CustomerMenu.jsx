@@ -6,13 +6,18 @@ import { ProductCard } from './ProductCard.jsx'
 import { useMenuData } from './useMenuData.js'
 
 // The signed-in customer's Menu: everything PublicMenu shows, plus a name
-// search and real ordering (quantity stepper, Add to cart). The header's
+// search and real ordering: Add to cart, which then shows the amount in the
+// cart with − and + (the user, 2026-10-28). The header's
 // search icon navigates here with ?focus=search, which just focuses the
 // input below — the products are already all in memory, so filtering is a
 // plain .filter() (Decision 9).
 export function CustomerMenu() {
   const { loading, sections, message } = useMenuData()
-  const { addItem } = useCart()
+  const { lines, addItem, setQuantity } = useCart()
+  const inCart = new Map(lines.map((line) => [line.productId, line.quantity]))
+  // The card's Add and its − / + change the same cart line the Cart shows;
+  // the first Add creates it, and − at 1 removes it.
+  const setCardQuantity = (productId, quantity) => (inCart.has(productId) ? setQuantity(productId, quantity) : addItem(productId, quantity))
   const [searchParams, setSearchParams] = useSearchParams()
   const [searchTerm, setSearchTerm] = useState('')
   const searchInputRef = useRef(null)
@@ -48,7 +53,7 @@ export function CustomerMenu() {
           />
         </div>
       }
-      renderCard={(product) => <ProductCard product={product} mode="customer" onAdd={addItem} />}
+      renderCard={(product) => <ProductCard product={product} mode="customer" cartQuantity={inCart.get(product.id) ?? 0} onSetQuantity={setCardQuantity} />}
     />
   )
 }
