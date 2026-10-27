@@ -326,7 +326,7 @@ function ProductStock({ user, params }) {
           <EmptyState title={`No products are ${stockFilters.find((filter) => filter.key === stockFilter).label.toLowerCase()} right now${categoryFilter === 'ALL' ? '' : ` in ${categoryFilter}`}`} description="Pick another status or category, or All." />
         ) : (
           <div>
-            <Table caption="Inventory stock levels" stickyFirstColumn>
+            <Table caption="Inventory stock levels" stickyFirstColumn className="inventory-table">
               <Thead>
                 <Tr className="hover:bg-transparent">
                   <Th>Product</Th>
@@ -439,12 +439,9 @@ function ProductStock({ user, params }) {
                   ) : (
                     <Tr key={item.productId}>
                       <Td className="font-semibold text-ink-900">
-                        {item.productName}
+                        <span className="block leading-5">{item.productName}</span>
                         {item.variant && <span className="block text-xs font-normal text-ink-500">{item.variant}</span>}
                         <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${item.stockType === 'HARD' ? 'bg-amber-100 text-amber-800' : 'bg-sky-100 text-sky-800'}`}>{item.stockType === 'HARD' ? 'Hard bread' : 'Soft bread'}</span>
-                        {/* On a phone the Status column is hidden, so the
-                            table fits the screen; the pill sits here. */}
-                        <span className="mt-1 block md:hidden"><StockStatusPill status={stockStatus(item)} /></span>
                       </Td>
                       <Td priority="lg">{item.categoryName}</Td>
                       <Td numeric>{item.stockQuantity}</Td>

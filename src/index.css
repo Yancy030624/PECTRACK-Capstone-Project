@@ -290,6 +290,67 @@ html,
 body {
   overflow-x: clip;
 }
+
+/* Inventory becomes compact stock cards on phones; every value and action
+ * remains visible without swiping across a six-column desktop table. */
+@media (max-width: 639px) {
+  .inventory-table,
+  .inventory-table tbody {
+    display: block;
+    width: 100%;
+  }
+  .inventory-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .inventory-table tbody {
+    display: grid;
+    gap: 0.75rem;
+  }
+  .inventory-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.5rem 1rem;
+    padding: 1rem;
+    border: 1px solid var(--color-line-200);
+    border-radius: var(--radius-panel);
+    background: var(--color-surface);
+  }
+  .inventory-table tbody td {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+  .inventory-table tbody td:first-child,
+  .inventory-table tbody td:last-child {
+    grid-column: 1 / -1;
+  }
+  .inventory-table tbody td:first-child {
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--color-line-100);
+  }
+  .inventory-table tbody td::before {
+    display: block;
+    margin-bottom: 0.125rem;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-ink-500);
+  }
+  .inventory-table tbody td:nth-child(2)::before { content: 'Category'; }
+  .inventory-table tbody td:nth-child(3)::before { content: 'Stock'; }
+  .inventory-table tbody td:nth-child(4)::before { content: 'Level'; }
+  .inventory-table tbody td:nth-child(5)::before { content: 'Status'; }
+  .inventory-table tbody td:last-child { padding-top: 0.5rem; }
+  .inventory-table tbody td[colspan] { padding: 0; border: 0; }
+  .inventory-table .row-form { position: static; width: 100%; }
+}
 @media (max-width: 767px) {
   input:not([type='checkbox']):not([type='radio']):not(.text-lg):not(.text-2xl),
   select,

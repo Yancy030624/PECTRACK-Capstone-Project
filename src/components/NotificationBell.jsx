@@ -249,37 +249,41 @@ export function NotificationBell({ user, onOpen }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 z-40 mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-panel border border-line-200 bg-surface shadow-raised">
-          <div className="flex items-center justify-between gap-2 border-b border-line-100 px-4 py-3">
+        <div className="fixed inset-x-3 top-20 z-40 flex max-h-[65dvh] flex-col overflow-hidden rounded-panel border border-line-200 bg-surface shadow-raised sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 sm:max-w-[calc(100vw-2rem)]">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-line-100 px-4 py-3">
             <p className="text-sm font-semibold text-ink-900">Notifications{unread.length > 0 && <span className="ml-1.5 text-xs font-normal text-ink-500">{unread.length} unread</span>}</p>
-            <span className="flex items-center gap-3">
+            <span className="flex flex-wrap items-center gap-3">
               {unread.length > 0 && <button type="button" onClick={markAllRead} className="text-xs font-semibold text-brand-700 hover:underline">Mark all as read</button>}
               <button type="button" onClick={toggleMuted} className="text-xs font-semibold text-brand-700 hover:underline">
                 {muted ? 'Sound off' : 'Sound on'}
+              </button>
+              <button type="button" onClick={() => setOpen(false)} aria-label="Close notifications" className="grid h-8 w-8 place-items-center rounded-full text-ink-500 hover:bg-surface-sunk">
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
               </button>
             </span>
           </div>
           {items.length === 0 ? (
             <p className="px-4 py-6 text-center text-sm text-ink-500">Nothing yet.</p>
           ) : (
-            <ul className="max-h-80 divide-y divide-line-100 overflow-y-auto">
+            <ul className="min-h-0 divide-y divide-line-100 overflow-y-auto overscroll-contain">
               {items.map((item) => (
                 <li key={item.key}>
                   <button type="button" onClick={() => choose(item)} className={`w-full px-4 py-2.5 text-left transition hover:bg-surface-sunk ${isUnread(item) ? 'bg-brand-50' : ''}`}>
                     <span className="flex items-center justify-between gap-2 text-sm text-ink-900">
-                      <span className={`${isUnread(item) ? 'font-semibold' : 'font-normal'} ${isWarning(item) ? 'text-red-700' : ''}`}>{titleOf(item)}</span>
+                      <span className={`min-w-0 [overflow-wrap:anywhere] ${isUnread(item) ? 'font-semibold' : 'font-normal'} ${isWarning(item) ? 'text-red-700' : ''}`}>{titleOf(item)}</span>
                       {isUnread(item)
                         ? <span className="shrink-0 rounded-full bg-red-600 px-1.5 text-[10px] font-bold uppercase text-white">Unread</span>
                         : <span className="shrink-0 rounded-full bg-surface-sunk px-1.5 text-[10px] font-semibold uppercase text-ink-500">Read</span>}
                     </span>
-                    <span className="block text-xs text-ink-500">{[textOf(item), formatDateTime(itemTime(item))].filter(Boolean).join(' · ')}</span>
+                    <span className="mt-1 block text-xs leading-5 text-ink-500 [overflow-wrap:anywhere]">{textOf(item)}</span>
+                    <span className="mt-1 block text-[11px] text-ink-500">{formatDateTime(itemTime(item))}</span>
                   </button>
                 </li>
               ))}
             </ul>
           )}
           {permission === 'default' && (
-            <div className="border-t border-line-100 px-4 py-3">
+            <div className="shrink-0 border-t border-line-100 px-4 py-3">
               <button type="button" onClick={askPermission} className="text-xs font-semibold text-brand-700 hover:underline">
                 Also notify me when this tab is in the background
               </button>
@@ -290,7 +294,7 @@ export function NotificationBell({ user, onOpen }) {
 
       {/* Toasts: newest on top, each opens its order (a low-stock one
           opens Inventory). Warnings are red and can be closed. */}
-      <div aria-live="polite" className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2 print:hidden">
+      <div aria-live="polite" className="pointer-events-auto fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-50 flex max-h-[30dvh] w-[min(22rem,calc(100vw-2rem))] flex-col gap-2 overflow-y-auto overscroll-contain [overflow-wrap:anywhere] sm:max-h-[50dvh] print:hidden">
         {toasts.map(({ key, item }) => (isWarning(item) ? (
           <div key={key} role="alert" className="pointer-events-auto flex items-start gap-3 rounded-panel border border-red-300 border-l-4 border-l-red-600 bg-red-50 px-4 py-3 shadow-raised">
             <svg viewBox="0 0 24 24" className="mt-0.5 h-5 w-5 shrink-0 text-red-600" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
