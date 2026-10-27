@@ -172,13 +172,13 @@ export function CheckoutPage({ user }) {
 
       {message && <p role={messageFailed ? 'alert' : 'status'} className={`mt-6 rounded-lg px-3 py-2 text-xs font-semibold ${messageFailed ? 'bg-red-50 text-red-700' : 'bg-cream-100 text-crust-700'}`}>{message}</p>}
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_320px]">
+      <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-6">
           <div className="rounded-2xl border border-cream-200 bg-white p-5">
             <h2 className="text-sm font-bold text-cocoa-900">How would you like your order?</h2>
             <div className="mt-3 flex gap-3">
-              <button type="button" onClick={() => { setOrderType('PICKUP'); setErrors({}); setMessage('') }} className={`flex-1 rounded-xl border px-4 py-3 text-xs font-bold transition ${orderType === 'PICKUP' ? 'border-crust-600 bg-cream-100 text-crust-700' : 'border-cream-300 text-cocoa-500'}`}>Pickup at the bakery</button>
-              <button type="button" onClick={() => { setOrderType('DELIVERY'); setErrors({}); setMessage('') }} className={`flex-1 rounded-xl border px-4 py-3 text-xs font-bold transition ${orderType === 'DELIVERY' ? 'border-crust-600 bg-cream-100 text-crust-700' : 'border-cream-300 text-cocoa-500'}`}>Delivery</button>
+              <button type="button" aria-pressed={orderType === 'PICKUP'} onClick={() => { setOrderType('PICKUP'); setErrors({}); setMessage('') }} className={`flex-1 rounded-xl min-h-11 border px-4 py-3 text-sm font-bold transition ${orderType === 'PICKUP' ? 'border-crust-600 bg-cream-100 text-crust-700' : 'border-cream-300 text-cocoa-500'}`}>Pickup at the bakery</button>
+              <button type="button" aria-pressed={orderType === 'DELIVERY'} onClick={() => { setOrderType('DELIVERY'); setErrors({}); setMessage('') }} className={`flex-1 rounded-xl min-h-11 border px-4 py-3 text-sm font-bold transition ${orderType === 'DELIVERY' ? 'border-crust-600 bg-cream-100 text-crust-700' : 'border-cream-300 text-cocoa-500'}`}>Delivery</button>
             </div>
           </div>
 
@@ -187,8 +187,8 @@ export function CheckoutPage({ user }) {
             {orderType === 'PICKUP' ? (
               <>
                 <div className="mt-3 flex gap-3">
-                  <button type="button" aria-pressed={pickupPayment === 'CASH'} onClick={() => { setPickupPayment('CASH'); setErrors({}) }} className={`flex-1 rounded-xl border px-4 py-3 text-xs font-bold transition ${pickupPayment === 'CASH' ? 'border-crust-600 bg-cream-100 text-crust-700' : 'border-cream-300 text-cocoa-500'}`}>Cash</button>
-                  <button type="button" aria-pressed={pickupPayment === 'GCASH'} onClick={() => { setPickupPayment('GCASH'); setErrors({}) }} className={`flex-1 rounded-xl border px-4 py-3 text-xs font-bold transition ${pickupPayment === 'GCASH' ? 'border-crust-600 bg-cream-100 text-crust-700' : 'border-cream-300 text-cocoa-500'}`}>GCash</button>
+                  <button type="button" aria-pressed={pickupPayment === 'CASH'} onClick={() => { setPickupPayment('CASH'); setErrors({}) }} className={`flex-1 rounded-xl min-h-11 border px-4 py-3 text-sm font-bold transition ${pickupPayment === 'CASH' ? 'border-crust-600 bg-cream-100 text-crust-700' : 'border-cream-300 text-cocoa-500'}`}>Cash</button>
+                  <button type="button" aria-pressed={pickupPayment === 'GCASH'} onClick={() => { setPickupPayment('GCASH'); setErrors({}) }} className={`flex-1 rounded-xl min-h-11 border px-4 py-3 text-sm font-bold transition ${pickupPayment === 'GCASH' ? 'border-crust-600 bg-cream-100 text-crust-700' : 'border-cream-300 text-cocoa-500'}`}>GCash</button>
                 </div>
                 <p className="mt-2 text-xs text-cocoa-500">{pickupPayment === 'CASH' ? 'Pay at the counter when you pick it up. One cash order at a time.' : 'You pay with GCash right away.'}</p>
               </>
@@ -197,7 +197,7 @@ export function CheckoutPage({ user }) {
               // is paid; said before the customer commits to it.
               <p className="mt-2 rounded-xl bg-butter-100 p-3 text-xs font-semibold text-cocoa-700">GCash only — delivery orders are paid first, with a {formatPeso(deliveryFee)} delivery fee. There is no cash on delivery.</p>
             )}
-            {errors.paymentMode && <p className="mt-2 text-xs font-medium text-red-700">{errors.paymentMode}</p>}
+            {errors.paymentMode && <p role="alert" className="mt-2 text-xs font-medium text-red-700">{errors.paymentMode}</p>}
           </div>
 
           {orderType === 'DELIVERY' && (
@@ -206,7 +206,7 @@ export function CheckoutPage({ user }) {
               {addresses.length === 0 && !addingAddress && (
                 <div className="mt-3">
                   <p className="text-xs text-cocoa-500">You don't have a saved address yet.</p>
-                  <button type="button" onClick={() => setAddingAddress(true)} className="mt-3 rounded-xl bg-crust-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-crust-700">Add a delivery address</button>
+                  <button type="button" onClick={() => setAddingAddress(true)} className="mt-3 min-h-11 rounded-xl bg-crust-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-crust-700">Add a delivery address</button>
                 </div>
               )}
               {addingAddress && (
@@ -223,8 +223,8 @@ export function CheckoutPage({ user }) {
                       const outside = !isDeliverable(address)
                       return (
                       <label key={address.id} className={`flex items-start gap-3 rounded-xl border p-3 text-xs transition ${outside ? 'cursor-not-allowed border-cream-300 opacity-60' : 'cursor-pointer'} ${addressId === address.id ? 'border-crust-600 bg-cream-100' : 'border-cream-300'}`}>
-                        <input type="radio" name="addressId" checked={addressId === address.id} disabled={outside} onChange={() => setAddressId(address.id)} className="mt-0.5 h-5 w-5 accent-crust-600" />
-                        <span>
+                        <input type="radio" name="addressId" checked={addressId === address.id} disabled={outside} onChange={() => setAddressId(address.id)} aria-invalid={Boolean(errors.addressId)} aria-describedby={errors.addressId ? 'checkout-address-error' : undefined} className="mt-0.5 h-5 w-5 shrink-0 accent-crust-600" />
+                        <span className="min-w-0 [overflow-wrap:anywhere]">
                           <span className="block font-bold text-cocoa-900">{address.label}{address.isDefault && <span className="ml-2 rounded-full bg-butter-100 px-2 py-0.5 text-[9px] font-bold text-crust-700">DEFAULT</span>}</span>
                           <span className="block text-cocoa-700">{address.recipientName} · {address.contactNumber}</span>
                           <span className="block text-cocoa-500">{address.addressLine1}{address.addressLine2 && `, ${address.addressLine2}`}{address.barangay && `, ${address.barangay}`}, {address.municipality}, {address.province}</span>
@@ -237,7 +237,7 @@ export function CheckoutPage({ user }) {
                   <button type="button" onClick={() => setAddingAddress(true)} className="mt-3 py-2 text-xs font-bold text-crust-600 hover:underline">+ Add another address</button>
                 </>
               )}
-              {errors.addressId && <p className="mt-2 text-xs font-medium text-red-700">{errors.addressId}</p>}
+              {errors.addressId && <p id="checkout-address-error" role="alert" className="mt-2 text-xs font-medium text-red-700">{errors.addressId}</p>}
             </div>
           )}
 
@@ -251,16 +251,16 @@ export function CheckoutPage({ user }) {
                 time={neededTime}
                 onDateChange={(value) => { setNeededDate(value); setErrors({}) }}
                 onTimeChange={(value) => { setNeededTime(value); setErrors({}) }}
-                inputClassName="w-full rounded-xl border border-cream-300 px-3 py-2 text-xs outline-none focus:border-crust-500"
+                inputClassName="w-full min-h-11 rounded-xl border border-line-200 px-3 py-2 text-base outline-none focus:border-crust-500"
                 labelClassName="mb-1 block text-xs font-semibold text-cocoa-700"
                 helpClassName="mt-2 text-xs text-cocoa-500"
               />
             </div>
-            {errors.requestedFulfillmentTime && <p className="mt-2 text-xs font-medium text-red-700">{errors.requestedFulfillmentTime}</p>}
+            {errors.requestedFulfillmentTime && <p role="alert" className="mt-2 text-xs font-medium text-red-700">{errors.requestedFulfillmentTime}</p>}
           </div>
 
           {needsVerification && (
-            <p role="status" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+            <p role="status" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm [overflow-wrap:anywhere] text-amber-900">
               <span className="font-bold">Confirm your email to place this order.</span> Open the link we sent to {user.email} — your cart is kept, and this page updates when you come back.
             </p>
           )}
@@ -276,8 +276,8 @@ export function CheckoutPage({ user }) {
           <div className="mt-3 space-y-2 divide-y divide-cream-200">
             {validLines.map(({ line, product }) => (
               <div key={line.productId} className="flex items-center justify-between gap-2 pt-2 text-xs first:pt-0">
-                <span className="text-cocoa-700">{product.name}{product.variant ? ` (${product.variant})` : ''} × {line.quantity}</span>
-                <span className="font-bold text-cocoa-900">{formatPeso(Number(product.price) * line.quantity)}</span>
+                <span className="min-w-0 break-words text-cocoa-700">{product.name}{product.variant ? ` (${product.variant})` : ''} × {line.quantity}</span>
+                <span className="shrink-0 whitespace-nowrap font-bold text-cocoa-900">{formatPeso(Number(product.price) * line.quantity)}</span>
               </div>
             ))}
           </div>

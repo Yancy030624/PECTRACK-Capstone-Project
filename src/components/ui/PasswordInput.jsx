@@ -17,7 +17,7 @@ export const PasswordInput = forwardRef(function PasswordInput(
   ref,
 ) {
   const [shown, setShown] = useState(false)
-  const fieldClass = inputClassName ?? `h-9 ${FIELD_SHAPE} ${className}`
+  const fieldClass = inputClassName ?? `h-11 md:h-9 ${FIELD_SHAPE} ${className}`
   return (
     <div className="relative">
       {/* pr-14! keeps the typed text clear of the button, whatever

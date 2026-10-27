@@ -208,43 +208,7 @@ export function StaffManagement({ embedded = false } = {}) {
         </>
       )}
       <p className={`${embedded ? 'mt-4' : 'mt-2'} text-sm text-ink-500`}>Create and review cashier accounts.</p>
-
-      <Card className="mt-6 p-6">
-        <h2 className="text-lg font-semibold text-ink-900">New staff account</h2>
-        <form className="mt-4 space-y-3" onSubmit={handleSubmit} noValidate>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Role" error={errors.role}>
-              <Select value={form.role} onChange={(event) => updateField('role', event.target.value)}>
-                <option value="CASHIER">Cashier</option>
-              </Select>
-            </Field>
-            <Field label="Full name" error={errors.name}>
-              <Input value={form.name} onChange={(event) => updateField('name', event.target.value)} autoComplete="name" placeholder="Full name" />
-            </Field>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Username" error={errors.username}>
-              <Input value={form.username} onChange={(event) => updateField('username', event.target.value)} autoComplete="off" placeholder="e.g. juan.delacruz" />
-            </Field>
-            <Field label="Contact number" error={errors.contactNumber}>
-              <Input value={form.contactNumber} onChange={(event) => updateField('contactNumber', digitsOnly(event.target.value))} autoComplete="tel" inputMode="numeric" maxLength={11} placeholder="09XXXXXXXXX" />
-            </Field>
-          </div>
-          <Field label="Email" error={errors.email}>
-            <Input type="email" value={form.email} onChange={(event) => updateField('email', event.target.value)} autoComplete="off" placeholder="name@example.com" />
-          </Field>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Password" error={errors.password}>
-              <PasswordInput value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" placeholder="Set an initial password" />
-            </Field>
-            <Field label="Confirm password" error={errors.confirmPassword}>
-              <PasswordInput value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} autoComplete="new-password" placeholder="Repeat password" />
-            </Field>
-          </div>
-          {message && <Alert variant={messageFailed ? 'error' : 'success'}>{message}</Alert>}
-          <Button type="submit" size="sm" disabled={submitting}>{submitting ? 'Creating account…' : 'Create account'}</Button>
-        </form>
-      </Card>
+      {message && <div className="mt-4"><Alert variant={messageFailed ? 'error' : 'success'}>{message}</Alert></div>}
 
       <Card className="mt-6 p-6">
         <h2 className="text-lg font-semibold text-ink-900">Current staff</h2>
@@ -259,7 +223,7 @@ export function StaffManagement({ embedded = false } = {}) {
                 <Alert variant={Object.keys(editErrors).length ? 'error' : 'success'}>{editMessage}</Alert>
               </div>
             )}
-            <Table caption="Current staff">
+            <Table caption="Current staff" stickyFirstColumn>
               <Thead>
                 <Tr className="hover:bg-transparent">
                   <Th>Name</Th>
@@ -342,6 +306,44 @@ export function StaffManagement({ embedded = false } = {}) {
           </div>
         )}
       </Card>
+
+      <details className="mt-6 rounded-panel bg-surface p-6 shadow-raised">
+        <summary className="py-3 text-base font-semibold text-brand-700">Add staff account</summary>
+        <h2 className="mt-3 text-lg font-semibold text-ink-900">New staff account</h2>
+        <form className="mt-4 space-y-3" onSubmit={handleSubmit} noValidate>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Role" error={errors.role}>
+              <Select value={form.role} onChange={(event) => updateField('role', event.target.value)}>
+                <option value="CASHIER">Cashier</option>
+              </Select>
+            </Field>
+            <Field label="Full name" error={errors.name}>
+              <Input value={form.name} onChange={(event) => updateField('name', event.target.value)} autoComplete="name" placeholder="Full name" />
+            </Field>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Username" error={errors.username}>
+              <Input value={form.username} onChange={(event) => updateField('username', event.target.value)} autoComplete="off" placeholder="e.g. juan.delacruz" />
+            </Field>
+            <Field label="Contact number" error={errors.contactNumber}>
+              <Input value={form.contactNumber} onChange={(event) => updateField('contactNumber', digitsOnly(event.target.value))} autoComplete="tel" inputMode="numeric" maxLength={11} placeholder="09XXXXXXXXX" />
+            </Field>
+          </div>
+          <Field label="Email" error={errors.email}>
+            <Input type="email" value={form.email} onChange={(event) => updateField('email', event.target.value)} autoComplete="off" placeholder="name@example.com" />
+          </Field>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Password" error={errors.password}>
+              <PasswordInput value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" placeholder="Set an initial password" />
+            </Field>
+            <Field label="Confirm password" error={errors.confirmPassword}>
+              <PasswordInput value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} autoComplete="new-password" placeholder="Repeat password" />
+            </Field>
+          </div>
+          <Button type="submit" size="sm" disabled={submitting}>{submitting ? 'Creating account…' : 'Create account'}</Button>
+        </form>
+      </details>
+
     </section>
   )
 }

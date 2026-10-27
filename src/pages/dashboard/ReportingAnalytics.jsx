@@ -204,6 +204,11 @@ export function ReportingAnalytics({ user }) {
       .finally(() => setLogsLoading(false))
   }, [user.role, activeTab, logsOffset])
 
+  const rangeChanged = appliedRange && (
+    fromInput !== appliedRange.from || toInput !== appliedRange.to ||
+    (activeTab === 'Sales' && groupBy !== appliedRange.groupBy)
+  )
+
   const csvHref = appliedRange ? `/api/reports/sales?${new URLSearchParams({ from: appliedRange.from, to: appliedRange.to, groupBy: appliedRange.groupBy, ...(appliedRange.includeDemo && { includeDemo: 'true' }), format: 'csv' })}` : null
   // The analytics export (GET /api/reports/analytics) is no longer offered
   // here: it is a raw developer file (REPORTS_UI_PLAN.md U1).
@@ -235,6 +240,13 @@ export function ReportingAnalytics({ user }) {
           looks forward from today and has no range to pick. */}
       <div hidden={activeTab === 'Export history' || activeTab === 'Forecast'} className="print:hidden">
         <Card className="mt-6 p-6">
+          <div role="group" aria-label="Report date presets" className="mb-4 flex flex-wrap gap-2">
+            {[{ label: 'Today', days: 1 }, { label: 'Last 7 days', days: 7 }, { label: 'Last 30 days', days: 30 }].map(({ label, days }) => (
+              <Button key={label} type="button" size="sm" variant={fromInput === manilaDateFromToday(1 - days) && toInput === manilaDate() ? 'primary' : 'secondary'} aria-pressed={fromInput === manilaDateFromToday(1 - days) && toInput === manilaDate()} onClick={() => { setFromInput(manilaDateFromToday(1 - days)); setToInput(manilaDate()) }}>
+                {label}
+              </Button>
+            ))}
+          </div>
           <form onSubmit={generate} className="flex flex-wrap items-end gap-3">
             <Field label="From" error={errors.from}>
               <Input type="date" value={fromInput} onChange={(event) => setFromInput(event.target.value)} className="w-auto" />
@@ -279,6 +291,12 @@ export function ReportingAnalytics({ user }) {
             </div>
           )}
         </Card>
+        {appliedRange && (
+          <div role="status" className="mt-4 rounded-control border border-line-200 bg-surface px-4 py-3 text-sm text-ink-700">
+            <p>Showing {formatDate(`${appliedRange.from}T00:00:00`)} – {formatDate(`${appliedRange.to}T00:00:00`)}{activeTab === 'Sales' ? ` · Grouped by ${appliedRange.groupBy}` : ''}</p>
+            {rangeChanged && <p className="mt-1 font-semibold text-status-wait-fg">Date or grouping changes are not applied yet. Select Generate report to update the results.</p>}
+          </div>
+        )}
         {appliedRange?.includeDemo && (
           <p role="status" className="mt-4 rounded-control border border-status-wait-fg/20 bg-status-wait-bg px-3 py-2 text-sm text-status-wait-fg">
             <span className="font-semibold">Includes demo data.</span> These figures add practice orders that never happened; turn Demo data off for the bakery&apos;s real figures.

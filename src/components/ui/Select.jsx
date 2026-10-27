@@ -6,7 +6,7 @@ import { FIELD_SHAPE } from './Input.jsx'
 // Input.jsx's header comment for why that shared shape exists (H3).
 export const Select = forwardRef(function Select({ className = '', children, ...props }, ref) {
   return (
-    <select ref={ref} className={`h-9 ${FIELD_SHAPE} ${className}`} {...props}>
+    <select ref={ref} className={`h-11 md:h-9 ${FIELD_SHAPE} ${className}`} {...props}>
       {children}
     </select>
   )

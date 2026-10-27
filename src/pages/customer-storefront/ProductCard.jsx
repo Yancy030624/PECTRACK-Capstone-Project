@@ -30,7 +30,7 @@ export function ProductCard({ product, mode = 'guest', onSignIn, cartQuantity = 
         ? <img src={product.imageUrl} alt={product.name} loading="lazy" className={`h-full w-full object-cover transition duration-500 group-hover:scale-105 ${soldOut ? 'grayscale-60' : ''}`} />
         : <div className="grid h-full w-full place-items-center text-6xl" aria-hidden="true">🥖</div>}
       {product.variant && (
-        <span className="absolute left-3 top-3 rounded-full bg-cream-50/95 px-3 py-1 text-[11px] font-bold text-cocoa-700 shadow-sm">{product.variant}</span>
+        <span className="absolute left-3 right-3 top-3 w-fit max-w-[calc(100%-1.5rem)] break-words rounded-full bg-cream-50/95 px-3 py-1 text-[11px] font-bold text-cocoa-700 shadow-sm">{product.variant}</span>
       )}
       {/* Stock left, on the photo where the eye already is (MINOR_REVISIONS
           M6, restyled 2026-10-28): plain while there is plenty, amber when
@@ -48,12 +48,12 @@ export function ProductCard({ product, mode = 'guest', onSignIn, cartQuantity = 
     </div>
   )
 
-  const roundButton = 'grid h-10 w-10 shrink-0 place-items-center rounded-full text-white transition disabled:cursor-not-allowed'
+  const roundButton = 'grid h-11 w-11 shrink-0 place-items-center rounded-full text-white transition disabled:cursor-not-allowed'
   const plusIcon = <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
 
   // The add control beside the price: + alone, or − n + once in the cart.
   const addControl = mode !== 'customer' ? null : cartQuantity > 0 && !soldOut ? (
-    <div className="flex h-10 items-center rounded-full bg-crust-600 text-white shadow-sm" role="group" aria-label={`${product.name} in your cart`}>
+    <div className="flex h-11 shrink-0 items-center rounded-full bg-crust-600 text-white shadow-sm" role="group" aria-label={`${product.name} in your cart`}>
       <button type="button" onClick={() => onSetQuantity(product.id, cartQuantity - 1)} aria-label={cartQuantity === 1 ? `Remove ${product.name} from the cart` : `One fewer ${product.name}`} className={`${roundButton} hover:bg-white/15`}>
         {cartQuantity === 1
           ? <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" /></svg>
@@ -63,22 +63,22 @@ export function ProductCard({ product, mode = 'guest', onSignIn, cartQuantity = 
       <button type="button" onClick={() => onSetQuantity(product.id, Math.min(cartQuantity + 1, limit))} disabled={cartQuantity >= limit} aria-label={`One more ${product.name}`} className={`${roundButton} hover:bg-white/15 disabled:opacity-40`}>{plusIcon}</button>
     </div>
   ) : (
-    <button type="button" disabled={soldOut} onClick={() => onSetQuantity(product.id, 1)} aria-label={soldOut ? `${product.name} is sold out` : `Add ${product.name} to the cart`} className={`${roundButton} bg-crust-600 shadow-sm hover:scale-105 hover:bg-crust-700 disabled:bg-cocoa-500/30 disabled:shadow-none disabled:hover:scale-100`}>
-      {plusIcon}
+    <button type="button" disabled={soldOut} onClick={() => onSetQuantity(product.id, 1)} aria-label={soldOut ? `${product.name} is sold out` : `Add ${product.name} to the cart`} className="inline-flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-full bg-crust-600 px-3 text-sm font-bold text-white shadow-sm transition hover:bg-crust-700 disabled:cursor-not-allowed disabled:bg-cocoa-500/30 disabled:shadow-none">
+      {plusIcon}<span>{soldOut ? 'Sold out' : 'Add'}</span>
     </button>
   )
 
   const body = (
     <div className="flex flex-1 flex-col px-4 pb-4 pt-3 sm:px-5 sm:pb-5">
-      <h3 className="font-display text-lg font-semibold leading-snug text-cocoa-900 sm:text-xl">{product.name}</h3>
+      <h3 className="break-words font-display text-lg font-semibold leading-snug text-cocoa-900 sm:text-xl">{product.name}</h3>
       {product.description && <p className="mt-1 line-clamp-2 text-xs leading-5 text-cocoa-500 sm:text-sm">{product.description}</p>}
       <div className="mt-auto pt-3">
-        <div className="flex min-h-10 items-center justify-between gap-2">
-          <p className="font-display text-xl font-bold text-crust-600">{formatPeso(product.price)}</p>
+        <div className="flex min-h-11 flex-wrap items-center justify-between gap-2">
+          <p className="whitespace-nowrap font-display text-xl font-bold text-crust-600">{formatPeso(product.price)}</p>
           {addControl}
         </div>
         {mode === 'guest' && (
-          <button type="button" onClick={onSignIn} className="mt-3 inline-flex min-h-10 w-full items-center justify-center rounded-full bg-crust-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-crust-700">
+          <button type="button" onClick={onSignIn} className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-full bg-crust-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-crust-700">
             Sign in to order
           </button>
         )}
@@ -86,7 +86,7 @@ export function ProductCard({ product, mode = 'guest', onSignIn, cartQuantity = 
     </div>
   )
 
-  const shell = 'group flex h-full flex-col overflow-hidden rounded-[1.75rem] bg-white shadow-[0_2px_0_rgb(58_35_20/0.06),0_10px_30px_-12px_rgb(58_35_20/0.25)] ring-1 ring-cream-200 transition duration-300 hover:-translate-y-1 hover:shadow-[0_2px_0_rgb(58_35_20/0.06),0_18px_40px_-14px_rgb(58_35_20/0.35)]'
+  const shell = 'group flex h-full w-full min-w-0 flex-col overflow-hidden rounded-[1.75rem] bg-white shadow-[0_2px_0_rgb(58_35_20/0.06),0_10px_30px_-12px_rgb(58_35_20/0.25)] ring-1 ring-cream-200 transition duration-300 hover:-translate-y-1 hover:shadow-[0_2px_0_rgb(58_35_20/0.06),0_18px_40px_-14px_rgb(58_35_20/0.35)]'
 
   if (mode === 'link') {
     return (
@@ -127,7 +127,7 @@ function AmountInput({ value, limit, name, onCommit }) {
       onFocus={(event) => event.target.select()}
       inputMode="numeric"
       aria-label={`How many ${name}`}
-      className="w-9 rounded-md bg-transparent text-center text-sm font-bold tabular-nums text-white outline-none focus:bg-white/20"
+      className="h-11 w-10 shrink-0 rounded-md bg-transparent text-center text-sm font-bold tabular-nums text-white outline-none focus:bg-white/20"
     />
   )
 }

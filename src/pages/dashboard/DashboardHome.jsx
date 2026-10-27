@@ -3,6 +3,7 @@ import { useNotificationRefresh } from '../../lib/useNotificationRefresh.js'
 import { apiGet } from '../../api/client.js'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Card } from '../../components/ui/Card.jsx'
+import { Button } from '../../components/ui/Button.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { NotPaidTag } from '../../components/ui/PaymentStatus.jsx'
 import { formatPeso } from '../../lib/format.js'
@@ -172,6 +173,12 @@ export function DashboardHome({ user, onNavigate }) {
         </div>
       </div>
 
+      {user.role === 'CASHIER' && (
+        <div className="mt-5">
+          <Button type="button" size="touch" onClick={() => onNavigate('Order Management', { tab: 'Walk-in' })}>New walk-in order</Button>
+        </div>
+      )}
+
       {error && <div className="mt-4"><Alert variant="error">{error}</Alert></div>}
 
       <div className="mt-7 flex flex-wrap items-center justify-between gap-3">
@@ -294,7 +301,7 @@ function NeededBy({ orders, canOpen, onOpen, onViewAll }) {
               <>
                 <span className="w-16 shrink-0 font-semibold text-ink-900 tabular-nums sm:w-20">{orderLabel(order)}</span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium text-ink-900">{order.customerName ?? 'Walk-in'}</span>
+                  <span className="block break-words font-medium text-ink-900">{order.customerName ?? 'Walk-in'}</span>
                   <span className="block text-xs text-ink-500">{order.orderType === 'DELIVERY' ? 'Delivery' : 'Pickup'}<NotPaidTag order={order} className="ml-1.5" /></span>
                 </span>
                 <span className={`shrink-0 text-right text-xs font-semibold ${late ? 'text-status-fail-fg' : 'text-ink-700'}`}>
@@ -310,8 +317,8 @@ function NeededBy({ orders, canOpen, onOpen, onViewAll }) {
             return (
               <li key={order.id}>
                 {canOpen
-                  ? <button type="button" onClick={() => onOpen(order)} aria-label={`Open order ${orderLabel(order)} in Payment & Billing`} className="flex w-full items-center gap-3 rounded-control px-2 py-2.5 text-left text-sm transition hover:bg-surface-sunk">{row}</button>
-                  : <div className="flex items-center gap-3 px-2 py-2.5 text-sm">{row}</div>}
+                  ? <button type="button" onClick={() => onOpen(order)} aria-label={`Open order ${orderLabel(order)} in Payment & Billing`} className="grid w-full grid-cols-2 items-center gap-3 rounded-control px-2 py-2.5 sm:flex sm:flex-wrap xl:flex-nowrap text-left text-sm transition hover:bg-surface-sunk">{row}</button>
+                  : <div className="grid grid-cols-2 items-center gap-3 px-2 py-2.5 text-sm sm:flex sm:flex-wrap xl:flex-nowrap">{row}</div>}
               </li>
             )
           })}
@@ -350,10 +357,10 @@ function RecentOrders({ orders, canOpen, onOpen, onViewAll }) {
               <>
                 <span className="w-24 shrink-0 font-semibold text-ink-900 tabular-nums">{orderLabel(order)}</span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium text-ink-900">{order.customerName ?? 'Walk-in'}</span>
+                  <span className="block break-words font-medium text-ink-900">{order.customerName ?? 'Walk-in'}</span>
                   <span className="block text-xs text-ink-500">{timeFormat.format(new Date(order.orderDate))} · {order.orderType === 'DELIVERY' ? 'Delivery' : 'Pickup'}</span>
                 </span>
-                <span className="hidden w-28 shrink-0 text-right sm:block">
+                <span className="block shrink-0 text-left sm:w-28 sm:text-right">
                   <span className="block font-medium text-ink-900 tabular-nums">{formatPeso(order.totalAmount)}</span>
                   <span className={`block text-xs font-semibold ${payment.tone}`}>{payment.label}</span>
                 </span>
@@ -363,8 +370,8 @@ function RecentOrders({ orders, canOpen, onOpen, onViewAll }) {
             return (
               <li key={order.id}>
                 {canOpen
-                  ? <button type="button" onClick={() => onOpen(order)} aria-label={`Open order ${orderLabel(order)}`} className="flex w-full items-center gap-3 rounded-control px-2 py-2.5 text-left text-sm transition hover:bg-surface-sunk">{row}</button>
-                  : <div className="flex items-center gap-3 px-2 py-2.5 text-sm">{row}</div>}
+                  ? <button type="button" onClick={() => onOpen(order)} aria-label={`Open order ${orderLabel(order)}`} className="grid w-full grid-cols-2 items-center gap-3 rounded-control px-2 py-2.5 sm:flex sm:flex-wrap xl:flex-nowrap text-left text-sm transition hover:bg-surface-sunk">{row}</button>
+                  : <div className="grid grid-cols-2 items-center gap-3 px-2 py-2.5 text-sm sm:flex sm:flex-wrap xl:flex-nowrap">{row}</div>}
               </li>
             )
           })}

@@ -9,16 +9,13 @@ import { useEffect, useRef, useState } from 'react'
 // users already see the page heading above the table, but a screen
 // reader jumping directly into table navigation mode has nothing else
 // that names what the table is.
-// Responsive column priority. A table that only ever scrolls sideways
-// hides whichever columns are rightmost — on every admin table that was
-// Status and Actions, the two a person acts on. `priority` names the
-// breakpoint a column first appears at; below it the column is dropped
-// entirely (`hidden` beats `table-cell`), so what remains fits. Pass the
-// same value to a column's <Th> and every <Td> under it.
+// Keep every column available inside the local horizontal scroller.
+// Accept existing priority props for compatibility; small screens must
+// still be able to reach reporting, payment, and inventory information.
 const PRIORITY_CLASSES = {
-  md: 'hidden md:table-cell',
-  lg: 'hidden lg:table-cell',
-  xl: 'hidden xl:table-cell',
+  md: 'table-cell',
+  lg: 'table-cell',
+  xl: 'table-cell',
 }
 const priorityClass = (priority) => (priority ? PRIORITY_CLASSES[priority] ?? '' : '')
 
@@ -26,7 +23,7 @@ const priorityClass = (priority) => (priority ? PRIORITY_CLASSES[priority] ?? ''
 // When it does, a small "Slide sideways to see more" line shows under it,
 // and a soft fade on the right edge hints there is more — until the end is
 // reached.
-export function Table({ caption, children, className = '' }) {
+export function Table({ caption, children, className = '', stickyFirstColumn = false }) {
   const scrollerRef = useRef(null)
   const [more, setMore] = useState(false)
   useEffect(() => {
@@ -46,8 +43,8 @@ export function Table({ caption, children, className = '' }) {
   return (
     <div>
       <div className="relative">
-        <div ref={scrollerRef} className="overflow-x-auto overscroll-x-contain rounded-panel bg-surface">
-          <table className={`w-full text-left text-sm ${className}`}>
+        <div ref={scrollerRef} tabIndex={0} role="region" aria-label={caption ? `${caption}, scroll horizontally for more columns` : 'Table, scroll horizontally for more columns'} className="overflow-x-auto overscroll-x-contain rounded-panel bg-surface">
+          <table className={`w-full text-left text-sm ${stickyFirstColumn ? 'md:[&_tr>:first-child:not([colspan])]:sticky md:[&_tr>:first-child:not([colspan])]:left-0 md:[&_tr>:first-child:not([colspan])]:z-10 md:[&_tr>:first-child:not([colspan])]:max-w-48 md:[&_tr>:first-child:not([colspan])]:break-words md:[&_tr>:first-child:not([colspan])]:bg-surface md:[&_tr.bg-brand-50>:first-child:not([colspan])]:bg-brand-50 md:[&_tr:hover>:first-child:not([colspan])]:bg-surface-sunk md:[&_tr>:first-child:not([colspan])]:shadow-[1px_0_0_var(--color-line-200)] print:[&_tr>:first-child]:static print:[&_tr>:first-child]:shadow-none' : ''} ${className}`}>
             {caption && <caption className="sr-only">{caption}</caption>}
             {children}
           </table>

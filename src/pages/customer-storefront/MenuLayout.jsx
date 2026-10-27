@@ -38,7 +38,7 @@ export function MenuLayout({ loading, sections, message, emptyText, toolbar, sho
       <div className="mx-auto max-w-7xl px-4 sm:px-7">
         {message && <p role="alert" className="mt-8 rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">{message}</p>}
         {loading ? (
-          <div className="mt-10 grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="mt-10 grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 sm:gap-6 lg:grid-cols-3 xl:grid-cols-4">
             {Array.from({ length: 8 }).map((_, index) => <div key={index} className="aspect-3/4 animate-pulse rounded-[1.75rem] bg-cream-200" />)}
           </div>
         ) : sections.length === 0 ? (
@@ -46,11 +46,11 @@ export function MenuLayout({ loading, sections, message, emptyText, toolbar, sho
         ) : (
           sections.map(({ category, items }) => (
             <div key={category.id} id={sectionAnchor(category.id)} className="scroll-mt-24 pt-12">
-              <div className="flex items-baseline gap-3 border-b border-dashed border-cream-300 pb-3">
+              <div className="flex flex-wrap items-baseline gap-3 border-b border-dashed border-cream-300 pb-3">
                 <h2 className="font-display text-3xl font-bold text-cocoa-900">{category.name}</h2>
                 <span className="text-sm font-bold text-cocoa-500">{items.length} item{items.length === 1 ? '' : 's'}</span>
               </div>
-              <div className="mt-6 grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-3 xl:grid-cols-4">
+              <div className="mt-6 grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 sm:gap-6 lg:grid-cols-3 xl:grid-cols-4">
                 {items.map((product) => <div key={product.id}>{renderCard(product)}</div>)}
               </div>
             </div>

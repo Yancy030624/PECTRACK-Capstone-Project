@@ -1,7 +1,7 @@
 // The money screen — Payment & Billing for staff, My Payments for a
 // customer (Dashboard.jsx maps both names here; the component dispatches
 // on role). Same responsive shape as OrderManagement.jsx: list beside the
-// receipt on `lg`, the receipt as an overlay below that, and a card list in
+// receipt on wider desktops, the receipt as an overlay below that, and a card list in
 // place of the table below `md` so "Owed" and Status are never scrolled
 // out of view.
 //
@@ -27,14 +27,14 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
 import { orderLabel } from '../../lib/orderNumber.js'
-import { useIsLargeScreen } from '../../lib/useMediaQuery.js'
+import { useMediaQuery } from '../../lib/useMediaQuery.js'
 import { PaymentLog } from './PaymentLog.jsx'
 import { PrintHeader, PrintThisButton } from '../../components/PrintReport.jsx'
 
 const emptyPaymentForm = { method: 'CASH', amount: '', gatewayReference: '' }
 
 function DetailPanel({ open, onClose, labelledBy, children }) {
-  const isLarge = useIsLargeScreen()
+  const isLarge = useMediaQuery('(min-width: 1536px)')
   if (isLarge) return children
   return (
     <Modal open={open} onClose={onClose} labelledBy={labelledBy}>
@@ -198,7 +198,7 @@ export function PaymentBilling({ user, params }) {
           {/* PAPER_VS_SYSTEM.md H9 — the paper promises a receipt the
               customer can keep as a PDF. */}
           {orderDetail && <PrintThisButton />}
-          <Button type="button" size="sm" variant="ghost" className="lg:hidden print:hidden" onClick={closeDetail}>Close</Button>
+          <Button type="button" size="sm" variant="ghost" className="2xl:hidden print:hidden" onClick={closeDetail}>Close</Button>
         </div>
       </div>
       {!selectedOrderId ? (
@@ -340,7 +340,7 @@ export function PaymentBilling({ user, params }) {
       {activeTab === 'log' && <PaymentLog user={user} />}
 
       {activeTab === 'billing' && (
-        <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+        <div className="mt-6 grid gap-4 2xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
           <Card className="min-w-0 p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-ink-900">{isStaff ? 'Orders' : 'Your orders'}</h2>
@@ -380,7 +380,7 @@ export function PaymentBilling({ user, params }) {
                   ))}
                 </ul>
                 <div className="mt-4 hidden md:block">
-                  <Table caption={isStaff ? 'Orders' : 'Your orders'}>
+                  <Table caption={isStaff ? 'Orders' : 'Your orders'} stickyFirstColumn>
                     <Thead>
                       <Tr className="hover:bg-transparent">
                         <Th>Order</Th>

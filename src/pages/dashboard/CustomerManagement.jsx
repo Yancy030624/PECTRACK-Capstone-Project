@@ -126,7 +126,7 @@ export function CustomerManagement({ user, embedded = false }) {
         ) : customers.length === 0 ? (
           <EmptyState title="No customers found" description="Try a different name, email, or contact number." />
         ) : (
-          <Table caption="Customer records">
+          <Table caption="Customer records" stickyFirstColumn>
             <Thead>
               <Tr className="hover:bg-transparent">
                 <Th>Name</Th>

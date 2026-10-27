@@ -59,10 +59,10 @@ export function CustomerAccount({ user, onLogout, onUserUpdated }) {
         <div className="flex flex-wrap items-center gap-4 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-cream-200 sm:p-6">
           <div className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-crust-600 font-display text-2xl font-bold text-white" aria-hidden="true">{user.name[0]}</div>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate font-display text-2xl font-bold text-cocoa-900">{user.name}</h1>
-            <p className="truncate text-sm text-cocoa-500">{[user.email, user.contactNumber].filter(Boolean).join(' · ')}</p>
+            <h1 className="break-words font-display text-2xl font-bold text-cocoa-900">{user.name}</h1>
+            <p className="text-sm text-cocoa-500 [overflow-wrap:anywhere]">{[user.email, user.contactNumber].filter(Boolean).join(' · ')}</p>
           </div>
-          <button type="button" onClick={onLogout} className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-cocoa-700 ring-1 ring-cream-300 transition hover:bg-cream-50 hover:text-red-700">
+          <button type="button" onClick={onLogout} className="inline-flex min-h-11 items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-cocoa-700 ring-1 ring-cream-300 transition hover:bg-cream-50 hover:text-red-700">
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H4" /></svg>
             Sign out
           </button>

@@ -14,5 +14,5 @@ export const FIELD_SHAPE =
   'aria-invalid:border-red-500 disabled:cursor-not-allowed disabled:opacity-60'
 
 export const Input = forwardRef(function Input({ className = '', ...props }, ref) {
-  return <input ref={ref} className={`h-9 ${FIELD_SHAPE} ${className}`} {...props} />
+  return <input ref={ref} className={`h-11 md:h-9 ${FIELD_SHAPE} ${className}`} {...props} />
 })

@@ -36,10 +36,10 @@ export function SiteFooter() {
   return (
     <footer className="mt-16 bg-cocoa-900 text-cream-200">
       <ScallopEdge className="-mt-4 text-cocoa-900 sm:-mt-6" flip />
-      <div className="mx-auto grid max-w-7xl gap-10 px-4 pb-10 pt-10 sm:px-7 md:grid-cols-[1.3fr_1fr_1fr_1fr]">
+      <div className="mx-auto grid max-w-7xl gap-10 px-4 pb-10 pt-10 sm:grid-cols-2 sm:px-7 lg:grid-cols-[1.3fr_1fr_1fr_1fr]">
         <div>
           <div className="flex items-center gap-3">
-            <span className="grid h-14 w-14 overflow-hidden rounded-full bg-white ring-2 ring-butter-300">
+            <span className="grid h-14 w-14 shrink-0 overflow-hidden rounded-full bg-white ring-2 ring-butter-300">
               <img src={logoMark} alt="" className="h-full w-full rounded-full object-contain" />
             </span>
             <span>
@@ -68,12 +68,12 @@ export function SiteFooter() {
         </FooterBlock>
       </div>
       <div className="border-t border-cream-50/10">
-        <p className="mx-auto flex max-w-7xl items-center gap-2 px-4 py-5 text-xs text-cream-200/70 sm:px-7">
+        <p className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-2 gap-y-3 px-4 py-5 text-xs text-cream-200/70 sm:px-7">
           <WheatSprig className="h-4 w-4 text-butter-400" />
           © {new Date().getFullYear()} Pecto&apos;s Bakery · Orders by PECTRACK
-          <span className="ml-auto flex gap-4">
-            <Link to="/privacy" className="hover:text-cream-50 hover:underline">Privacy Policy</Link>
-            <Link to="/terms" className="hover:text-cream-50 hover:underline">Terms of Service</Link>
+          <span className="flex w-full flex-wrap gap-x-4 gap-y-2 sm:ml-auto sm:w-auto">
+            <Link to="/privacy" className="inline-flex min-h-11 items-center hover:text-cream-50 hover:underline">Privacy Policy</Link>
+            <Link to="/terms" className="inline-flex min-h-11 items-center hover:text-cream-50 hover:underline">Terms of Service</Link>
           </span>
         </p>
       </div>

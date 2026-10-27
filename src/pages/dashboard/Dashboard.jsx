@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Brand } from '../../components/Brand.jsx'
 import { NotificationBell } from '../../components/NotificationBell.jsx'
@@ -27,6 +27,8 @@ const moduleComponents = {
 }
 // Staff only — a customer never reaches this shell (App.jsx routes them
 // to /account instead), so there is no CUSTOMER case to answer here.
+const navigationGroupFor = (name) => name === 'My Profile' ? 'Account' : ['Reporting & Analytics', 'User Management'].includes(name) ? 'Business' : 'Daily operations'
+
 const defaultModuleFor = (role) => {
   if (role === 'DELIVERY PERSONNEL') return 'My Deliveries'
   return 'Dashboard'
@@ -60,11 +62,34 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
   // behind a Menu button, instead of a sideways-scrolling strip where most
   // modules sat off the screen and nobody knew to swipe for them.
   const [menuOpen, setMenuOpen] = useState(false)
+  const drawerRef = useRef(null)
   useEffect(() => {
     if (!menuOpen) return
-    const closeOnEscape = (event) => { if (event.key === 'Escape') setMenuOpen(false) }
-    document.addEventListener('keydown', closeOnEscape)
-    return () => document.removeEventListener('keydown', closeOnEscape)
+    const opener = document.activeElement
+    const previousOverflow = document.body.style.overflow
+    const desktop = window.matchMedia('(min-width: 1024px)')
+    const closeOnDesktop = () => { if (desktop.matches) setMenuOpen(false) }
+    document.body.style.overflow = 'hidden'
+    drawerRef.current?.focus()
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') { event.preventDefault(); setMenuOpen(false) }
+      if (event.key !== 'Tab' || !drawerRef.current) return
+      const focusable = [...drawerRef.current.querySelectorAll('button:not([disabled]), a[href]')].filter((element) => element.getClientRects().length > 0)
+      if (!focusable.length) { event.preventDefault(); return }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === drawerRef.current)) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && (document.activeElement === last || document.activeElement === drawerRef.current)) { event.preventDefault(); first.focus() }
+    }
+    closeOnDesktop()
+    desktop.addEventListener('change', closeOnDesktop)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      desktop.removeEventListener('change', closeOnDesktop)
+      document.removeEventListener('keydown', handleKeyDown)
+      document.body.style.overflow = previousOverflow
+      if (opener?.isConnected) opener.focus({ preventScroll: true })
+    }
   }, [menuOpen])
   // The bell (NOTIFICATIONS_PLAN.md, N3): order news, delivery news
   // included, opens the order in Order Management (no Delivery Management
@@ -129,7 +154,7 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
       {/* Sticky on phones, so the Menu and the bell are always one tap away. */}
       <header className="sticky top-0 z-40 flex shrink-0 items-center justify-between gap-2 bg-surface px-3 py-2.5 shadow-raised sm:px-7 lg:relative lg:z-10 lg:py-3 print:hidden">
         <div className="flex min-w-0 items-center gap-2">
-          <button type="button" onClick={() => setMenuOpen(true)} aria-label="Open the menu" aria-expanded={menuOpen} className="grid h-10 w-10 shrink-0 place-items-center rounded-control text-ink-700 hover:bg-surface-sunk lg:hidden">
+          <button type="button" onClick={() => setMenuOpen(true)} aria-label="Open the menu" aria-expanded={menuOpen} aria-controls={menuOpen ? 'staff-mobile-menu' : undefined} className="grid h-10 w-10 shrink-0 place-items-center rounded-control text-ink-700 hover:bg-surface-sunk lg:hidden">
             <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
           </button>
           <Link to="/" aria-label="Go to home" className="min-w-0">
@@ -170,25 +195,25 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
               everywhere). */}
           <p className="mb-4 px-3 text-[10px] font-semibold tracking-wide text-ink-500 uppercase">MAIN MENU</p>
           <nav className="space-y-1">
-            {allowedModules.map((module) => (
-              <button
-                type="button"
-                key={module.name}
-                onClick={() => openModule(module.name)}
-                // Nav items are navigation, not generic buttons (see the
-                // audit's Stage 2 note), so they're styled directly
-                // instead of forced through <Button>. Weight now
-                // distinguishes state instead of every item being bold
-                // (H2): the active module is 600, everything else is 500.
-                className={`flex w-full items-center gap-3 rounded-control px-3 py-3 text-left text-sm transition ${
-                  activeModule === module.name
-                    ? 'bg-brand-600 font-semibold text-white shadow-raised'
-                    : 'font-medium text-ink-500 hover:bg-brand-50 hover:text-brand-700'
-                }`}
-              >
-                <ModuleIcon name={module.icon} />
-                {module.name}
-              </button>
+            {allowedModules.map((module, index) => (
+              <div key={module.name}>
+                {(index === 0 || navigationGroupFor(allowedModules[index - 1].name) !== navigationGroupFor(module.name)) && (
+                  <p className="mb-2 mt-4 px-3 text-[10px] font-semibold uppercase tracking-wide text-ink-500">{navigationGroupFor(module.name)}</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => openModule(module.name)}
+                  aria-current={activeModule === module.name ? 'page' : undefined}
+                  className={`flex w-full items-center gap-3 rounded-control px-3 py-3 text-left text-sm transition ${
+                    activeModule === module.name
+                      ? 'bg-brand-600 font-semibold text-white shadow-raised'
+                      : 'font-medium text-ink-500 hover:bg-brand-50 hover:text-brand-700'
+                  }`}
+                >
+                  <ModuleIcon name={module.icon} />
+                  {module.name}
+                </button>
+              </div>
             ))}
           </nav>
         </aside>
@@ -198,25 +223,29 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
         {menuOpen && (
           <div className="fixed inset-0 z-50 lg:hidden print:hidden" role="dialog" aria-modal="true" aria-label="Menu">
             <button type="button" aria-label="Close the menu" onClick={() => setMenuOpen(false)} className="absolute inset-0 bg-black/40" />
-            <nav className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col overflow-y-auto bg-surface p-4 shadow-2xl">
+            <nav id="staff-mobile-menu" ref={drawerRef} tabIndex={-1} className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col overflow-y-auto bg-surface p-4 shadow-2xl">
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-[10px] font-semibold tracking-wide text-ink-500 uppercase">Main menu</p>
-                <button type="button" onClick={() => setMenuOpen(false)} aria-label="Close the menu" className="grid h-9 w-9 place-items-center rounded-control text-lg text-ink-500 hover:bg-surface-sunk">✕</button>
+                <button type="button" onClick={() => setMenuOpen(false)} aria-label="Close the menu" className="grid h-11 w-11 place-items-center rounded-control text-lg text-ink-500 hover:bg-surface-sunk">✕</button>
               </div>
               <div className="space-y-1">
-                {allowedModules.map((module) => (
-                  <button
-                    type="button"
-                    key={module.name}
-                    onClick={() => openModule(module.name)}
-                    aria-current={activeModule === module.name ? 'page' : undefined}
-                    className={`flex min-h-12 w-full items-center gap-3 rounded-control px-3 text-left text-base transition ${
-                      activeModule === module.name ? 'bg-brand-600 font-semibold text-white' : 'font-medium text-ink-700 hover:bg-brand-50'
-                    }`}
-                  >
-                    <ModuleIcon name={module.icon} />
-                    {module.name}
-                  </button>
+                {allowedModules.map((module, index) => (
+                  <div key={module.name}>
+                    {(index === 0 || navigationGroupFor(allowedModules[index - 1].name) !== navigationGroupFor(module.name)) && (
+                      <p className="mb-2 mt-4 px-3 text-[10px] font-semibold uppercase tracking-wide text-ink-500">{navigationGroupFor(module.name)}</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => openModule(module.name)}
+                      aria-current={activeModule === module.name ? 'page' : undefined}
+                      className={`flex min-h-12 w-full items-center gap-3 rounded-control px-3 text-left text-base transition ${
+                        activeModule === module.name ? 'bg-brand-600 font-semibold text-white' : 'font-medium text-ink-700 hover:bg-brand-50'
+                      }`}
+                    >
+                      <ModuleIcon name={module.icon} />
+                      {module.name}
+                    </button>
+                  </div>
                 ))}
               </div>
               <p className="mt-auto border-t border-line-200 pt-3 text-xs text-ink-500">

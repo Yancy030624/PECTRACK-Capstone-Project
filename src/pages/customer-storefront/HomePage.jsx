@@ -60,17 +60,17 @@ export function HomePage() {
             fills the hero, dimmed. */}
         <img src={heroBasket} alt="A hand holding out a basket of Pecto's Broas" className="absolute inset-y-0 right-0 -z-10 h-full w-full object-cover object-[70%_center] lg:w-[68%] lg:object-center" />
         <div aria-hidden="true" className="absolute inset-0 -z-10 bg-linear-to-r from-[#0d0a08] via-[#0d0a08]/85 to-transparent lg:from-[#0d0a08] lg:from-35% lg:via-[#0d0a08]/40 lg:via-50%" />
-        <div className="mx-auto flex min-h-[34rem] max-w-7xl flex-col justify-center px-4 py-20 sm:min-h-[38rem] sm:px-7 lg:min-h-[42rem]">
+        <div className="mx-auto flex max-w-7xl flex-col justify-center px-4 py-8 sm:py-20 sm:min-h-[38rem] sm:px-7 lg:min-h-[42rem]">
           <div className="max-w-xl">
             <Eyebrow className="text-butter-300">Lucban&apos;s Best Delicacies · Since 1947</Eyebrow>
-            <h1 className="mt-5 font-display text-5xl font-bold leading-[1.02] sm:text-6xl lg:text-7xl">
+            <h1 className="mt-3 font-display text-4xl sm:mt-5 font-bold leading-[1.08] min-[400px]:text-5xl sm:text-6xl lg:text-7xl">
               Warm bread,<br />
               <span className="italic text-butter-300">baked every morning.</span>
             </h1>
-            <p className="mt-6 text-lg leading-8 text-cream-200">
-              Our own Broas, soft ensaymada, and pandesal straight from the oven. Order ahead and pick it up at the bakery, or have it delivered anywhere in Lucban.
+            <p className="mt-4 text-base leading-7 text-cream-200 sm:mt-6 sm:text-lg sm:leading-8">
+              Broas, ensaymada and pandesal, baked fresh in Lucban. Order ahead for bakery pickup or delivery within Lucban.
             </p>
-            <div className="mt-8 flex flex-wrap items-center gap-3">
+            <div className="mt-6 flex flex-wrap items-center gap-3 sm:mt-8">
               {orderCta}
               {!user && (
                 <button type="button" onClick={openLogin} className="inline-flex min-h-12 items-center rounded-full px-7 text-base font-bold text-cream-50 ring-1 ring-cream-50/50 transition hover:bg-cream-50/10">Sign in to order</button>
@@ -79,7 +79,7 @@ export function HomePage() {
                 <Link to="/dashboard" className="inline-flex min-h-12 items-center rounded-full px-7 text-base font-bold text-cream-50 ring-1 ring-cream-50/50 transition hover:bg-cream-50/10">Go to dashboard</Link>
               )}
             </div>
-            <ul className="mt-10 flex flex-wrap gap-x-7 gap-y-3 text-sm font-bold text-cream-100">
+            <ul className="mt-6 flex flex-wrap gap-x-4 gap-y-2 text-xs font-bold text-cream-100 sm:mt-10 sm:gap-x-7 sm:gap-y-3 sm:text-sm">
               <li className="flex items-center gap-2"><LineIcon name="oven" className="h-5 w-5 text-butter-400" />Baked in-house</li>
               <li className="flex items-center gap-2"><LineIcon name="pickup" className="h-5 w-5 text-butter-400" />Pickup ready on time</li>
               <li className="flex items-center gap-2"><LineIcon name="delivery" className="h-5 w-5 text-butter-400" />Delivery within Lucban</li>
@@ -113,8 +113,8 @@ export function HomePage() {
 
       {/* ---- Most loved ---- */}
       <section className="mx-auto max-w-7xl px-4 pt-20 sm:px-7">
-        <SectionHeading eyebrow="Bestsellers" title="Most loved picks" lead="The ones Lucban keeps coming back for — tap any to find it on the menu." />
-        <div className="mt-8 grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-4">
+        <SectionHeading eyebrow="From our bakery" title="Bakery favorites" lead="A selection of our signature breads and pastries — tap any to find it on the menu." />
+        <div className="mt-8 grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 sm:gap-6 lg:grid-cols-4">
           {loading
             ? Array.from({ length: 8 }).map((_, index) => <div key={index} className="aspect-3/4 animate-pulse rounded-[1.75rem] bg-cream-200" />)
             : favourites.map((product) => (
@@ -142,7 +142,7 @@ export function HomePage() {
           </div>
           <div className="p-8 sm:p-12">
             <Eyebrow className="text-butter-300">Our signature</Eyebrow>
-            <h2 className="mt-4 font-display text-4xl font-bold leading-tight text-cream-50 sm:text-5xl">Broas, the Lucban way.</h2>
+            <h2 className="mt-4 font-display text-3xl font-bold min-[400px]:text-4xl leading-tight text-cream-50 sm:text-5xl">Broas, the Lucban way.</h2>
             <p className="mt-5 text-base leading-7 text-cream-200">
               Light, crisp ladyfinger biscuits — the taste of Lucban that families carry home as pasalubong. From a single pack to the gallon tin for the fiesta, baked the same way it always has been.
             </p>
@@ -161,7 +161,7 @@ export function HomePage() {
           <div aria-hidden="true" className="absolute inset-0 -z-10 bg-linear-to-r from-[#0b0806] via-[#0b0806]/80 to-transparent" />
           <div className="max-w-xl px-6 py-14 sm:px-12 sm:py-20">
             <Eyebrow className="text-butter-300">Fiestas &amp; pasalubong</Eyebrow>
-            <h2 className="mt-4 font-display text-4xl font-bold leading-tight sm:text-5xl">Planning a fiesta or a big merienda?</h2>
+            <h2 className="mt-4 font-display text-3xl font-bold min-[400px]:text-4xl leading-tight sm:text-5xl">Planning a fiesta or a big merienda?</h2>
             <p className="mt-4 text-lg leading-8 text-cream-200">Order by the tray or the gallon tin, up to 30 days ahead, and pick the day and time you need it ready.</p>
             <div className="mt-8 flex flex-wrap gap-3">
               {isCustomer
@@ -186,7 +186,7 @@ export function HomePage() {
           </figure>
           <div>
             <Eyebrow>Visit the bakery</Eyebrow>
-            <h2 className="mt-3 font-display text-4xl font-bold leading-tight text-cocoa-900 sm:text-5xl">Look for the giant chef on Quezon Avenue</h2>
+            <h2 className="mt-3 font-display text-3xl font-bold min-[400px]:text-4xl leading-tight text-cocoa-900 sm:text-5xl">Look for the giant chef on Quezon Avenue</h2>
             <p className="mt-4 max-w-xl text-lg leading-8 text-cocoa-700">You can&apos;t miss us — our chef stands guard right outside the door. Come in for the full counter, warm from the oven, and pasalubong to take home.</p>
             <dl className="mt-8 grid gap-4 sm:grid-cols-2">
               <div className="rounded-[1.75rem] bg-white p-5 ring-1 ring-cream-200">
@@ -218,7 +218,7 @@ function SectionHeading({ eyebrow, title, lead, action, center = false }) {
     <div className={center ? 'flex flex-col items-center gap-4 text-center' : 'flex flex-wrap items-end justify-between gap-4'}>
       <div className={center ? 'flex w-full flex-col items-center' : ''}>
         <Eyebrow>{eyebrow}</Eyebrow>
-        <h2 className="mt-3 font-display text-4xl font-bold text-cocoa-900 sm:text-5xl">{title}</h2>
+        <h2 className="mt-3 font-display text-3xl font-bold min-[400px]:text-4xl text-cocoa-900 sm:text-5xl">{title}</h2>
         {lead && <p className="mt-3 max-w-2xl text-base text-cocoa-500">{lead}</p>}
       </div>
       {action}

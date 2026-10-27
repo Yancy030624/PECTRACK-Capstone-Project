@@ -30,8 +30,8 @@ const VARIANT_CLASSES = {
 }
 
 const SIZE_CLASSES = {
-  default: 'h-9 px-4 text-sm',
-  sm: 'h-8 px-3 text-xs',
+  default: 'min-h-11 px-4 text-sm md:min-h-9',
+  sm: 'min-h-11 px-3 text-xs md:min-h-8',
   touch: 'h-11 px-5 text-sm',
 }
 

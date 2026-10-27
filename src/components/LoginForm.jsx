@@ -214,7 +214,7 @@ export function LoginForm({ mode = 'customer', onModeChange = () => {}, onLogin,
               <label htmlFor="username" className="mb-1.5 block text-xs font-bold">Username or email</label>
               <div className="relative">
                 <svg viewBox="0 0 24 24" className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="8" r="3" /><path d="M5.5 20c.8-3.3 2.9-5 6.5-5s5.7 1.7 6.5 5" /></svg>
-                <input id="username" value={username} onChange={(event) => { setUsername(event.target.value); setError('') }} autoComplete="username" autoFocus placeholder="e.g. maria or maria@gmail.com" className={`${fieldClass} py-3 pl-10 pr-3`} />
+                <input id="username" value={username} onChange={(event) => { setUsername(event.target.value); setError('') }} autoComplete="username" autoFocus placeholder="e.g. christian or christian@gmail.com" className={`${fieldClass} py-3 pl-10 pr-3`} />
               </div>
             </div>
             <div>

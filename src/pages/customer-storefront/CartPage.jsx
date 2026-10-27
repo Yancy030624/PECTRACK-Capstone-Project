@@ -56,13 +56,13 @@ export function CartPage() {
                   {product.imageUrl ? <img src={product.imageUrl} alt="" className="h-full w-full object-cover" /> : <span aria-hidden="true">🥖</span>}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="font-display text-lg font-semibold text-cocoa-900">{product.name}</p>
+                  <p className="break-words font-display text-lg font-semibold text-cocoa-900">{product.name}</p>
                   {product.variant && <p className="text-xs font-semibold text-crust-600">{product.variant}</p>}
                   <p className="mt-1 text-xs text-cocoa-500">{formatPeso(product.price)} each</p>
                 </div>
                 <QuantityBox quantity={line.quantity} max={product.stockLeft} name={product.name} onChange={(quantity) => setQuantity(line.productId, quantity)} />
-                <p className="w-20 shrink-0 text-right text-sm font-extrabold text-crust-700">{formatPeso(Number(product.price) * line.quantity)}</p>
-                <button type="button" onClick={() => removeItem(line.productId)} className="shrink-0 rounded-full px-3 py-2 text-xs font-bold text-red-700 transition hover:bg-red-50">Remove</button>
+                <p className="min-w-20 shrink-0 whitespace-nowrap text-right text-sm font-extrabold text-crust-700">{formatPeso(Number(product.price) * line.quantity)}</p>
+                <button type="button" onClick={() => removeItem(line.productId)} className="shrink-0 inline-flex min-h-11 items-center rounded-full px-3 py-2 text-sm font-bold text-red-700 transition hover:bg-red-50">Remove</button>
               </div>
             ))}
           </div>
@@ -73,9 +73,9 @@ export function CartPage() {
               <p className="text-2xl font-extrabold text-cocoa-900">{formatPeso(subtotal)}</p>
               <p className="mt-1 text-xs text-cocoa-500">The exact total is confirmed when you place the order.</p>
             </div>
-            <div className="flex items-center gap-3">
-              <Link to="/menu" className="inline-flex min-h-9 items-center text-xs font-bold text-crust-700 hover:underline">Continue shopping</Link>
-              <Link to="/checkout" className="rounded-full bg-crust-600 px-6 py-3 text-xs font-bold text-white shadow-md transition hover:bg-crust-700">Proceed to checkout</Link>
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
+              <Link to="/menu" className="inline-flex min-h-11 items-center justify-center text-sm font-bold text-crust-700 hover:underline">Continue shopping</Link>
+              <Link to="/checkout" className="inline-flex min-h-11 items-center justify-center rounded-full bg-crust-600 px-6 py-3 text-sm font-bold text-white shadow-md transition hover:bg-crust-700">Proceed to checkout</Link>
             </div>
           </div>
         </>
@@ -107,7 +107,7 @@ function QuantityBox({ quantity, max, name, onChange }) {
 
   return (
     <div className="flex items-center rounded-full border border-cream-200">
-      <button type="button" onClick={() => onChange(quantity - 1)} aria-label={`Fewer ${name}`} className="grid h-9 w-9 place-items-center text-base font-bold text-crust-700">−</button>
+      <button type="button" onClick={() => onChange(quantity - 1)} aria-label={`Fewer ${name}`} className="grid h-11 w-11 place-items-center text-base font-bold text-crust-700">−</button>
       <input
         value={draft}
         onChange={(event) => setDraft(event.target.value.replace(/\D/g, '').slice(0, 4))}
@@ -115,9 +115,9 @@ function QuantityBox({ quantity, max, name, onChange }) {
         onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
         inputMode="numeric"
         aria-label={`How many ${name}`}
-        className="w-12 rounded-md bg-transparent text-center text-sm font-bold outline-none focus:bg-cream-100"
+        className="h-11 w-12 rounded-md bg-transparent text-center text-sm font-bold outline-none focus:bg-cream-100"
       />
-      <button type="button" onClick={() => onChange(Math.min(quantity + 1, limit))} disabled={quantity >= limit} aria-label={`More ${name}`} className="grid h-9 w-9 place-items-center text-base font-bold text-crust-700 disabled:opacity-40">+</button>
+      <button type="button" onClick={() => onChange(Math.min(quantity + 1, limit))} disabled={quantity >= limit} aria-label={`More ${name}`} className="grid h-11 w-11 place-items-center text-base font-bold text-crust-700 disabled:opacity-40">+</button>
     </div>
   )
 }

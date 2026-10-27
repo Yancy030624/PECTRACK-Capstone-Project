@@ -290,7 +290,7 @@ html,
 body {
   overflow-x: clip;
 }
-@media (max-width: 639px) {
+@media (max-width: 767px) {
   input:not([type='checkbox']):not([type='radio']):not(.text-lg):not(.text-2xl),
   select,
   textarea {

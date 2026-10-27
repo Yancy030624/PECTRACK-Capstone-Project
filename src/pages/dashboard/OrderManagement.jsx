@@ -24,7 +24,7 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
 import { matchesOrderSearch, orderLabel } from '../../lib/orderNumber.js'
-import { useIsLargeScreen } from '../../lib/useMediaQuery.js'
+import { useMediaQuery } from '../../lib/useMediaQuery.js'
 import { WalkInOrderForm } from './WalkInOrderForm.jsx'
 
 // Payment first (RULES-PLANS/PAYMENT_FIRST_PLAN.md, the adviser 2026-10-16):
@@ -99,7 +99,7 @@ export function OrderManagement({ user, params }) {
 // Wraps the detail card: a sibling column on large screens, an overlay
 // below. `open` is whether an order is selected at all.
 function DetailPanel({ open, onClose, labelledBy, children }) {
-  const isLarge = useIsLargeScreen()
+  const isLarge = useMediaQuery('(min-width: 1536px)')
   if (isLarge) return children
   return (
     <Modal open={open} onClose={onClose} labelledBy={labelledBy}>
@@ -181,7 +181,7 @@ function DeliveryProgress({ delivery }) {
 // the Dashboard's Recent orders (CLIENT_REVISIONS_PLAN.md, R4).
 function StaffOrderManagement({ user, params }) {
   const isCashier = user.role === 'CASHIER'
-  const [activeTab, setActiveTab] = useState('Orders')
+  const [activeTab, setActiveTab] = useState(isCashier && params?.tab === 'Walk-in' ? 'Walk-in' : 'Orders')
 
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
@@ -307,7 +307,7 @@ function StaffOrderManagement({ user, params }) {
     <Card className="min-w-0 p-6">
       <div className="flex items-start justify-between gap-3">
         <h2 id="order-detail-heading" className="text-lg font-semibold text-ink-900">Order detail</h2>
-        <Button type="button" size="sm" variant="ghost" className="lg:hidden" onClick={closeDetail}>Close</Button>
+        <Button type="button" size="sm" variant="ghost" className="2xl:hidden" onClick={closeDetail}>Close</Button>
       </div>
       {!selectedOrderId ? (
         <p className="mt-4 text-sm text-ink-500">Select an order to view its details.</p>
@@ -376,8 +376,8 @@ function StaffOrderManagement({ user, params }) {
                 </p>
               ) : (
                 <div className="flex flex-wrap gap-2">
-                  {statusActions(orderDetail).filter((action) => action.status !== 'CANCELLED').map((action) => (
-                    <Button key={action.status} type="button" size="sm" onClick={() => changeStatus(action.status)} disabled={statusSubmitting || action.needsPayment}>
+                  {statusActions(orderDetail).filter((action) => action.status !== 'CANCELLED').map((action, index) => (
+                    <Button key={action.status} type="button" size="sm" variant={index === 0 ? 'primary' : 'secondary'} aria-describedby={action.needsPayment ? 'order-payment-requirement' : undefined} onClick={() => changeStatus(action.status)} disabled={statusSubmitting || action.needsPayment}>
                       {statusSubmitting ? 'Saving…' : action.label}
                     </Button>
                   ))}
@@ -387,7 +387,7 @@ function StaffOrderManagement({ user, params }) {
                 </div>
               )}
               {statusActions(orderDetail).some((action) => action.needsPayment) && (
-                <p className="text-xs text-status-fail-fg">Record the payment in Payment &amp; Billing first — an order is completed only once fully paid.</p>
+                <p id="order-payment-requirement" className="rounded-control bg-status-wait-bg px-3 py-2 text-sm text-status-wait-fg">Record the payment in Payment &amp; Billing first — an order is completed only once fully paid.</p>
               )}
               {cancelling && (
                 // A cancellation needs a reason (PHASE10 B7); it is kept in
@@ -437,7 +437,7 @@ function StaffOrderManagement({ user, params }) {
       {/* min-w-0 on both Cards is load-bearing: below lg the single
           implicit column gives each grid item min-width:auto, so a Card
           holding a table refuses to shrink and the page grows sideways. */}
-      <div hidden={activeTab !== 'Orders'} className="mt-7 grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+      <div hidden={activeTab !== 'Orders'} className="mt-7 grid gap-4 2xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
         <Card className="min-w-0 p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold text-ink-900">Orders</h2>
@@ -479,7 +479,7 @@ function StaffOrderManagement({ user, params }) {
                 <OrderCardList orders={visibleOrders} selectedOrderId={selectedOrderId} onOpen={openOrder} showCustomer />
               </div>
               <div className="mt-4 hidden md:block">
-                <Table caption="Orders">
+                <Table caption="Orders" stickyFirstColumn>
                   <Thead>
                     <Tr className="hover:bg-transparent">
                       <Th>Order</Th>
@@ -585,7 +585,7 @@ function CustomerOrders({ user }) {
     <Card className="min-w-0 p-6">
       <div className="flex items-start justify-between gap-3">
         <h2 id="order-detail-heading" className="text-lg font-semibold text-ink-900">Order detail</h2>
-        <Button type="button" size="sm" variant="ghost" className="lg:hidden" onClick={closeDetail}>Close</Button>
+        <Button type="button" size="sm" variant="ghost" className="2xl:hidden" onClick={closeDetail}>Close</Button>
       </div>
       {!selectedOrderId ? (
         <p className="mt-4 text-sm text-ink-500">Select an order to see its items and status.</p>
@@ -640,7 +640,7 @@ function CustomerOrders({ user }) {
         </div>
       )}
 
-      <div className="mt-7 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+      <div className="mt-7 grid gap-4 2xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
         <Card className="min-w-0 p-6">
           <h2 className="text-lg font-semibold text-ink-900">Your orders</h2>
           {loading ? (

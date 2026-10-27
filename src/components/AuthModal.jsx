@@ -51,7 +51,7 @@ function AuthDialog({ request, isRegister, onClose, onLogin, onView }) {
       {/* One column, the form alone (the adviser, 2026-10-23): the welcome
           panel that sat beside it is gone, for both doors. */}
       <div className={`relative w-full overflow-hidden rounded-[26px] bg-[#fffedc] shadow-2xl shadow-[#102d71]/25 ${isRegister ? 'max-w-130' : 'max-w-110'}`}>
-        <button type="button" onClick={onClose} aria-label="Close" className="absolute right-3 top-3 z-10 grid h-8 w-8 place-items-center rounded-full bg-white/90 text-lg leading-none text-stone-500 shadow-md transition hover:text-stone-900">✕</button>
+        <button type="button" onClick={onClose} aria-label="Close" className="absolute right-2 top-2 z-10 grid h-11 w-11 place-items-center rounded-full bg-white/90 text-lg leading-none text-stone-500 shadow-md transition hover:text-stone-900">✕</button>
         {isRegister ? (
           <RegisterForm onSwitchToLogin={() => onView({ view: 'login', mode: 'customer' })} />
         ) : (

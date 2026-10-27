@@ -246,7 +246,7 @@ export function ReceiptPage({ user }) {
           </div>
         </header>
 
-        <dl className="mt-4 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
+        <dl className="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 [&_dd]:min-w-0 [&_dd]:[overflow-wrap:anywhere] [&_dt]:shrink-0">
           <div className="flex justify-between gap-2 sm:block"><dt className="text-cocoa-500">Customer</dt><dd className="font-semibold text-cocoa-900">{order.customerName ?? user?.name}</dd></div>
           {user?.email && <div className="flex justify-between gap-2 sm:block"><dt className="text-cocoa-500">Email</dt><dd className="font-semibold text-cocoa-900">{user.email}</dd></div>}
           {user?.contactNumber && <div className="flex justify-between gap-2 sm:block"><dt className="text-cocoa-500">Contact number</dt><dd className="font-semibold text-cocoa-900">{user.contactNumber}</dd></div>}

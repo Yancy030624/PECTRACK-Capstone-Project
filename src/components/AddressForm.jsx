@@ -11,10 +11,10 @@ const emptyAddressForm = { label: 'Home', recipientName: '', contactNumber: '', 
 // storefront styling sat next to the primitive kit and clashed with it.
 const storefrontClasses = {
   label: 'mb-1.5 block text-xs font-bold',
-  input: 'w-full rounded-xl border border-stone-200 px-3 py-2.5 text-sm outline-none focus:border-green-700',
+  input: 'min-h-11 w-full rounded-xl border border-line-200 bg-white px-3 py-2.5 text-base text-cocoa-900 focus:border-crust-600 focus:ring-2 focus:ring-crust-500/25',
   error: 'mt-1 text-xs font-medium text-red-700',
-  submit: 'rounded-xl bg-green-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60',
-  cancel: 'rounded-xl px-4 py-2 text-xs font-bold text-slate-500 transition hover:bg-slate-50',
+  submit: 'inline-flex min-h-11 items-center justify-center rounded-xl bg-crust-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-crust-700 disabled:cursor-not-allowed disabled:opacity-60',
+  cancel: 'inline-flex min-h-11 items-center justify-center rounded-xl px-4 py-2 text-sm font-bold text-cocoa-500 transition hover:bg-cream-100',
 }
 const dashboardClasses = {
   label: 'mb-1 block text-xs font-semibold text-ink-700',
@@ -107,7 +107,7 @@ export function AddressForm({ onSaved, onCancel, submitLabel = 'Save address', c
         <label htmlFor="addr-notes" className={cls.label}>Delivery notes (optional)</label>
         <input id="addr-notes" value={form.deliveryNotes} onChange={(event) => updateField('deliveryNotes', event.target.value)} placeholder="e.g. Gate code, landmark" className={cls.input} />
       </div>
-      <div className="flex items-center gap-2 sm:col-span-2">
+      <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
         <button type="submit" disabled={submitting} className={cls.submit}>{submitting ? 'Saving…' : submitLabel}</button>
         {onCancel && <button type="button" onClick={onCancel} className={cls.cancel}>Cancel</button>}
       </div>

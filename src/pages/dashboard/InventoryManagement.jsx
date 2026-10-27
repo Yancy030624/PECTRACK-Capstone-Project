@@ -10,6 +10,7 @@ import { Card } from '../../components/ui/Card.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Field } from '../../components/ui/Field.jsx'
 import { Input } from '../../components/ui/Input.jsx'
+import { Select } from '../../components/ui/Select.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { IngredientsPanel } from './IngredientsPanel.jsx'
@@ -20,6 +21,7 @@ import { ProductManagement } from './ProductManagement.jsx'
 // as a restock. No reason or note to fill in, and a confirmation shows the
 // new totals before anything is saved.
 const emptyAddForm = { addQuantity: '', minStockLevel: '' }
+const deductionReasons = ['Burnt', 'Fallen to the floor']
 
 // Admin and cashier both add stock here, with no approval step
 // (CLIENT_REVISIONS_PLAN.md, R1): cashiers encode stock, and every change
@@ -106,6 +108,7 @@ function ProductStock({ user, params }) {
   // no rejects list). Logged as a CORRECTION.
   const [formMode, setFormMode] = useState('add')
   const [countedQuantity, setCountedQuantity] = useState('')
+  const [deductionReason, setDeductionReason] = useState('')
 
 
   // `quiet`: a live update (below) re-reads in place, without the loading
@@ -138,6 +141,7 @@ function ProductStock({ user, params }) {
     setEditingProductId(item.productId)
     setFormMode('count')
     setCountedQuantity('')
+    setDeductionReason('')
     setEditOriginal(item)
     setEditErrors({})
     setConfirming(false)
@@ -146,17 +150,19 @@ function ProductStock({ user, params }) {
   const reviewCount = (event) => {
     event.preventDefault()
     const pieces = Number(countedQuantity)
+    const errors = {}
     if (!(pieces >= 1) || pieces > editOriginal.stockQuantity) {
-      setEditErrors({ counted: pieces > editOriginal.stockQuantity ? `Only ${editOriginal.stockQuantity} on hand.` : 'Enter how many pieces to deduct, 1 or more.' })
-      return
+      errors.counted = pieces > editOriginal.stockQuantity ? `Only ${editOriginal.stockQuantity} on hand.` : 'Enter how many pieces to deduct, 1 or more.'
     }
-    setEditErrors({})
+    if (!deductionReasons.includes(deductionReason)) errors.deductionReason = 'Select a reason for the deduction.'
+    setEditErrors(errors)
+    if (Object.keys(errors).length > 0) return
     setConfirming(true)
   }
   const confirmCount = async (item) => {
     setEditSubmitting(true)
     try {
-      const data = await apiPatch(`/api/inventory/${item.productId}`, { deductQuantity: Number(countedQuantity) })
+      const data = await apiPatch(`/api/inventory/${item.productId}`, { deductQuantity: Number(countedQuantity), note: deductionReason })
       setNotice(`${item.productName}: deducted ${countedQuantity} — ${data.item?.stockQuantity ?? item.stockQuantity - Number(countedQuantity)} in stock now.`)
       setEditingProductId(null)
       setConfirming(false)
@@ -265,7 +271,7 @@ function ProductStock({ user, params }) {
                     key={filter.key}
                     onClick={() => setStockFilter(filter.key)}
                     aria-pressed={active}
-                    className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition ${active ? 'border-ink-900 bg-ink-900 text-white' : 'border-line-200 bg-surface text-ink-700 hover:bg-surface-sunk'}`}
+                    className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition ${active ? 'border-ink-900 bg-ink-900 text-white' : 'border-line-200 bg-surface text-ink-700 hover:bg-surface-sunk'}`}
                   >
                     {filter.tone && <span className={`h-2.5 w-2.5 rounded-full ${TONES[filter.tone].dot}`} aria-hidden="true" />}
                     {filter.label}
@@ -277,7 +283,14 @@ function ProductStock({ user, params }) {
             {categories.length > 1 && (
               <>
                 <p id="category-filter-label" className="mt-4 text-xs font-semibold uppercase tracking-wide text-ink-500">Category</p>
-                <div role="group" aria-labelledby="category-filter-label" className="mt-2 flex flex-wrap gap-2">
+                <Select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} aria-labelledby="category-filter-label" className="mt-2 lg:hidden">
+                  {['ALL', ...categories].map((category) => (
+                    <option key={category} value={category}>
+                      {category === 'ALL' ? 'All categories' : category} ({ofType.filter((item) => matchesFilter(item, stockFilter) && (category === 'ALL' || item.categoryName === category)).length})
+                    </option>
+                  ))}
+                </Select>
+                <div role="group" aria-labelledby="category-filter-label" className="mt-2 hidden flex-wrap gap-2 lg:flex">
                   {['ALL', ...categories].map((category) => {
                     const active = categoryFilter === category
                     const count = ofType.filter((item) => matchesFilter(item, stockFilter) && (category === 'ALL' || item.categoryName === category)).length
@@ -287,7 +300,7 @@ function ProductStock({ user, params }) {
                         key={category}
                         onClick={() => setCategoryFilter(category)}
                         aria-pressed={active}
-                        className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition ${active ? 'border-brand-700 bg-brand-700 text-white' : 'border-line-200 bg-surface text-ink-700 hover:bg-surface-sunk'}`}
+                        className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition ${active ? 'border-brand-700 bg-brand-700 text-white' : 'border-line-200 bg-surface text-ink-700 hover:bg-surface-sunk'}`}
                       >
                         {category === 'ALL' ? 'All categories' : category}
                         <span className={`rounded-full px-1.5 text-xs tabular-nums ${active ? 'bg-white/20' : 'bg-surface-sunk text-ink-500'}`}>{count}</span>
@@ -299,6 +312,12 @@ function ProductStock({ user, params }) {
             )}
           </div>
         )}
+        {!loading && inventory.length > 0 && (
+          <p role="status" className="mb-3 text-sm text-ink-500">
+            Showing {visibleInventory.length} of {inventory.length} products · {stockFilters.find((filter) => filter.key === stockFilter)?.label}
+            {categoryFilter !== 'ALL' ? ` · ${categoryFilter}` : ' · All categories'}
+          </p>
+        )}
         {loading ? (
           <LoadingRows className="mt-4" />
         ) : ofType.length === 0 ? (
@@ -307,7 +326,7 @@ function ProductStock({ user, params }) {
           <EmptyState title={`No products are ${stockFilters.find((filter) => filter.key === stockFilter).label.toLowerCase()} right now${categoryFilter === 'ALL' ? '' : ` in ${categoryFilter}`}`} description="Pick another status or category, or All." />
         ) : (
           <div>
-            <Table caption="Inventory stock levels">
+            <Table caption="Inventory stock levels" stickyFirstColumn>
               <Thead>
                 <Tr className="hover:bg-transparent">
                   <Th>Product</Th>
@@ -351,6 +370,7 @@ function ProductStock({ user, params }) {
                             <div className="mt-2 rounded-panel bg-amber-50 p-3">
                               <p className="font-semibold text-ink-900">Are you sure you want to confirm these changes?</p>
                               <p className="mt-1.5 text-sm">Stock: <span className="tabular-nums">{item.stockQuantity}</span> on hand − <span className="tabular-nums">{countedQuantity}</span> deducted = <strong className="tabular-nums">{item.stockQuantity - Number(countedQuantity)}</strong> pieces</p>
+                              <p className="mt-2 text-sm">Reason: <strong>{deductionReason}</strong></p>
                               <div className="mt-3 flex gap-2">
                                 <Button size="sm" onClick={() => confirmCount(item)} disabled={editSubmitting}>{editSubmitting ? 'Saving…' : 'Confirm'}</Button>
                                 <Button size="sm" variant="secondary" onClick={() => setConfirming(false)} disabled={editSubmitting}>Back</Button>
@@ -362,8 +382,14 @@ function ProductStock({ user, params }) {
                                 <Field label="Pieces to deduct" error={editErrors.counted}>
                                   <Input value={countedQuantity} onChange={(event) => setCountedQuantity(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" placeholder="e.g. 5" autoFocus />
                                 </Field>
+                                <Field label="Reason for deduction (required)" error={editErrors.deductionReason}>
+                                  <Select value={deductionReason} onChange={(event) => setDeductionReason(event.target.value)} required>
+                                    <option value="">Select a reason</option>
+                                    {deductionReasons.map((reason) => <option key={reason} value={reason}>{reason}</option>)}
+                                  </Select>
+                                </Field>
                               </div>
-                              <p className="mt-2 text-xs text-ink-500">{item.stockQuantity} on hand{Number(countedQuantity) > 0 ? <> − {countedQuantity} = <strong className="text-ink-900">{item.stockQuantity - Number(countedQuantity)}</strong> after deducting</> : ''}. For bread thrown away or found missing at a stock check.</p>
+                              <p className="mt-2 text-xs text-ink-500">{item.stockQuantity} on hand{Number(countedQuantity) > 0 ? <> − {countedQuantity} = <strong className="text-ink-900">{item.stockQuantity - Number(countedQuantity)}</strong> after deducting</> : ''}. Choose why these pieces are being removed.</p>
                               <div className="mt-3 flex gap-2">
                                 <Button type="submit" size="sm">Deduct</Button>
                                 <Button type="button" size="sm" variant="secondary" onClick={cancelEdit}>Cancel</Button>
