@@ -104,7 +104,9 @@ router.get('/production', async (request, response) => {
 // levels are the admin's: the bakery keeps no rejects list, so a corrected
 // count is how thrown-away bread leaves the shelf figure (the client,
 // 2026-10-23).
-const adminOnlyInventoryFields = ['minStockLevel', 'standardStock', 'targetStock', 'stockQuantity']
+// Deduct (deductQuantity) replaced Correct count in the screens (the panel,
+// 2026-10-26; MINOR_REVISIONS_PLAN.md M12) and is the admin's too.
+const adminOnlyInventoryFields = ['minStockLevel', 'standardStock', 'targetStock', 'stockQuantity', 'deductQuantity']
 router.patch('/:productId', async (request, response) => {
   if (request.user.role !== 'ADMIN' && adminOnlyInventoryFields.some((field) => field in request.body)) {
     return response.status(403).json({ message: 'Only an admin can change the stock levels or correct the count.' })
@@ -135,6 +137,15 @@ router.patch('/:productId', async (request, response) => {
     if (!Number.isInteger(addQuantity) || addQuantity < 1 || addQuantity > 100000) errors.addQuantity = 'Enter how many pieces to add, 1 or more.'
     if ('stockQuantity' in request.body) errors.addQuantity = 'Send either the pieces to add or the new count, not both.'
   }
+  // `deductQuantity`: pieces taken OFF the shelf — thrown away, or found
+  // missing at a stock check — recorded as a CORRECTION. Like Add, worked
+  // out under the row lock, so a sale in between is never overwritten.
+  let deductQuantity = null
+  if ('deductQuantity' in request.body) {
+    deductQuantity = Number(request.body.deductQuantity)
+    if (!Number.isInteger(deductQuantity) || deductQuantity < 1 || deductQuantity > 100000) errors.deductQuantity = 'Enter how many pieces to deduct, 1 or more.'
+    if ('stockQuantity' in request.body || 'addQuantity' in request.body) errors.deductQuantity = 'Send only the pieces to deduct.'
+  }
   if ('stockQuantity' in request.body) {
     const stockQuantity = Number(request.body.stockQuantity)
     if (!Number.isInteger(stockQuantity) || stockQuantity < 0) errors.stockQuantity = 'Enter a whole number, zero or greater.'
@@ -159,13 +170,14 @@ router.patch('/:productId', async (request, response) => {
   // this route is metadata that doesn't need a reason.
   let reason = null
   if (addQuantity != null && !errors.addQuantity) reason = 'RESTOCK'
+  else if (deductQuantity != null && !errors.deductQuantity) reason = 'CORRECTION'
   else if ('stockQuantity' in values) {
     reason = normalize(request.body.reason).toUpperCase()
     if (!manualMovementReasons.has(reason)) errors.reason = 'Select why stock is changing: restock, reject, or recount.'
   }
 
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
-  if (Object.keys(values).length === 0 && addQuantity == null) return response.status(422).json({ message: 'Provide at least one field to update.' })
+  if (Object.keys(values).length === 0 && addQuantity == null && deductQuantity == null) return response.status(422).json({ message: 'Provide at least one field to update.' })
 
   const note = request.body.note == null ? null : normalize(request.body.note).slice(0, 500) || null
 
@@ -197,6 +209,14 @@ router.patch('/:productId', async (request, response) => {
     }
     const current = locked.rows[0]
     if (addQuantity != null) values.stockQuantity = current.stock_quantity + addQuantity
+    if (deductQuantity != null) {
+      if (deductQuantity > current.stock_quantity) {
+        await client.query('ROLLBACK')
+        const message = `Only ${current.stock_quantity} on hand — you cannot deduct ${deductQuantity}.`
+        return response.status(422).json({ message, errors: { deductQuantity: message } })
+      }
+      values.stockQuantity = current.stock_quantity - deductQuantity
+    }
 
     // Judged against the LOCKED figure, for the same reason the ledger row
     // below is: the direction of the change is only knowable once the

@@ -965,6 +965,26 @@ describe('delivery management', () => {
     assert.equal(returned.rows[0].delivery_personnel_id, null)
     assert.ok(returned.rows[0].failed_at)
   })
+
+  // MINOR_REVISIONS_PLAN.md M13 — no riders: staff send a paid delivery
+  // out and mark it delivered, and the order follows as it did for a driver.
+  test('a cashier sends a paid delivery out with no rider, then marks it delivered, which completes the order', async () => {
+    const { orderId, deliveryId } = await placeDeliveryOrder()
+
+    const out = await setStatus(deliveryId, 'OUT_FOR_DELIVERY', cashierCookie)
+    assert.equal(out.status, 200)
+    assert.equal(await orderStatus(orderId), 'OUT_FOR_DELIVERY')
+
+    const delivered = await setStatus(deliveryId, 'DELIVERED', cashierCookie)
+    assert.equal(delivered.status, 200)
+    assert.equal(await orderStatus(orderId), 'COMPLETED')
+  })
+
+  test('staff cannot send out a delivery whose order is not paid and ready', async () => {
+    const { deliveryId } = await placeDeliveryOrder({ pay: false, legacyRow: true })
+    const out = await setStatus(deliveryId, 'OUT_FOR_DELIVERY', adminCookie)
+    assert.equal(out.status, 409)
+  })
 })
 
 after(async () => {

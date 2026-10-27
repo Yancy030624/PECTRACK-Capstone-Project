@@ -15,6 +15,7 @@ import { optionalAuth, requireAuth, requireRole } from '../lib/auth.js'
 import { deleteFile, filePath, saveNamedFile } from '../lib/storage.js'
 import { normalize, parseId } from '../lib/validation.js'
 import { hardDefaults } from '../lib/dailyStock.js'
+import { openStockStream } from '../lib/liveStock.js'
 
 const router = express.Router()
 
@@ -40,18 +41,21 @@ const mapProductRow = (row) => ({
   // replaced photo still shows at once: new photo, new key, new URL. The
   // route ignores the parameter.
   imageUrl: row.image_key ? `/api/products/${row.product_id}/image?v=${row.image_key.match(/-([0-9a-f]{8})\.\w+$/)?.[1] ?? row.image_key.slice(0, 8)}` : null,
-  // A boolean, never the count. availability_status is what the bakery
-  // CHOOSES to sell; this is whether there is any to sell right now.
-  // Without it the Menu offered a product at stock 0 as if it were on the
-  // shelf, and the customer learned otherwise only at checkout, from the
-  // 409 the stock guard in routes/orders.js returns. The number itself
-  // stays private to routes/inventory.js (ADMIN/CASHIER): the storefront
-  // needs "sold out", not "3 left".
+  // availability_status is what the bakery CHOOSES to sell; inStock is
+  // whether there is any to sell right now. Without it the Menu offered a
+  // product at stock 0 as if it were on the shelf, and the customer learned
+  // otherwise only at checkout, from the 409 the stock guard in
+  // routes/orders.js returns.
   inStock: row.in_stock,
+  // The count itself, shown on the Menu as "12 left" (the panel,
+  // 2026-10-26; MINOR_REVISIONS_PLAN.md M6) so a customer knows how much
+  // is left before ordering. Only the count — the levels and the ledger
+  // stay private to routes/inventory.js.
+  stockLeft: row.stock_left,
 })
 
 const productSelectQuery = `SELECT p.product_id, p.category_id, c.category_name, p.product_name, p.description, p.price, p.variant, p.availability_status, p.image_key,
-            COALESCE(i.stock_quantity, 0) > 0 AS in_stock
+            COALESCE(i.stock_quantity, 0) > 0 AS in_stock, COALESCE(i.stock_quantity, 0) AS stock_left
      FROM products p
      JOIN categories c ON c.category_id = p.category_id
      LEFT JOIN inventory i ON i.product_id = p.product_id`
@@ -125,6 +129,13 @@ function validateProductFields(body, { partial }) {
 // order, so a route added above the router.use(requireAuth) line below
 // would silently inherit the public/optional treatment instead of needing
 // a session. Anything that writes to the catalogue belongs below that line.
+// GET /api/products/live — the Menu's live stock (MINOR_REVISIONS_PLAN.md
+// M6): the same Server-Sent Events stream as /api/inventory/live
+// (RULES-PLANS/LIVE_STOCK_PLAN.md), open to anyone viewing the Menu. An
+// event names only the table that changed, never a figure; the Menu then
+// re-reads GET / for the counts it already shows.
+router.get('/live', openStockStream)
+
 router.get('/', optionalAuth, async (request, response) => {
   // An anonymous visitor gets exactly the CUSTOMER view — never a new,
   // separate "public" one — because a customer view is already the most

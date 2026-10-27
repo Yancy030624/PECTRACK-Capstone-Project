@@ -308,6 +308,27 @@ describe('editing stock directly', () => {
     await pool.query(`DELETE FROM inventory_movements WHERE movement_id = (SELECT max(m.movement_id) FROM inventory_movements m JOIN inventory i ON i.inventory_id = m.inventory_id WHERE i.product_id = $1)`, [productId])
   })
 
+  // MINOR_REVISIONS_PLAN.md M12 — Deduct takes pieces off, admin only.
+  test('Deduct takes pieces off the shelf as a correction; admin only, never below zero', async () => {
+    const before = (await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [productId])).rows[0].stock_quantity
+    const deduct = (cookie, body) => fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(body) })
+
+    assert.equal((await deduct(cashierCookie, { deductQuantity: 1 })).status, 403, 'a cashier cannot deduct')
+    const tooMany = await deduct(adminCookie, { deductQuantity: before + 1 })
+    assert.equal(tooMany.status, 422)
+    assert.ok((await tooMany.json()).errors.deductQuantity)
+
+    const ok = await deduct(adminCookie, { deductQuantity: 2 })
+    assert.equal(ok.status, 200)
+    assert.equal((await ok.json()).item.stockQuantity, before - 2)
+    const movement = await pool.query('SELECT quantity_change, reason FROM inventory_movements WHERE inventory_id = $1 ORDER BY movement_id DESC LIMIT 1', [inventoryId])
+    assert.deepEqual([movement.rows[0].quantity_change, movement.rows[0].reason], [-2, 'CORRECTION'])
+
+    // Leave the product as found: the tests below count its movement rows.
+    await pool.query('DELETE FROM inventory_movements WHERE inventory_id = $1', [inventoryId])
+    await pool.query('UPDATE inventory SET stock_quantity = $2 WHERE product_id = $1', [productId, before])
+  })
+
   test('a cashier cannot change the minimum level', async () => {
     const response = await fetch(`${baseUrl}/api/inventory/${productId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ minStockLevel: 8 }) })
     assert.equal(response.status, 403)

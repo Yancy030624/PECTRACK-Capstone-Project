@@ -128,14 +128,9 @@ export function DashboardHome({ user, onNavigate }) {
       // Management, which opens on Today (payment first, the adviser).
       to: ['Order Management', { day: 'TODAY', status: 'OPEN' }],
     },
-    {
-      label: 'Deliveries to assign',
-      goodLabel: 'deliveries',
-      value: summary.deliveriesNeedingAttention,
-      tone: summary.deliveriesNeedingAttention > 0 ? 'attention' : 'good',
-      note: summary.deliveriesNeedingAttention > 0 ? 'Waiting for a driver' : 'All assigned',
-      to: ['Delivery Management', { focus: 'toAssign' }],
-    },
+    // No "Deliveries to assign" tile: there are no riders to assign (the
+    // panel, 2026-10-26; MINOR_REVISIONS_PLAN.md M13). Delivery orders are
+    // in Order Management with the other open orders.
     // No "Likely to sell out" tile any more: a soft bread is meant to sell
     // out daily, and what to bake is Inventory → Production
     // (RULES-PLANS/REPORTS_ALIGNMENT_ANALYSIS.md, D).
@@ -395,8 +390,11 @@ function StatusTile({ tile, linkable, onOpen }) {
     </div>
   )
   const shell = `rounded-panel border-l-4 ${tone.edge} bg-surface p-4 text-left shadow-raised sm:p-5`
+  // Hover keeps the tile's own white and lifts it with an outline and a
+  // deeper shadow (the panel, 2026-10-26; MINOR_REVISIONS_PLAN.md M10): the
+  // old hover turned it the page's own colour, so it seemed to vanish.
   return linkable
-    ? <button type="button" onClick={onOpen} className={`${shell} transition hover:bg-surface-sunk`} aria-label={`${tile.label}: ${tile.value}, ${tone.label}. Open.`}>{body}</button>
+    ? <button type="button" onClick={onOpen} className={`${shell} transition hover:-translate-y-0.5 hover:shadow-lg hover:ring-2 hover:ring-brand-600/40`} aria-label={`${tile.label}: ${tile.value}, ${tone.label}. Open.`}>{body}</button>
     : <div className={shell}>{body}</div>
 }
 

@@ -207,7 +207,7 @@ export function StaffManagement({ embedded = false } = {}) {
           <h1 className="mt-1 text-2xl font-semibold text-ink-900">Staff Management</h1>
         </>
       )}
-      <p className={`${embedded ? 'mt-4' : 'mt-2'} text-sm text-ink-500`}>Create and review cashier and delivery-personnel accounts.</p>
+      <p className={`${embedded ? 'mt-4' : 'mt-2'} text-sm text-ink-500`}>Create and review cashier accounts.</p>
 
       <Card className="mt-6 p-6">
         <h2 className="text-lg font-semibold text-ink-900">New staff account</h2>
@@ -216,7 +216,6 @@ export function StaffManagement({ embedded = false } = {}) {
             <Field label="Role" error={errors.role}>
               <Select value={form.role} onChange={(event) => updateField('role', event.target.value)}>
                 <option value="CASHIER">Cashier</option>
-                <option value="DELIVERY_PERSONNEL">Delivery Personnel</option>
               </Select>
             </Field>
             <Field label="Full name" error={errors.name}>

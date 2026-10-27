@@ -62,13 +62,10 @@ export const modules = [
   // Management, under Today.
   { name: 'Inventory Management', icon: 'inventory', roles: ['ADMIN', 'CASHIER'] },
   { name: 'Payment & Billing', icon: 'payments', roles: ['ADMIN', 'CASHIER'] },
-  // Phase 7 (see PHASE7_PLAN.md) — one nav entry shared by three roles.
-  // ADMIN/CASHIER get the assignment queue; DELIVERY PERSONNEL get their
-  // own workflow instead — DeliveryManagement.jsx dispatches between the
-  // two based on role, the same shape Order Management now also uses.
-  { name: 'Delivery Management', icon: 'deliveries', roles: ['ADMIN', 'CASHIER'] },
-  // The driver's screen has always titled itself "My Deliveries"; the nav
-  // said "Delivery Management". One name, the driver's own.
+  // No Delivery Management module and no rider accounts (the panel,
+  // 2026-10-26; MINOR_REVISIONS_PLAN.md M13): staff mark a delivery order
+  // Out for delivery, then Delivered, in Order Management. Migration 042
+  // deactivated the rider accounts, so My Deliveries has no one to show.
   { name: 'My Deliveries', icon: 'deliveries', roles: ['DELIVERY PERSONNEL'] },
   // Product Management is now the Edit Products tab of Inventory
   // Management (the user, 2026-10-16), admin only there as before.

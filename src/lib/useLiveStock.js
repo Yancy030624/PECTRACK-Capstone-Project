@@ -10,7 +10,9 @@ import { useEffect, useRef } from 'react'
 // of five breads, the 5:00 AM top-up — are merged into one reload.
 const mergeMs = 300
 
-export function useLiveStock(table, onChange) {
+// `path` is the stream to open: the staff one by default, or the Menu's
+// public /api/products/live (MINOR_REVISIONS_PLAN.md M6).
+export function useLiveStock(table, onChange, path = '/api/inventory/live') {
   // The latest callback, so the stream is opened once rather than every
   // time the screen re-renders with a new function.
   const callback = useRef(onChange)
@@ -20,7 +22,7 @@ export function useLiveStock(table, onChange) {
 
   useEffect(() => {
     if (typeof EventSource === 'undefined') return undefined
-    const source = new EventSource('/api/inventory/live', { withCredentials: true })
+    const source = new EventSource(path, { withCredentials: true })
     let timer = null
     const fire = () => {
       clearTimeout(timer)
@@ -43,5 +45,5 @@ export function useLiveStock(table, onChange) {
       clearTimeout(timer)
       source.close()
     }
-  }, [table])
+  }, [table, path])
 }

@@ -105,6 +105,13 @@ router.post('/register', registerLimiter, async (request, response) => {
       // already — see the enumeration note in SECURITY_REVIEW.md.
       return response.status(409).json({ message: 'An account already uses that username, email, or contact number. If the email is yours, use "Forgot password?" to get into that account.' })
     }
+    // checkOnly (MINOR_REVISIONS_PLAN.md M4): the form asks first, so a
+    // code is texted only for an account that can actually be created —
+    // never for a taken username or a mistyped field.
+    if (request.body.checkOnly === true) {
+      await client.query('ROLLBACK')
+      return response.json({ ok: true })
+    }
 
     const passwordHash = await bcrypt.hash(values.password, bcryptRounds)
     const userResult = await client.query(
@@ -115,11 +122,13 @@ router.post('/register', registerLimiter, async (request, response) => {
     )
     const user = userResult.rows[0]
     // customers.name, the full name, is built by the customers_sync_name
-    // trigger from the two parts (migration 026).
-    const customerResult = await client.query(
-      `INSERT INTO customers (user_id, first_name, last_name, contact_num, email)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING name`,
+    // trigger from the two parts (migration 026). The email is taken as
+    // given, with no confirmation link (the panel, 2026-10-26;
+    // MINOR_REVISIONS_PLAN.md M1): the contact number's texted code is the
+    // one check at sign-up, so the account can order at once.
+    await client.query(
+      `INSERT INTO customers (user_id, first_name, last_name, contact_num, email, email_verified_at)
+       VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)`,
       [user.user_id, values.firstName, values.lastName, values.contactNumber, values.email],
     )
     if (config.sms.verifyPhones) {
@@ -134,18 +143,10 @@ router.post('/register', registerLimiter, async (request, response) => {
     await client.query('COMMIT')
     recordSecurityEvent({ request, type: 'ACCOUNT_CREATED', userId: user.user_id, username: user.username, detail: 'CUSTOMER self-registration' })
 
-    // Migration 016. The account exists and can sign in and browse right
-    // away; placing an order is what needs a confirmed address. Sent after
-    // the COMMIT, never inside it: a slow mail server must not hold a
-    // transaction open, and a mail failure must not undo the account the
-    // customer just filled in — they can ask for another link.
-    const verification = await issueEmailVerification({ userId: user.user_id, email: values.email, name: customerResult.rows[0].name })
-    recordSecurityEvent({ request, type: 'EMAIL_VERIFICATION_SENT', userId: user.user_id, username: user.username, detail: verification.sent ? 'at registration' : 'at registration; mail not delivered' })
-
     return response.status(201).json({
-      message: 'Account created. We sent a confirmation link to your email — confirm it before placing an order.',
+      message: 'Account created. You can sign in and order now.',
       user: { username: user.username },
-      verificationSent: verification.sent,
+      verificationSent: false,
     })
   } catch (error) {
     await client.query('ROLLBACK')
@@ -678,7 +679,6 @@ router.patch('/me', requireAuth, async (request, response) => {
     }
   }
 
-  let emailChanged = false
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -708,21 +708,9 @@ router.patch('/me', requireAuth, async (request, response) => {
         [updates.name ?? null, updates.email ?? null, updates.contactNumber ?? null, current.user_id],
       )
     }
-    // A customer who changes their email has an unproven address again.
-    // Keeping the old verification would let anyone who knows a password
-    // swap in an address they do not control and keep ordering — and would
-    // point every future reset link at it. Only when the address actually
-    // CHANGED: re-saving the same email must not cost a verified customer
-    // their status.
-    if (current.user_type === 'CUSTOMER' && updates.email !== undefined) {
-      const changed = await client.query(
-        `UPDATE customers SET email_verified_at = NULL
-          WHERE user_id = $1 AND LOWER(email) = LOWER($2) AND LOWER(email) IS DISTINCT FROM LOWER($3)
-        RETURNING user_id`,
-        [current.user_id, updates.email, request.user.email],
-      )
-      emailChanged = changed.rowCount > 0
-    }
+    // A changed email is no longer sent a confirmation link (the panel,
+    // 2026-10-26; MINOR_REVISIONS_PLAN.md M1). The change still needs the
+    // current password, and the OLD address is still told (below).
     await client.query('COMMIT')
   } catch (error) {
     await client.query('ROLLBACK')
@@ -752,11 +740,7 @@ router.patch('/me', requireAuth, async (request, response) => {
       console.error('Could not send an email-change notice to the previous address:', error)
     }
   }
-  if (emailChanged) {
-    const verification = await issueEmailVerification({ userId: row.user_id, email: row.email, name: row.name })
-    recordSecurityEvent({ request, type: 'EMAIL_VERIFICATION_SENT', userId: row.user_id, username: row.username, detail: verification.sent ? 'after an email change' : 'after an email change; mail not delivered' })
-  }
-  return response.json({ user: toPublicUser(row), verificationSent: emailChanged })
+  return response.json({ user: toPublicUser(row), verificationSent: false })
 })
 
 // POST /api/auth/verify-email — redeem the link from the email.

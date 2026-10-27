@@ -194,10 +194,13 @@ router.get('/:id', async (request, response) => {
   const orderResult = await pool.query(
     `SELECT o.order_id, o.daily_number, o.order_day, o.customer_id, COALESCE(c.name, o.guest_name) AS customer_name, o.processed_by, ca.name AS cashier_name,
             o.order_type, o.status, o.instructions, o.requested_fulfillment_time,
-            o.total_amount, o.order_date, o.is_reservation, o.guest_contact, o.guest_email, o.guest_contact_verified_at, o.payment_mode, o.delivery_fee
+            o.total_amount, o.order_date, o.is_reservation, o.guest_contact, o.guest_email, o.guest_contact_verified_at, o.payment_mode, o.delivery_fee,
+            -- Where a delivery goes, for the receipt (MINOR_REVISIONS_PLAN.md M8).
+            CONCAT_WS(', ', NULLIF(ad.address_line_1, ''), NULLIF(ad.address_line_2, ''), NULLIF(ad.barangay, ''), ad.municipality, ad.province) AS delivery_address
      FROM orders o
      LEFT JOIN customers c ON c.customer_id = o.customer_id
      LEFT JOIN cashiers ca ON ca.cashier_id = o.processed_by
+     LEFT JOIN customer_addresses ad ON ad.address_id = o.address_id
      WHERE o.order_id = $1`,
     [orderId],
   )
@@ -283,6 +286,7 @@ router.get('/:id', async (request, response) => {
       status: order.status,
       paymentMode: order.payment_mode,
       deliveryFee: order.delivery_fee,
+      deliveryAddress: order.order_type === 'DELIVERY' ? order.delivery_address || null : null,
       instructions: order.instructions,
       requestedFulfillmentTime: order.requested_fulfillment_time,
       totalAmount: order.total_amount,

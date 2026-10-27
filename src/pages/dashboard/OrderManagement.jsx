@@ -18,7 +18,6 @@ import { Button } from '../../components/ui/Button.jsx'
 import { Card } from '../../components/ui/Card.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Input } from '../../components/ui/Input.jsx'
-import { Select } from '../../components/ui/Select.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { NotPaidTag, PaymentModeLine } from '../../components/ui/PaymentStatus.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
@@ -31,9 +30,10 @@ import { WalkInOrderForm } from './WalkInOrderForm.jsx'
 // Payment first (RULES-PLANS/PAYMENT_FIRST_PLAN.md, the adviser 2026-10-16):
 // every order shown here is paid. A pickup or walk-in order is Ready for
 // pickup, then Completed when it is handed over; a delivery order is Ready
-// for delivery, then Out for delivery and Completed from the driver's
-// phone. No Placed, In production or Cancelled step any more (older orders
-// may still carry one).
+// for delivery, then Out for delivery, then Delivered (which completes it),
+// marked by staff in the order details (MINOR_REVISIONS_PLAN.md M13). No
+// Placed, In production or Cancelled step any more (older orders may still
+// carry one).
 const statusRank = { PLACED: 0, CONFIRMED: 1, IN_PRODUCTION: 2, READY_FOR_PICKUP: 3, READY_FOR_DELIVERY: 3, OUT_FOR_DELIVERY: 3.5, COMPLETED: 4 }
 const openStatuses = new Set(['PLACED', 'CONFIRMED', 'IN_PRODUCTION', 'READY_FOR_PICKUP', 'READY_FOR_DELIVERY', 'OUT_FOR_DELIVERY'])
 
@@ -205,14 +205,10 @@ function StaffOrderManagement({ user, params }) {
   const [statusNote, setStatusNote] = useState('')
   const [statusSubmitting, setStatusSubmitting] = useState(false)
 
-  // Assign rider (the user, 2026-10-16): a delivery order waiting for a
-  // driver is assigned right here, the same call Delivery Management makes.
-  const [riders, setRiders] = useState([])
-  const [riderChoice, setRiderChoice] = useState('')
-  const [assigning, setAssigning] = useState(false)
-  useEffect(() => {
-    apiGet('/api/deliveries/personnel').then((data) => setRiders(data.personnel)).catch(() => setRiders([]))
-  }, [])
+  // Staff move a delivery order themselves (the panel, 2026-10-26;
+  // MINOR_REVISIONS_PLAN.md M13): there are no rider accounts, so the
+  // order details offer Out for delivery, then Delivered.
+  const [moving, setMoving] = useState(false)
 
   const loadOrders = async () => {
     try {
@@ -266,21 +262,19 @@ function StaffOrderManagement({ user, params }) {
     setOrderDetail(null)
   }
 
-  const assignRider = async () => {
-    if (!riderChoice || !orderDetail?.delivery?.id) return
-    setAssigning(true)
+  const moveDelivery = async (status) => {
+    if (!orderDetail?.delivery?.id) return
+    setMoving(true)
     setMessage('')
     try {
-      await apiPatch(`/api/deliveries/${orderDetail.delivery.id}/assign`, { deliveryPersonnelId: riderChoice })
-      const rider = riders.find((person) => String(person.id) === String(riderChoice))
-      setRiderChoice('')
+      await apiPatch(`/api/deliveries/${orderDetail.delivery.id}/status`, { status })
       await openOrder(selectedOrderId)
       await loadOrders()
-      setNotice(`Order ${orderLabel(orderDetail)} assigned to ${rider?.name ?? 'the rider'}.`)
+      setNotice(`Order ${orderLabel(orderDetail)} is ${status === 'DELIVERED' ? 'delivered' : 'out for delivery'}.`)
     } catch (error) {
       setMessage(error.message)
     } finally {
-      setAssigning(false)
+      setMoving(false)
     }
   }
 
@@ -341,22 +335,16 @@ function StaffOrderManagement({ user, params }) {
             {orderDetail.requestedFulfillmentTime && <p className="mt-1 font-semibold text-ink-900">Needed by: {formatDateTime(orderDetail.requestedFulfillmentTime)}</p>}
           </div>
           <DeliveryProgress delivery={orderDetail.delivery} />
-          {orderDetail.orderType === 'DELIVERY' && orderDetail.delivery?.id && orderDetail.delivery.status === 'PENDING_ASSIGNMENT' && orderDetail.status === 'READY_FOR_DELIVERY' && (
-            <div className="rounded-panel bg-surface-sunk p-3">
-              <p className="text-xs font-semibold text-ink-700">Assign rider</p>
-              {riders.length === 0 ? (
-                <p className="mt-1 text-xs text-ink-500">No active riders. Add one in User Management, Staff.</p>
-              ) : (
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <div className="min-w-40 flex-1">
-                    <Select value={riderChoice} onChange={(event) => setRiderChoice(event.target.value)} aria-label={`Rider for order ${orderLabel(orderDetail)}`}>
-                      <option value="">Select a rider…</option>
-                      {riders.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
-                    </Select>
-                  </div>
-                  <Button type="button" size="sm" onClick={assignRider} disabled={assigning || !riderChoice}>{assigning ? 'Assigning…' : 'Assign rider'}</Button>
-                </div>
-              )}
+          {orderDetail.orderType === 'DELIVERY' && orderDetail.delivery?.id && ['PENDING_ASSIGNMENT', 'ASSIGNED'].includes(orderDetail.delivery.status) && orderDetail.status === 'READY_FOR_DELIVERY' && (
+            <div className="flex flex-wrap items-center gap-2 rounded-panel bg-surface-sunk p-3">
+              <p className="mr-auto text-xs font-semibold text-ink-700">Ready to go out</p>
+              <Button type="button" size="sm" onClick={() => moveDelivery('OUT_FOR_DELIVERY')} disabled={moving}>{moving ? 'Saving…' : 'Out for delivery'}</Button>
+            </div>
+          )}
+          {orderDetail.orderType === 'DELIVERY' && orderDetail.delivery?.id && orderDetail.delivery.status === 'OUT_FOR_DELIVERY' && (
+            <div className="flex flex-wrap items-center gap-2 rounded-panel bg-surface-sunk p-3">
+              <p className="mr-auto text-xs font-semibold text-ink-700">On the way to the customer</p>
+              <Button type="button" size="sm" onClick={() => moveDelivery('DELIVERED')} disabled={moving}>{moving ? 'Saving…' : 'Delivered'}</Button>
             </div>
           )}
 

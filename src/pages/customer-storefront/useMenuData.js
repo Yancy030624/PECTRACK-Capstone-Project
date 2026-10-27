@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiGet } from '../../api/client.js'
+import { useLiveStock } from '../../lib/useLiveStock.js'
 
 // Shared by PublicMenu and CustomerMenu so the fetch and the
 // category-grouping are written once — the two screens differ only in
@@ -17,6 +18,12 @@ export function useMenuData() {
       })
       .catch((error) => setMessage(error.message))
   }, [])
+
+  // "12 left" follows the shelf without a refresh (MINOR_REVISIONS_PLAN.md
+  // M6): another customer's order or the 5:00 AM top-up re-reads the list.
+  useLiveStock('inventory', () => {
+    apiGet('/api/products', { background: true }).then((data) => setProducts(data.products)).catch(() => {})
+  }, '/api/products/live')
 
   const loading = products === null || categories === null
 

@@ -252,6 +252,8 @@ export function ReceiptPage({ user }) {
           {user?.contactNumber && <div className="flex justify-between gap-2 sm:block"><dt className="text-cocoa-500">Contact number</dt><dd className="font-semibold text-cocoa-900">{user.contactNumber}</dd></div>}
           <div className="flex justify-between gap-2 sm:block"><dt className="text-cocoa-500">Placed</dt><dd className="font-semibold text-cocoa-900">{formatDateTime(order.orderDate)}</dd></div>
           <div className="flex justify-between gap-2 sm:block"><dt className="text-cocoa-500">Order type</dt><dd className="font-semibold text-cocoa-900">{order.orderType === 'DELIVERY' ? 'Delivery' : 'Pickup'}</dd></div>
+          {/* Where it is delivered (MINOR_REVISIONS_PLAN.md M8). */}
+          {order.deliveryAddress && <div className="flex justify-between gap-2 sm:col-span-2 sm:block"><dt className="text-cocoa-500">Delivery address</dt><dd className="text-right font-semibold text-cocoa-900 sm:text-left">{order.deliveryAddress}</dd></div>}
           <div className="flex justify-between gap-2 sm:block"><dt className="text-cocoa-500">Order status</dt><dd className="font-semibold text-cocoa-900">{humanize(order.status)}</dd></div>
           {order.requestedFulfillmentTime && <div className="flex justify-between gap-2 sm:block"><dt className="text-cocoa-500">Needed by</dt><dd className="font-semibold text-cocoa-900">{formatDateTime(order.requestedFulfillmentTime)}</dd></div>}
         </dl>

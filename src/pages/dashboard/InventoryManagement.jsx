@@ -35,16 +35,15 @@ const emptyAddForm = { addQuantity: '', minStockLevel: '' }
 // No rejects list: the bakery does not record rejects (the client,
 // 2026-10-23). When bread is thrown away the admin corrects the count
 // instead ("Correct count", below), so the shelf figure stays true.
-const breadTypes = [
-  { key: 'SOFT', label: 'Soft breads' },
-  { key: 'HARD', label: 'Hard breads' },
-]
-const stockFiltersFor = (type) => [
+// One list since the panel's revisions (2026-10-26; MINOR_REVISIONS_PLAN.md
+// M11): soft and hard breads together, each row still labelled Soft or
+// Hard, and the status filter offers every status.
+const stockFilters = [
   { key: 'ALL', label: 'All' },
   { key: 'GOOD', label: STOCK_STATUSES.GOOD.label, tone: 'good' },
-  ...(type === 'SOFT'
-    ? [{ key: 'SELLING_OUT', label: STOCK_STATUSES.SELLING_OUT.label, tone: 'okay' }, { key: 'SOLD_OUT', label: STOCK_STATUSES.SOLD_OUT.label, tone: 'attention' }]
-    : [{ key: 'LOW', label: STOCK_STATUSES.LOW.label, tone: 'attention' }]),
+  { key: 'SELLING_OUT', label: STOCK_STATUSES.SELLING_OUT.label, tone: 'okay' },
+  { key: 'SOLD_OUT', label: STOCK_STATUSES.SOLD_OUT.label, tone: 'attention' },
+  { key: 'LOW', label: STOCK_STATUSES.LOW.label, tone: 'attention' },
 ]
 const matchesFilter = (item, filter) => {
   if (filter === 'ALL') return true
@@ -84,12 +83,7 @@ export function InventoryManagement({ user, params }) {
 
 function ProductStock({ user, params }) {
   const isAdmin = user.role === 'ADMIN'
-  const [breadType, setBreadType] = useState(params?.breadType === 'HARD' ? 'HARD' : 'SOFT')
-  const stockFilters = stockFiltersFor(breadType)
-  const [stockFilter, setStockFilter] = useState(() => {
-    const asked = params?.stockFilter
-    return stockFiltersFor(params?.breadType === 'HARD' ? 'HARD' : 'SOFT').some((filter) => filter.key === asked) ? asked : 'ALL'
-  })
+  const [stockFilter, setStockFilter] = useState(() => (stockFilters.some((filter) => filter.key === params?.stockFilter) ? params.stockFilter : 'ALL'))
 
   // Category filter (the user, 2026-10-16): one more row of buttons under
   // the statuses, built from the categories the stock list actually has.
@@ -137,10 +131,13 @@ function ProductStock({ user, params }) {
   // without a refresh.
   useLiveStock('inventory', () => loadInventory({ quiet: true }))
 
+  // Deduct (MINOR_REVISIONS_PLAN.md M12): the pieces to take off, never
+  // the total — the server subtracts, so a sale at the same moment is not
+  // overwritten.
   const startCount = (item) => {
     setEditingProductId(item.productId)
     setFormMode('count')
-    setCountedQuantity(String(item.stockQuantity))
+    setCountedQuantity('')
     setEditOriginal(item)
     setEditErrors({})
     setConfirming(false)
@@ -148,8 +145,9 @@ function ProductStock({ user, params }) {
   }
   const reviewCount = (event) => {
     event.preventDefault()
-    if (countedQuantity === '' || Number(countedQuantity) === editOriginal.stockQuantity) {
-      setEditErrors({ counted: countedQuantity === '' ? 'Enter the count on the shelf.' : 'That is already the count.' })
+    const pieces = Number(countedQuantity)
+    if (!(pieces >= 1) || pieces > editOriginal.stockQuantity) {
+      setEditErrors({ counted: pieces > editOriginal.stockQuantity ? `Only ${editOriginal.stockQuantity} on hand.` : 'Enter how many pieces to deduct, 1 or more.' })
       return
     }
     setEditErrors({})
@@ -158,13 +156,13 @@ function ProductStock({ user, params }) {
   const confirmCount = async (item) => {
     setEditSubmitting(true)
     try {
-      await apiPatch(`/api/inventory/${item.productId}`, { stockQuantity: Number(countedQuantity), reason: 'CORRECTION', note: 'Count corrected' })
-      setNotice(`${item.productName}: count corrected from ${item.stockQuantity} to ${countedQuantity}.`)
+      const data = await apiPatch(`/api/inventory/${item.productId}`, { deductQuantity: Number(countedQuantity) })
+      setNotice(`${item.productName}: deducted ${countedQuantity} — ${data.item?.stockQuantity ?? item.stockQuantity - Number(countedQuantity)} in stock now.`)
       setEditingProductId(null)
       setConfirming(false)
       await loadInventory()
     } catch (error) {
-      setEditErrors({ counted: error.errors?.stockQuantity ?? error.message })
+      setEditErrors({ counted: error.errors?.deductQuantity ?? error.errors?.stockQuantity ?? error.message })
       setConfirming(false)
     } finally {
       setEditSubmitting(false)
@@ -231,9 +229,9 @@ function ProductStock({ user, params }) {
   // Worst first under a filter that mixes statuses, so what needs
   // attention is never below the fold of what is fine.
   const statusRank = { SOLD_OUT: 0, LOW: 1, SELLING_OUT: 2, GOOD: 3 }
-  const ofType = inventory.filter((item) => item.stockType === breadType)
+  const ofType = inventory
   const categories = [...new Set(ofType.map((item) => item.categoryName).filter(Boolean))].sort((a, b) => a.localeCompare(b))
-  const inCategory = (item) => item.stockType === breadType && (categoryFilter === 'ALL' || item.categoryName === categoryFilter)
+  const inCategory = (item) => categoryFilter === 'ALL' || item.categoryName === categoryFilter
   const visibleInventory = inventory
     .filter((item) => matchesFilter(item, stockFilter) && inCategory(item))
     .sort((a, b) => (stockFilter === 'ALL' ? 0 : statusRank[stockStatus(a)] - statusRank[stockStatus(b)]))
@@ -256,20 +254,6 @@ function ProductStock({ user, params }) {
       <Card className="mt-6 p-6">
         {!loading && inventory.length > 0 && (
           <div className="mb-5">
-            <div role="tablist" aria-label="Bread type" className="mb-4 inline-flex rounded-full bg-surface-sunk p-1">
-              {breadTypes.map((type) => (
-                <button
-                  key={type.key}
-                  type="button"
-                  role="tab"
-                  aria-selected={breadType === type.key}
-                  onClick={() => { setBreadType(type.key); setStockFilter('ALL'); setCategoryFilter('ALL') }}
-                  className={`min-h-9 rounded-full px-4 text-sm font-semibold transition ${breadType === type.key ? 'bg-surface text-ink-900 shadow-raised' : 'text-ink-500 hover:text-ink-900'}`}
-                >
-                  {type.label} <span className="tabular-nums text-ink-500">{inventory.filter((item) => item.stockType === type.key).length}</span>
-                </button>
-              ))}
-            </div>
             <p id="stock-filter-label" className="text-xs font-semibold uppercase tracking-wide text-ink-500">Status</p>
             <div role="group" aria-labelledby="stock-filter-label" className="mt-2 flex flex-wrap gap-2">
               {stockFilters.map((filter) => {
@@ -318,7 +302,7 @@ function ProductStock({ user, params }) {
         {loading ? (
           <LoadingRows className="mt-4" />
         ) : ofType.length === 0 ? (
-          <EmptyState title={`No ${breadType === 'SOFT' ? 'soft' : 'hard'} breads yet`} description="Set a product's bread type in Edit Products." />
+          <EmptyState title="No products yet" description="Add products in Edit Products." />
         ) : visibleInventory.length === 0 ? (
           <EmptyState title={`No products are ${stockFilters.find((filter) => filter.key === stockFilter).label.toLowerCase()} right now${categoryFilter === 'ALL' ? '' : ` in ${categoryFilter}`}`} description="Pick another status or category, or All." />
         ) : (
@@ -347,7 +331,7 @@ function ProductStock({ user, params }) {
                           <p className="font-semibold text-ink-900">{item.productName}{item.variant ? ` (${item.variant})` : ''}</p>
                           {isAdmin && !confirming && (
                             <div role="tablist" aria-label="What to change" className="inline-flex rounded-full bg-surface-sunk p-0.5">
-                              {[['add', 'Add stock'], ['count', 'Correct count']].map(([key, label]) => (
+                              {[['add', 'Add'], ['count', 'Deduct']].map(([key, label]) => (
                                 <button
                                   key={key}
                                   type="button"
@@ -366,7 +350,7 @@ function ProductStock({ user, params }) {
                           confirming ? (
                             <div className="mt-2 rounded-panel bg-amber-50 p-3">
                               <p className="font-semibold text-ink-900">Are you sure you want to confirm these changes?</p>
-                              <p className="mt-1.5 text-sm">Count: <span className="tabular-nums">{item.stockQuantity}</span> → <strong className="tabular-nums">{countedQuantity}</strong> pieces</p>
+                              <p className="mt-1.5 text-sm">Stock: <span className="tabular-nums">{item.stockQuantity}</span> on hand − <span className="tabular-nums">{countedQuantity}</span> deducted = <strong className="tabular-nums">{item.stockQuantity - Number(countedQuantity)}</strong> pieces</p>
                               <div className="mt-3 flex gap-2">
                                 <Button size="sm" onClick={() => confirmCount(item)} disabled={editSubmitting}>{editSubmitting ? 'Saving…' : 'Confirm'}</Button>
                                 <Button size="sm" variant="secondary" onClick={() => setConfirming(false)} disabled={editSubmitting}>Back</Button>
@@ -375,13 +359,13 @@ function ProductStock({ user, params }) {
                           ) : (
                             <form onSubmit={reviewCount} noValidate>
                               <div className="mt-2 grid gap-3 sm:grid-cols-3">
-                                <Field label="Count on the shelf now" error={editErrors.counted}>
-                                  <Input value={countedQuantity} onChange={(event) => setCountedQuantity(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoFocus />
+                                <Field label="Pieces to deduct" error={editErrors.counted}>
+                                  <Input value={countedQuantity} onChange={(event) => setCountedQuantity(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" placeholder="e.g. 5" autoFocus />
                                 </Field>
                               </div>
-                              <p className="mt-2 text-xs text-ink-500">The system has {item.stockQuantity}. Enter what is really on the shelf, for example after bread was thrown away.</p>
+                              <p className="mt-2 text-xs text-ink-500">{item.stockQuantity} on hand{Number(countedQuantity) > 0 ? <> − {countedQuantity} = <strong className="text-ink-900">{item.stockQuantity - Number(countedQuantity)}</strong> after deducting</> : ''}. For bread thrown away or found missing at a stock check.</p>
                               <div className="mt-3 flex gap-2">
-                                <Button type="submit" size="sm">Correct count</Button>
+                                <Button type="submit" size="sm">Deduct</Button>
                                 <Button type="button" size="sm" variant="secondary" onClick={cancelEdit}>Cancel</Button>
                               </div>
                             </form>
@@ -431,6 +415,7 @@ function ProductStock({ user, params }) {
                       <Td className="font-semibold text-ink-900">
                         {item.productName}
                         {item.variant && <span className="block text-xs font-normal text-ink-500">{item.variant}</span>}
+                        <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${item.stockType === 'HARD' ? 'bg-amber-100 text-amber-800' : 'bg-sky-100 text-sky-800'}`}>{item.stockType === 'HARD' ? 'Hard bread' : 'Soft bread'}</span>
                         {/* On a phone the Status column is hidden, so the
                             table fits the screen; the pill sits here. */}
                         <span className="mt-1 block md:hidden"><StockStatusPill status={stockStatus(item)} /></span>
@@ -446,11 +431,12 @@ function ProductStock({ user, params }) {
                         <StockStatusPill status={stockStatus(item)} />
                       </Td>
                       <Td>
-                        {/* One button (the user, 2026-10-23); Add stock and, for
-                            the admin, Correct count are inside the form. */}
-                        <Button size="sm" variant="ghost" onClick={() => startEdit(item)} aria-label={`Edit the stock of ${item.productName}`}>
-                          Edit
-                        </Button>
+                        {/* Add and, for the admin, Deduct (the panel, 2026-10-26;
+                            MINOR_REVISIONS_PLAN.md M12). */}
+                        <div className="flex flex-wrap gap-1">
+                          <Button size="sm" variant="ghost" onClick={() => startEdit(item)} aria-label={`Add stock to ${item.productName}`}>Add</Button>
+                          {isAdmin && <Button size="sm" variant="ghost" onClick={() => startCount(item)} aria-label={`Deduct stock from ${item.productName}`}>Deduct</Button>}
+                        </div>
                       </Td>
                     </Tr>
                   ),

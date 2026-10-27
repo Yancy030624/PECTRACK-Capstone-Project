@@ -52,6 +52,14 @@ const adminTransitions = {
   // delivery back, then retry it into the queue for someone else.
   FAILED: ['ASSIGNED', 'OUT_FOR_DELIVERY'],
 }
+// Staff move a delivery themselves now that there are no rider accounts
+// (the panel, 2026-10-26; MINOR_REVISIONS_PLAN.md M13): the admin or a
+// cashier marks it out for delivery, then delivered. No driver, no proof
+// photo; the order sync below is the same as a driver's.
+const staffTransitions = {
+  OUT_FOR_DELIVERY: ['PENDING_ASSIGNMENT', 'ASSIGNED'],
+  DELIVERED: ['OUT_FOR_DELIVERY'],
+}
 const proofTypes = new Set(['PHOTO', 'SIGNATURE', 'CONFIRMATION'])
 // Content types accepted for a proof upload, mapped to the extension
 // Pattern G derives the storage key from — this list IS the validation:
@@ -387,7 +395,9 @@ router.patch('/:id/status', async (request, response) => {
   // arrives in the display form lib/auth.js produces; requireRole()
   // normalizes either spelling, but a raw === has to match what's there.
   const isDriver = request.user.role === 'DELIVERY PERSONNEL'
-  const allowedFrom = isAdmin ? adminTransitions[status] : isDriver ? driverTransitions[status] : undefined
+  const isStaff = isAdmin || request.user.role === 'CASHIER'
+  const staffMove = isStaff ? staffTransitions[status] : undefined
+  const allowedFrom = staffMove ?? (isAdmin ? adminTransitions[status] : isDriver ? driverTransitions[status] : undefined)
   if (!allowedFrom) {
     // A transition that exists for ANOTHER role is a permission problem
     // (403); one that exists for nobody is a bad request (422). Keeping
@@ -399,7 +409,7 @@ router.patch('/:id/status', async (request, response) => {
   }
   // Both admin transitions are recoveries from something going wrong, and
   // deliveries.note is the only place that reason can be recorded.
-  if (isAdmin && !note) return response.status(422).json({ message: 'Explain why this delivery is being changed.', errors: { note: 'Explain why this delivery is being changed.' } })
+  if (isAdmin && !staffMove && !note) return response.status(422).json({ message: 'Explain why this delivery is being changed.', errors: { note: 'Explain why this delivery is being changed.' } })
 
   // deliveries.order_id is immutable — nothing in this app ever updates
   // it — so reading it outside the transaction is safe, and it is what
@@ -453,6 +463,12 @@ router.patch('/:id/status', async (request, response) => {
     if (status !== 'FAILED' && terminalOrderStatuses.has(orderStatus)) {
       await client.query('ROLLBACK')
       return response.status(409).json({ message: `This order is already ${orderStatus.toLowerCase()} — its delivery cannot be moved any further.` })
+    }
+    // Staff send out only a paid order that is ready (M13) — the same rule
+    // assigning a rider used to enforce.
+    if (staffMove && status === 'OUT_FOR_DELIVERY' && orderStatus !== 'READY_FOR_DELIVERY') {
+      await client.query('ROLLBACK')
+      return response.status(409).json({ message: 'Only a paid order that is ready for delivery can be sent out.' })
     }
 
     const claimed = await client.query(

@@ -8,13 +8,12 @@ import { deliveryFee, isDeliverable } from '../../lib/bakery.js'
 import { NeededByFields } from '../../components/NeededByFields.jsx'
 import { checkPicked, toRequestedTime } from '../../lib/orderHours.js'
 
-const instructionsMaxLength = 500
-
 export function CheckoutPage({ user }) {
   // Migration 016 — the server refuses an order from an unconfirmed email
   // (routes/orders.js). Saying so here, before the button, is the kinder
   // half: finding out only after pressing "Place order" means finding out
-  // after choosing a pickup time and typing instructions.
+  // after choosing a pickup time. No special instructions box (the panel,
+  // 2026-10-26; MINOR_REVISIONS_PLAN.md M7).
   const needsVerification = user?.role === 'CUSTOMER' && user.emailVerified === false
   const navigate = useNavigate()
   const { lines, clear, removeItem } = useCart()
@@ -29,7 +28,6 @@ export function CheckoutPage({ user }) {
   const [pickupPayment, setPickupPayment] = useState('CASH')
   const paymentMode = orderType === 'PICKUP' ? pickupPayment : 'GCASH'
   const [addressId, setAddressId] = useState(null)
-  const [instructions, setInstructions] = useState('')
   // When it is needed: a Manila date and time, both blank for "as soon as
   // it's ready" (lib/orderHours.js).
   const [neededDate, setNeededDate] = useState('')
@@ -39,6 +37,11 @@ export function CheckoutPage({ user }) {
   const [message, setMessage] = useState('')
   const [messageFailed, setMessageFailed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  // Set once the order is placed (MINOR_REVISIONS_PLAN.md M9): the cart is
+  // cleared at that moment, so without this the page showed "Your cart is
+  // empty" while GCash was still opening. A loader shows instead until the
+  // next page takes over.
+  const [leaving, setLeaving] = useState(false)
 
   useEffect(() => {
     apiGet('/api/products').then((data) => setProducts(data.products)).catch(() => setProducts([]))
@@ -92,7 +95,6 @@ export function CheckoutPage({ user }) {
     setSubmitting(true)
     try {
       const body = { orderType, items: validLines.map(({ line }) => ({ productId: line.productId, quantity: line.quantity })) }
-      if (instructions.trim()) body.instructions = instructions.trim()
       if (neededDate) body.requestedFulfillmentTime = toRequestedTime(neededDate, neededTime)
       if (orderType === 'DELIVERY') body.addressId = addressId
       body.paymentMode = paymentMode
@@ -102,6 +104,7 @@ export function CheckoutPage({ user }) {
       // GCash; PayMongo brings them back to the receipt. If GCash cannot be
       // opened, the receipt page offers to try again or cancel.
       const data = await apiPost('/api/orders', body)
+      setLeaving(true)
       clear()
       // Cash: placed and ready, paid at the counter. The receipt says so.
       if (paymentMode === 'CASH') {
@@ -115,6 +118,7 @@ export function CheckoutPage({ user }) {
         navigate(`/receipt/${data.order.id}?cancelled=1`)
       }
     } catch (error) {
+      setLeaving(false)
       // A 409 is usually stock; one about the payment mode is the "one
       // cash order at a time" rule and is shown as it is.
       if (!error.errors?.paymentMode && (error.status === 409 || (error.status === 422 && error.errors?.items))) {
@@ -129,6 +133,18 @@ export function CheckoutPage({ user }) {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  if (leaving) {
+    return (
+      <section className="mx-auto grid min-h-[50vh] max-w-4xl place-items-center px-4 py-14 sm:px-7" role="status" aria-live="polite">
+        <div className="text-center">
+          <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-cream-200 border-t-crust-600" aria-hidden="true" />
+          <p className="mt-4 font-display text-xl font-semibold text-cocoa-900">{paymentMode === 'CASH' ? 'Placing your order…' : 'Opening GCash…'}</p>
+          <p className="mt-1 text-xs text-cocoa-500">Please wait; do not close this page.</p>
+        </div>
+      </section>
+    )
   }
 
   if (loading) {
@@ -225,11 +241,6 @@ export function CheckoutPage({ user }) {
             </div>
           )}
 
-          <div className="rounded-2xl border border-cream-200 bg-white p-5">
-            <label htmlFor="checkout-instructions" className="text-sm font-bold text-cocoa-900">Special instructions (optional)</label>
-            <textarea id="checkout-instructions" value={instructions} onChange={(event) => setInstructions(event.target.value.slice(0, instructionsMaxLength))} rows={3} placeholder="e.g. Less sugar, birthday message on the cake" className="mt-3 w-full rounded-xl border border-cream-300 px-3 py-2 text-xs outline-none focus:border-crust-500" />
-            <p className="mt-1 text-right text-xs text-cocoa-500">{instructions.length}/{instructionsMaxLength}</p>
-          </div>
 
           <div className="rounded-2xl border border-cream-200 bg-white p-5">
             <p className="text-sm font-bold text-cocoa-900">When do you need it?</p>

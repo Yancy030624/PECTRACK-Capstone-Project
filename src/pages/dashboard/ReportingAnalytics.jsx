@@ -389,29 +389,29 @@ export function ReportingAnalytics({ user }) {
         {/* Baked, sold and lost in the range, real movements only (the user,
             2026-10-25): the one place that sets what went on the shelf
             against what sold. Ingredients have their own history on the
-            Ingredients screen. "Lost" is labelled Corrected count (the user,
-            2026-10-26): the bakery records no rejects, so the figure is the
-            counts corrected down. */}
+            Ingredients screen. "Lost" is labelled Deducted (the panel,
+            2026-10-26; MINOR_REVISIONS_PLAN.md M12): the bakery records no
+            rejects, so the figure is the pieces deducted in Inventory. */}
         {inventory ? (
           <>
             <div className="mt-6 grid gap-4 sm:grid-cols-3">
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Baked / added</p><p className="mt-3 text-4xl font-semibold text-ink-900 tabular-nums">{inventory.totals.added.toLocaleString()}</p><p className="mt-1 text-xs text-ink-500">Restocks and the 5:00 AM top-up</p></Card>
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Sold</p><p className="mt-3 text-4xl font-semibold text-ink-900 tabular-nums">{inventory.totals.sold.toLocaleString()}</p><p className="mt-1 text-xs text-ink-500">Pieces in orders, cancelled ones returned</p></Card>
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Corrected count</p><p className="mt-3 text-4xl font-semibold text-ink-900 tabular-nums">{inventory.totals.lost.toLocaleString()}</p><p className="mt-1 text-xs text-ink-500">Counts corrected down after a stock check</p></Card>
+              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Deducted</p><p className="mt-3 text-4xl font-semibold text-ink-900 tabular-nums">{inventory.totals.lost.toLocaleString()}</p><p className="mt-1 text-xs text-ink-500">Pieces deducted in Inventory</p></Card>
             </div>
 
             <Card className="mt-6 p-6">
               <h2 className="text-lg font-semibold text-ink-900">By product</h2>
               {inventory.products.length === 0 ? <p className="mt-4 text-sm text-ink-500">No stock changes in this range.</p> : (
                 <div className="mt-4">
-                  <Table caption="Baked, sold and corrected by product">
+                  <Table caption="Baked, sold and deducted by product">
                     <Thead>
                       <Tr className="hover:bg-transparent">
                         <Th>Product</Th>
                         <Th priority="md">Type</Th>
                         <Th align="right">Baked / added</Th>
                         <Th align="right">Sold</Th>
-                        <Th align="right">Corrected count</Th>
+                        <Th align="right">Deducted</Th>
                       </Tr>
                     </Thead>
                     <Tbody>

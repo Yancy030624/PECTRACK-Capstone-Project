@@ -4,9 +4,13 @@
 // or failing; a driver hears about every delivery assigned to them. The
 // events come from GET /api/notifications, one feed for every role.
 //
-// No server push: the screen asks every 20 seconds. "New" means after the
-// last time this person opened the bell ON THIS DEVICE, kept in
-// localStorage — nothing is stored in the database for it.
+// No server push: the screen asks every 20 seconds.
+//
+// Read and unread (the panel, 2026-10-26; MINOR_REVISIONS_PLAN.md M14):
+// each item is Unread until this person opens it, or presses "Mark all as
+// read". Only a new UNREAD item toasts and sounds, once; a read one never
+// does again, and stays in the list marked Read. Kept per person ON THIS
+// DEVICE in localStorage — nothing is stored in the database for it.
 //
 // A product falling to its minimum (`low_stock`, the seniors 2026-10-24)
 // is a warning, not news: its toast is red, stays longer, has its own
@@ -92,13 +96,27 @@ function chime(notes = chimeNotes) {
 }
 
 const isNewer = (time, than) => than == null || new Date(time) > new Date(than)
+// The keys of the items opened, newest last; capped so it cannot grow
+// without end (the bell only ever holds the latest few).
+const maxReadKeys = 300
+const loadReadKeys = (key) => {
+  try { return new Set(JSON.parse(storage.get(key) ?? '[]')) } catch { return new Set() }
+}
 
 export function NotificationBell({ user, onOpen }) {
+  // `seen` is the first visit's starting point: everything before it counts
+  // as read. `read` is each item opened since.
   const seenKey = `pectrack.notifications.seen.${user.id}`
+  const readKey = `pectrack.notifications.read.${user.id}`
   const mutedKey = 'pectrack.notifications.muted'
 
   const [items, setItems] = useState([])
   const [lastSeen, setLastSeen] = useState(() => storage.get(seenKey))
+  const [readKeys, setReadKeys] = useState(() => loadReadKeys(readKey))
+  const readRef = useRef(readKeys)
+  readRef.current = readKeys
+  const lastSeenRef = useRef(lastSeen)
+  lastSeenRef.current = lastSeen
   const [open, setOpen] = useState(false)
   const [toasts, setToasts] = useState([])
   const [muted, setMuted] = useState(() => storage.get(mutedKey) === '1')
@@ -148,7 +166,8 @@ export function NotificationBell({ user, onOpen }) {
             setLastSeen(newestTime)
           }
         } else {
-          const fresh = fetched.filter((item) => !known.current.has(item.key))
+          // Only what is new to this screen AND still unread is announced.
+          const fresh = fetched.filter((item) => !known.current.has(item.key) && !readRef.current.has(item.key) && isNewer(itemTime(item), lastSeenRef.current))
           for (const item of fetched) known.current.set(item.key, item)
           if (fresh.length) announce(fresh)
         }
@@ -176,25 +195,27 @@ export function NotificationBell({ user, onOpen }) {
     return () => { document.removeEventListener('mousedown', onPointer); document.removeEventListener('keydown', onKey) }
   }, [open])
 
-  const unseen = items.filter((item) => itemTime(item) && isNewer(itemTime(item), lastSeen))
-  // What was new as the panel opened, kept highlighted while it is open.
-  const [openedUnseen, setOpenedUnseen] = useState(new Set())
-  const toggle = () => {
-    if (!open) setOpenedUnseen(new Set(unseen.map((item) => item.key)))
-    if (!open && items.length) {
-      // Opening the bell is "seeing" what is in it.
-      const newestTime = items.map(itemTime).filter(Boolean).sort().at(-1)
-      if (newestTime && isNewer(newestTime, lastSeen)) {
-        storage.set(seenKey, newestTime)
-        setLastSeen(newestTime)
-      }
-    }
-    setOpen(!open)
+  const isUnread = (item) => Boolean(itemTime(item)) && isNewer(itemTime(item), lastSeen) && !readKeys.has(item.key)
+  const unread = items.filter(isUnread)
+  const saveRead = (next) => {
+    storage.set(readKey, JSON.stringify([...next].slice(-maxReadKeys)))
+    setReadKeys(next)
   }
+  const markRead = (item) => {
+    if (readKeys.has(item.key)) return
+    saveRead(new Set([...readKeys, item.key]))
+  }
+  const markAllRead = () => {
+    saveRead(new Set([...readKeys, ...unread.map((item) => item.key)]))
+    setToasts([])
+  }
+  const toggle = () => setOpen(!open)
   const dismiss = (item) => setToasts((current) => current.filter((toast) => toast.item.key !== item.key))
+  // Opening an item reads it: its toast goes, and it is never announced again.
   const choose = (item) => {
     setOpen(false)
     dismiss(item)
+    markRead(item)
     onOpen(item)
   }
   const toggleMuted = () => {
@@ -213,16 +234,16 @@ export function NotificationBell({ user, onOpen }) {
         type="button"
         onClick={toggle}
         aria-expanded={open}
-        aria-label={unseen.length ? `${unseen.length} new ${noun(unseen.length)}` : `No new ${noun(0)}`}
+        aria-label={unread.length ? `${unread.length} unread ${noun(unread.length)}` : `No unread ${noun(0)}`}
         className="relative grid h-9 w-9 place-items-center rounded-full text-ink-700 transition hover:bg-surface-sunk"
       >
         <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
           <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
         </svg>
-        {unseen.length > 0 && (
+        {unread.length > 0 && (
           <span className="absolute -right-0.5 -top-0.5 grid min-w-5 place-items-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-5 text-white tabular-nums">
-            {unseen.length >= keepItems ? `${keepItems}+` : unseen.length}
+            {unread.length >= keepItems ? `${keepItems}+` : unread.length}
           </span>
         )}
       </button>
@@ -230,10 +251,13 @@ export function NotificationBell({ user, onOpen }) {
       {open && (
         <div className="absolute right-0 z-40 mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-panel border border-line-200 bg-surface shadow-raised">
           <div className="flex items-center justify-between gap-2 border-b border-line-100 px-4 py-3">
-            <p className="text-sm font-semibold text-ink-900">Notifications</p>
-            <button type="button" onClick={toggleMuted} className="text-xs font-semibold text-brand-700 hover:underline">
-              {muted ? 'Sound off' : 'Sound on'}
-            </button>
+            <p className="text-sm font-semibold text-ink-900">Notifications{unread.length > 0 && <span className="ml-1.5 text-xs font-normal text-ink-500">{unread.length} unread</span>}</p>
+            <span className="flex items-center gap-3">
+              {unread.length > 0 && <button type="button" onClick={markAllRead} className="text-xs font-semibold text-brand-700 hover:underline">Mark all as read</button>}
+              <button type="button" onClick={toggleMuted} className="text-xs font-semibold text-brand-700 hover:underline">
+                {muted ? 'Sound off' : 'Sound on'}
+              </button>
+            </span>
           </div>
           {items.length === 0 ? (
             <p className="px-4 py-6 text-center text-sm text-ink-500">Nothing yet.</p>
@@ -241,11 +265,12 @@ export function NotificationBell({ user, onOpen }) {
             <ul className="max-h-80 divide-y divide-line-100 overflow-y-auto">
               {items.map((item) => (
                 <li key={item.key}>
-                  <button type="button" onClick={() => choose(item)} className={`w-full px-4 py-2.5 text-left transition hover:bg-surface-sunk ${openedUnseen.has(item.key) ? 'bg-brand-50' : ''}`}>
-                    <span className="flex items-center justify-between gap-2 text-sm font-semibold text-ink-900">
-                      <span className={isWarning(item) ? 'text-red-700' : undefined}>{titleOf(item)}</span>
-                      {openedUnseen.has(item.key) && <span className="rounded-full bg-red-600 px-1.5 text-[10px] font-bold uppercase text-white">New</span>}
-                      {!openedUnseen.has(item.key) && isWarning(item) && <span className="rounded-full bg-red-50 px-1.5 text-[10px] font-bold uppercase text-red-700 ring-1 ring-red-200">Low stock</span>}
+                  <button type="button" onClick={() => choose(item)} className={`w-full px-4 py-2.5 text-left transition hover:bg-surface-sunk ${isUnread(item) ? 'bg-brand-50' : ''}`}>
+                    <span className="flex items-center justify-between gap-2 text-sm text-ink-900">
+                      <span className={`${isUnread(item) ? 'font-semibold' : 'font-normal'} ${isWarning(item) ? 'text-red-700' : ''}`}>{titleOf(item)}</span>
+                      {isUnread(item)
+                        ? <span className="shrink-0 rounded-full bg-red-600 px-1.5 text-[10px] font-bold uppercase text-white">Unread</span>
+                        : <span className="shrink-0 rounded-full bg-surface-sunk px-1.5 text-[10px] font-semibold uppercase text-ink-500">Read</span>}
                     </span>
                     <span className="block text-xs text-ink-500">{[textOf(item), formatDateTime(itemTime(item))].filter(Boolean).join(' · ')}</span>
                   </button>

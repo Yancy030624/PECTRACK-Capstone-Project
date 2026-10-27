@@ -285,10 +285,14 @@ describe('product catalog management', () => {
     // lives on `inventory` and stays there; `inStock` is the one deliberate
     // exception — a boolean, so the Menu can say "sold out" without the
     // number behind it ever leaving routes/inventory.js.
-    test('the public response carries no stock or cost field, by name', async () => {
+    // The count left IS public now, as stockLeft (the panel, 2026-10-26;
+    // MINOR_REVISIONS_PLAN.md M6). The levels, the ledger and any cost stay
+    // private.
+    test('the public response carries the count left, but no level or cost field, by name', async () => {
       const { product } = await (await fetch(`${baseUrl}/api/products/${publicAvailableId}`)).json()
-      assert.deepEqual(Object.keys(product).sort(), ['availabilityStatus', 'categoryId', 'categoryName', 'description', 'id', 'imageUrl', 'inStock', 'name', 'price', 'variant'])
+      assert.deepEqual(Object.keys(product).sort(), ['availabilityStatus', 'categoryId', 'categoryName', 'description', 'id', 'imageUrl', 'inStock', 'name', 'price', 'stockLeft', 'variant'])
       assert.equal(typeof product.inStock, 'boolean')
+      assert.equal(typeof product.stockLeft, 'number')
       for (const forbidden of ['stockQuantity', 'stock_quantity', 'cost', 'minStockLevel', 'min_stock_level']) {
         assert.ok(!(forbidden in product), `product must not carry a "${forbidden}" field`)
       }

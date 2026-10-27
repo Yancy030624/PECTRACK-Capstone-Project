@@ -7,10 +7,10 @@ import { formatPeso } from '../../lib/format.js'
 // crust colour. What the card lets a visitor DO depends on `mode`:
 //
 //   guest     "Sign in to order" (STOREFRONT_PLAN.md Decision 3)
-//   customer  a quantity stepper and Add to cart
+//   customer  Add to cart, one at a time; the amount is changed in the
+//             cart (the panel, 2026-10-26; MINOR_REVISIONS_PLAN.md M5)
 //   link      the whole card links to the Menu (Home's showcase)
 export function ProductCard({ product, mode = 'guest', onSignIn, onAdd, onOpen }) {
-  const [quantity, setQuantity] = useState(1)
   const [added, setAdded] = useState(false)
   // Sold out is a fact about stock, not a choice about the catalogue: the
   // card stays visible so the customer knows it exists, but cannot be
@@ -19,8 +19,7 @@ export function ProductCard({ product, mode = 'guest', onSignIn, onAdd, onOpen }
 
   const handleAdd = () => {
     if (soldOut) return
-    onAdd(product.id, quantity)
-    setQuantity(1)
+    onAdd(product.id, 1)
     setAdded(true)
     setTimeout(() => setAdded(false), 1500)
   }
@@ -44,23 +43,22 @@ export function ProductCard({ product, mode = 'guest', onSignIn, onAdd, onOpen }
       <h3 className="font-display text-lg font-semibold leading-snug text-cocoa-900 sm:text-xl">{product.name}</h3>
       {product.description && <p className="mt-1 line-clamp-2 text-xs leading-5 text-cocoa-500 sm:text-sm">{product.description}</p>}
       <div className="mt-auto pt-3">
-        <p className="font-display text-xl font-bold text-crust-600">{formatPeso(product.price)}</p>
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="font-display text-xl font-bold text-crust-600">{formatPeso(product.price)}</p>
+          {/* How many are left (MINOR_REVISIONS_PLAN.md M6); live. */}
+          {product.stockLeft != null && (
+            <p className={`text-xs font-bold ${soldOut ? 'text-cocoa-500' : 'text-leaf-600'}`}>{soldOut ? 'Sold out' : `${product.stockLeft} left`}</p>
+          )}
+        </div>
         {mode === 'guest' && (
           <button type="button" onClick={onSignIn} className="mt-3 inline-flex min-h-10 w-full items-center justify-center rounded-full bg-crust-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-crust-700">
             Sign in to order
           </button>
         )}
         {mode === 'customer' && (
-          <div className="mt-3 flex items-center gap-2">
-            <div className="flex items-center rounded-full border border-cream-300 bg-cream-50">
-              <button type="button" disabled={soldOut} onClick={() => setQuantity((q) => Math.max(1, q - 1))} aria-label={`Fewer ${product.name}`} className="grid h-10 w-9 place-items-center text-lg font-bold text-cocoa-700 disabled:opacity-40">−</button>
-              <span className="w-6 text-center text-sm font-bold text-cocoa-900" aria-live="polite">{quantity}</span>
-              <button type="button" disabled={soldOut} onClick={() => setQuantity((q) => q + 1)} aria-label={`More ${product.name}`} className="grid h-10 w-9 place-items-center text-lg font-bold text-cocoa-700 disabled:opacity-40">+</button>
-            </div>
-            <button type="button" disabled={soldOut} onClick={handleAdd} className={`inline-flex min-h-10 flex-1 items-center justify-center rounded-full px-3 text-sm font-bold text-white shadow-sm transition disabled:cursor-not-allowed disabled:bg-cocoa-500/40 ${added ? 'bg-leaf-600' : 'bg-crust-600 hover:bg-crust-700'}`}>
-              {soldOut ? 'Sold out' : added ? 'Added ✓' : 'Add'}
-            </button>
-          </div>
+          <button type="button" disabled={soldOut} onClick={handleAdd} className={`mt-3 inline-flex min-h-10 w-full items-center justify-center rounded-full px-3 text-sm font-bold text-white shadow-sm transition disabled:cursor-not-allowed disabled:bg-cocoa-500/40 ${added ? 'bg-leaf-600' : 'bg-crust-600 hover:bg-crust-700'}`}>
+            {soldOut ? 'Sold out' : added ? 'Added ✓' : 'Add to cart'}
+          </button>
         )}
       </div>
     </div>

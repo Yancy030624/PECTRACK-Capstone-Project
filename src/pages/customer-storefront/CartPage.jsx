@@ -60,11 +60,7 @@ export function CartPage() {
                   {product.variant && <p className="text-xs font-semibold text-crust-600">{product.variant}</p>}
                   <p className="mt-1 text-xs text-cocoa-500">{formatPeso(product.price)} each</p>
                 </div>
-                <div className="flex items-center rounded-full border border-cream-200">
-                  <button type="button" onClick={() => setQuantity(line.productId, line.quantity - 1)} aria-label="Decrease quantity" className="grid h-9 w-9 place-items-center text-base font-bold text-crust-700">−</button>
-                  <span className="w-7 text-center text-sm font-bold">{line.quantity}</span>
-                  <button type="button" onClick={() => setQuantity(line.productId, line.quantity + 1)} aria-label="Increase quantity" className="grid h-9 w-9 place-items-center text-base font-bold text-crust-700">+</button>
-                </div>
+                <QuantityBox quantity={line.quantity} max={product.stockLeft} name={product.name} onChange={(quantity) => setQuantity(line.productId, quantity)} />
                 <p className="w-20 shrink-0 text-right text-sm font-extrabold text-crust-700">{formatPeso(Number(product.price) * line.quantity)}</p>
                 <button type="button" onClick={() => removeItem(line.productId)} className="shrink-0 rounded-full px-3 py-2 text-xs font-bold text-red-700 transition hover:bg-red-50">Remove</button>
               </div>
@@ -85,5 +81,43 @@ export function CartPage() {
         </>
       )}
     </section>
+  )
+}
+
+// The amount of one cart line (the panel, 2026-10-26; MINOR_REVISIONS_PLAN.md
+// M5): − and + as before, and the number itself can be typed. A typed
+// amount is kept to 1 up to the stock left, and is applied when the box is
+// left or Enter is pressed — not on every keystroke, so clearing the box to
+// type "12" does not remove the line on the way.
+function QuantityBox({ quantity, max, name, onChange }) {
+  const [draft, setDraft] = useState(String(quantity))
+  useEffect(() => setDraft(String(quantity)), [quantity])
+  const limit = Number.isInteger(max) && max > 0 ? max : Infinity
+
+  const commit = () => {
+    const typed = Number(draft)
+    if (!draft || !Number.isInteger(typed) || typed < 1) {
+      setDraft(String(quantity))
+      return
+    }
+    const next = Math.min(typed, limit)
+    setDraft(String(next))
+    if (next !== quantity) onChange(next)
+  }
+
+  return (
+    <div className="flex items-center rounded-full border border-cream-200">
+      <button type="button" onClick={() => onChange(quantity - 1)} aria-label={`Fewer ${name}`} className="grid h-9 w-9 place-items-center text-base font-bold text-crust-700">−</button>
+      <input
+        value={draft}
+        onChange={(event) => setDraft(event.target.value.replace(/\D/g, '').slice(0, 4))}
+        onBlur={commit}
+        onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
+        inputMode="numeric"
+        aria-label={`How many ${name}`}
+        className="w-12 rounded-md bg-transparent text-center text-sm font-bold outline-none focus:bg-cream-100"
+      />
+      <button type="button" onClick={() => onChange(Math.min(quantity + 1, limit))} disabled={quantity >= limit} aria-label={`More ${name}`} className="grid h-9 w-9 place-items-center text-base font-bold text-crust-700 disabled:opacity-40">+</button>
+    </div>
   )
 }

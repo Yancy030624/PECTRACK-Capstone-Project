@@ -118,6 +118,16 @@
  * mouse click — so this is the one intentional visual change in Stage 0,
  * and only on keyboard focus.
  * --------------------------------------------------------------------- */
+/* A panel that scrolls without drawing a bar (the Create account pop-up on
+   a small screen; MINOR_REVISIONS_PLAN.md M3). Wheel, touch and keyboard
+   still scroll it. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @layer base {
   :focus-visible {
     outline: 2px solid var(--color-brand-600);

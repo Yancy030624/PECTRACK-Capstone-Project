@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { apiPost } from '../api/client.js'
 import logoMark from '../assets/logo-mark.png'
 import { PasswordToggle } from './PasswordToggle.jsx'
@@ -88,28 +88,27 @@ export function RegisterForm({ onSwitchToLogin }) {
   })
 
   const passwordHint = describePassword(form.password)
+  // Red only for a real problem (the panel, 2026-10-26; MINOR_REVISIONS_PLAN.md
+  // M2): a password that breaks a rule, a confirmation that does not match,
+  // or an error the form or server named. Otherwise the outline is blue.
+  const passwordWeak = Boolean(form.password) && passwordHint !== strongPasswordHint
+  const confirmMismatch = Boolean(form.confirmPassword) && form.password !== form.confirmPassword
+  const isWrong = (field) => Boolean(errors[field]) || (field === 'password' && passwordWeak) || (field === 'confirmPassword' && confirmMismatch)
 
-  // Submit to the API, which repeats all validation and hashes the password with bcrypt.
-  const handleSubmit = async (event) => {
-    event.preventDefault()
-    const missing = missingFields(form)
-    if (!missing.contactNumber && phone.required && !phone.verified) missing.contactNumber = 'Verify your contact number with the code we text you.'
-    if (Object.keys(missing).length) {
-      setErrors(missing)
-      setMessage('Please fill in the fields marked below.')
-      return
-    }
+  // The texted code (MINOR_REVISIONS_PLAN.md M4): asked for in a pop-up
+  // after Create account, not with buttons of its own on the form.
+  const [codeOpen, setCodeOpen] = useState(false)
+
+  const register = async (phoneVerificationToken) => {
     setSubmitting(true)
-    setMessage('')
-    setErrors({})
     try {
-      const data = await apiPost('/api/auth/register', { ...form, phoneVerificationToken: phone.token ?? undefined })
+      const data = await apiPost('/api/auth/register', { ...form, phoneVerificationToken })
       setForm(emptyForm)
+      setCodeOpen(false)
       setCreated(true)
-      // The server's own wording — it says a confirmation link went out,
-      // which is the one thing the customer has to act on next.
       setMessage(data.message)
     } catch (error) {
+      setCodeOpen(false)
       setErrors(error.errors ?? {})
       setMessage(error.message)
     } finally {
@@ -117,11 +116,57 @@ export function RegisterForm({ onSwitchToLogin }) {
     }
   }
 
-  const fieldClass = 'w-full rounded-2xl border border-stone-200 bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition focus:border-crust-500 focus:ring-4 focus:ring-cream-200'
+  // One press: check everything, then text the code and ask for it in the
+  // pop-up; a correct code creates the account (below). With codes off, the
+  // account is created at once.
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+    const missing = missingFields(form)
+    if (!missing.password && passwordWeak) missing.password = passwordHint
+    if (Object.keys(missing).length) {
+      setErrors(missing)
+      setMessage('Please fix the fields marked below.')
+      return
+    }
+    setMessage('')
+    setErrors({})
+    if (!phone.required) {
+      await register(undefined)
+      return
+    }
+    setSubmitting(true)
+    try {
+      // Taken username, email or number, or any other field the server
+      // refuses, is said now — before a code is texted.
+      await apiPost('/api/auth/register', { ...form, checkOnly: true })
+    } catch (error) {
+      setErrors(error.errors ?? {})
+      setMessage(error.message)
+      setSubmitting(false)
+      return
+    }
+    setSubmitting(false)
+    phone.reset()
+    setCodeOpen(true)
+    await phone.send(form.contactNumber)
+  }
+
+  // A correct code creates the account straight away.
+  useEffect(() => {
+    if (codeOpen && phone.verified && !submitting && !created) register(phone.token)
+    // register reads the form as it is now; this runs once, on verification.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codeOpen, phone.verified])
+
+  // Blue while typing or when fine; red only when the field is wrong.
+  const outline = (field) => (isWrong(field)
+    ? 'border-red-500 focus:border-red-500 focus:ring-red-100'
+    : 'border-stone-200 focus:border-sky-500 focus:ring-sky-100')
+  const fieldClass = (field) => `w-full min-w-0 rounded-2xl border bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition focus:ring-4 ${outline(field)}`
   // Same field with room on the right for the eye button. pl-4 pr-11, not
   // px-4 plus pr-11: two padding classes on one element are decided by
   // stylesheet order, not by which is written last.
-  const passwordFieldClass = 'w-full rounded-2xl border border-stone-200 bg-white py-2.5 pl-4 pr-11 text-sm shadow-sm outline-none transition focus:border-crust-500 focus:ring-4 focus:ring-cream-200'
+  const passwordFieldClass = (field) => `w-full min-w-0 rounded-2xl border bg-white py-2.5 pl-4 pr-11 text-sm shadow-sm outline-none transition focus:ring-4 ${outline(field)}`
 
   return (
     // The same top as the log-in form (the user, 2026-10-23): the logo
@@ -146,62 +191,47 @@ export function RegisterForm({ onSwitchToLogin }) {
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <RequiredLabel htmlFor="first-name">First name</RequiredLabel>
-                <input id="first-name" value={form.firstName} onChange={(event) => updateField('firstName', event.target.value)} autoComplete="given-name" placeholder="e.g. Maria" className={fieldClass} {...fieldProps('firstName')} />
+                <input id="first-name" value={form.firstName} onChange={(event) => updateField('firstName', event.target.value)} autoComplete="given-name" placeholder="e.g. Maria" className={fieldClass('firstName')} {...fieldProps('firstName')} />
                 <FieldError id="firstName-error" message={errors.firstName} />
               </div>
               <div>
                 <RequiredLabel htmlFor="last-name">Last name</RequiredLabel>
-                <input id="last-name" value={form.lastName} onChange={(event) => updateField('lastName', event.target.value)} autoComplete="family-name" placeholder="e.g. Dela Cruz" className={fieldClass} {...fieldProps('lastName')} />
+                <input id="last-name" value={form.lastName} onChange={(event) => updateField('lastName', event.target.value)} autoComplete="family-name" placeholder="e.g. Dela Cruz" className={fieldClass('lastName')} {...fieldProps('lastName')} />
                 <FieldError id="lastName-error" message={errors.lastName} />
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <RequiredLabel htmlFor="register-username">Username</RequiredLabel>
-                <input id="register-username" value={form.username} onChange={(event) => updateField('username', event.target.value)} autoComplete="username" placeholder="e.g. maria.delacruz" className={fieldClass} {...fieldProps('username')} />
+                <input id="register-username" value={form.username} onChange={(event) => updateField('username', event.target.value)} autoComplete="username" placeholder="e.g. maria.delacruz" className={fieldClass('username')} {...fieldProps('username')} />
                 <FieldError id="username-error" message={errors.username} />
               </div>
               <div>
                 <RequiredLabel htmlFor="contact-number">Contact number</RequiredLabel>
-                <input id="contact-number" maxLength={11} value={form.contactNumber} onChange={(event) => updateField('contactNumber', digitsOnly(event.target.value))} autoComplete="tel" inputMode="tel" placeholder="09XXXXXXXXX" className={fieldClass} {...fieldProps('contactNumber')} />
+                <input id="contact-number" maxLength={11} value={form.contactNumber} onChange={(event) => updateField('contactNumber', digitsOnly(event.target.value))} autoComplete="tel" inputMode="tel" placeholder="09XXXXXXXXX" className={fieldClass('contactNumber')} {...fieldProps('contactNumber')} />
                 <FieldError id="contactNumber-error" message={errors.contactNumber} />
-                {phone.required && (phone.verified ? (
-                  <p className="mt-1 text-xs font-bold text-emerald-700">✓ Number verified</p>
-                ) : (
-                  <div className="mt-2 space-y-2">
-                    <button type="button" onClick={() => phone.send(form.contactNumber)} disabled={phone.busy || !form.contactNumber.trim()} className="w-full rounded-2xl border border-crust-500 py-2 text-xs font-bold text-crust-700 transition hover:bg-cream-100 disabled:cursor-not-allowed disabled:opacity-60">
-                      {phone.token ? 'Send the code again' : 'Text me a code'}
-                    </button>
-                    {phone.token && (
-                      <div className="flex gap-2">
-                        <input value={phone.code} onChange={(event) => phone.setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" aria-label="Code from the text" className={fieldClass} />
-                        <button type="button" onClick={phone.check} disabled={phone.busy || phone.code.length !== 6} className="shrink-0 rounded-2xl bg-crust-600 px-4 text-xs font-bold text-white transition hover:bg-crust-700 disabled:cursor-not-allowed disabled:opacity-60">Verify</button>
-                      </div>
-                    )}
-                    {phone.info && <p className="text-xs text-stone-500">{phone.info}</p>}
-                    {phone.error && <p className="text-xs font-medium text-red-700">{phone.error}</p>}
-                  </div>
-                ))}
+                {phone.required && <p className="mt-1 text-[11px] text-stone-500">We text a code to this number when you create the account.</p>}
               </div>
             </div>
             <div>
               <RequiredLabel htmlFor="register-email">Email address</RequiredLabel>
-              <input id="register-email" type="email" value={form.email} onChange={(event) => updateField('email', event.target.value)} autoComplete="email" placeholder="you@example.com" className={fieldClass} {...fieldProps('email')} />
+              <input id="register-email" type="email" value={form.email} onChange={(event) => updateField('email', event.target.value)} autoComplete="email" placeholder="you@example.com" className={fieldClass('email')} {...fieldProps('email')} />
               <FieldError id="email-error" message={errors.email} />
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <RequiredLabel htmlFor="register-password">Password</RequiredLabel>
-                <div className="relative"><input id="register-password" type={showPassword ? 'text' : 'password'} value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" placeholder="Create password" className={passwordFieldClass} {...fieldProps('password')} /><PasswordToggle shown={showPassword} onToggle={() => setShowPassword(!showPassword)} /></div>
+                <div className="relative"><input id="register-password" type={showPassword ? 'text' : 'password'} value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" placeholder="Create password" className={passwordFieldClass('password')} {...fieldProps('password')} aria-invalid={isWrong('password') || undefined} /><PasswordToggle shown={showPassword} onToggle={() => setShowPassword(!showPassword)} /></div>
                 <FieldError id="password-error" message={errors.password} />
               </div>
               <div>
                 <RequiredLabel htmlFor="confirm-password">Confirm password</RequiredLabel>
-                <div className="relative"><input id="confirm-password" type={showConfirm ? 'text' : 'password'} value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} autoComplete="new-password" placeholder="Repeat password" className={passwordFieldClass} {...fieldProps('confirmPassword')} /><PasswordToggle shown={showConfirm} onToggle={() => setShowConfirm(!showConfirm)} /></div>
+                <div className="relative"><input id="confirm-password" type={showConfirm ? 'text' : 'password'} value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} autoComplete="new-password" placeholder="Repeat password" className={passwordFieldClass('confirmPassword')} {...fieldProps('confirmPassword')} aria-invalid={isWrong('confirmPassword') || undefined} /><PasswordToggle shown={showConfirm} onToggle={() => setShowConfirm(!showConfirm)} /></div>
                 <FieldError id="confirmPassword-error" message={errors.confirmPassword} />
               </div>
             </div>
-            <p className={`text-xs ${form.password && passwordHint === strongPasswordHint ? 'text-crust-600' : 'text-stone-500'}`}>{passwordHint}</p>
+            <p className={`text-xs ${!form.password ? 'text-stone-500' : passwordWeak ? 'font-medium text-red-700' : 'text-sky-700'}`}>{passwordHint}</p>
+            {confirmMismatch && !errors.confirmPassword && <p className="text-xs font-medium text-red-700">Passwords do not match.</p>}
             <div>
               <label className="flex cursor-pointer items-start gap-2 rounded-xl bg-white/70 p-2.5 text-xs leading-5 shadow-sm">
                 <input type="checkbox" checked={form.agree} onChange={(event) => updateField('agree', event.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-crust-600" {...fieldProps('agree')} />
@@ -210,8 +240,38 @@ export function RegisterForm({ onSwitchToLogin }) {
               <FieldError id="agree-error" message={errors.agree} />
             </div>
             {message && <p role="status" className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{message}</p>}
-            <button type="submit" disabled={submitting} className="w-full rounded-2xl bg-crust-600 py-2.5 text-sm font-bold text-white shadow-lg shadow-crust-600/25 transition hover:bg-crust-700 focus:ring-4 focus:ring-cream-200 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Creating account…' : 'Create account'}</button>
+            <button type="submit" disabled={submitting || codeOpen} className="w-full rounded-2xl bg-crust-600 py-2.5 text-sm font-bold text-white shadow-lg shadow-crust-600/25 transition hover:bg-crust-700 focus:ring-4 focus:ring-cream-200 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Checking…' : 'Create account'}</button>
           </form>
+          {codeOpen && (
+            // The texted code, in a pop-up over the form (M4). A correct code
+            // creates the account; Cancel goes back to the form as it was.
+            <div className="fixed inset-0 z-[60] grid place-items-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="code-heading">
+              <div className="w-full max-w-sm rounded-[22px] bg-[#fffedc] p-6 shadow-2xl">
+                <h3 id="code-heading" className="font-display text-xl font-bold text-crust-700">Enter the code</h3>
+                <p className="mt-1 text-xs text-stone-600">We texted a 6-digit code to <span className="font-semibold">{form.contactNumber}</span>.</p>
+                <input
+                  autoFocus
+                  value={phone.code}
+                  onChange={(event) => phone.setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                  onKeyDown={(event) => { if (event.key === 'Enter' && phone.code.length === 6) phone.check() }}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="6-digit code"
+                  aria-label="Code from the text"
+                  className={`mt-4 w-full rounded-2xl border bg-white px-4 py-2.5 text-center text-lg tracking-[0.4em] shadow-sm outline-none transition focus:ring-4 ${phone.error ? 'border-red-500 focus:border-red-500 focus:ring-red-100' : 'border-stone-200 focus:border-sky-500 focus:ring-sky-100'}`}
+                />
+                {phone.info && <p className="mt-2 text-xs text-stone-500">{phone.info}</p>}
+                {phone.error && <p className="mt-2 text-xs font-medium text-red-700">{phone.error}</p>}
+                <button type="button" onClick={phone.check} disabled={phone.busy || submitting || phone.code.length !== 6} className="mt-4 w-full rounded-2xl bg-crust-600 py-2.5 text-sm font-bold text-white transition hover:bg-crust-700 disabled:cursor-not-allowed disabled:opacity-60">
+                  {submitting ? 'Creating account…' : phone.busy ? 'Checking…' : 'Verify and create account'}
+                </button>
+                <div className="mt-3 flex justify-between text-xs">
+                  <button type="button" onClick={() => phone.send(form.contactNumber)} disabled={phone.busy || submitting} className="font-bold text-crust-600 hover:underline disabled:opacity-60">Send the code again</button>
+                  <button type="button" onClick={() => { setCodeOpen(false); phone.reset() }} disabled={submitting} className="font-bold text-stone-500 hover:underline">Cancel</button>
+                </div>
+              </div>
+            </div>
+          )}
           <p className="mt-5 border-t border-stone-200 pt-4 text-center text-xs text-stone-500">
             Already have an account? <button type="button" onClick={onSwitchToLogin} className="font-bold text-crust-600 hover:underline">Log in</button>
           </p>

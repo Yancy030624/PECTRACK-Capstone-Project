@@ -995,17 +995,31 @@ describe('customer email verification', () => {
 
   let firstToken
 
-  test('registering sends a confirmation link, and the new account starts unverified', async () => {
+  // MINOR_REVISIONS_PLAN.md M1 (the panel, 2026-10-26): registering sends
+  // no confirmation link, and the account may order at once. The
+  // confirmation flow below is kept for an account that is still
+  // unconfirmed from before then, so the test makes one that way.
+  test('registering sends no confirmation link, and the new account counts as confirmed', async () => {
     let registration
-    firstToken = await captureMailedToken(async () => {
+    const mailed = await captureMailedToken(async () => {
       registration = await post('/api/auth/register', { ...person, confirmPassword: person.password })
     })
     assert.equal(registration.status, 201)
-    assert.ok(firstToken, 'the confirmation email carries a token in its link')
+    assert.equal(mailed, null, 'no confirmation email at sign-up')
 
     const row = await pool.query('SELECT u.user_id, c.email_verified_at FROM users u JOIN customers c ON c.user_id = u.user_id WHERE u.username = $1', [person.username])
     userId = row.rows[0].user_id
-    assert.equal(row.rows[0].email_verified_at, null)
+    assert.ok(row.rows[0].email_verified_at)
+  })
+
+  test('an account still unconfirmed from before the change gets a link that stores only its hash', async () => {
+    await pool.query('UPDATE customers SET email_verified_at = NULL WHERE user_id = $1', [userId])
+    const login = await post('/api/auth/login', { identifier: person.username, password: person.password, audience: 'customer' })
+    const legacyCookie = login.headers.get('set-cookie').split(';')[0]
+    firstToken = await captureMailedToken(async () => {
+      await post('/api/auth/resend-verification', {}, legacyCookie)
+    })
+    assert.ok(firstToken, 'the confirmation email carries a token in its link')
 
     // Only a hash is stored — the token itself exists once, in the email.
     const stored = await pool.query('SELECT token_hash FROM email_verification_tokens WHERE user_id = $1', [userId])
@@ -1113,7 +1127,7 @@ describe('customer email verification', () => {
     await pool.query('UPDATE customers SET email = $2 WHERE user_id = $1', [userId, person.email])
   })
 
-  test('changing the email makes it unverified again and mails the NEW address', async () => {
+  test('changing the email sends no confirmation link and keeps the account able to order (M1)', async () => {
     const newEmail = `verifycust2_${runId}@example.com`
     let edit
     const token = await captureMailedToken(async () => {
@@ -1121,12 +1135,9 @@ describe('customer email verification', () => {
     })
     assert.equal(edit.status, 200)
     const body = await edit.json()
-    assert.equal(body.user.emailVerified, false)
-    assert.equal(body.verificationSent, true)
-    assert.ok(token)
-
-    const stored = await pool.query('SELECT email FROM email_verification_tokens WHERE user_id = $1 AND consumed_at IS NULL', [userId])
-    assert.equal(stored.rows[0].email, newEmail)
+    assert.equal(body.user.emailVerified, true)
+    assert.equal(body.verificationSent, false)
+    assert.equal(token, null)
   })
 
   test('re-saving the SAME email does not cost a verified customer their status', async () => {

@@ -66,13 +66,12 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
     document.addEventListener('keydown', closeOnEscape)
     return () => document.removeEventListener('keydown', closeOnEscape)
   }, [menuOpen])
-  // The bell (NOTIFICATIONS_PLAN.md, N3): order news opens the order in
-  // Order Management, delivery news opens Delivery Management, and a
-  // driver's new assignment opens My Deliveries. `at` makes a second click
-  // on the same order open it again.
+  // The bell (NOTIFICATIONS_PLAN.md, N3): order news, delivery news
+  // included, opens the order in Order Management (no Delivery Management
+  // module since MINOR_REVISIONS_PLAN.md M13). `at` makes a second click on
+  // the same order open it again.
   const openNotified = (item) => {
     if (item.type === 'assigned') openModule('My Deliveries')
-    else if (['out_for_delivery', 'delivered', 'delivery_failed'].includes(item.type)) openModule('Delivery Management')
     // A product running low (SENIOR_CONSULT_PLAN.md, S4): its stock.
     else if (item.type === 'low_stock') openModule('Inventory Management')
     // Due within the hour: the order's receipt, where Needed by lives.

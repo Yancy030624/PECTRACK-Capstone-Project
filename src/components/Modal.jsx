@@ -45,7 +45,10 @@ export function Modal({ open, onClose, children, labelledBy, closeOnBackdrop = t
       className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4"
       onClick={(event) => { if (closeOnBackdrop && event.target === event.currentTarget) onClose() }}
     >
-      <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={labelledBy} tabIndex={-1} className="max-h-full overflow-y-auto outline-none">
+      {/* No visible scroll bar beside the panel (the panel, 2026-10-26;
+          MINOR_REVISIONS_PLAN.md M3): a tall form still scrolls, by touch
+          or wheel, but no bar is drawn, and nothing scrolls sideways. */}
+      <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={labelledBy} tabIndex={-1} className="no-scrollbar flex max-h-full w-full justify-center overflow-x-hidden overflow-y-auto outline-none">
         {children}
       </div>
     </div>
