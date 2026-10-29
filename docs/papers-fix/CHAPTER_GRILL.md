@@ -12,7 +12,7 @@ Each round lists the decisions the group accepted. Tick a box (☐ → ☑) when
 
 | ☐ | Where | Change |
 |---|---|---|
-| ☐ | Title: p. 1, p. 2, p. 6, p. 11, General Objective (p. 21), and every other mention | "…with Predictive Analytics and **Inventory System**…" becomes "…with Predictive Analytics and **Automated Inventory**…". Check first that the endorsed title may still be changed. |
+| ☐ | Title: every mention | **Keep the adviser's title**: "PECTRACK: A Web-Based Order Management System with Predictive Analytics and **Inventory System** for Pecto's Bakery in Lucban, Quezon" (corrected 2026-10-30). Write it the same way everywhere: "in Lucban, Quezon", not "at Lucban Quezon" (p. 29, 53, 213, and the transcript headers), and "PECTRACK", not "Pectrack". |
 | ☐ | Title page and endorsement form (p. 1–2) | "May 2026" becomes the month of submission, unless the school's template fixes the proposal date. |
 | ☐ | Problem 6, "Manual Inventory Monitoring and Production Planning" (p. 10) | Its text is a copy of the payment problem. Replace it with the text below. |
 | ☐ | Problem 5's solution (p. 10) and every online-payment mention | "the bakery's QR Ph code" becomes "the bakery's **GCash QR code**"; "bank or e-wallet app" becomes "GCash". This matches the system, which accepts only GCash's numeric reference numbers. QR Ph may be named once, in Chapter 3 Technical Background, as the standard behind the code. |
@@ -39,7 +39,7 @@ Evidence: Appendix B, 07:55 ("may nag-e-inventory kasi ng stock"). The transcrip
 
 ☐ **Replace the whole Purpose and Description (p. 12 to the end of p. 20) with the text below.** It applies every Round 2 decision:
 
-1. The opening is formal, with three roles and the new title.
+1. The opening is formal, with three roles and the full title.
 2. Registration has no email confirmation: a pop-up asks for the SMS code.
 3. Cashiers have no "deliveries" access; they confirm GCash payments.
 4. The Dashboard tile for deliveries awaiting a rider becomes Payments to Confirm.
@@ -55,7 +55,7 @@ The forecast sentence in the last module uses the Round 11 wording.
 
 > ## Purpose and Description
 >
-> PECTRACK is a web-based Order Management System with Predictive Analytics and Automated Inventory developed to improve the daily transactions of Pecto's Bakery in Lucban, Quezon. The system streamlines the processes of ordering, payment, product tracking, and inventory management, making these operations faster and more organized. By replacing paper-based and manual procedures with digital record-keeping, the system reduces errors and saves time for both the staff and the customers of the bakery.
+> PECTRACK is a web-based Order Management System with Predictive Analytics and Inventory System developed to improve the daily transactions of Pecto's Bakery in Lucban, Quezon. The system streamlines the processes of ordering, payment, product tracking, and inventory management, making these operations faster and more organized. By replacing paper-based and manual procedures with digital record-keeping, the system reduces errors and saves time for both the staff and the customers of the bakery.
 >
 > The name PECTRACK was derived from *Pecto's Bakery* and the word *Track*, reflecting the system's capability to monitor the bakery's baked products, specifically the number of items produced, currently available, and sold. Through this capability, the bakery maintains an up-to-date view of its product inventory at all times.
 >
@@ -131,11 +131,11 @@ The forecast sentence in the last module uses the Round 11 wording.
 
 ### 3a. Objectives (p. 21–23): replace with this text
 
-Each objective is a numbered title on its own line, with its explanation below. Changes: the title, Objective 5 (GCash), Objective 7 (switch rule, "did not have. The system"), and "Staff record" in Objective 6.
+Each objective is a numbered title on its own line, with its explanation below. Changes: the full title written consistently, Objective 5 (GCash), Objective 7 (switch rule, "did not have. The system"), and "Staff record" in Objective 6.
 
 > **General Objective**
 >
-> The general objective of this study is to design, develop, and implement PECTRACK: A Web-Based Order Management System with Predictive Analytics and Automated Inventory for Pecto's Bakery in Lucban, Quezon. The system centralizes the bakery's online, walk-in, and advanced orders, customer records, order status, payments, and product inventory in a single web-based platform, and demonstrates demand forecasting to support the bakery's inventory planning.
+> The general objective of this study is to design, develop, and implement PECTRACK: A Web-Based Order Management System with Predictive Analytics and Inventory System for Pecto's Bakery in Lucban, Quezon. The system centralizes the bakery's online, walk-in, and advanced orders, customer records, order status, payments, and product inventory in a single web-based platform, and demonstrates demand forecasting to support the bakery's inventory planning.
 >
 > **Specific Objectives**
 >
@@ -164,7 +164,7 @@ Each objective is a numbered title on its own line, with its explanation below. 
 
 ### 3b. Scope intro and beneficiaries (p. 24): replace with this text
 
-> The general purpose of this study is to design, develop, and implement PECTRACK, a web-based Order Management System with Predictive Analytics and Automated Inventory for Pecto's Bakery in Lucban, Quezon. The system operates as an e-commerce platform that enables customers to browse products, place and pay for orders, and track their orders online, while providing the bakery with a centralized system for managing its daily operations.
+> The general purpose of this study is to design, develop, and implement PECTRACK, a web-based Order Management System with Predictive Analytics and Inventory System for Pecto's Bakery in Lucban, Quezon. The system operates as an e-commerce platform that enables customers to browse products, place and pay for orders, and track their orders online, while providing the bakery with a centralized system for managing its daily operations.
 >
 > The target users and beneficiaries of this study are the customers, the administrator, and the cashiers of Pecto's Bakery. The customers benefit from browsing products and ordering online without having to visit the store. The administrator gains full control of the system, including the products, inventory, production, users, and reports. The cashiers are provided with a structured means of taking walk-in and advanced orders, recording and confirming payments, managing stock, and marking delivery orders Out for Delivery and Delivered.
 
@@ -720,7 +720,7 @@ Labastida et al. (2024) is already in the reference list.
 | ☐ | Appendix C: delete Fig 44 (Delivery Person Inventory Management) and Fig 54 (Cashier Reporting and Analytics). Redraw Fig 55 (Customer: Orders and receipts, no My Payments) and Figs 49–51 (payments: staff confirm GCash references, no gateway). Redraw the others to match the Round 5 descriptions, add the Production and Forecast flowchart, renumber with no gaps (40, 48, and 52 are missing), and correct "FLow". |
 | ☐ | Appendix order: **A** Resource Persons, with the request letter (Fig 66) moved next to Fig 33; **B** Interview Transcripts; **C** Consultation Notes (new); **D** Flow Charts; **E** Accomplishment Form, with every consultation week; **F** Gantt Chart; **G** Curriculum Vitae. Remove the misplaced "APPENDIX E. Gantt Chart" heading on p. 181, and update the Table of Contents. |
 | ☐ | Request letter (p. 190): keep it **unchanged**, because it is signed. If asked about "pre-assessment process": it was a template error, and the interview covered order processing, as the transcript shows. |
-| ☐ | Transcript headers (p. 126 and the two later ones): use the new title, "…with Predictive Analytics and Automated Inventory for Pecto's Bakery in Lucban, Quezon". Leave the transcript text exactly as spoken. |
+| ☐ | Transcript headers (p. 126 and the two later ones): write the title exactly as on the title page, "…with Predictive Analytics and Inventory System for Pecto's Bakery in Lucban, Quezon" (they now say "at Lucban Quezon"). Leave the transcript text exactly as spoken. |
 | ☐ | Gantt chart and accomplishment forms: check that they run to the final defense. If they stop in May 2026, extend them with the June–November work: the three sprints, the client and adviser revisions of October 2026, the mock defense (October 26), and the final revisions. |
 
 ### 9a. Consultation Notes (draft; the group checks every line)
