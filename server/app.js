@@ -5,7 +5,7 @@ import cors from 'cors'
 import express from 'express'
 import { config } from './config.js'
 import { pool } from './db.js'
-import { apiLimiter, httpsRedirect, securityHeaders } from './lib/security.js'
+import { apiLimiter, httpsRedirect, sameSiteRequests, securityHeaders } from './lib/security.js'
 import addressesRouter from './routes/addresses.js'
 import authRouter from './routes/auth.js'
 import categoriesRouter from './routes/categories.js'
@@ -41,6 +41,9 @@ app.use(securityHeaders)
 app.use(httpsRedirect)
 
 app.use(cors({ origin: config.clientOrigin, credentials: true }))
+// Refuse a data-changing request another website started (CSRF), before
+// any body is parsed or route runs.
+app.use(sameSiteRequests)
 // The `verify` option here exists for exactly one route:
 // POST /api/payments/webhook (Phase 6.5 — see PHASE6.5_PLAN.md, Decision
 // 5). Verifying a PayMongo webhook signature requires the EXACT raw bytes

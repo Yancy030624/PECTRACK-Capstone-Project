@@ -108,6 +108,26 @@ describe('customer record management', () => {
     assert.ok((await asCashier.json()).customers.some((customer) => customer.id === targetCustomerId))
   })
 
+  test('a search is plain text: SQL and LIKE wildcards in it match nothing extra', async () => {
+    // SQL injection: the text is a bound parameter, so a classic payload is
+    // just a name nobody has. LIKE wildcards are escaped too, so "%" or "_"
+    // does not list every customer.
+    for (const search of ["' OR '1'='1", "'; DROP TABLE customers; --"]) {
+      const response = await fetch(`${baseUrl}/api/customers?search=${encodeURIComponent(search)}`, { headers: { Cookie: adminCookie } })
+      assert.equal(response.status, 200, search)
+      assert.equal((await response.json()).customers.some((customer) => customer.id === targetCustomerId), false, search)
+    }
+    // A wildcard character finds only records that really contain it.
+    for (const search of ['%', '_']) {
+      const response = await fetch(`${baseUrl}/api/customers?search=${encodeURIComponent(search)}`, { headers: { Cookie: adminCookie } })
+      assert.equal(response.status, 200, search)
+      for (const customer of (await response.json()).customers) {
+        assert.ok([customer.name, customer.email, customer.contactNumber].some((value) => String(value ?? '').includes(search)), `${search} matched ${customer.name}`)
+      }
+    }
+    assert.equal((await pool.query("SELECT to_regclass('customers') IS NOT NULL AS still_there")).rows[0].still_there, true)
+  })
+
   // COUNTER_ORDER_PLAN.md, Decision 3 — `id` (user_id) and `customerId`
   // (customers.customer_id) are two DIFFERENT numbers naming the same
   // person, verified here against the database's own row rather than

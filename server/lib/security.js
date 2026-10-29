@@ -39,13 +39,26 @@ import { config } from '../config.js'
 //     from /reset-password can hand that token to a third-party host.
 //     no-referrer sends nothing, ever.
 //
-//   Content-Security-Policy  Only frame-ancestors, deliberately. It is the
-//     modern replacement for X-Frame-Options (both are sent: older
-//     browsers read one, newer the other). A full CSP would have to
-//     enumerate script and style sources for a Vite bundle that inlines
-//     both, which is a maintenance burden for a page that loads no
-//     third-party script at all — the marginal gain does not pay for it.
-//     Recorded as optional item 10 in the review rather than pretended.
+//   Content-Security-Policy  The browser's second line of defence against
+//     cross-site scripting (XSS), behind React escaping every value it
+//     renders. Scripts may come only from this site, so an injected
+//     <script> or onclick= never runs; nothing may be framed, posted to,
+//     or fetched from another site. The production build has no inline
+//     script (dist/index.html loads one module file), so script-src needs
+//     no 'unsafe-inline'. Styles do: React's style={} props and Chart.js
+//     set inline styles, and Google Fonts serves the storefront's CSS and
+//     font files. img-src allows data: and blob: for icons and the
+//     product photo preview before upload. frame-ancestors 'none' is the
+//     modern X-Frame-Options (both are sent: older browsers read one,
+//     newer the other). Vite's dev server serves its own HTML, so this
+//     policy applies to the deployed site, not to `npm run dev`.
+//
+//   Permissions-Policy       The system never uses the camera, microphone,
+//     location or payment APIs, so a script that somehow ran could not
+//     ask for them either.
+//
+//   Cross-Origin-Opener-Policy  same-origin: a page opened from another
+//     site cannot keep a handle to a PECTRACK window and read or steer it.
 //
 //   Strict-Transport-Security  Production only. Telling a browser "never
 //     use plain HTTP for this host again" is close to irreversible for
@@ -53,13 +66,66 @@ import { config } from '../config.js'
 //     localhost would poison the developer's own browser for every other
 //     localhost project. Two years, subdomains included, which is what
 //     the HSTS preload list requires.
+export const contentSecurityPolicy = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com",
+  "img-src 'self' data: blob:",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join('; ')
+
 export function securityHeaders(_request, response, next) {
   response.setHeader('X-Content-Type-Options', 'nosniff')
   response.setHeader('X-Frame-Options', 'DENY')
   response.setHeader('Referrer-Policy', 'no-referrer')
-  response.setHeader('Content-Security-Policy', "frame-ancestors 'none'")
+  response.setHeader('Content-Security-Policy', contentSecurityPolicy)
+  response.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()')
+  response.setHeader('Cross-Origin-Opener-Policy', 'same-origin')
   if (config.isProduction) response.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains')
   next()
+}
+
+// ---------------------------------------------------------------------------
+// Cross-site request forgery (CSRF)
+// ---------------------------------------------------------------------------
+// The sign-in cookie is SameSite=Lax, so modern browsers already refuse to
+// send it with a POST, PATCH, PUT or DELETE started by another site. This
+// is the second check, for browsers or setups where that is not enough: a
+// request that changes data is refused when the browser says it came from
+// another site. Browsers attach these headers themselves and a page's
+// script cannot forge them:
+//   Sec-Fetch-Site: cross-site   the request was started by another site
+//   Origin                       the site that started it
+// An Origin is accepted when it is this site's own address (the Host the
+// request came to, which also covers a mis-set CLIENT_ORIGIN) or the
+// configured front-end address (Vite's dev server on another port).
+// A request with neither header is not from a browser page (the tests, a
+// health check, the old PayMongo webhook), and a CSRF attack needs a
+// browser, so it is let through to the normal sign-in and role checks.
+const changesData = (method) => !['GET', 'HEAD', 'OPTIONS'].includes(method)
+
+export function sameSiteRequests(request, response, next) {
+  if (!changesData(request.method)) return next()
+  const refuse = () => response.status(403).json({ message: 'This request came from another website and was refused.' })
+  if (request.headers['sec-fetch-site'] === 'cross-site') return refuse()
+  const origin = request.headers.origin
+  if (!origin) return next()
+  let host
+  try {
+    host = new URL(origin).host
+  } catch {
+    return refuse()
+  }
+  // Behind the host's proxy the public address may arrive as
+  // X-Forwarded-Host; it is read only when app.js trusts that proxy.
+  const forwardedHost = config.trustProxyHops > 0 ? request.headers['x-forwarded-host'] : undefined
+  if (host === request.headers.host || host === forwardedHost || origin === config.clientOrigin) return next()
+  return refuse()
 }
 
 // ---------------------------------------------------------------------------

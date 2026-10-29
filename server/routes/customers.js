@@ -54,7 +54,11 @@ router.use(requireAuth, requireRole('ADMIN', 'CASHIER'))
 router.get('/', async (request, response) => {
   const search = normalize(request.query.search)
   if (search) {
-    const result = await pool.query(`${customerSelectQuery} WHERE c.name ILIKE $1 OR c.email ILIKE $1 OR c.contact_num ILIKE $1 ORDER BY c.name`, [`%${search}%`])
+    // The search text is a bound parameter, so it can never change the SQL.
+    // Escaping % and _ also stops it acting as a LIKE wildcard: a search
+    // for "%" finds names containing "%", not every customer.
+    const pattern = `%${search.replace(/[\\%_]/g, (character) => `\\${character}`)}%`
+    const result = await pool.query(`${customerSelectQuery} WHERE c.name ILIKE $1 ESCAPE '\\' OR c.email ILIKE $1 ESCAPE '\\' OR c.contact_num ILIKE $1 ESCAPE '\\' ORDER BY c.name`, [pattern])
     return response.json({ customers: result.rows.map(mapCustomerRow) })
   }
   const result = await pool.query(`${customerSelectQuery} ORDER BY c.name`)

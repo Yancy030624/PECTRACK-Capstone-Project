@@ -10,7 +10,7 @@ import { after, before, beforeEach, describe, test } from 'node:test'
 import app from '../app.js'
 import { pool } from '../db.js'
 import { config, normalizeOrigin } from '../config.js'
-import { httpsRedirect, rateLimit, resetRateLimits } from './security.js'
+import { contentSecurityPolicy, httpsRedirect, rateLimit, resetRateLimits } from './security.js'
 
 describe('security headers', () => {
   let server
@@ -28,12 +28,23 @@ describe('security headers', () => {
 
   beforeEach(resetRateLimits)
 
-  test('every response carries the four always-on headers', async () => {
+  test('every response carries the always-on headers', async () => {
     const response = await fetch(`${baseUrl}/api/health`)
     assert.equal(response.headers.get('x-content-type-options'), 'nosniff')
     assert.equal(response.headers.get('x-frame-options'), 'DENY')
     assert.equal(response.headers.get('referrer-policy'), 'no-referrer')
-    assert.equal(response.headers.get('content-security-policy'), "frame-ancestors 'none'")
+    assert.equal(response.headers.get('content-security-policy'), contentSecurityPolicy)
+    assert.equal(response.headers.get('cross-origin-opener-policy'), 'same-origin')
+    assert.match(response.headers.get('permissions-policy'), /camera=\(\)/)
+  })
+
+  test('the CSP lets scripts come only from this site', async () => {
+    // XSS: an injected <script> or onclick= is refused by the browser,
+    // because script-src has neither 'unsafe-inline' nor another host.
+    const policy = Object.fromEntries(contentSecurityPolicy.split('; ').map((part) => [part.split(' ')[0], part]))
+    assert.equal(policy['script-src'], "script-src 'self'")
+    assert.equal(policy['object-src'], "object-src 'none'")
+    assert.equal(policy['frame-ancestors'], "frame-ancestors 'none'")
   })
 
   test('a REFUSED response carries them too', async () => {
@@ -54,6 +65,53 @@ describe('security headers', () => {
     // poison the developer's own browser for every other localhost project.
     const response = await fetch(`${baseUrl}/api/health`)
     assert.equal(response.headers.get('strict-transport-security'), null)
+  })
+})
+
+describe('cross-site request forgery (CSRF)', () => {
+  let server
+  let baseUrl
+
+  before(async () => {
+    server = app.listen(0)
+    await new Promise((resolve) => server.once('listening', resolve))
+    baseUrl = `http://localhost:${server.address().port}`
+  })
+
+  after(async () => {
+    await new Promise((resolve) => server.close(resolve))
+  })
+
+  beforeEach(resetRateLimits)
+
+  // POST /api/auth/logout changes data and needs no body, so the CSRF check
+  // is the only thing that can refuse it.
+  const logout = (headers) => fetch(`${baseUrl}/api/auth/logout`, { method: 'POST', headers })
+
+  test('a data-changing request from another website is refused', async () => {
+    const response = await logout({ Origin: 'https://evil.example' })
+    assert.equal(response.status, 403)
+  })
+
+  test('a request the browser marks as cross-site is refused, whatever its Origin', async () => {
+    const response = await logout({ 'Sec-Fetch-Site': 'cross-site', Origin: baseUrl })
+    assert.equal(response.status, 403)
+  })
+
+  test('an unreadable Origin ("null", from a sandboxed frame) is refused', async () => {
+    const response = await logout({ Origin: 'null' })
+    assert.equal(response.status, 403)
+  })
+
+  test('the site itself and the configured front end are let through', async () => {
+    assert.notEqual((await logout({ Origin: baseUrl, 'Sec-Fetch-Site': 'same-origin' })).status, 403)
+    assert.notEqual((await logout({ Origin: config.clientOrigin, 'Sec-Fetch-Site': 'same-site' })).status, 403)
+  })
+
+  test('reading is never blocked, and a request with no browser headers is let through', async () => {
+    const read = await fetch(`${baseUrl}/api/health`, { headers: { Origin: 'https://evil.example' } })
+    assert.equal(read.status, 200)
+    assert.notEqual((await logout({})).status, 403)
   })
 })
 
