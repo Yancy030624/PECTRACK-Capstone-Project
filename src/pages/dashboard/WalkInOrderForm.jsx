@@ -54,7 +54,7 @@ export function WalkInOrderForm({ onCreated }) {
   const [lines, setLines] = useState([])
   // A Manila date and time ('YYYY-MM-DD', 'HH:mm'); both blank means "as
   // soon as it's ready", the common case, stored as NULL. Today or later,
-  // 5:00 AM to 10:00 PM (lib/orderHours.js).
+  // 6:00 AM to 10:00 PM; a walk-in for now from 5:00 AM (lib/orderHours.js).
   const [neededDate, setNeededDate] = useState('')
   const [neededTime, setNeededTime] = useState('')
 
@@ -160,7 +160,7 @@ export function WalkInOrderForm({ onCreated }) {
       return
     }
     // A walk-in is for now; only a reservation has a date and time.
-    const timeError = isReserve ? checkPicked(neededDate, neededTime) : checkPicked('', '')
+    const timeError = isReserve ? checkPicked(neededDate, neededTime) : checkPicked('', '', new Date(), { walkIn: true })
     if (timeError) {
       setErrors({ requestedFulfillmentTime: timeError })
       return

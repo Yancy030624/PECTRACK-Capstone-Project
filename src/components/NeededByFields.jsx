@@ -4,7 +4,7 @@ import { dateLimits, openForNow, timeSlots } from '../lib/orderHours.js'
 // "When do you need it?" — a date and a time, used by the storefront
 // checkout and the cashier's Walk-in page (the adviser, 2026-10-16).
 // The date picker starts at today (tomorrow after 10:00 PM). The time is a
-// list of the times that can be chosen, every 30 minutes from 5:00 AM to
+// list of the times that can be chosen, every 30 minutes from 6:00 AM to
 // 10:00 PM and only those still ahead today (the seniors, 2026-10-24): a
 // native time input let people scroll to 3:00 AM and be refused on submit. Both blank means "as soon as it's ready", which is only taken
 // within those hours. lib/orderHours.js has the rules; the server checks
@@ -51,8 +51,8 @@ export function NeededByFields({ date, time, onDateChange, onTimeChange, idPrefi
       </div>
       <p className={helpClassName}>
         {openForNow()
-          ? 'Leave both blank for as soon as it’s ready. Orders are for 5:00 AM to 10:00 PM, up to 30 days ahead.'
-          : 'Ordering for right now is closed (5:00 AM to 10:00 PM). Choose a date and a time.'}
+          ? 'Leave both blank for as soon as it’s ready. Pickup and delivery are from 6:00 AM to 10:00 PM, up to 30 days ahead.'
+          : 'Ordering for right now is closed (pickup and delivery are from 6:00 AM to 10:00 PM). Choose a date and a time.'}
       </p>
     </div>
   )

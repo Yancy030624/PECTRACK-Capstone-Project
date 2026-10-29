@@ -79,7 +79,8 @@ export const config = {
   // PayMongo dashboard once ready to wire them in. The page PayMongo sends
   // the payer back to is built from clientOrigin (routes/payments.js).
   // Ordering hours (lib/orderHours.js). An order for "now" can only be
-  // placed between 5:00 AM and 10:00 PM Manila time. Off under the test
+  // placed until 10:00 PM Manila time, from 6:00 AM online and from
+  // 5:00 AM at the counter. Off under the test
   // runner, so the suites can place orders at any hour; orders.test.js and
   // lib/orderHours.test.js turn it on to test the rule itself.
   //

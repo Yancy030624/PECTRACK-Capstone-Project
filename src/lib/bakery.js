@@ -6,8 +6,9 @@
 // numbers for the emails the server sends. Change it with this file.
 //
 // HOURS — 5:00 AM to 10:00 PM, the same as the ordering hours
-// (lib/orderHours.js); the user confirmed them on 2026-10-16. Change the
-// values below and every page follows.
+// (lib/orderHours.js); the user confirmed them on 2026-10-16. Pickup and
+// delivery start at 6:00 AM, once the 5:00 AM batch has cooled (the user,
+// 2026-10-29). Change the values below and every page follows.
 export const bakery = {
   name: "Pecto's Bakery",
   tagline: "Lucban's Best Delicacies",
@@ -18,7 +19,7 @@ export const bakery = {
     days: 'Daily',
     time: '5:00 AM – 10:00 PM',
     opens: '5 AM',
-    note: 'Fresh batches at 5 AM and 3 PM',
+    note: 'Fresh batches at 5 AM and 3 PM · pickup and delivery from 6 AM',
   },
   phones: ['(042) 540-4366', '(042) 540-8838'],
 }

@@ -454,8 +454,9 @@ describe('order management', () => {
   // orders.requested_fulfillment_time existed in the schema from the
   // start and was never written; a cake order needs a date.
   //
-  // The adviser (2026-10-16): today or later, 5:00 AM to 10:00 PM
-  // inclusive, Manila time, for pickup, delivery and walk-in orders, and
+  // The adviser (2026-10-16): today or later, up to 10:00 PM inclusive,
+  // Manila time, for pickup, delivery and walk-in orders, from 6:00 AM
+  // (the user, 2026-10-29: the hour after the 5:00 AM bake is for cooling), and
   // checked here even when the form is bypassed. The times are two days
   // ahead, so the result does not depend on when the suite runs.
   const manilaDayAhead = (days) => manilaClock(new Date(Date.now() + days * 24 * 60 * 60 * 1000)).day
@@ -485,19 +486,19 @@ describe('order management', () => {
     }
   })
 
-  test('POST /api/orders takes times from 5:00 AM to 10:00 PM only — pickup, delivery and walk-in alike', async () => {
+  test('POST /api/orders takes times from 6:00 AM to 10:00 PM only — pickup, delivery and walk-in alike', async () => {
     const day = manilaDayAhead(2)
     const ways = [['pickup', {}], ['delivery', { delivery: true }], ['walk-in', { cookie: cashierCookie }]]
     for (const [way, options] of ways) {
-      for (const time of ['05:00', '21:59', '22:00']) {
+      for (const time of ['06:00', '21:59', '22:00']) {
         const accepted = await placeWithTime(manilaTime(day, time), options)
         assert.equal(accepted.status, 201, `${way} at ${time}`)
         createdOrderIds.push((await accepted.json()).order.id)
       }
-      for (const time of ['04:59', '22:01', '22:30', '23:00']) {
+      for (const time of ['04:59', '05:00', '05:59', '22:01', '22:30', '23:00']) {
         const refused = await placeWithTime(manilaTime(day, time), options)
         assert.equal(refused.status, 422, `${way} at ${time}`)
-        assert.match((await refused.json()).errors.requestedFulfillmentTime, /5:00 AM to 10:00 PM/)
+        assert.match((await refused.json()).errors.requestedFulfillmentTime, /6:00 AM to 10:00 PM/)
       }
     }
   })

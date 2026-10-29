@@ -162,7 +162,7 @@ const termsSections = [
       <List items={[
         'Prices are in Philippine pesos and are the prices shown when you place the order.',
         'An order is accepted only if the products are in stock and not past their date; the menu shows only what is available.',
-        'You may ask for a date and time from today up to 30 days ahead, between 5:00 AM and 10:00 PM. An order for right now can be placed between 5:00 AM and 10:00 PM.',
+        'You may ask for a pickup or delivery date and time from today up to 30 days ahead, between 6:00 AM and 10:00 PM. Pickup and delivery start at 6:00 AM so the morning breads can cool. An order for right now can be placed between 6:00 AM and 10:00 PM.',
         'Every order is paid first. An order is placed only once it is paid; it is then ready for pickup, or ready to be delivered, on the day you chose.',
         'Once placed, the items in an order cannot be changed.',
       ]} />

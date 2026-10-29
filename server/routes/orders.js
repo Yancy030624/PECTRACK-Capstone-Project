@@ -79,15 +79,15 @@ const maxFulfillmentLeadDays = 30
 
 // Parses an optional requestedFulfillmentTime. Returns { value } (a Date,
 // or null when the field was absent/blank) or { error }. Today or later,
-// 5:00 AM to 10:00 PM Manila time, and an order for "now" only within
-// those hours (lib/orderHours.js, the adviser 2026-10-16). Pickup,
-// delivery and walk-in orders all come through here.
-function parseFulfillmentTime(raw) {
+// 6:00 AM to 10:00 PM Manila time, and an order for "now" only within the
+// hours — from 5:00 AM for a walk-in (lib/orderHours.js). Pickup, delivery
+// and walk-in orders all come through here.
+function parseFulfillmentTime(raw, { walkIn }) {
   const now = new Date()
   const blank = raw == null || String(raw).trim() === ''
   const value = blank ? null : new Date(raw)
   if (value && Number.isNaN(value.getTime())) return { error: 'Enter a valid date and time.' }
-  const error = checkOrderTime(value, { now, enforceNowHours: config.orders.enforceNowHours })
+  const error = checkOrderTime(value, { now, enforceNowHours: config.orders.enforceNowHours, walkIn })
   if (error) return { error }
   if (value && value.getTime() > now.getTime() + maxFulfillmentLeadDays * 24 * 60 * 60 * 1000) return { error: `Orders can be placed up to ${maxFulfillmentLeadDays} days ahead.` }
   return { value }
@@ -327,7 +327,7 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
   if (orderType !== 'PICKUP' && orderType !== 'DELIVERY') return response.status(422).json({ message: 'Enter a valid order type.', errors: { orderType: 'Enter a valid order type.' } })
 
   const instructions = request.body.instructions == null ? null : String(request.body.instructions).trim().slice(0, instructionsMaxLength)
-  const fulfillment = parseFulfillmentTime(request.body.requestedFulfillmentTime)
+  const fulfillment = parseFulfillmentTime(request.body.requestedFulfillmentTime, { walkIn: request.user.role !== 'CUSTOMER' })
   if (fulfillment.error) return response.status(422).json({ message: fulfillment.error, errors: { requestedFulfillmentTime: fulfillment.error } })
   const items = Array.isArray(request.body.items) ? request.body.items : []
   if (items.length === 0) return response.status(422).json({ message: 'Add at least one item to the order.', errors: { items: 'Add at least one item to the order.' } })
