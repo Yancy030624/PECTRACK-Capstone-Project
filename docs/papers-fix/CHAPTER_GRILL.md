@@ -249,10 +249,6 @@ Every source below was checked against its journal or publisher page on 2026-10-
 >
 > Hewamalage, Ackermann, and Bergmeir (2023) reviewed common pitfalls in evaluating forecasts. They recommended rolling-origin testing, which preserves the time order of the data, warned that percentage errors break down when sales are very small, and stressed that every method must be compared against simple benchmarks. However, their guidelines are general and must be applied to each business's data. This study is relevant to PECTRACK because the system compares its methods against the seasonal naïve benchmark and reports the mean absolute error, which remains valid on days with low sales.
 >
-> *Forecasting Theory and Practice*
->
-> Petropoulos and colleagues (2022) presented an extensive review of forecasting theory and practice written by leading forecasting researchers. The review covers how data are prepared, how forecasts are produced and evaluated, and how they are applied in fields such as retail. However, its breadth means that each business must still choose the methods suited to its own data. This literature is relevant to PECTRACK because it provides an authoritative overview of the forecasting practices the system follows.
->
 > *Retail Forecasting Research and Practice*
 >
 > Fildes, Ma, and Kolassa (2022) reviewed forecasting research and practice in retail, from strategic decisions down to forecasts for individual products, including the effects of calendar events, promotions, and new products. However, much of the reviewed work comes from large retailers with extensive data. This literature is relevant to PECTRACK because it shows that daily, product-level forecasting with calendar effects is an established practice in retail.
@@ -325,13 +321,10 @@ If the adviser does not approve the per-product accuracy display, replace the la
 >
 > Makridakis, S., Spiliotis, E., & Assimakopoulos, V. (2022). M5 accuracy competition: Results, findings, and conclusions. *International Journal of Forecasting, 38*(4), 1346–1364. https://doi.org/10.1016/j.ijforecast.2021.11.013
 >
-> Petropoulos, F., et al. (2022). Forecasting: Theory and practice. *International Journal of Forecasting, 38*(3), 705–871. https://doi.org/10.1016/j.ijforecast.2021.11.001
->
 > Spiliotis, E., Makridakis, S., Semenoglou, A.-A., & Assimakopoulos, V. (2022). Comparison of statistical and machine learning methods for daily SKU demand forecasting. *Operational Research, 22*(3), 3037–3061. https://doi.org/10.1007/s12351-020-00605-2
 
 Hübner et al. (2024) and Labastida et al. (2024) are already in the reference list. Before printing:
-- add the page ranges for Cerqueira et al. (2020) and Fries and Ludwig (2024);
-- format the Petropoulos et al. (2022) author list as your school requires: APA 7 lists the first 19 authors, then "…", then the last author.
+- add the page ranges for Cerqueira et al. (2020) and Fries and Ludwig (2024).
 
 ---
 
@@ -446,7 +439,7 @@ In Data Privacy, replace "beyond what is necessary for payment processing throug
 | ☐ | Cruz, Mendoza, & Dela Cruz (2022); Lopez, Garcia, & Reyes (2023); Santos & Villanueva (2023); Salazar (2024); Alzoubi & Snider (2022); Sharma et al. (2023); Singh et al. (2024) | **Not found anywhere.** Delete each paragraph, its mention in the Synthesis, and its reference entry. |
 | ☐ | Taqueban & Villamor (2024) | An unpublished student thesis by Abao, Baja, & Taqueban, with no Villamor and an unconfirmed year. **Delete.** |
 | ☐ | Alzoubi, Elrehail, et al. (2022) in the reference list | Real, but about supply chain integration in healthcare; it does not support the order management claims. **Delete.** |
-| ☐ | Krishnamurthy et al. (2024) | Real, but in a weak journal. **Delete**; Fildes et al. (2022) and Petropoulos et al. (2022) cover the same point. |
+| ☐ | Krishnamurthy et al. (2024) | Real, but in a weak journal. **Delete**; Fildes et al. (2022) covers the same point. |
 | ☐ | "Comparative Study of AutoML and Machine Learning in Retail Forecasting" (2025) | Cite as **Kristian and Suri (2025)**. Reference: Kristian, D., & Suri, P. A. (2025). Comparative study of AutoML and machine learning in retail forecasting. *Procedia Computer Science, 269*, 882–891. https://doi.org/10.1016/j.procs.2025.09.031 |
 | ☐ | Pattnaik et al. (2025) | Pattnaik, M., Padhi, S. K., Panda, L., Naushad, U., Behera, R. K., Mishra, A., & Pattnaik, A. (2025). AI-driven sales forecasting in retail: Insights from Big Bazaar's sales data. *International Journal of Management Science and Engineering Management, 21*(1), 1–14. https://doi.org/10.1080/17509653.2025.2499076 |
 | ☐ | Divina et al. (2025) | Add DOI: https://doi.org/10.51584/IJRIAS.2025.1010000066 |
@@ -693,8 +686,6 @@ Labastida et al. (2024) is already in the reference list.
 >
 > Pattnaik, M., Padhi, S. K., Panda, L., Naushad, U., Behera, R. K., Mishra, A., & Pattnaik, A. (2025). AI-driven sales forecasting in retail: Insights from Big Bazaar's sales data. *International Journal of Management Science and Engineering Management, 21*(1), 1–14. https://doi.org/10.1080/17509653.2025.2499076
 >
-> Petropoulos, F., et al. (2022). Forecasting: Theory and practice. *International Journal of Forecasting, 38*(3), 705–871. https://doi.org/10.1016/j.ijforecast.2021.11.001
->
 > Red Ribbon Bakeshop. (2024). *Red Ribbon online ordering system*. https://www.redribbon.ph
 >
 > Shopify Inc. (2023). *E-commerce platform for online stores*. https://www.shopify.com
@@ -717,7 +708,6 @@ Labastida et al. (2024) is already in the reference list.
 
 **Before printing:**
 - Add the page ranges for Cerqueira et al. (2020), Fries and Ludwig (2024), and Sinaga and Johan (2024).
-- Format the Petropoulos et al. (2022) author list as the school requires.
 - Check that every source cited in the final text appears here, and that every entry here is cited in the text.
 
 ---
@@ -771,3 +761,58 @@ Drafted from the group's records of each consultation. Delete any line the clien
 > Changes made: the Events calendar, the weekend and event build-up of hard breads in the Production list, and the event variable in the forecast.
 
 Also consider a short entry for the adviser's consultation of October 16, 2026 (first and last name at registration, removal of the bulk-order approval, fewer clicks for staff) and the adviser's recommendation of GCash QR payments in place of the paid payment gateway, if the school allows adviser consultations in this appendix.
+
+---
+
+## Round 12: the teammate's predictive analytics RRL compared with the added literature (2026-10-30)
+
+The teammate's predictive analytics section is the one in the October 29 PDF (Chapter 2, p. 57–61): five local and five foreign sources. Every one was checked in Round 5. This round compares each source with what the system actually does, and keeps the set that supports it best.
+
+### 12a. What each source supports in PECTRACK
+
+| Source | Whose | Supports in the system | Verdict |
+|---|---|---|---|
+| Divina et al. (2025) | Teammate | Forecasting combined with sales and inventory in a Philippine food business | **Keep** |
+| Lo et al. (2025) | Teammate | Linear regression for sales forecasting, as in PECTRACK's multiple linear regression | **Keep** |
+| Orquesta (2026) | Teammate | Comparing several methods, Holt-Winters and linear regression among them, which PECTRACK does | **Keep** (strong match) |
+| Culili (2026) | Teammate | Forecasting alongside online ordering, like PECTRACK's storefront | **Keep** |
+| Custodio et al. (2026) | Teammate | Linear regression for product-level sales | **Keep** |
+| Krishnamurthy et al. (2024) | Teammate | General retail forecasting | **Delete** (Round 5: weak journal; Fildes et al., 2022, covers it) |
+| van der Haar et al. (2024) | Teammate | Forecasting tied to stock decisions for perishable goods, like the Production list | **Keep** |
+| Pattnaik et al. (2025) | Teammate | Comparing models per product category, including fresh food, like PECTRACK's per-product choice | **Keep** |
+| Kristian & Suri (2025) | Teammate | Accuracy varies by method and data, so methods must be compared | **Keep** |
+| Mansur et al. (2025) | Teammate | Holidays and salary days as forecast factors, the same as PECTRACK's payday and holiday variables | **Keep** (strong match) |
+| Hyndman & Athanasopoulos (2021) | Added | The three methods PECTRACK uses, and testing them in time order | **Keep** |
+| Hyndman & Kostenko (2007) | Added | Minimum data for seasonal models: the answer to "why 56 days?" | **Keep** |
+| Cerqueira et al. (2020) | Added | Testing on several periods in time order: the four-week backtest | **Keep** |
+| Hewamalage et al. (2023) | Added | Comparing against a simple benchmark, and using MAE rather than percentage error | **Keep** |
+| Fildes et al. (2022) | Added | Daily product-level retail forecasting with calendar effects | **Keep** |
+| Makridakis et al. (2022) | Added | Comparing methods on the same data before choosing | **Keep** |
+| Spiliotis et al. (2022) | Added | Machine learning does not always win, so the method is chosen per product | **Keep** |
+| Huber & Stuckenschmidt (2020) | Added | Bakery, daily demand, special calendar days: the closest match | **Keep** (strong match) |
+| Hübner et al. (2024) | Added | Forecasting reduces unsold bread in bakeries | **Keep** (already cited in Chapter 1) |
+| Fries & Ludwig (2024) | Added | Bakery staff need to trust the forecast and see its accuracy: the per-product accuracy display | **Keep** |
+| Bandara et al. (2021) | Added | Developing forecasts on generated data when real data are scarce: the assumed history | **Keep** |
+| Petropoulos et al. (2022) | Added | A general overview, already covered by the others | **Removed now**: deleted from 4a, 4e, and 8b |
+
+**Why both sets are needed:** the teammate's sources show that systems like PECTRACK exist and use forecasting, which answers "is it relevant?". The added sources show how PECTRACK's forecast is built and tested (methods, benchmark, backtest, minimum data, assumed data, bakeries), which answers the panel's major revision: "how do you know it is reliable?". The teammate's set alone has no source on testing a forecast or on how much data it needs.
+
+### 12b. Sharper relevance sentences for the teammate's paragraphs
+
+Replace the last sentence of each paragraph, so it names the PECTRACK feature it supports:
+
+| ☐ | Paragraph | New last sentence |
+|---|---|---|
+| ☐ | Divina et al. (2025) | "This study is relevant to PECTRACK because it is a local example of combining sales forecasting with sales and inventory records in a food business, which PECTRACK does for a bakery." |
+| ☐ | Lo et al. (2025) | "This study is relevant to PECTRACK because it uses linear regression for sales forecasting within a web-based system, as PECTRACK's multiple linear regression does." |
+| ☐ | Orquesta (2026) | "This study is relevant to PECTRACK because it compares several forecasting methods, including Holt-Winters seasonal smoothing and linear regression, which PECTRACK compares for each product before choosing one." |
+| ☐ | Culili (2026) | Keep as it is. |
+| ☐ | Custodio et al. (2026) | "This study is relevant to PECTRACK because it applies linear regression to product-level sales, as PECTRACK does for each of the bakery's products." |
+| ☐ | van der Haar et al. (2024) | "This study is relevant to PECTRACK because bakery products have limited shelf lives, so expected demand must inform how much is produced, which PECTRACK's forecast check does beside the Production list." |
+| ☐ | Pattnaik et al. (2025) | "This study is relevant to PECTRACK because it supports evaluating models for each product category, as PECTRACK selects the most accurate method for each product." |
+| ☐ | Kristian & Suri (2025) | "This study is relevant to PECTRACK because it shows that accuracy depends on the method and the data, which is why PECTRACK tests every method before using one." |
+| ☐ | Mansur et al. (2025) | "This research is relevant to PECTRACK because it shows that holidays and salary days affect sales, the same factors PECTRACK's regression uses, together with the day of the week and bakery events." |
+
+Also in these paragraphs, use APA 7 citations ("Lo et al. (2025)", not "Lo, Tolentino, and their colleagues (2025)"), and replace "The researchers of Comparative Study of AutoML and Machine Learning in Retail Forecasting (2025)" with "Kristian and Suri (2025)".
+
+**Order in Chapter 2:** Local Literature keeps the teammate's five local sources. Foreign Literature keeps her four foreign sources (without Krishnamurthy), followed by the Round 4a subsection "Forecasting Methods, Evaluation, and Data Requirements" (now without Petropoulos), then "Forecasting in Bakeries" and "Learning from Generated Data".
