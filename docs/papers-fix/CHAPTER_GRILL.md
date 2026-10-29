@@ -420,6 +420,8 @@ Keep one Sprint Planning text in Requirements Analysis and one in Requirements D
 
 ### 5g. System Security (p. 101–103)
 
+**Superseded (2026-10-30):** use the full System Security text in `SECURITY_PAPER_CHANGES.md`, section 3. It includes everything below, plus SQL injection, XSS, CSRF, rate limits, security headers, and uploads. The text below is kept only for reference.
+
 Replace the session paragraph:
 
 > Session management is also enforced throughout the system. Each user is assigned a unique session token upon login. When the "Keep me logged in" option is selected, the session lasts for up to seven days; otherwise, it ends when the browser is closed. Signing out ends the session, and changing the password signs the account out of every other device.
