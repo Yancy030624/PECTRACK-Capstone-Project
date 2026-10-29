@@ -51,18 +51,18 @@ export function CartPage() {
         <>
           <div className="mt-8 divide-y divide-cream-200 rounded-2xl border border-cream-200 bg-white">
             {validLines.map(({ line, product }) => (
-              <div key={line.productId} className="flex flex-wrap items-center gap-4 p-4 sm:p-5">
+              <div key={line.productId} className="grid grid-cols-[4rem_minmax(0,1fr)_auto] items-center gap-4 p-4 sm:flex sm:flex-wrap sm:p-5">
                 <span className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-2xl bg-cream-200 text-2xl">
                   {product.imageUrl ? <img src={product.imageUrl} alt="" className="h-full w-full object-cover" /> : <span aria-hidden="true">🥖</span>}
                 </span>
-                <div className="min-w-0 flex-1">
+                <div className="col-span-2 min-w-0 sm:min-w-40 sm:flex-1">
                   <p className="break-words font-display text-lg font-semibold text-cocoa-900">{product.name}</p>
                   {product.variant && <p className="text-xs font-semibold text-crust-600">{product.variant}</p>}
                   <p className="mt-1 text-xs text-cocoa-500">{formatPeso(product.price)} each</p>
                 </div>
                 <QuantityBox quantity={line.quantity} max={product.stockLeft} name={product.name} onChange={(quantity) => setQuantity(line.productId, quantity)} />
                 <p className="min-w-20 shrink-0 whitespace-nowrap text-right text-sm font-extrabold text-crust-700">{formatPeso(Number(product.price) * line.quantity)}</p>
-                <button type="button" onClick={() => removeItem(line.productId)} className="shrink-0 inline-flex min-h-11 items-center rounded-full px-3 py-2 text-sm font-bold text-red-700 transition hover:bg-red-50">Remove</button>
+                <button type="button" onClick={() => removeItem(line.productId)} className="col-span-3 justify-self-start shrink-0 inline-flex min-h-11 items-center rounded-full px-3 py-2 text-sm font-bold text-red-700 transition hover:bg-red-50">Remove</button>
               </div>
             ))}
           </div>
@@ -106,7 +106,7 @@ function QuantityBox({ quantity, max, name, onChange }) {
   }
 
   return (
-    <div className="flex items-center rounded-full border border-cream-200">
+    <div className="col-span-2 flex shrink-0 items-center justify-self-start rounded-full border border-cream-200">
       <button type="button" onClick={() => onChange(quantity - 1)} aria-label={`Fewer ${name}`} className="grid h-11 w-11 place-items-center text-base font-bold text-crust-700">−</button>
       <input
         value={draft}
