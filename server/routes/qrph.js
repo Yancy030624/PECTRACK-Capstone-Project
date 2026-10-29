@@ -35,9 +35,8 @@ const router = express.Router()
 // The QR image and a payment screenshot: what a phone saves or screenshots.
 const allowedImageTypes = new Set(['image/jpeg', 'image/png'])
 const imageUploadLimit = '5mb'
-// GCash and bank references are 10–20 characters; anything from 6 to 40
-// letters, digits and hyphens is accepted, spaces dropped.
-const referencePattern = /^[A-Za-z0-9-]{6,40}$/
+// Numeric payment references, with formatting spaces dropped.
+const referencePattern = /^[0-9]{6,40}$/
 const reasonMaxLength = 300
 
 router.use(requireAuth)
@@ -104,7 +103,7 @@ router.post('/', requireRole('CUSTOMER'), async (request, response) => {
   if (!orderId) return response.status(422).json({ message: 'Select a valid order.', errors: { orderId: 'Select a valid order.' } })
   const reference = normalize(request.body.reference).replace(/\s+/g, '')
   if (!referencePattern.test(reference)) {
-    return response.status(422).json({ message: 'Enter the reference number from your payment app.', errors: { reference: 'Enter the reference number shown in your payment app (letters and numbers).' } })
+    return response.status(422).json({ message: 'Enter the reference number from your payment app.', errors: { reference: 'Enter the 6-40 digit reference number shown in GCash.' } })
   }
 
   const customer = await pool.query('SELECT customer_id FROM customers WHERE user_id = $1', [request.user.id])

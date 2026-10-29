@@ -12,7 +12,7 @@ import { pool } from '../db.js'
 
 const runId = crypto.randomUUID().slice(0, 8)
 const randomContactNumber = () => `09${Math.floor(100000000 + Math.random() * 899999999)}`
-const reference = (label) => `QR${runId}${label}`.toUpperCase()
+const reference = (label) => BigInt(`0x${crypto.createHash('sha256').update(`${runId}:${label}`).digest('hex').slice(0, 16)}`).toString().padStart(20, '0')
 // The smallest valid PNG header is enough: the server checks the declared
 // type and that bytes arrived, not the picture.
 const pngBytes = (seed) => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from(seed)])
@@ -144,7 +144,9 @@ describe('QR Ph payments', () => {
   test('the customer sends a reference number for the full amount; bad ones are refused', async () => {
     const order = await checkout(3)
     assert.equal((await sendReference(order.id, 'ab')).status, 422)
-    assert.equal((await sendReference(order.id, 'has space!')).status, 422)
+    for (const invalid of ['has space!', 'ABCDEF', '12345A', '123-456', '123.456', '12345', '1'.repeat(41), '']) {
+      assert.equal((await sendReference(order.id, invalid)).status, 422, invalid)
+    }
     assert.equal((await sendReference(order.id, reference('own'), otherCustomerCookie)).status, 404)
     assert.equal((await json('POST', '/api/qrph', cashierCookie, { orderId: order.id, reference: reference('staff') })).status, 403)
 

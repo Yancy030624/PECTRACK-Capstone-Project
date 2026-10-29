@@ -179,18 +179,8 @@ export function ForecastPanel({ user, active }) {
   const selected = products.find((product) => product.productId === selectedId)
   const isAssumed = data?.run?.source === 'ASSUMED'
   const days = data?.dates ?? []
-  const beatBaseline = products.filter((product) => product.mae != null && product.baselineMae != null && product.mae < product.baselineMae).length
-  const scored = products.filter((product) => product.mae != null).length
   const methodCounts = products.reduce((counts, product) => ({ ...counts, [product.method]: (counts[product.method] ?? 0) + 1 }), {})
-  // The plain-language summary. Accuracy is 1 − WAPE over every scored
-  // product: of all the items the methods had to predict in testing, how
-  // much they got right. Shown as a percentage because "88% accurate"
-  // means something to anyone; "WAPE 0.12" does not.
   const weekTotal = products.reduce((sum, product) => sum + Number(product.total), 0)
-  const scoredProducts = products.filter((product) => product.wape != null)
-  const weightedError = scoredProducts.reduce((sum, product) => sum + Number(product.wape) * Number(product.total), 0)
-  const scoredTotal = scoredProducts.reduce((sum, product) => sum + Number(product.total), 0)
-  const accuracy = scoredTotal > 0 ? Math.max(0, Math.round((1 - weightedError / scoredTotal) * 100)) : null
   // The day the forecast expects the most sales, across all products.
   const dayTotals = days.map((date) => ({ date, total: products.reduce((sum, product) => sum + Number(product.days?.find((day) => day.date === date)?.predicted ?? 0), 0) }))
   const busiestDay = dayTotals.reduce((best, day) => (!best || day.total > best.total ? day : best), null)
@@ -250,16 +240,9 @@ export function ForecastPanel({ user, active }) {
             </Card>
           ) : (
             <>
-              <div className="mt-6 grid gap-4 sm:grid-cols-3">
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
                 <SummaryCard label="Expected to sell this week" value={`${whole(weekTotal)} items`} note={`Across ${products.length} products, next 7 days`} />
                 <SummaryCard label="Busiest day ahead" value={busiest ? busiest.label : '—'} note={busiest ? `About ${whole(busiest.total)} items expected` : 'No forecast yet'} />
-                {/* On practice data the backtest measures the method, not the
-                    bakery (ANALYTICS_PLAN.md, the defense wording): it says so. */}
-                <SummaryCard
-                  label={isAssumed ? 'Method test (practice data)' : 'How accurate'}
-                  value={accuracy == null ? 'Not tested yet' : `About ${accuracy}%`}
-                  note={accuracy == null ? 'Needs about eight weeks of history' : isAssumed ? 'How well the method fits the sample pattern — not Pecto\'s real sales' : `Checked against past weeks it had not seen${scored ? ` · ${beatBaseline} of ${scored} products beat a simple average` : ''}`}
-                />
               </div>
 
               {/* One bake list (RULES-PLANS/REPORTS_ALIGNMENT_ANALYSIS.md, D):
@@ -348,7 +331,7 @@ export function ForecastPanel({ user, active }) {
                       <li key={key}><span className="font-semibold text-ink-900">{label}</span> ({methodCounts[key] ?? 0} product{methodCounts[key] === 1 ? '' : 's'}) — {METHOD_HELP[key]}</li>
                     ))}
                   </ul>
-                  <p>&ldquo;Usually within ±N a day&rdquo; is the average miss in that test (mean absolute error). &ldquo;How accurate&rdquo; is 100% minus the share of items missed overall (weighted absolute percentage error). Days a product sold out are left out of learning and testing, because they show the shelf running empty, not what people wanted.</p>
+                  <p>&ldquo;Usually within ±N a day&rdquo; is the average miss in that test (mean absolute error). Days a product sold out are left out of learning and testing, because they show the shelf running empty, not what people wanted.</p>
                   <a href="/api/forecasts/latest?format=csv" download className="inline-flex h-8 items-center rounded-control border border-line-200 bg-surface px-3 text-xs font-medium text-ink-700 transition hover:bg-surface-sunk">Download the full forecast (CSV)</a>
                 </div>
               </details>

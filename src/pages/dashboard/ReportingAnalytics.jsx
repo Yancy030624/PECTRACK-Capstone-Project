@@ -18,6 +18,7 @@ import { exportLabels, logPrint } from '../../lib/exportLog.js'
 import { cssVar } from '../../lib/theme.js'
 
 const logsLimit = 20
+const inventoryPageSize = 10
 
 
 // UI_AUDIT.md Stage 5.5's specific instruction for this screen: "Chart
@@ -75,6 +76,7 @@ export function ReportingAnalytics({ user }) {
   const [sales, setSales] = useState(null)
   const [products, setProducts] = useState(null)
   const [inventory, setInventory] = useState(null)
+  const [inventoryPage, setInventoryPage] = useState(1)
   const [appliedRange, setAppliedRange] = useState(null)
   const [generating, setGenerating] = useState(false)
   const [errors, setErrors] = useState({})
@@ -101,6 +103,7 @@ export function ReportingAnalytics({ user }) {
       setSales(salesData)
       setProducts(productsData)
       setInventory(inventoryData)
+      setInventoryPage(1)
       setAppliedRange({ from: fromInput, to: toInput, groupBy, includeDemo })
     } catch (error) {
       setErrors(error.errors ?? {})
@@ -308,10 +311,9 @@ export function ReportingAnalytics({ user }) {
         {sales ? (
           <>
             {/* The money the bakery received (REPORTS_UI_PLAN.md U3). */}
-            <div className="mt-6 grid gap-4 sm:grid-cols-3">
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Sales</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.sales)}</p><p className="mt-2 text-xs text-ink-500">Money received, delivery fees not included</p></Card>
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Orders</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{sales.totals.orders}</p><p className="mt-2 text-xs text-ink-500">Paid in this range</p></Card>
-              <Card className="p-6"><p className="text-sm font-medium text-ink-500">Delivery fees</p><p className="mt-3 text-3xl font-semibold text-ink-900 tabular-nums xl:text-4xl">{formatPeso(sales.totals.deliveryFees)}</p><p className="mt-2 text-xs text-ink-500">Received with delivery orders</p></Card>
             </div>
             <p className={`mt-3 text-xs ${sales.totals.unpaidCash.orders > 0 ? 'font-medium text-status-wait-fg' : 'text-ink-500'}`}>
               Cash orders not yet paid: {sales.totals.unpaidCash.orders > 0 ? <>{sales.totals.unpaidCash.orders} ({formatPeso(sales.totals.unpaidCash.amount)})</> : 'none'}
@@ -433,8 +435,8 @@ export function ReportingAnalytics({ user }) {
                       </Tr>
                     </Thead>
                     <Tbody>
-                      {inventory.products.map((row) => (
-                        <Tr key={row.productId}>
+                      {inventory.products.map((row, index) => (
+                        <Tr key={row.productId} className={Math.floor(index / inventoryPageSize) + 1 === inventoryPage ? '' : 'hidden print:table-row'}>
                           <Td className="font-semibold text-ink-900">{row.productName}{row.variant ? ` (${row.variant})` : ''}</Td>
                           <Td priority="md" className="text-ink-500">{row.stockType === 'HARD' ? 'Hard' : 'Soft'}</Td>
                           <Td numeric>{row.added}</Td>
@@ -444,6 +446,13 @@ export function ReportingAnalytics({ user }) {
                       ))}
                     </Tbody>
                   </Table>
+                  <nav aria-label="Inventory product pages" className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-ink-500 print:hidden">
+                    <span role="status">Showing {(inventoryPage - 1) * inventoryPageSize + 1}-{Math.min(inventoryPage * inventoryPageSize, inventory.products.length)} of {inventory.products.length} products / Page {inventoryPage} of {Math.ceil(inventory.products.length / inventoryPageSize)}</span>
+                    <div className="flex gap-2">
+                      <Button type="button" size="sm" variant="secondary" disabled={inventoryPage === 1} onClick={() => setInventoryPage((page) => page - 1)}>Previous</Button>
+                      <Button type="button" size="sm" variant="secondary" disabled={inventoryPage * inventoryPageSize >= inventory.products.length} onClick={() => setInventoryPage((page) => page + 1)}>Next</Button>
+                    </div>
+                  </nav>
                 </div>
               )}
             </Card>

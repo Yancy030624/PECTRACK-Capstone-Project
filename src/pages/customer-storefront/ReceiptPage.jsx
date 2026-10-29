@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { apiGet, apiPatch, apiPost, apiUpload } from '../../api/client.js'
+import { apiGet, apiPatch, apiPost } from '../../api/client.js'
 import { PrintThisButton } from '../../components/PrintReport.jsx'
 import { bakery, bakeryAddress } from '../../lib/bakery.js'
 import { formatDateTime, formatPeso } from '../../lib/format.js'
@@ -30,7 +30,7 @@ const waitingPollMs = 8000
 
 const humanize = (status) => status.replaceAll('_', ' ').toLowerCase().replace(/^./, (letter) => letter.toUpperCase())
 // QRPH: QR Ph (QRPH_PLAN.md, Q14); GCASH: an older PayMongo payment.
-const methodName = (method) => ({ QRPH: 'QR Ph', GCASH: 'GCash', CASH: 'Cash' })[method] ?? method
+const methodName = (method) => ({ QRPH: 'GCash', GCASH: 'GCash', CASH: 'Cash' })[method] ?? method
 
 const latestQrPayment = (order) => [...order.payment.payments].reverse().find((payment) => payment.method === 'QRPH')
 
@@ -191,9 +191,6 @@ export function ReceiptPage({ user }) {
           <p className="mt-3 text-sm text-cocoa-500">
             We received reference number <span className="font-bold break-all text-cocoa-900">{sent.gatewayReference}</span> for <span className="font-bold text-cocoa-900">{formatPeso(sent.amount)}</span>. Someone at the bakery is checking it now. This page updates by itself, and we email you once it is confirmed.
           </p>
-          {sent.hasProof
-            ? <p className="mt-3 text-xs font-semibold text-green-800">Screenshot attached.</p>
-            : <ProofUpload paymentId={sent.id} onDone={load} />}
           <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
             <Link to="/account?tab=orders" className="rounded-full border border-crust-600 px-5 py-2.5 text-xs font-bold text-crust-700 transition hover:bg-cream-100">View My Orders</Link>
           </div>
@@ -206,12 +203,14 @@ export function ReceiptPage({ user }) {
     return (
       <section className="mx-auto max-w-2xl px-4 py-10 sm:px-7 sm:py-14">
         <div className="rounded-2xl border border-cream-200 bg-white p-6 text-center sm:p-8">
-          <h1 className="text-xl font-extrabold text-cocoa-900">Pay with QR Ph</h1>
+          <h1 className="text-xl font-extrabold text-cocoa-900">Pay with GCash</h1>
           <p className="mt-2 text-sm text-cocoa-500">
-            Scan the code with GCash, Maya or your bank's app, and pay exactly <span className="font-bold text-cocoa-900">{formatPeso(order.payment.balanceDue ?? order.payment.totalAmount)}</span> for order {orderLabel(order)}. We hold your order for 15 minutes.
+            Scan the code with GCash and pay exactly <span className="font-bold text-cocoa-900">{formatPeso(order.payment.balanceDue ?? order.payment.totalAmount)}</span> for order {orderLabel(order)}. We hold your order for 15 minutes.
           </p>
-          <QrCode qr={qr} />
-          <ReferenceForm order={order} onSent={load} />
+          <div className="mt-6 grid gap-6 sm:grid-cols-2 sm:items-center">
+            <QrCode qr={qr} />
+            <ReferenceForm order={order} onSent={load} />
+          </div>
           {actionError && <p role="alert" className="mt-2 text-xs font-semibold text-red-700">{actionError}</p>}
           <button type="button" onClick={cancelOrder} disabled={busy} className="mt-4 rounded-full border border-red-300 px-5 py-2.5 text-xs font-bold text-red-700 transition hover:bg-red-50 disabled:opacity-60">{busy ? 'Please wait…' : 'Cancel order'}</button>
         </div>
@@ -322,33 +321,29 @@ function QrCode({ qr }) {
     return <p role="alert" className="mt-5 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-800">The bakery's QR code is not available right now. Please call {bakery.phones[0]}, or cancel this order.</p>
   }
   return (
-    <figure className="mt-5">
-      <img src={qr.imageUrl} alt="The bakery's QR Ph code" className="mx-auto w-60 max-w-full rounded-2xl border border-cream-200 bg-white p-2" />
+    <figure className="min-w-0">
+      <img src={qr.imageUrl} alt="The bakery's GCash QR code" className="mx-auto max-h-80 w-auto max-w-full rounded-2xl border border-cream-200 bg-white p-2 object-contain" />
       {qr.accountName && <figcaption className="mt-2 text-xs text-cocoa-500">Account name: <span className="font-bold text-cocoa-900">{qr.accountName}</span></figcaption>}
     </figure>
   )
 }
 
-// The reference number from the customer's payment app (required) and a
-// screenshot of it (optional, QRPH_PLAN.md Q3).
+// The numeric reference number from the customer's payment app.
 function ReferenceForm({ order, onSent }) {
   const [reference, setReference] = useState('')
-  const [file, setFile] = useState(null)
   const [error, setError] = useState('')
   const [sending, setSending] = useState(false)
 
   const submit = async (event) => {
     event.preventDefault()
     setError('')
-    if (!reference.trim()) {
-      setError('Enter the reference number from your payment app.')
+    if (!/^[0-9]{6,40}$/.test(reference)) {
+      setError('Enter the 6-40 digit reference number from GCash.')
       return
     }
     setSending(true)
     try {
-      const { paymentId } = await apiPost('/api/qrph', { orderId: order.id, reference })
-      // The screenshot is extra: if it fails, the reference still counts.
-      if (file) await apiUpload(`/api/qrph/payments/${paymentId}/proof`, file).catch(() => null)
+      await apiPost('/api/qrph', { orderId: order.id, reference })
       await onSent()
     } catch (sendError) {
       setError(sendError.errors?.reference ?? sendError.message)
@@ -357,12 +352,18 @@ function ReferenceForm({ order, onSent }) {
   }
 
   return (
-    <form onSubmit={submit} noValidate className="mx-auto mt-6 max-w-sm space-y-2 text-left">
+    <form onSubmit={submit} noValidate className="mx-auto w-full min-w-0 max-w-sm space-y-2 text-left">
       <label className="block text-xs font-bold text-cocoa-700" htmlFor="qr-reference">Reference number</label>
       <input
         id="qr-reference"
         value={reference}
-        onChange={(event) => setReference(event.target.value)}
+        onChange={(event) => setReference(event.target.value.replace(/[^0-9]/g, '').slice(0, 40))}
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]{6,40}"
+        minLength={6}
+        maxLength={40}
+        required
         autoComplete="off"
         placeholder="e.g. 1234 567 890123"
         aria-invalid={Boolean(error)}
@@ -371,39 +372,8 @@ function ReferenceForm({ order, onSent }) {
       />
       {error
         ? <p id="qr-reference-error" role="alert" className="text-xs font-semibold text-red-700">{error}</p>
-        : <p id="qr-reference-help" className="text-xs text-cocoa-500">Shown in your app after paying, as Ref. No.</p>}
-      <label className="block pt-2 text-xs font-bold text-cocoa-700" htmlFor="qr-proof">Screenshot of the payment <span className="font-normal text-cocoa-500">(optional)</span></label>
-      <input id="qr-proof" type="file" accept="image/jpeg,image/png" onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="block w-full text-xs text-cocoa-700 file:mr-3 file:rounded-full file:border-0 file:bg-cream-100 file:px-4 file:py-2 file:text-xs file:font-bold file:text-crust-700" />
-      <button type="submit" disabled={sending} className="!mt-4 w-full rounded-2xl bg-crust-600 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-crust-700 disabled:opacity-60">{sending ? 'Sending…' : 'I have paid — send reference'}</button>
+        : <p id="qr-reference-help" className="text-xs text-cocoa-500">Enter 6-40 digits, shown in GCash after paying as Ref. No.</p>}
+      <button type="submit" disabled={sending} className="!mt-4 w-full rounded-2xl bg-crust-600 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-crust-700 disabled:opacity-60">{sending ? 'Sending…' : 'Place Order'}</button>
     </form>
-  )
-}
-
-// Attach a screenshot after the reference was sent.
-function ProofUpload({ paymentId, onDone }) {
-  const [error, setError] = useState('')
-  const [sending, setSending] = useState(false)
-  const choose = async (event) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    setSending(true)
-    setError('')
-    try {
-      await apiUpload(`/api/qrph/payments/${paymentId}/proof`, file)
-      await onDone()
-    } catch (uploadError) {
-      setError(uploadError.message)
-    } finally {
-      setSending(false)
-    }
-  }
-  return (
-    <div className="mt-4 text-xs text-cocoa-500">
-      <label className="cursor-pointer font-bold text-crust-700 hover:underline">
-        {sending ? 'Attaching…' : 'Attach a screenshot of the payment (optional)'}
-        <input type="file" accept="image/jpeg,image/png" onChange={choose} disabled={sending} className="sr-only" />
-      </label>
-      {error && <p role="alert" className="mt-1 font-semibold text-red-700">{error}</p>}
-    </div>
   )
 }
