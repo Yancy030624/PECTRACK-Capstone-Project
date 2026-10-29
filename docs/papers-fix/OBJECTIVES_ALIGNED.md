@@ -126,4 +126,4 @@ Objectives 1, 2 and 6 stay as they are.
 
 ## Later (not for now)
 
-- The predictive analytics studies for the Review of Related Literature are in `papers-rrl/PREDICTIVE_ANALYTICS_RRL.md`. Add them to the reference list when that section is written.
+- The predictive analytics studies are now in `CHAPTER_GRILL.md` (Rounds 4, 7, 8, and 12), with the final reference list in Round 8b.

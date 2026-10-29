@@ -1,7 +1,7 @@
 # PECTRACK paper: chapter-by-chapter grill
 
 **For:** the whole group
-**Based on:** `docs/PECTRACK_REVISED.pdf` (the version from October 29, 2026), split into `docs/papers-fix/chapters/`
+**Based on:** `docs/PECTRACK_REVISED.pdf` (the version from October 29, 2026)
 **Page numbers** are PDF page numbers (the number in the PDF viewer).
 
 Each round lists the decisions the group accepted. Tick a box (☐ → ☑) when the change is made in the paper.
@@ -31,7 +31,7 @@ Evidence: Appendix B, 07:55 ("may nag-e-inventory kasi ng stock"). The transcrip
 
 > …and it will switch to actual sales once 56 days are recorded, the shortest history on which its accuracy can be measured on four test weeks. From then on, each product's measured accuracy is shown beside the same-day-last-week estimate.
 
-**Corrected in Round 11:** the earlier rule ("switch only when the forecast beats same-day-last-week") was dropped. The chosen method can never be worse than the benchmark, because the benchmark is one of the candidates, so a product whose best method is the benchmark would never switch; and a run must not mix assumed and actual data. **System change (needs the adviser's OK):** show each product's measured accuracy on the Forecast tab, beside the benchmark's (plan: `RULES-PLANS/FORECAST_ACCURACY_PLAN.md`). Sources: `papers-rrl/PREDICTIVE_ANALYTICS_RRL.md`, section 3.
+**Corrected in Round 11:** the earlier rule ("switch only when the forecast beats same-day-last-week") was dropped. The chosen method can never be worse than the benchmark, because the benchmark is one of the candidates, so a product whose best method is the benchmark would never switch; and a run must not mix assumed and actual data. **System change (needs the adviser's OK):** show each product's measured accuracy on the Forecast tab, beside the benchmark's (plan: `RULES-PLANS/FORECAST_ACCURACY_PLAN.md`).
 
 ---
 
@@ -217,7 +217,7 @@ Show each product's measured accuracy on the Forecast tab, beside the same-day-l
 
 ## Round 4: Chapter 2, pages 57–71, Review of Related Literature (accepted 2026-10-29)
 
-Every source below was checked against its journal or publisher page on 2026-10-27 (`papers-rrl/PREDICTIVE_ANALYTICS_RRL.md`). Removing or replacing the existing sources waits for the citation check (Round 5).
+Every source below was checked against its journal or publisher page on 2026-10-27. Removing or replacing the existing sources waits for the citation check (Round 5).
 
 | ☐ | Change |
 |---|---|
