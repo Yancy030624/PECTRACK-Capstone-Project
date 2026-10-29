@@ -58,7 +58,7 @@ export function sendReservationNotices({ orderId, receiptUrl }) {
         'Your order:',
         ...lines.rows.map((line) => `  - ${line.name}${line.variant ? ` (${line.variant})` : ''} × ${line.quantity}  ${peso(Number(line.unit_price) * line.quantity)}`),
         '',
-        `Total paid: ${peso(order.total_amount)}${order.payment_method ? ` (${order.payment_method === 'GCASH' ? 'GCash' : 'Cash'})` : ''}`,
+        `Total paid: ${peso(order.total_amount)}${order.payment_method ? ` (${({ QRPH: 'QR Ph', GCASH: 'GCash' })[order.payment_method] ?? 'Cash'})` : ''}`,
         '',
         'Show this email, the receipt page, or the order number at the counter when you pick it up.',
         `Your receipt: ${receiptUrl}`,

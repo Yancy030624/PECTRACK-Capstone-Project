@@ -514,7 +514,7 @@ function StaffOrderManagement({ user, params }) {
                         <Td priority="xl">{order.requestedFulfillmentTime ? formatDateTime(order.requestedFulfillmentTime) : <span className="text-ink-500">—</span>}</Td>
                         <Td numeric>{formatPeso(order.totalAmount)}</Td>
                         <Td>
-                          <span className="inline-flex flex-wrap items-center gap-1.5"><StatusBadge status={order.status} /><NotPaidTag order={order} /></span>
+                          <span className="inline-flex flex-wrap items-center gap-1.5"><StatusBadge status={order.status} label={order.status === 'AWAITING_PAYMENT' ? 'Checking payment' : undefined} /><NotPaidTag order={order} /></span>
                         </Td>
                       </Tr>
                     ))}
@@ -598,9 +598,22 @@ function CustomerOrders({ user }) {
             <p className="text-xs text-ink-500">
               <strong className="text-ink-900">Order {orderLabel(orderDetail)}</strong> · {orderDetail.orderType} · placed {formatDate(orderDetail.orderDate)}
             </p>
-            <StatusBadge status={orderDetail.status} />
+            <StatusBadge status={orderDetail.status} label={orderDetail.status === 'AWAITING_PAYMENT' ? 'Checking payment' : undefined} />
           </div>
           <PaymentModeLine order={orderDetail} />
+          {/* QR Ph (QRPH_PLAN.md, Q12): the customer's own order waits while
+              the bakery checks the reference, or was not accepted. */}
+          {orderDetail.status === 'AWAITING_PAYMENT' && (
+            <p className="rounded-panel bg-surface-warm p-3 text-sm text-ink-700">
+              The bakery is checking your QR Ph payment.{' '}
+              <Link to={`/receipt/${orderDetail.id}`} className="font-semibold text-brand-700 hover:underline">Open order</Link>
+            </p>
+          )}
+          {orderDetail.status === 'CANCELLED' && orderDetail.payment?.payments?.some((payment) => payment.rejectedReason) && (
+            <p className="rounded-panel bg-status-fail-bg p-3 text-sm text-status-fail-fg">
+              Payment not accepted: {orderDetail.payment.payments.findLast((payment) => payment.rejectedReason).rejectedReason}
+            </p>
+          )}
           {orderDetail.instructions && <p className="text-xs text-ink-500">Instructions: {orderDetail.instructions}</p>}
           {orderDetail.requestedFulfillmentTime && <p className="text-xs text-ink-500">Needed by: <span className="font-semibold text-ink-900">{formatDateTime(orderDetail.requestedFulfillmentTime)}</span></p>}
           {/* Where a delivery order actually stands — deliveries.status,

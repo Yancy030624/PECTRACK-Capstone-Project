@@ -30,7 +30,7 @@ const emptyFilters = { from: '', to: '', method: '' }
 // The API pages at most 200 rows at a time; the export asks page by page.
 const exportPageSize = 200
 const exportMaxPages = 50
-const methodName = (method) => ({ CASH: 'Cash', GCASH: 'GCash' })[method] ?? method
+const methodName = (method) => ({ CASH: 'Cash', QRPH: 'QR Ph', GCASH: 'GCash' })[method] ?? method
 
 // The query for a set of filters, PAID payments only.
 function paymentsQuery(filters, limit, offset) {
@@ -139,7 +139,8 @@ export function PaymentLog({ user }) {
           <Select value={filters.method} onChange={(event) => setFilters({ ...filters, method: event.target.value })}>
             <option value="">Any</option>
             <option value="CASH">Cash</option>
-            <option value="GCASH">GCash</option>
+            <option value="QRPH">QR Ph</option>
+            <option value="GCASH">GCash (older)</option>
           </Select>
         </Field>
         <div className="flex gap-2">
@@ -177,10 +178,10 @@ export function PaymentLog({ user }) {
                   <Tr key={payment.id}>
                     <Td className="font-semibold text-ink-900">{orderLabel(payment)}</Td>
                     {!isCustomer && <Td priority="md">{payment.customerName ?? 'Walk-in'}</Td>}
-                    <Td>{payment.method}</Td>
+                    <Td>{methodName(payment.method)}</Td>
                     <Td numeric>{formatPeso(payment.amount)}</Td>
                     <Td priority="xl" className="text-ink-500">{payment.gatewayReference ?? '—'}</Td>
-                    <Td priority="lg">{payment.recordedByName ?? (payment.gatewayReference ? 'Online (GCash)' : '—')}</Td>
+                    <Td priority="lg">{payment.recordedByName ?? (payment.gatewayReference ? `Online (${methodName(payment.method)})` : '—')}</Td>
                     <Td priority="md" className="whitespace-nowrap text-ink-500">{formatDateTime(payment.paymentDate ?? payment.createdAt)}</Td>
                   </Tr>
                 ))}
@@ -205,7 +206,7 @@ export function PaymentLog({ user }) {
 function PaymentLogPrint({ rows, filters, user, title, showCustomer }) {
   const totalCentavos = rows.reduce((sum, payment) => sum + Math.round(Number(payment.amount) * 100), 0)
   const range = filters.from || filters.to ? `${filters.from || 'the start'} to ${filters.to || 'today'}` : 'All dates'
-  const subtitle = [range, filters.method ? methodName(filters.method) : 'Cash and GCash', `${rows.length} payment${rows.length === 1 ? '' : 's'}`].join(' · ')
+  const subtitle = [range, filters.method ? methodName(filters.method) : 'All methods', `${rows.length} payment${rows.length === 1 ? '' : 's'}`].join(' · ')
   return (
     <div className="print-only-target hidden print:block">
       <PrintHeader title={title} subtitle={subtitle} user={user} />
@@ -228,7 +229,7 @@ function PaymentLogPrint({ rows, filters, user, title, showCustomer }) {
               {showCustomer && <td className="py-1">{payment.customerName ?? 'Walk-in'}</td>}
               <td className="py-1">{methodName(payment.method)}</td>
               <td className="py-1">{payment.gatewayReference ?? '—'}</td>
-              <td className="py-1">{payment.recordedByName ?? (payment.gatewayReference ? 'Online (GCash)' : '—')}</td>
+              <td className="py-1">{payment.recordedByName ?? (payment.gatewayReference ? `Online (${methodName(payment.method)})` : '—')}</td>
               <td className="py-1">{formatDateTime(payment.paymentDate ?? payment.createdAt)}</td>
               <td className="py-1 text-right tabular-nums">{formatPeso(payment.amount)}</td>
             </tr>

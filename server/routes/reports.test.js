@@ -209,7 +209,7 @@ describe('reporting & analytics', () => {
     const body = await response.json()
     assert.deepEqual(body.buckets, [])
     assert.deepEqual(body.totals, { sales: '0.00', orders: 0, averageOrder: '0.00', deliveryFees: '0.00', unpaidCash: { orders: 0, amount: '0.00' } })
-    assert.deepEqual(body.byMethod, [{ key: 'CASH', orders: 0, sales: '0.00' }, { key: 'GCASH', orders: 0, sales: '0.00' }])
+    assert.deepEqual(body.byMethod, [{ key: 'CASH', orders: 0, sales: '0.00' }, { key: 'QRPH', orders: 0, sales: '0.00' }, { key: 'GCASH', orders: 0, sales: '0.00' }])
     assert.deepEqual(body.byType.map((row) => row.key), ['WALK_IN', 'PICKUP', 'DELIVERY'])
   })
 

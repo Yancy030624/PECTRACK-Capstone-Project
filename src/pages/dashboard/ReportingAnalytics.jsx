@@ -351,7 +351,7 @@ export function ReportingAnalytics({ user }) {
             <Card className="mt-6 p-6">
               <h2 className="text-lg font-semibold text-ink-900">Where the sales came from</h2>
               <div className="mt-4 grid gap-6 lg:grid-cols-2">
-                <BreakdownTable caption="By payment method" rows={sales.byMethod} names={{ CASH: 'Cash', GCASH: 'GCash' }} total={sales.totals.sales} />
+                <BreakdownTable caption="By payment method" rows={sales.byMethod} names={{ CASH: 'Cash', QRPH: 'QR Ph', GCASH: 'GCash' }} total={sales.totals.sales} />
                 <BreakdownTable caption="By order type" rows={sales.byType} names={{ WALK_IN: 'Walk-in / counter', PICKUP: 'Online pickup', DELIVERY: 'Delivery' }} total={sales.totals.sales} />
               </div>
             </Card>

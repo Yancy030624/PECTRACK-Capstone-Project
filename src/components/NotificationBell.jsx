@@ -50,8 +50,9 @@ const wording = {
   order_placed: (item) => [`New order ${orderLabel(item)}`, `${item.customerName ?? 'Walk-in'}, ${item.orderType === 'DELIVERY' ? 'delivery' : 'pickup'}, ${formatPeso(item.totalAmount)}${item.unpaid && item.paymentMode === 'CASH' ? ' · cash, not paid' : ''}`],
   payment_received: (item) => [
     `Payment received for ${orderLabel(item)}`,
-    `GCash ${formatPeso(item.amount)}${item.orderStatus === 'CANCELLED' ? ' — the order was cancelled; settle it with the customer' : ''}`,
+    `${item.paymentMethod === 'QRPH' ? 'QR Ph' : 'GCash'} ${formatPeso(item.amount)}${item.orderStatus === 'CANCELLED' ? ' — the order was cancelled; settle it with the customer' : ''}`,
   ],
+  payment_to_confirm: (item) => [`Payment to confirm for ${orderLabel(item)}`, `QR Ph ${formatPeso(item.amount)} from ${item.customerName ?? 'a customer'} — check the reference number`],
   order_cancelled: (item) => [`Order ${orderLabel(item)} cancelled`, item.actorIsCustomer ? 'By the customer' : `By ${item.actorName ?? 'staff'}`],
   out_for_delivery: (item) => [`Order ${orderLabel(item)} is on the way`, `With ${item.actorName ?? 'the driver'}`],
   delivered: (item) => [`Order ${orderLabel(item)} delivered`, [`By ${item.actorName ?? 'the driver'}`, [item.recipientName, item.barangay].filter(Boolean).join(', ')].filter(Boolean).join(' · ')],

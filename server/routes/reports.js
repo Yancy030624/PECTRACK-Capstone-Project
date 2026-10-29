@@ -13,6 +13,7 @@ import { requireAuth, requireRole } from '../lib/auth.js'
 import { bucketSql, csvRow, dateRangeSql, parseDateRange, parseGroupBy } from '../lib/reporting.js'
 import { normalize } from '../lib/validation.js'
 import { logExport, PRINT_TYPES } from '../lib/exportLog.js'
+import { qrphOverdueMinutes } from '../lib/qrph.js'
 
 const router = express.Router()
 
@@ -190,7 +191,9 @@ router.get('/sales', adminOnly, async (request, response) => {
     const row = rows.find((entry) => entry.key === key)
     return { key, orders: row?.orders ?? 0, sales: row?.sales ?? '0.00' }
   })
-  const byMethod = breakdown(methodResult.rows, ['CASH', 'GCASH'])
+  // QR Ph replaced PayMongo GCash (QRPH_PLAN.md, Q14); older GCash payments
+  // keep their own row.
+  const byMethod = breakdown(methodResult.rows, ['CASH', 'QRPH', 'GCASH'])
   const byType = breakdown(typeResult.rows, ['WALK_IN', 'PICKUP', 'DELIVERY'])
 
   // The export history (REPORTS_UI_PLAN.md U2): viewing the report is not
@@ -207,6 +210,7 @@ router.get('/sales', adminOnly, async (request, response) => {
     // and a preamble would push the real header off row 1 and break a
     // plain spreadsheet import. The date range travels in the filename.
     const typeNames = { WALK_IN: 'Walk-in / counter', PICKUP: 'Online pickup', DELIVERY: 'Delivery' }
+    const methodNames = { CASH: 'Cash', QRPH: 'QR Ph', GCASH: 'GCash' }
     const lines = [
       csvRow([`Period (${groupBy})`, 'Orders', 'Sales (excl. delivery fees)', 'Delivery fees']),
       ...buckets.map((bucket) => csvRow([bucket.period, bucket.orders, bucket.sales, bucket.deliveryFees])),
@@ -214,7 +218,7 @@ router.get('/sales', adminOnly, async (request, response) => {
       csvRow(['Totals', totals.orders, totals.sales, totals.deliveryFees]),
       '',
       csvRow(['By payment method', 'Orders', 'Sales']),
-      ...byMethod.map((row) => csvRow([row.key === 'GCASH' ? 'GCash' : 'Cash', row.orders, row.sales])),
+      ...byMethod.map((row) => csvRow([methodNames[row.key], row.orders, row.sales])),
       '',
       csvRow(['By order type', 'Orders', 'Sales']),
       ...byType.map((row) => csvRow([typeNames[row.key], row.orders, row.sales])),
@@ -242,7 +246,7 @@ router.get('/sales', adminOnly, async (request, response) => {
 // database that already has to know the right answer (Decision 1) compute
 // it start to finish.
 router.get('/summary', async (_request, response) => {
-  const [todayResult, outstandingResult, deliveriesResult, kitchen] = await Promise.all([
+  const [todayResult, outstandingResult, deliveriesResult, kitchen, qrph] = await Promise.all([
     pool.query(`
       WITH today_range AS (
         SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date AS local_date,
@@ -304,6 +308,11 @@ router.get('/summary', async (_request, response) => {
                    AND data_source = 'RECORDED'
                    AND (COALESCE(requested_fulfillment_time, order_date) AT TIME ZONE 'Asia/Manila')::date
                        = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date`),
+    // QR Ph references waiting for staff (QRPH_PLAN.md, Q8 and Q11), and
+    // those waiting longer than lib/qrph.js qrphOverdueMinutes.
+    pool.query(`SELECT COUNT(*)::int AS to_confirm,
+                       COUNT(*) FILTER (WHERE created_at < CURRENT_TIMESTAMP - make_interval(mins => $1::int))::int AS overdue
+                  FROM payments WHERE payment_method = 'QRPH' AND status = 'PENDING'`, [qrphOverdueMinutes]),
   ])
   const todayRow = todayResult.rows[0]
 
@@ -321,6 +330,8 @@ router.get('/summary', async (_request, response) => {
     deliveriesNeedingAttention: deliveriesResult.rows[0].n,
     ordersToPrepare: kitchen.rows[0].to_prepare,
     ordersOverdue: kitchen.rows[0].overdue,
+    paymentsToConfirm: qrph.rows[0].to_confirm,
+    paymentsOverdue: qrph.rows[0].overdue,
   })
 })
 

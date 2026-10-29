@@ -36,7 +36,9 @@ const router = express.Router()
 // is VARCHAR(50) in the approved thesis schema; a Set here guarantees the
 // same thing an enum would at the API boundary, without a migration to add
 // a third method later.
-const paymentMethods = new Set(['CASH', 'GCASH'])
+// QRPH: a scan of the bakery's QR Ph code (QRPH_PLAN.md); GCASH stays for
+// older screens and PayMongo rows.
+const paymentMethods = new Set(['CASH', 'QRPH', 'GCASH'])
 // Mirrors payments.gateway_reference's own VARCHAR(255) in the approved
 // thesis schema. Kept as a named constant so the validation below and the
 // column can be seen to agree, rather than a bare 255 sitting in a
@@ -239,7 +241,7 @@ router.get('/', billingRoles, async (request, response) => {
 
   if (request.query.method != null) {
     const method = normalize(request.query.method).toUpperCase()
-    if (!paymentMethods.has(method)) return response.status(422).json({ message: 'Select cash or GCash.', errors: { method: 'Select cash or GCash.' } })
+    if (!paymentMethods.has(method)) return response.status(422).json({ message: 'Select cash, QR Ph or GCash.', errors: { method: 'Select cash, QR Ph or GCash.' } })
     params.push(method)
     filters.push(`p.payment_method = $${params.length}`)
   }
@@ -319,7 +321,7 @@ router.post('/', requireRole('CASHIER', 'ADMIN'), async (request, response) => {
   const errors = {}
 
   const method = normalize(request.body.method).toUpperCase()
-  if (!paymentMethods.has(method)) errors.method = 'Select cash or GCash.'
+  if (!paymentMethods.has(method)) errors.method = 'Select cash or QR Ph.'
 
   // Decision 3: 0 and negative amounts are refused here — the column's
   // CHECK (amount >= 0) alone would let a zero-amount row through, and a
@@ -344,9 +346,9 @@ router.post('/', requireRole('CASHIER', 'ADMIN'), async (request, response) => {
   // tried to store '', where NULL never collides with anything, even
   // itself. Required and validated only for GCASH.
   let gatewayReference = null
-  if (method === 'GCASH') {
+  if (method === 'GCASH' || method === 'QRPH') {
     gatewayReference = normalize(request.body.gatewayReference)
-    if (!gatewayReference) errors.gatewayReference = 'Enter the GCash reference number from the receipt.'
+    if (!gatewayReference) errors.gatewayReference = 'Enter the reference number from the payment.'
     // REFUSED when too long, not silently truncated — unlike the free-text
     // `reason`/`note` fields elsewhere in this app, which are .slice()d
     // because losing their tail costs nothing. A gateway reference is an
@@ -356,7 +358,7 @@ router.post('/', requireRole('CASHIER', 'ADMIN'), async (request, response) => {
     // the UNIQUE slot the real reference needs. Without this the column's
     // own VARCHAR(255) limit rejected it at the database instead, as an
     // unhandled 22001 that surfaced to the cashier as a generic 500.
-    else if (gatewayReference.length > gatewayReferenceMaxLength) errors.gatewayReference = `A GCash reference cannot be longer than ${gatewayReferenceMaxLength} characters.`
+    else if (gatewayReference.length > gatewayReferenceMaxLength) errors.gatewayReference = `A reference number cannot be longer than ${gatewayReferenceMaxLength} characters.`
   }
 
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
@@ -418,7 +420,7 @@ router.post('/', requireRole('CASHIER', 'ADMIN'), async (request, response) => {
       // credit the order for money that arrived once.
       if (error.code === '23505' && error.constraint === 'payments_gateway_reference_key') {
         await client.query('ROLLBACK')
-        return response.status(409).json({ message: 'That GCash reference has already been recorded.', errors: { gatewayReference: 'That GCash reference has already been recorded.' } })
+        return response.status(409).json({ message: 'That reference number has already been recorded.', errors: { gatewayReference: 'That reference number has already been recorded.' } })
       }
       throw error
     }

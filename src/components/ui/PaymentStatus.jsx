@@ -4,7 +4,9 @@
 //
 // Works on both shapes: an order detail (payment.isFullyPaid) and a list
 // row (isFullyPaid, from lib/billing.js's list columns).
-const paymentModeName = (mode) => ({ CASH: 'Cash', GCASH: 'GCash' })[mode] ?? null
+// GCASH is the order's "paid before release" mode; online that is now
+// QR Ph (QRPH_PLAN.md, Q14).
+const paymentModeName = (mode) => ({ CASH: 'Cash', GCASH: 'QR Ph' })[mode] ?? null
 const isPaid = (order) => Boolean(order.payment?.isFullyPaid ?? order.isFullyPaid)
 const owes = (order) => order.status !== 'CANCELLED' && order.status !== 'AWAITING_PAYMENT' && !isPaid(order)
 

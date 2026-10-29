@@ -1,127 +1,88 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { apiGet, apiPatch, apiPost } from '../../api/client.js'
+import { Link, useParams } from 'react-router-dom'
+import { apiGet, apiPatch, apiPost, apiUpload } from '../../api/client.js'
 import { PrintThisButton } from '../../components/PrintReport.jsx'
 import { bakery, bakeryAddress } from '../../lib/bakery.js'
 import { formatDateTime, formatPeso } from '../../lib/format.js'
 import { orderLabel } from '../../lib/orderNumber.js'
 
-// Where PayMongo sends the customer back after paying (the adviser,
-// 2026-10-16): the receipt itself, with no list to pick from and no
-// button to press first (routes/payments.js POST /intent, successUrl).
+// The receipt page, and since QR Ph (RULES-PLANS/QRPH_PLAN.md) also where
+// an online order is paid. Checkout saves the order as a 15-minute hold
+// (payment first, PAYMENT_FIRST_PLAN.md) and opens this page, which shows:
 //
-// Reaching this page never marks anything paid. It asks the server to
-// check each pending GCash attempt with PayMongo (POST
-// /api/payments/:id/confirm), which settles it only when PayMongo says it
-// was paid — exactly as the webhook would — and then shows what the server
-// says. If PayMongo has not finished yet it asks again a few times, then
-// offers a "Check again" button. Refreshing repeats only those checks: a
-// payment is settled once, whatever the number of reports, and nothing on
-// this page creates an order or a payment.
+// - pay:      the bakery's QR Ph code, the account name and the exact
+//             amount; the customer pays in their own bank or e-wallet app,
+//             then types the reference number (and may attach a
+//             screenshot). Or cancels the order.
+// - waiting:  "Waiting for payment confirmation" while a person at the
+//             bakery checks that reference in the bakery's app. The page
+//             asks again every few seconds; the customer is also emailed.
+// - rejected: the bakery did not find the payment; the reason, and the
+//             order cancelled with its stock returned.
+// - paid:     the receipt.
+// - cashDue:  a cash pickup, paid at the counter (SENIOR_CONSULT_PLAN.md S3).
+// - released: a hold nobody paid in 15 minutes, let go by the system.
 //
-// The order is read through GET /api/orders/:id, which answers 404 for an
-// order that is not this customer's own, so a receipt can only ever show
-// the signed-in customer's order.
-//
-// Payment first (RULES-PLANS/PAYMENT_FIRST_PLAN.md): checkout saves the
-// order as a 15-minute hold and opens GCash at once. Back here unpaid (the
-// customer backed out of GCash: ?cancelled=1, or the payment failed), the
-// page offers the two ways forward — Pay with GCash again, or Cancel order.
-// A hold not paid in time is let go by the system; the page says so.
-const pollEveryMs = 3000
-const pollTries = 10
+// Reaching this page never marks anything paid. The order is read through
+// GET /api/orders/:id, which answers 404 for an order that is not this
+// customer's own, so a receipt can only ever show their own order.
+const waitingPollMs = 8000
 
 const humanize = (status) => status.replaceAll('_', ' ').toLowerCase().replace(/^./, (letter) => letter.toUpperCase())
-const methodName = (method) => ({ GCASH: 'GCash', CASH: 'Cash' })[method] ?? method
+// QRPH: QR Ph (QRPH_PLAN.md, Q14); GCASH: an older PayMongo payment.
+const methodName = (method) => ({ QRPH: 'QR Ph', GCASH: 'GCash', CASH: 'Cash' })[method] ?? method
 
-// The newest online attempt decides what to say when the order is not paid.
-const latestOnlineAttempt = (order) => [...order.payment.payments].reverse().find((payment) => payment.gatewayReference)
+const latestQrPayment = (order) => [...order.payment.payments].reverse().find((payment) => payment.method === 'QRPH')
 
 export function ReceiptPage({ user }) {
   const { orderId } = useParams()
-  const [searchParams] = useSearchParams()
-  // Came back from GCash without paying: check once, then ask what next.
-  const backedOut = searchParams.get('cancelled') === '1'
   const [order, setOrder] = useState(null)
-  const [phase, setPhase] = useState('verifying') // verifying | paid | cashDue | pending | unpaid | released | lateTaken | error
+  const [phase, setPhase] = useState('loading') // loading | paid | cashDue | pay | waiting | rejected | released | lateTaken | error
+  const [qr, setQr] = useState(null)
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState('')
   const [message, setMessage] = useState('')
-  const tries = useRef(0)
   const timer = useRef(null)
 
-  const verify = useCallback(async () => {
+  const load = useCallback(async () => {
     window.clearTimeout(timer.current)
     try {
-      let data = await apiGet(`/api/orders/${orderId}`)
-      const pending = data.order.payment.payments.filter((payment) => payment.status === 'PENDING')
-      if (pending.length && data.order.status !== 'CANCELLED') {
-        // A check that fails to reach PayMongo is not an error here: the
-        // payment simply stays pending and is asked about again.
-        await Promise.all(pending.map((payment) => apiPost(`/api/payments/${payment.id}/confirm`, {}).catch(() => null)))
-        data = await apiGet(`/api/orders/${orderId}`)
-      }
-      const current = data.order
+      const { order: current } = await apiGet(`/api/orders/${orderId}`, { background: true })
       setOrder(current)
+      const qrPayment = latestQrPayment(current)
       // Paid after the hold was let go: recorded, flagged for the bakery.
       if (current.status === 'CANCELLED' && current.payment.isFullyPaid) return setPhase('lateTaken')
       if (current.payment.isFullyPaid) return setPhase('paid')
-      if (current.status === 'CANCELLED') return setPhase('released')
+      if (current.status === 'CANCELLED') return setPhase(qrPayment?.status === 'FAILED' ? 'rejected' : 'released')
       // A cash pickup is placed unpaid on purpose (SENIOR_CONSULT_PLAN.md,
       // S3): it is paid at the counter when collected.
       if (current.paymentMode === 'CASH') return setPhase('cashDue')
-      const stillPending = current.payment.payments.some((payment) => payment.status === 'PENDING')
-      if (stillPending && !backedOut) {
-        // Keep the spinner up while there are tries left; after that,
-        // say so and let the customer ask again.
-        tries.current += 1
-        if (tries.current < pollTries) {
-          setPhase('verifying')
-          timer.current = window.setTimeout(verify, pollEveryMs)
-        } else {
-          setPhase('pending')
-        }
+      if (qrPayment?.status === 'PENDING') {
+        setPhase('waiting')
+        timer.current = window.setTimeout(load, waitingPollMs)
         return undefined
       }
-      setPhase('unpaid')
-      const attempt = latestOnlineAttempt(current)
-      setMessage(attempt?.status === 'FAILED'
-        ? 'Your GCash payment did not go through. No money was taken for it.'
-        : 'Your order is not paid yet.')
+      setPhase('pay')
     } catch (error) {
       setPhase('error')
       setMessage(error.status === 404 ? 'We could not find that order on your account.' : error.message)
     }
     return undefined
-  }, [orderId, backedOut])
+  }, [orderId])
 
   useEffect(() => {
-    tries.current = 0
-    verify()
+    load()
     return () => window.clearTimeout(timer.current)
-  }, [verify])
+  }, [load])
 
-  const checkAgain = () => {
-    tries.current = 0
-    setPhase('verifying')
-    verify()
-  }
+  useEffect(() => {
+    if (phase !== 'pay' || qr) return
+    apiGet('/api/qrph').then(setQr).catch(() => setQr({ configured: false }))
+  }, [phase, qr])
 
-  // Pay again: an open GCash attempt blocks a new one, so it is closed
-  // first (a payment that still lands on it is recorded all the same).
-  const payAgain = async () => {
-    setBusy(true)
-    setActionError('')
-    try {
-      for (const payment of order.payment.payments.filter((entry) => entry.status === 'PENDING')) {
-        await apiPatch(`/api/payments/${payment.id}`, { status: 'CANCELLED' })
-      }
-      const intent = await apiPost('/api/payments/intent', { orderId: order.id })
-      window.location.href = intent.checkoutUrl
-    } catch (error) {
-      setActionError(error.message)
-      setBusy(false)
-    }
+  const tryAgain = () => {
+    setPhase('loading')
+    load()
   }
 
   // Cancel the unpaid order: its stock goes back; nothing was charged.
@@ -141,13 +102,12 @@ export function ReceiptPage({ user }) {
     }
   }
 
-  if (phase === 'verifying' || (!order && phase !== 'error')) {
+  if (phase === 'loading' || (!order && phase !== 'error')) {
     return (
       <section className="mx-auto max-w-2xl px-4 py-14 text-center sm:px-7">
         <div role="status" aria-live="polite" className="rounded-2xl border border-cream-200 bg-white p-10">
           <span aria-hidden="true" className="mx-auto block h-10 w-10 animate-spin rounded-full border-4 border-cream-200 border-t-crust-600" />
-          <h1 className="mt-5 text-xl font-extrabold text-cocoa-900">Confirming your payment…</h1>
-          <p className="mt-2 text-sm text-cocoa-500">We are checking with GCash. This usually takes a few seconds — please keep this page open.</p>
+          <h1 className="mt-5 text-xl font-extrabold text-cocoa-900">Opening your order…</h1>
         </div>
       </section>
     )
@@ -159,8 +119,25 @@ export function ReceiptPage({ user }) {
         <div className="rounded-2xl border border-cream-200 bg-white p-8">
           <p className="text-sm font-semibold text-red-700">{message}</p>
           <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
-            <button type="button" onClick={checkAgain} className="rounded-full bg-crust-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-crust-700">Try again</button>
+            <button type="button" onClick={tryAgain} className="rounded-full bg-crust-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-crust-700">Try again</button>
             <Link to="/account?tab=orders" className="rounded-full border border-crust-600 px-5 py-2.5 text-xs font-bold text-crust-700 transition hover:bg-cream-100">View My Orders</Link>
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  if (phase === 'rejected') {
+    const rejected = latestQrPayment(order)
+    return (
+      <section className="mx-auto max-w-2xl px-4 py-14 text-center sm:px-7">
+        <div className="rounded-2xl border border-cream-200 bg-white p-8">
+          <h1 className="text-xl font-extrabold text-cocoa-900">Payment not accepted</h1>
+          <p className="mt-3 text-sm text-cocoa-500">The bakery could not confirm the QR Ph payment for order {orderLabel(order)}, so the order was cancelled and nothing was set aside.</p>
+          {rejected?.rejectedReason && <p className="mt-3 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-800">Reason: {rejected.rejectedReason}</p>}
+          <p className="mt-3 text-xs text-cocoa-500">If you did pay, call us at {bakery.phones.join(' or ')} with your reference number{rejected?.gatewayReference ? ` (${rejected.gatewayReference})` : ''}.</p>
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
+            <Link to="/menu" className="rounded-full bg-crust-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-crust-700">Back to the menu</Link>
           </div>
         </div>
       </section>
@@ -204,26 +181,39 @@ export function ReceiptPage({ user }) {
     )
   }
 
-  if (phase === 'pending' || phase === 'unpaid') {
+  if (phase === 'waiting') {
+    const sent = latestQrPayment(order)
     return (
       <section className="mx-auto max-w-2xl px-4 py-14 text-center sm:px-7">
         <div className="rounded-2xl border border-cream-200 bg-white p-8">
-          <h1 className="text-xl font-extrabold text-cocoa-900">{phase === 'pending' ? 'Still waiting for GCash' : 'Finish paying to place your order'}</h1>
+          <span aria-hidden="true" className="mx-auto block h-10 w-10 animate-spin rounded-full border-4 border-cream-200 border-t-crust-600" />
+          <h1 role="status" className="mt-5 text-xl font-extrabold text-cocoa-900">Waiting for payment confirmation</h1>
           <p className="mt-3 text-sm text-cocoa-500">
-            {phase === 'pending'
-              ? `GCash has not confirmed the payment for order ${orderLabel(order)} yet. If you finished paying, it will show here in a moment.`
-              : `${message} We hold order ${orderLabel(order)} (${formatPeso(order.payment.totalAmount)}) for 15 minutes — pay with GCash to place it, or cancel it.`}
+            We received reference number <span className="font-bold break-all text-cocoa-900">{sent.gatewayReference}</span> for <span className="font-bold text-cocoa-900">{formatPeso(sent.amount)}</span>. Someone at the bakery is checking it now. This page updates by itself, and we email you once it is confirmed.
           </p>
-          {actionError && <p role="alert" className="mt-2 text-xs font-semibold text-red-700">{actionError}</p>}
+          {sent.hasProof
+            ? <p className="mt-3 text-xs font-semibold text-green-800">Screenshot attached.</p>
+            : <ProofUpload paymentId={sent.id} onDone={load} />}
           <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
-            {phase === 'pending' && <button type="button" onClick={checkAgain} className="rounded-full bg-crust-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-crust-700">Check again</button>}
-            {phase === 'unpaid' && (
-              <>
-                <button type="button" onClick={payAgain} disabled={busy} className="rounded-full bg-crust-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-crust-700 disabled:opacity-60">{busy ? 'Please wait…' : 'Pay with GCash'}</button>
-                <button type="button" onClick={cancelOrder} disabled={busy} className="rounded-full border border-red-300 px-5 py-2.5 text-xs font-bold text-red-700 transition hover:bg-red-50 disabled:opacity-60">Cancel order</button>
-              </>
-            )}
+            <Link to="/account?tab=orders" className="rounded-full border border-crust-600 px-5 py-2.5 text-xs font-bold text-crust-700 transition hover:bg-cream-100">View My Orders</Link>
           </div>
+        </div>
+      </section>
+    )
+  }
+
+  if (phase === 'pay') {
+    return (
+      <section className="mx-auto max-w-2xl px-4 py-10 sm:px-7 sm:py-14">
+        <div className="rounded-2xl border border-cream-200 bg-white p-6 text-center sm:p-8">
+          <h1 className="text-xl font-extrabold text-cocoa-900">Pay with QR Ph</h1>
+          <p className="mt-2 text-sm text-cocoa-500">
+            Scan the code with GCash, Maya or your bank's app, and pay exactly <span className="font-bold text-cocoa-900">{formatPeso(order.payment.balanceDue ?? order.payment.totalAmount)}</span> for order {orderLabel(order)}. We hold your order for 15 minutes.
+          </p>
+          <QrCode qr={qr} />
+          <ReferenceForm order={order} onSent={load} />
+          {actionError && <p role="alert" className="mt-2 text-xs font-semibold text-red-700">{actionError}</p>}
+          <button type="button" onClick={cancelOrder} disabled={busy} className="mt-4 rounded-full border border-red-300 px-5 py-2.5 text-xs font-bold text-red-700 transition hover:bg-red-50 disabled:opacity-60">{busy ? 'Please wait…' : 'Cancel order'}</button>
         </div>
       </section>
     )
@@ -322,5 +312,98 @@ export function ReceiptPage({ user }) {
         <Link to="/menu" className="rounded-full border border-crust-600 px-5 py-2.5 text-center text-xs font-bold text-crust-700 transition hover:bg-cream-100">Back to the menu</Link>
       </div>
     </section>
+  )
+}
+
+// The bakery's QR Ph code, set by the admin in Payment & Billing.
+function QrCode({ qr }) {
+  if (!qr) return <div aria-hidden="true" className="mx-auto mt-5 h-60 w-60 max-w-full animate-pulse rounded-2xl bg-cream-100" />
+  if (!qr.configured) {
+    return <p role="alert" className="mt-5 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-800">The bakery's QR code is not available right now. Please call {bakery.phones[0]}, or cancel this order.</p>
+  }
+  return (
+    <figure className="mt-5">
+      <img src={qr.imageUrl} alt="The bakery's QR Ph code" className="mx-auto w-60 max-w-full rounded-2xl border border-cream-200 bg-white p-2" />
+      {qr.accountName && <figcaption className="mt-2 text-xs text-cocoa-500">Account name: <span className="font-bold text-cocoa-900">{qr.accountName}</span></figcaption>}
+    </figure>
+  )
+}
+
+// The reference number from the customer's payment app (required) and a
+// screenshot of it (optional, QRPH_PLAN.md Q3).
+function ReferenceForm({ order, onSent }) {
+  const [reference, setReference] = useState('')
+  const [file, setFile] = useState(null)
+  const [error, setError] = useState('')
+  const [sending, setSending] = useState(false)
+
+  const submit = async (event) => {
+    event.preventDefault()
+    setError('')
+    if (!reference.trim()) {
+      setError('Enter the reference number from your payment app.')
+      return
+    }
+    setSending(true)
+    try {
+      const { paymentId } = await apiPost('/api/qrph', { orderId: order.id, reference })
+      // The screenshot is extra: if it fails, the reference still counts.
+      if (file) await apiUpload(`/api/qrph/payments/${paymentId}/proof`, file).catch(() => null)
+      await onSent()
+    } catch (sendError) {
+      setError(sendError.errors?.reference ?? sendError.message)
+      setSending(false)
+    }
+  }
+
+  return (
+    <form onSubmit={submit} noValidate className="mx-auto mt-6 max-w-sm space-y-2 text-left">
+      <label className="block text-xs font-bold text-cocoa-700" htmlFor="qr-reference">Reference number</label>
+      <input
+        id="qr-reference"
+        value={reference}
+        onChange={(event) => setReference(event.target.value)}
+        autoComplete="off"
+        placeholder="e.g. 1234 567 890123"
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? 'qr-reference-error' : 'qr-reference-help'}
+        className={`w-full rounded-xl border px-4 py-3 text-sm outline-none focus:ring-2 ${error ? 'border-red-400 focus:ring-red-200' : 'border-cream-300 focus:border-blue-500 focus:ring-blue-100'}`}
+      />
+      {error
+        ? <p id="qr-reference-error" role="alert" className="text-xs font-semibold text-red-700">{error}</p>
+        : <p id="qr-reference-help" className="text-xs text-cocoa-500">Shown in your app after paying, as Ref. No.</p>}
+      <label className="block pt-2 text-xs font-bold text-cocoa-700" htmlFor="qr-proof">Screenshot of the payment <span className="font-normal text-cocoa-500">(optional)</span></label>
+      <input id="qr-proof" type="file" accept="image/jpeg,image/png" onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="block w-full text-xs text-cocoa-700 file:mr-3 file:rounded-full file:border-0 file:bg-cream-100 file:px-4 file:py-2 file:text-xs file:font-bold file:text-crust-700" />
+      <button type="submit" disabled={sending} className="!mt-4 w-full rounded-2xl bg-crust-600 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-crust-700 disabled:opacity-60">{sending ? 'Sending…' : 'I have paid — send reference'}</button>
+    </form>
+  )
+}
+
+// Attach a screenshot after the reference was sent.
+function ProofUpload({ paymentId, onDone }) {
+  const [error, setError] = useState('')
+  const [sending, setSending] = useState(false)
+  const choose = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setSending(true)
+    setError('')
+    try {
+      await apiUpload(`/api/qrph/payments/${paymentId}/proof`, file)
+      await onDone()
+    } catch (uploadError) {
+      setError(uploadError.message)
+    } finally {
+      setSending(false)
+    }
+  }
+  return (
+    <div className="mt-4 text-xs text-cocoa-500">
+      <label className="cursor-pointer font-bold text-crust-700 hover:underline">
+        {sending ? 'Attaching…' : 'Attach a screenshot of the payment (optional)'}
+        <input type="file" accept="image/jpeg,image/png" onChange={choose} disabled={sending} className="sr-only" />
+      </label>
+      {error && <p role="alert" className="mt-1 font-semibold text-red-700">{error}</p>}
+    </div>
   )
 }

@@ -117,6 +117,8 @@ export async function closeStaleOrders({ onlyOrderIds = null } = {}) {
 //   Before letting it go, each open GCash attempt is checked with PayMongo:
 //   one paid just now makes the order ready instead. If PayMongo cannot be
 //   reached the hold is kept and asked about again on the next run.
+//   A hold whose customer sent a QR Ph reference number is kept for staff
+//   to confirm or reject, however long that takes (QRPH_PLAN.md, Q8).
 // - An order from before payment first that is still open and has no
 //   payment at all is cancelled the same way: there are no unpaid orders
 //   any more. (One whose day has passed is closed by closeStaleOrders
@@ -141,10 +143,13 @@ const unpaidOrdersQuery = `
      AND ($2::bigint[] IS NULL OR o.order_id = ANY($2::bigint[]))
    ORDER BY o.order_id`
 
-// true when the hold must be kept: paid after all (now ready), or PayMongo
+// true when the hold must be kept: a QR Ph reference was sent and waits
+// for staff (QRPH_PLAN.md, Q8: the customer may really have paid, so only a
+// person decides), paid after all through PayMongo (now ready), or PayMongo
 // could not be asked.
 async function paidAfterAll(orderId) {
-  const pending = await pool.query(`SELECT gateway_reference FROM payments WHERE order_id = $1 AND status = 'PENDING' AND gateway_reference IS NOT NULL`, [orderId])
+  const pending = await pool.query(`SELECT payment_method, gateway_reference FROM payments WHERE order_id = $1 AND status = 'PENDING' AND gateway_reference IS NOT NULL`, [orderId])
+  if (pending.rows.some((row) => row.payment_method === 'QRPH')) return true
   if (pending.rows.length === 0 || !config.paymongo.secretKey) return false
   for (const { gateway_reference: sessionId } of pending.rows) {
     try {

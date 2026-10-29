@@ -787,7 +787,7 @@ describe('order management', () => {
   test('cash is for pickup only, and a customer has one unpaid cash order open at a time', async () => {
     const delivery = await placeCashOrder({ orderType: 'DELIVERY', extra: { addressId: customerAddressId } })
     assert.equal(delivery.status, 422)
-    assert.equal(delivery.body.errors.paymentMode, 'Delivery orders are paid with GCash.')
+    assert.equal(delivery.body.errors.paymentMode, 'Delivery orders are paid with QR Ph.')
     const bad = await placeCashOrder({ extra: { paymentMode: 'CHEQUE' } })
     assert.equal(bad.status, 422)
 

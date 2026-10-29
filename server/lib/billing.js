@@ -114,12 +114,15 @@ export async function getBillingSummary(client, orderId) {
 const paymentsForOrderSelectQuery = `SELECT p.payment_id, p.payment_method, p.amount, p.amount_tendered, p.status, p.gateway_reference, p.payment_date, p.created_at,
             COALESCE(ra.name, rc.name, rd.name) AS recorded_by_name,
             p.refunded_at, p.refund_reason, fa.name AS refunded_by_name,
-            p.gateway_payment_id, p.refund_reference
+            p.gateway_payment_id, p.refund_reference,
+            p.verified_at, COALESCE(va.name, vc.name) AS verified_by_name, p.rejected_reason, p.proof_image IS NOT NULL AS has_proof
        FROM payments p
        LEFT JOIN admins ra ON ra.user_id = p.recorded_by
        LEFT JOIN cashiers rc ON rc.user_id = p.recorded_by
        LEFT JOIN delivery_personnel rd ON rd.user_id = p.recorded_by
        LEFT JOIN admins fa ON fa.user_id = p.refunded_by
+       LEFT JOIN admins va ON va.user_id = p.verified_by
+       LEFT JOIN cashiers vc ON vc.user_id = p.verified_by
       WHERE p.order_id = $1
       ORDER BY p.created_at`
 
@@ -142,5 +145,11 @@ const mapPaymentRow = (row) => ({
   // reached PayMongo (refundReference set) or is still owed there.
   gatewayPaymentId: row.gateway_payment_id,
   refundReference: row.refund_reference,
+  // Migration 043 (QRPH_PLAN.md): who confirmed or rejected a QR Ph
+  // payment and when, why it was rejected, and whether a screenshot came.
+  verifiedAt: row.verified_at,
+  verifiedByName: row.verified_by_name,
+  rejectedReason: row.rejected_reason,
+  hasProof: row.has_proof,
   createdAt: row.created_at,
 })

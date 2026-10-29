@@ -74,6 +74,18 @@ const staffQueries = {
        AND o.status = 'CANCELLED'
        AND ${after('p.payment_date')} AND p.recorded_by IS DISTINCT FROM $2::bigint
      ORDER BY at DESC LIMIT $3`,
+  // A customer sent the reference number of a QR Ph payment (QRPH_PLAN.md,
+  // Q11): someone has to check the bakery's app and confirm or reject it.
+  // Still news only while it waits; one already decided drops out. $2 is
+  // cast like due_soon's: the customer, not a staff member, sent it.
+  payment_to_confirm: `
+    SELECT ${orderColumns}, p.payment_id AS source_id, p.created_at AS at, p.amount, p.payment_method
+      FROM payments p
+      JOIN orders o ON o.order_id = p.order_id
+      LEFT JOIN customers c ON c.customer_id = o.customer_id
+     WHERE p.payment_method = 'QRPH' AND p.status = 'PENDING'
+       AND ${after('p.created_at')} AND $2::bigint IS NOT NULL
+     ORDER BY at DESC LIMIT $3`,
   // Leaving the bakery, from the order's own history. Not the viewer's own
   // changes. (Paid orders cannot be cancelled, so there is no cancel news.)
   order_history: `

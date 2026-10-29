@@ -26,7 +26,8 @@ import { PrintThisButton } from '../../components/PrintReport.jsx'
 //
 // Payment first (RULES-PLANS/PAYMENT_FIRST_PLAN.md): the cashier takes the
 // money here, before Place order — cash (the amount received, with the
-// change shown) or GCash (the reference number). The server saves the
+// change shown) or QR Ph (the reference number from the bakery's app,
+// QRPH_PLAN.md Q6). The server saves the
 // order and its payment for the full total together, Ready for pickup.
 //
 // Walk-in or Advanced order (the adviser, 2026-10-19 and 2026-10-23;
@@ -168,8 +169,8 @@ export function WalkInOrderForm({ onCreated }) {
       setErrors({ cashReceived: `Enter the cash received — at least ${formatPeso(subtotal)}.` })
       return
     }
-    if (method === 'GCASH' && !gcashReference.trim()) {
-      setErrors({ gatewayReference: 'Enter the GCash reference number from the receipt.' })
+    if (method === 'QRPH' && !gcashReference.trim()) {
+      setErrors({ gatewayReference: 'Enter the reference number from the payment.' })
       return
     }
 
@@ -178,7 +179,7 @@ export function WalkInOrderForm({ onCreated }) {
       const body = {
         orderType: 'PICKUP',
         items: lines.map((line) => ({ productId: line.productId, quantity: quantityOf(line) })),
-        payment: method === 'GCASH' ? { method, gatewayReference: gcashReference.trim() } : { method, cashReceived: received },
+        payment: method === 'QRPH' ? { method, gatewayReference: gcashReference.trim() } : { method, cashReceived: received },
       }
       if (isReserve) {
         body.customerName = customer.name.trim()
@@ -196,7 +197,7 @@ export function WalkInOrderForm({ onCreated }) {
         total: subtotal,
         method,
         cashReceived: method === 'CASH' ? received : null,
-        gcashReference: method === 'GCASH' ? gcashReference.trim() : null,
+        gcashReference: method === 'QRPH' ? gcashReference.trim() : null,
       }
       resetDraft()
       if (isReserve) onCreated?.(data.order.id, data.message, pickupDay)
@@ -256,7 +257,7 @@ export function WalkInOrderForm({ onCreated }) {
                 <div className="flex justify-between"><dt>Change</dt><dd className="tabular-nums">{formatPeso(receipt.cashReceived - receipt.total)}</dd></div>
               </>
             ) : (
-              <div className="flex justify-between"><dt>GCash ref.</dt><dd>{receipt.gcashReference}</dd></div>
+              <div className="flex justify-between"><dt>QR Ph ref.</dt><dd>{receipt.gcashReference}</dd></div>
             )}
           </dl>
           <p className="mt-4 text-center text-xs text-ink-500">Paid in full. Thank you!</p>
@@ -446,7 +447,7 @@ export function WalkInOrderForm({ onCreated }) {
             <div className="mt-4 border-t border-brand-100 pt-4">
               <p className="text-xs font-semibold text-ink-700">Payment</p>
               <div role="group" aria-label="Payment method" className="mt-2 grid grid-cols-2 gap-2">
-                {[['CASH', 'Cash'], ['GCASH', 'GCash']].map(([key, label]) => (
+                {[['CASH', 'Cash'], ['QRPH', 'QR Ph']].map(([key, label]) => (
                   <Button key={key} type="button" size="sm" variant={method === key ? 'primary' : 'secondary'} aria-pressed={method === key} onClick={() => { setMethod(key); setErrors({}) }}>{label}</Button>
                 ))}
               </div>
@@ -459,8 +460,8 @@ export function WalkInOrderForm({ onCreated }) {
                 </div>
               ) : (
                 <div className="mt-3">
-                  <Field label="GCash reference number" error={errors.gatewayReference}>
-                    <Input value={gcashReference} onChange={(event) => setGcashReference(event.target.value)} placeholder="From the customer's GCash receipt" />
+                  <Field label="Reference number" error={errors.gatewayReference}>
+                    <Input value={gcashReference} onChange={(event) => setGcashReference(event.target.value)} placeholder="From the customer's payment app" />
                   </Field>
                 </div>
               )}

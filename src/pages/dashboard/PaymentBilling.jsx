@@ -5,12 +5,15 @@
 // place of the table below `md` so "Owed" and Status are never scrolled
 // out of view.
 //
-// Nothing about payment recording, the cash/GCash split, or refund rules
-// changed (RULES-PLANS/PHASE6_PLAN.md). handlePaymentSubmit still builds
-// its request body the same way: gatewayReference is only added when the
-// method is GCASH, never spread unconditionally from state (sending '' for
-// an omitted optional field fails validation even though the field itself
+// Nothing about payment recording or refund rules changed
+// (RULES-PLANS/PHASE6_PLAN.md). handlePaymentSubmit still builds its
+// request body the same way: gatewayReference is only added for a QR Ph
+// payment, never spread unconditionally from state (sending '' for an
+// omitted optional field fails validation even though the field itself
 // is fine to leave out).
+//
+// QR Ph (RULES-PLANS/QRPH_PLAN.md): staff confirm the reference numbers
+// customers send on the To confirm tab (PaymentsToConfirm.jsx).
 import { useEffect, useMemo, useState } from 'react'
 import { apiGet, apiPatch, apiPost } from '../../api/client.js'
 import { Modal } from '../../components/Modal.jsx'
@@ -29,9 +32,12 @@ import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
 import { orderLabel } from '../../lib/orderNumber.js'
 import { useMediaQuery } from '../../lib/useMediaQuery.js'
 import { PaymentLog } from './PaymentLog.jsx'
+import { PaymentsToConfirm } from './PaymentsToConfirm.jsx'
 import { PrintHeader, PrintThisButton } from '../../components/PrintReport.jsx'
 
 const emptyPaymentForm = { method: 'CASH', amount: '', gatewayReference: '' }
+// QRPH: QR Ph; GCASH: an older PayMongo or counter GCash payment.
+const methodName = (method) => ({ QRPH: 'QR Ph', GCASH: 'GCash', CASH: 'Cash' })[method] ?? method
 
 function DetailPanel({ open, onClose, labelledBy, children }) {
   const isLarge = useMediaQuery('(min-width: 1536px)')
@@ -62,7 +68,13 @@ export function PaymentBilling({ user, params }) {
   // unpaid balances to chase and no "Still owed" view. This screen is the
   // receipts and the payment log.
 
-  const [activeTab, setActiveTab] = useState('billing')
+  // The Dashboard tile and the bell open To confirm directly.
+  const [activeTab, setActiveTab] = useState(isStaff && params?.tab === 'confirm' ? 'confirm' : 'billing')
+  const [toConfirmCount, setToConfirmCount] = useState(null)
+  const loadToConfirmCount = () => {
+    if (!isStaff) return
+    apiGet('/api/qrph/to-confirm', { background: true }).then((data) => setToConfirmCount(data.payments.length)).catch(() => {})
+  }
 
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
@@ -90,6 +102,7 @@ export function PaymentBilling({ user, params }) {
 
   useEffect(() => {
     loadOrders()
+    loadToConfirmCount()
     // Back from PayMongo: the return link names the order
     // (?order=<id>, routes/payments.js POST /intent), so its receipt opens
     // at once — and opening it confirms the payment (below).
@@ -122,7 +135,8 @@ export function PaymentBilling({ user, params }) {
       // back from GCash sees the order paid without waiting for PayMongo's
       // webhook. A failed check is not an error here — the payment stays
       // pending and the webhook can still settle it.
-      const pending = data.order.status === 'CANCELLED' ? [] : data.order.payment.payments.filter((payment) => payment.status === 'PENDING')
+      // A QR Ph reference is checked by a person on To confirm, not here.
+      const pending = data.order.status === 'CANCELLED' ? [] : data.order.payment.payments.filter((payment) => payment.status === 'PENDING' && payment.method === 'GCASH')
       if (pending.length) {
         const results = await Promise.all(pending.map((payment) => apiPost(`/api/payments/${payment.id}/confirm`, {}).catch(() => null)))
         if (results.some((result) => result && result.status !== 'PENDING')) {
@@ -166,7 +180,7 @@ export function PaymentBilling({ user, params }) {
     setMessage('')
     try {
       const body = { orderId: selectedOrderId, method: paymentForm.method, amount: Number(paymentForm.amount) }
-      if (paymentForm.method === 'GCASH') body.gatewayReference = paymentForm.gatewayReference
+      if (paymentForm.method === 'QRPH') body.gatewayReference = paymentForm.gatewayReference
       const data = await apiPost('/api/payments', body)
       setPaymentForm(emptyPaymentForm)
       await openOrder(selectedOrderId)
@@ -185,6 +199,7 @@ export function PaymentBilling({ user, params }) {
   // taken at the counter with the form below.
 
   const tabs = [
+    ...(isStaff ? [{ key: 'confirm', label: `To confirm${toConfirmCount ? ` (${toConfirmCount})` : ''}` }] : []),
     { key: 'billing', label: 'Billing' },
     { key: 'log', label: 'Payment log' },
   ]
@@ -273,13 +288,14 @@ export function PaymentBilling({ user, params }) {
                 {orderDetail.payment.payments.map((payment) => (
                   <li key={payment.id} className="flex flex-wrap items-center justify-between gap-2">
                     <span>
-                      {payment.method} · <span className="tabular-nums">{formatPeso(payment.amount)}</span> {payment.gatewayReference && <span className="text-ink-500">({payment.gatewayReference})</span>}
+                      {methodName(payment.method)} · <span className="tabular-nums">{formatPeso(payment.amount)}</span> {payment.gatewayReference && <span className="text-ink-500">({payment.gatewayReference})</span>}
                       {payment.amountTendered != null && <span className="block text-ink-700">Cash received <span className="tabular-nums">{formatPeso(payment.amountTendered)}</span> · Change <span className="tabular-nums">{formatPeso(payment.change)}</span></span>}
-                      <span className="block text-xs text-ink-500">{formatDateTime(payment.paymentDate ?? payment.createdAt)}{payment.recordedByName ? ` · ${payment.recordedByName}` : ''}</span>
+                      <span className="block text-xs text-ink-500">{formatDateTime(payment.paymentDate ?? payment.createdAt)}{payment.recordedByName ? ` · ${payment.recordedByName}` : ''}{payment.verifiedByName ? ` · confirmed by ${payment.verifiedByName}` : ''}</span>
+                      {payment.rejectedReason && <span className="block text-xs text-status-fail-fg">Not accepted: {payment.rejectedReason}</span>}
                     </span>
                     <span className="flex items-center gap-2">
                       <StatusBadge status={payment.status} />
-                      {payment.status === 'PENDING' && orderDetail.status !== 'CANCELLED' && (
+                      {payment.status === 'PENDING' && payment.method === 'GCASH' && orderDetail.status !== 'CANCELLED' && (
                         <Button type="button" size="sm" variant="secondary" onClick={() => handleCancelAttempt(payment.id)}>Cancel attempt</Button>
                       )}
                     </span>
@@ -295,15 +311,15 @@ export function PaymentBilling({ user, params }) {
               <Field label="Method" error={paymentErrors.method}>
                 <Select value={paymentForm.method} onChange={(event) => setPaymentForm({ ...paymentForm, method: event.target.value })}>
                   <option value="CASH">Cash</option>
-                  <option value="GCASH">GCash</option>
+                  <option value="QRPH">QR Ph</option>
                 </Select>
               </Field>
               <Field label="Amount" error={paymentErrors.amount} help={`${formatPeso(orderDetail.payment.balanceDue)} still owed`}>
                 <Input value={paymentForm.amount} onChange={(event) => setPaymentForm({ ...paymentForm, amount: event.target.value })} inputMode="decimal" placeholder="0.00" />
               </Field>
-              {paymentForm.method === 'GCASH' && (
-                <Field label="GCash reference number" error={paymentErrors.gatewayReference}>
-                  <Input value={paymentForm.gatewayReference} onChange={(event) => setPaymentForm({ ...paymentForm, gatewayReference: event.target.value })} placeholder="GCash reference number" />
+              {paymentForm.method === 'QRPH' && (
+                <Field label="Reference number" error={paymentErrors.gatewayReference}>
+                  <Input value={paymentForm.gatewayReference} onChange={(event) => setPaymentForm({ ...paymentForm, gatewayReference: event.target.value })} placeholder="From the bakery's app" />
                 </Field>
               )}
               <Button type="submit" size="sm" disabled={paymentSubmitting}>
@@ -338,6 +354,8 @@ export function PaymentBilling({ user, params }) {
       </div>
 
       {activeTab === 'log' && <PaymentLog user={user} />}
+
+      {activeTab === 'confirm' && <PaymentsToConfirm user={user} onChanged={() => { loadToConfirmCount(); loadOrders() }} />}
 
       {activeTab === 'billing' && (
         <div className="mt-6 grid gap-4 2xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">

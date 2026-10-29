@@ -121,6 +121,58 @@ export async function sendOrderReadyEmailFor(orderId) {
   await sendOrderReadyEmail({ to: customer.email, name: customer.name, order: { orderNumber: orderId }, items: lines.rows, requestedTime: customer.requested_fulfillment_time })
 }
 
+// QR Ph (QRPH_PLAN.md, Q9 and Q12) — to the customer, once staff checked
+// the reference number they sent: confirmed, so the order is ready (or
+// being prepared for delivery); or not accepted, with the reason, and the
+// order cancelled. Only at a confirmed email, like the ready email.
+export async function sendQrPaymentDecisionEmail({ orderId, confirmed, reason }) {
+  const found = await pool.query(
+    `SELECT o.order_type, o.requested_fulfillment_time, c.name, c.email, c.email_verified_at
+       FROM orders o JOIN customers c ON c.customer_id = o.customer_id
+      WHERE o.order_id = $1`,
+    [orderId],
+  )
+  const customer = found.rows[0]
+  if (!customer?.email || !customer.email_verified_at) return
+  const order = { orderNumber: orderId }
+  if (!confirmed) {
+    await sendMail({
+      to: customer.email,
+      subject: `Your payment for order ${subjectNumber(order)} was not accepted`,
+      text: [
+        `Hello ${firstName(customer.name)},`,
+        '',
+        `We could not confirm the QR Ph payment you sent for order ${bodyLabel(order)}.`,
+        `Reason: ${reason}`,
+        '',
+        'The order was cancelled. If you did pay, call us with your reference number and we will sort it out.',
+        `Call us at ${bakeryPhones}.`,
+        '',
+        ...signOff,
+      ].join('\n'),
+    })
+    return
+  }
+  if (customer.order_type !== 'DELIVERY') {
+    await sendOrderReadyEmailFor(orderId)
+    return
+  }
+  await sendMail({
+    to: customer.email,
+    subject: `Payment confirmed for order ${subjectNumber(order)}`,
+    text: [
+      `Hello ${firstName(customer.name)},`,
+      '',
+      `We confirmed your QR Ph payment for order ${bodyLabel(order)}. The order is ready for delivery${customer.requested_fulfillment_time ? ` at ${formatTime(customer.requested_fulfillment_time)}` : ''}.`,
+      'We will email you again when it leaves the bakery.',
+      '',
+      `See your orders: ${accountLink()}`,
+      '',
+      ...signOff,
+    ].join('\n'),
+  })
+}
+
 // N5 — to the customer, when the driver leaves with their order.
 export function sendOutForDeliveryEmail({ to, name, order, driverName, address, items }) {
   return sendMail({

@@ -23,8 +23,9 @@ export function CheckoutPage({ user }) {
   const [addingAddress, setAddingAddress] = useState(false)
 
   const [orderType, setOrderType] = useState('PICKUP')
-  // Cash or GCash for pickup (SENIOR_CONSULT_PLAN.md, S3). Delivery is
-  // GCash only, so the choice is only offered for pickup.
+  // Cash or QR Ph for pickup (SENIOR_CONSULT_PLAN.md, S3; QRPH_PLAN.md).
+  // Delivery is QR Ph only, so the choice is only offered for pickup. The
+  // server keeps one value, GCASH, for "paid before release".
   const [pickupPayment, setPickupPayment] = useState('CASH')
   const paymentMode = orderType === 'PICKUP' ? pickupPayment : 'GCASH'
   const [addressId, setAddressId] = useState(null)
@@ -39,7 +40,7 @@ export function CheckoutPage({ user }) {
   const [submitting, setSubmitting] = useState(false)
   // Set once the order is placed (MINOR_REVISIONS_PLAN.md M9): the cart is
   // cleared at that moment, so without this the page showed "Your cart is
-  // empty" while GCash was still opening. A loader shows instead until the
+  // empty" while the payment page was still opening. A loader shows instead until the
   // next page takes over.
   const [leaving, setLeaving] = useState(false)
 
@@ -100,23 +101,13 @@ export function CheckoutPage({ user }) {
       body.paymentMode = paymentMode
 
       // Payment first (RULES-PLANS/PAYMENT_FIRST_PLAN.md): the order is held
-      // for 15 minutes, hidden from the bakery, while the customer pays with
-      // GCash; PayMongo brings them back to the receipt. If GCash cannot be
-      // opened, the receipt page offers to try again or cancel.
+      // for 15 minutes, hidden from the bakery, while the customer pays. The
+      // receipt page shows the bakery's QR Ph code and takes the reference
+      // number (QRPH_PLAN.md). Cash: placed and ready, paid at the counter.
       const data = await apiPost('/api/orders', body)
       setLeaving(true)
       clear()
-      // Cash: placed and ready, paid at the counter. The receipt says so.
-      if (paymentMode === 'CASH') {
-        navigate(`/receipt/${data.order.id}`)
-        return
-      }
-      try {
-        const intent = await apiPost('/api/payments/intent', { orderId: data.order.id })
-        window.location.href = intent.checkoutUrl
-      } catch {
-        navigate(`/receipt/${data.order.id}?cancelled=1`)
-      }
+      navigate(`/receipt/${data.order.id}`)
     } catch (error) {
       setLeaving(false)
       // A 409 is usually stock; one about the payment mode is the "one
@@ -140,7 +131,7 @@ export function CheckoutPage({ user }) {
       <section className="mx-auto grid min-h-[50vh] max-w-4xl place-items-center px-4 py-14 sm:px-7" role="status" aria-live="polite">
         <div className="text-center">
           <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-cream-200 border-t-crust-600" aria-hidden="true" />
-          <p className="mt-4 font-display text-xl font-semibold text-cocoa-900">{paymentMode === 'CASH' ? 'Placing your order…' : 'Opening GCash…'}</p>
+          <p className="mt-4 font-display text-xl font-semibold text-cocoa-900">{paymentMode === 'CASH' ? 'Placing your order…' : 'Opening the payment page…'}</p>
           <p className="mt-1 text-xs text-cocoa-500">Please wait; do not close this page.</p>
         </div>
       </section>
@@ -188,14 +179,14 @@ export function CheckoutPage({ user }) {
               <>
                 <div className="mt-3 flex gap-3">
                   <button type="button" aria-pressed={pickupPayment === 'CASH'} onClick={() => { setPickupPayment('CASH'); setErrors({}) }} className={`flex-1 rounded-xl min-h-11 border px-4 py-3 text-sm font-bold transition ${pickupPayment === 'CASH' ? 'border-crust-600 bg-cream-100 text-crust-700' : 'border-cream-300 text-cocoa-500'}`}>Cash</button>
-                  <button type="button" aria-pressed={pickupPayment === 'GCASH'} onClick={() => { setPickupPayment('GCASH'); setErrors({}) }} className={`flex-1 rounded-xl min-h-11 border px-4 py-3 text-sm font-bold transition ${pickupPayment === 'GCASH' ? 'border-crust-600 bg-cream-100 text-crust-700' : 'border-cream-300 text-cocoa-500'}`}>GCash</button>
+                  <button type="button" aria-pressed={pickupPayment === 'GCASH'} onClick={() => { setPickupPayment('GCASH'); setErrors({}) }} className={`flex-1 rounded-xl min-h-11 border px-4 py-3 text-sm font-bold transition ${pickupPayment === 'GCASH' ? 'border-crust-600 bg-cream-100 text-crust-700' : 'border-cream-300 text-cocoa-500'}`}>QR Ph</button>
                 </div>
-                <p className="mt-2 text-xs text-cocoa-500">{pickupPayment === 'CASH' ? 'Pay at the counter when you pick it up. One cash order at a time.' : 'You pay with GCash right away.'}</p>
+                <p className="mt-2 text-xs text-cocoa-500">{pickupPayment === 'CASH' ? 'Pay at the counter when you pick it up. One cash order at a time.' : 'Scan our QR Ph code with any bank or e-wallet app right away.'}</p>
               </>
             ) : (
               // NO_COD_PLAN — the bakery sends a delivery out only once it
               // is paid; said before the customer commits to it.
-              <p className="mt-2 rounded-xl bg-butter-100 p-3 text-xs font-semibold text-cocoa-700">GCash only — delivery orders are paid first, with a {formatPeso(deliveryFee)} delivery fee. There is no cash on delivery.</p>
+              <p className="mt-2 rounded-xl bg-butter-100 p-3 text-xs font-semibold text-cocoa-700">QR Ph only — delivery orders are paid first, with a {formatPeso(deliveryFee)} delivery fee. There is no cash on delivery.</p>
             )}
             {errors.paymentMode && <p role="alert" className="mt-2 text-xs font-medium text-red-700">{errors.paymentMode}</p>}
           </div>
@@ -264,8 +255,8 @@ export function CheckoutPage({ user }) {
               <span className="font-bold">Confirm your email to place this order.</span> Open the link we sent to {user.email} — your cart is kept, and this page updates when you come back.
             </p>
           )}
-          <p className="text-center text-xs text-cocoa-500">{paymentMode === 'CASH' ? 'Your order is placed now and set aside for you. Pay in cash when you pick it up.' : 'You pay with GCash right away. Your order is placed once it is paid; an unpaid order is let go after 15 minutes.'}</p>
-          <button type="button" onClick={handleSubmit} disabled={submitting || needsVerification} className="w-full rounded-2xl bg-crust-600 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-crust-700 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? (paymentMode === 'CASH' ? 'Placing order…' : 'Opening GCash…') : needsVerification ? 'Confirm your email first' : 'Place Order'}</button>
+          <p className="text-center text-xs text-cocoa-500">{paymentMode === 'CASH' ? 'Your order is placed now and set aside for you. Pay in cash when you pick it up.' : 'Next, scan our QR Ph code and enter your reference number. Your order is placed once the bakery confirms the payment; one not paid within 15 minutes is let go.'}</p>
+          <button type="button" onClick={handleSubmit} disabled={submitting || needsVerification} className="w-full rounded-2xl bg-crust-600 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-crust-700 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Placing order…' : needsVerification ? 'Confirm your email first' : 'Place Order'}</button>
         </div>
 
         {/* order-first below lg: on a phone the summary used to render

@@ -12,7 +12,7 @@ import { formatDateTime, formatPeso } from '../../lib/format.js'
 // to show at pickup, with the order number large and the pickup time
 // first; the SMS with the order number is the same proof without internet.
 const humanize = (status) => status.replaceAll('_', ' ').toLowerCase().replace(/^./, (letter) => letter.toUpperCase())
-const methodName = (method) => ({ GCASH: 'GCash', CASH: 'Cash' })[method] ?? method
+const methodName = (method) => ({ QRPH: 'QR Ph', GCASH: 'GCash', CASH: 'Cash' })[method] ?? method
 
 export function ReservationReceiptPage() {
   const { token } = useParams()

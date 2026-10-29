@@ -354,7 +354,16 @@ CREATE TABLE payments (
   -- one exists; NULL on a REFUNDED row that has a gateway_payment_id
   -- means the gateway side is still owed (server/lib/refunds.js retries).
   gateway_payment_id VARCHAR(255),
-  refund_reference VARCHAR(255)
+  refund_reference VARCHAR(255),
+  -- Migration 043 (QRPH_PLAN.md). A QR Ph payment is confirmed or rejected
+  -- by a person: who and when, why it was rejected (shown to the
+  -- customer), and the customer's optional screenshot with its MIME type,
+  -- kept in the database because Railway's disk is replaced on deploy.
+  verified_by BIGINT REFERENCES users(user_id),
+  verified_at TIMESTAMPTZ,
+  rejected_reason TEXT,
+  proof_image BYTEA,
+  proof_type VARCHAR(20)
 );
 
 CREATE TABLE deliveries (
@@ -571,6 +580,10 @@ CREATE INDEX ingredient_movements_created_at_idx ON ingredient_movements (create
 -- history a payment row accumulates.
 CREATE UNIQUE INDEX payments_one_pending_per_order_idx
   ON payments (order_id) WHERE status = 'PENDING';
+
+-- Migration 043. Staff's "Payments to confirm" list: pending QR Ph
+-- payments, oldest first.
+CREATE INDEX payments_qrph_pending_idx ON payments (created_at) WHERE payment_method = 'QRPH' AND status = 'PENDING';
 
 -- Attach the set_updated_at() function defined at the top of this file to
 -- every table that carries an updated_at column. BEFORE UPDATE so the new
@@ -832,6 +845,18 @@ CREATE TABLE IF NOT EXISTS forecasts (
   low NUMERIC(10, 2) NOT NULL CHECK (low >= 0),
   high NUMERIC(10, 2) NOT NULL,
   PRIMARY KEY (run_id, product_id, forecast_date)
+);
+
+-- Migration 043 (QRPH_PLAN.md). Settings the admin changes in the app: the
+-- bakery's QR Ph image (qrph_image_key) and account name
+-- (qrph_account_name). A file setting keeps its bytes in data and its MIME
+-- type in value.
+CREATE TABLE IF NOT EXISTS app_settings (
+  key VARCHAR(100) PRIMARY KEY,
+  value TEXT,
+  data BYTEA,
+  updated_by BIGINT REFERENCES users(user_id),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 COMMIT;

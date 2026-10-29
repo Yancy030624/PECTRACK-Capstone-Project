@@ -119,6 +119,16 @@ export function DashboardHome({ user, onNavigate }) {
       note: ingredientCounts.LOW > 0 ? 'At or under the minimum' : 'Well stocked',
       to: ['Inventory Management', { tab: 'Ingredients', stockFilter: 'LOW' }],
     },
+    // QR Ph references customers sent, waiting for staff to check them in
+    // the bakery's app (QRPH_PLAN.md, Q11). Red once one waits too long.
+    {
+      label: 'Payments to confirm',
+      goodLabel: 'payments',
+      value: summary.paymentsToConfirm ?? 0,
+      tone: summary.paymentsOverdue > 0 ? 'attention' : summary.paymentsToConfirm > 0 ? 'okay' : 'good',
+      note: summary.paymentsOverdue > 0 ? `${summary.paymentsOverdue} waiting over 30 minutes` : summary.paymentsToConfirm > 0 ? 'Check the reference numbers' : 'None waiting',
+      to: ['Payment & Billing', { tab: 'confirm' }],
+    },
     {
       label: 'Orders',
       goodLabel: 'orders',

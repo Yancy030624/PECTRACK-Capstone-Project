@@ -147,12 +147,18 @@ router.use(requireAuth, requireRole('CUSTOMER', 'CASHIER', 'ADMIN'))
 // is not an order anyone works on, so it is not listed either; it stays
 // in the database for the Forecast (the adviser, 2026-10-16).
 const visibleOrderSql = `o.data_source = 'RECORDED' AND o.status <> 'AWAITING_PAYMENT' AND (o.status <> 'CANCELLED' OR COALESCE(paid.amount, 0) > 0)`
+// The customer also sees their own orders whose QR Ph payment the bakery
+// is still checking, or rejected (QRPH_PLAN.md, Q9 and Q12): they paid, or
+// say they did, so the order must not vanish from My Orders.
+const customerVisibleOrderSql = `o.data_source = 'RECORDED' AND (
+  (o.status <> 'AWAITING_PAYMENT' AND (o.status <> 'CANCELLED' OR COALESCE(paid.amount, 0) > 0))
+  OR EXISTS (SELECT 1 FROM payments qp WHERE qp.order_id = o.order_id AND qp.payment_method = 'QRPH' AND qp.status IN ('PENDING', 'FAILED')))`
 
 router.get('/', async (request, response) => {
   if (request.user.role === 'CUSTOMER') {
     const customerResult = await pool.query('SELECT customer_id FROM customers WHERE user_id = $1', [request.user.id])
     const customerId = customerResult.rows[0]?.customer_id
-    const result = await pool.query(`${orderSummarySelectQuery} WHERE o.customer_id = $1 AND ${visibleOrderSql} ORDER BY o.order_date DESC`, [customerId])
+    const result = await pool.query(`${orderSummarySelectQuery} WHERE o.customer_id = $1 AND ${customerVisibleOrderSql} ORDER BY o.order_date DESC`, [customerId])
     return response.json({ orders: result.rows.map(mapOrderSummary) })
   }
   // Cashier and admin see every order.
@@ -413,17 +419,18 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
 
   // Payment first (RULES-PLANS/PAYMENT_FIRST_PLAN.md): an order placed by
   // staff — a walk-in at the counter — is paid as it is placed, cash or
-  // GCash by its reference number, for the order's full total. Without a
-  // payment it is refused; there is no unpaid order any more.
+  // QR Ph by its reference number, for the order's full total. Without a
+  // payment it is refused; there is no unpaid order any more. GCASH is
+  // still accepted from an older screen (QRPH_PLAN.md, Q6 and Q14).
   let staffPayment = null
   if (request.user.role !== 'CUSTOMER') {
     const method = normalize(request.body.payment?.method).toUpperCase()
-    if (method !== 'CASH' && method !== 'GCASH') return response.status(422).json({ message: 'Take the payment first: choose cash or GCash.', errors: { payment: 'Choose cash or GCash.' } })
+    if (method !== 'CASH' && method !== 'QRPH' && method !== 'GCASH') return response.status(422).json({ message: 'Take the payment first: choose cash or QR Ph.', errors: { payment: 'Choose cash or QR Ph.' } })
     let gatewayReference = null
-    if (method === 'GCASH') {
+    if (method !== 'CASH') {
       gatewayReference = normalize(request.body.payment?.gatewayReference)
-      if (!gatewayReference) return response.status(422).json({ message: 'Enter the GCash reference number from the receipt.', errors: { gatewayReference: 'Enter the GCash reference number from the receipt.' } })
-      if (gatewayReference.length > 255) return response.status(422).json({ message: 'A GCash reference cannot be longer than 255 characters.', errors: { gatewayReference: 'A GCash reference cannot be longer than 255 characters.' } })
+      if (!gatewayReference) return response.status(422).json({ message: 'Enter the reference number from the payment.', errors: { gatewayReference: 'Enter the reference number from the payment.' } })
+      if (gatewayReference.length > 255) return response.status(422).json({ message: 'A reference number cannot be longer than 255 characters.', errors: { gatewayReference: 'A reference number cannot be longer than 255 characters.' } })
     }
     // The bill the customer handed over, for the receipt's "Cash received
     // / Change" (migration 034). Optional; never less than the total,
@@ -438,13 +445,17 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
   }
 
   // How an online order is paid for (SENIOR_CONSULT_PLAN.md, S3): a pickup
-  // in cash when it is collected, or GCash now; a delivery with GCash only
+  // in cash when it is collected, or QR Ph now; a delivery with QR Ph only
   // (no cash on delivery). A staff order's mode is the payment just taken.
-  let paymentMode = staffPayment?.method ?? 'GCASH'
+  // orders.payment_mode keeps one value for "paid before release", GCASH
+  // (its CHECK allows CASH and GCASH), which the screens show as QR Ph
+  // (QRPH_PLAN.md, Q14).
+  let paymentMode = staffPayment ? (staffPayment.method === 'CASH' ? 'CASH' : 'GCASH') : 'GCASH'
   if (request.user.role === 'CUSTOMER' && request.body.paymentMode != null) {
     paymentMode = normalize(request.body.paymentMode).toUpperCase()
-    if (paymentMode !== 'CASH' && paymentMode !== 'GCASH') return response.status(422).json({ message: 'Choose cash or GCash.', errors: { paymentMode: 'Choose cash or GCash.' } })
-    if (paymentMode === 'CASH' && orderType !== 'PICKUP') return response.status(422).json({ message: 'Delivery orders are paid with GCash.', errors: { paymentMode: 'Delivery orders are paid with GCash.' } })
+    if (paymentMode === 'QRPH') paymentMode = 'GCASH'
+    if (paymentMode !== 'CASH' && paymentMode !== 'GCASH') return response.status(422).json({ message: 'Choose cash or QR Ph.', errors: { paymentMode: 'Choose cash or QR Ph.' } })
+    if (paymentMode === 'CASH' && orderType !== 'PICKUP') return response.status(422).json({ message: 'Delivery orders are paid with QR Ph.', errors: { paymentMode: 'Delivery orders are paid with QR Ph.' } })
   }
   const payAtPickup = request.user.role === 'CUSTOMER' && paymentMode === 'CASH'
 
@@ -482,7 +493,7 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
       const open = await client.query(openCashOrderSql, [customerId])
       if (open.rows[0]) {
         await client.query('ROLLBACK')
-        const message = `You already have a cash order waiting for pickup (#${open.rows[0].order_id}). Pay for or collect it first, or pay this one with GCash.`
+        const message = `You already have a cash order waiting for pickup (#${open.rows[0].order_id}). Pay for or collect it first, or pay this one with QR Ph.`
         return response.status(409).json({ message, errors: { paymentMode: message }, openOrderId: open.rows[0].order_id })
       }
     }
@@ -667,7 +678,7 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
       } catch (error) {
         if (error.code === '23505' && error.constraint === 'payments_gateway_reference_key') {
           await client.query('ROLLBACK')
-          return response.status(409).json({ message: 'That GCash reference has already been recorded.', errors: { gatewayReference: 'That GCash reference has already been recorded.' } })
+          return response.status(409).json({ message: 'That reference number has already been recorded.', errors: { gatewayReference: 'That reference number has already been recorded.' } })
         }
         throw error
       }
@@ -678,7 +689,7 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     const receiptUrl = receiptToken ? `${config.clientOrigin}/r/${receiptToken}` : null
     if (receiptUrl) sendReservationNotices({ orderId, receiptUrl })
     return response.status(201).json({
-      message: guest?.isReservation ? `Advanced order placed and paid. The order number is on its way by SMS${guest.email ? ', and the receipt by email' : ''}.` : staffPayment ? 'Order placed and paid.' : payAtPickup ? 'Order placed. Pay in cash when you pick it up.' : 'Order saved. Pay with GCash within 15 minutes to place it.',
+      message: guest?.isReservation ? `Advanced order placed and paid. The order number is on its way by SMS${guest.email ? ', and the receipt by email' : ''}.` : staffPayment ? 'Order placed and paid.' : payAtPickup ? 'Order placed. Pay in cash when you pick it up.' : 'Order saved. Pay with QR Ph within 15 minutes to place it.',
       order: { id: orderId, orderNumber, orderDay, status, totalAmount, orderType, paymentMode, isReservation: guest?.isReservation ?? false, receiptUrl },
     })
   } catch (error) {

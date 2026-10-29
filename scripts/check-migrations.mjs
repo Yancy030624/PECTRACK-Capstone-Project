@@ -34,6 +34,7 @@ const checks = [
   ['040_export_history', () => column('report_logs', 'user_id')],
   ['041_live_stock', () => exists(`SELECT 1 FROM pg_trigger WHERE tgname = 'inventory_stock_changed'`)],
   ['042_minor_revisions', async () => !(await exists(`SELECT 1 FROM users WHERE user_type = 'DELIVERY_PERSONNEL' AND is_active`))],
+  ['043_qrph', () => table('app_settings')],
 ]
 
 const missing = []

@@ -101,6 +101,8 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
     else if (item.type === 'low_stock') openModule('Inventory Management')
     // Due within the hour: the order's receipt, where Needed by lives.
     else if (item.type === 'due_soon') openModule('Payment & Billing', { orderId: item.orderId, at: Date.now() })
+    // A QR Ph reference to check (QRPH_PLAN.md, Q11).
+    else if (item.type === 'payment_to_confirm') openModule('Payment & Billing', { tab: 'confirm', at: Date.now() })
     else openModule('Order Management', { orderId: item.orderId, at: Date.now() })
   }
   // Calculate the navigation items for the signed-in role.

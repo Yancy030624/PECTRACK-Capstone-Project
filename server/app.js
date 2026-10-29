@@ -20,6 +20,7 @@ import ordersRouter from './routes/orders.js'
 import paymentsRouter from './routes/payments.js'
 import phoneVerificationRouter from './routes/phoneVerification.js'
 import productsRouter from './routes/products.js'
+import qrphRouter from './routes/qrph.js'
 import receiptsRouter from './routes/receipts.js'
 import reportsRouter from './routes/reports.js'
 import staffRouter from './routes/staff.js'
@@ -107,6 +108,7 @@ app.use('/api/inventory', inventoryRouter)
 app.use('/api/ingredients', ingredientsRouter)
 app.use('/api/orders', ordersRouter)
 app.use('/api/payments', paymentsRouter)
+app.use('/api/qrph', qrphRouter)
 app.use('/api/deliveries', deliveriesRouter)
 app.use('/api/notifications', notificationsRouter)
 app.use('/api/reports', reportsRouter)

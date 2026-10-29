@@ -64,11 +64,11 @@ export const apiDelete = (path) => request(path, { method: 'DELETE' })
 // Decision 8) — that route reads express.raw() bytes, not JSON, so this
 // sends the file's own bytes and MIME type directly rather than
 // JSON-encoding it. path may already carry query params (?proofType=…).
-export async function apiUpload(path, file) {
+export async function apiUpload(path, file, method = 'POST') {
   let response
   try {
     response = await fetch(path, {
-      method: 'POST',
+      method,
       credentials: 'include',
       headers: { 'Content-Type': file.type },
       body: file,
