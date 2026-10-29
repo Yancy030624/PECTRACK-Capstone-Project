@@ -30,7 +30,7 @@ const emptyFilters = { from: '', to: '', method: '' }
 // The API pages at most 200 rows at a time; the export asks page by page.
 const exportPageSize = 200
 const exportMaxPages = 50
-const methodName = (method) => ({ CASH: 'Cash', QRPH: 'QR Ph', GCASH: 'GCash' })[method] ?? method
+const methodName = (method) => ({ CASH: 'Cash', QRPH: 'GCash', GCASH: 'GCash' })[method] ?? method
 
 // The query for a set of filters, PAID payments only.
 function paymentsQuery(filters, limit, offset) {
@@ -139,8 +139,7 @@ export function PaymentLog({ user }) {
           <Select value={filters.method} onChange={(event) => setFilters({ ...filters, method: event.target.value })}>
             <option value="">Any</option>
             <option value="CASH">Cash</option>
-            <option value="QRPH">QR Ph</option>
-            <option value="GCASH">GCash (older)</option>
+            <option value="GCASH">GCash</option>
           </Select>
         </Field>
         <div className="flex gap-2">

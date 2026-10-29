@@ -71,7 +71,7 @@ const privacySections = [
         <><strong>Your account:</strong> full name, username, email address and contact number. Your password is stored only as a one-way hash, so nobody — not even the bakery — can read it.</>,
         <><strong>Delivery addresses you save:</strong> a label, the recipient's name and contact number, the street, barangay, town, province, postal code and any delivery notes.</>,
         <><strong>Your orders:</strong> the items, prices and totals, pickup or delivery, the date and time you asked for, special instructions, and each change of status.</>,
-        <><strong>Payments:</strong> the method (cash or QR Ph), the amount, the date, the reference number of a QR Ph payment, and a screenshot of it if you choose to attach one. You pay a QR Ph code in your own bank or e-wallet app; we never see or store your login, PIN or account details.</>,
+        <><strong>Payments:</strong> the method (cash or GCash), the amount, the date, the reference number of a GCash payment, and a screenshot of it if you choose to attach one. You pay the bakery's GCash QR code in your own GCash app; we never see or store your login, PIN or account details.</>,
         <><strong>Delivery records:</strong> who delivered your order, when, and the photo taken as proof of delivery.</>,
         <><strong>Security records:</strong> sign-ins, failed sign-in attempts and account changes, with the time, the internet (IP) address and the browser used, so we can spot and stop someone trying to get into your account.</>,
       ]} />
@@ -97,7 +97,7 @@ const privacySections = [
       <>
         <List items={[
           <><strong>Bakery staff</strong>, only as their role needs: the administrator and cashiers see customer records, orders and payments; a delivery person sees only the name, contact number and address for the deliveries assigned to them.</>,
-          <><strong>Your bank or e-wallet</strong> processes a QR Ph payment under its own terms; we only receive the reference number you send us.</>,
+          <><strong>GCash</strong> processes your payment under its own terms; we only receive the reference number you send us.</>,
           <><strong>Google</strong> delivers the emails we send you (email confirmation, password reset, notices about your account).</>,
           <><strong>Our hosting provider</strong> stores the system and its database on our behalf.</>,
         ]} />
@@ -173,7 +173,7 @@ const termsSections = [
     title: 'Payment',
     body: (
       <List items={[
-        "Online orders are paid by scanning the bakery's QR Ph code when you place them, and are released once the bakery confirms the payment. A pickup may also be paid in cash at the counter. Walk-in orders are paid in cash or QR Ph before they are rung up.",
+        "Online orders are paid by scanning the bakery's GCash QR code when you place them, and are released once the bakery confirms the payment. A pickup may also be paid in cash at the counter. Walk-in orders are paid in cash or QR Ph before they are rung up.",
         'If you do not finish paying, the order is held for 15 minutes and then let go; nothing is charged. We do not offer cash on delivery.',
         'Online payments are processed by PayMongo, and PayMongo\'s own terms apply to them.',
       ]} />

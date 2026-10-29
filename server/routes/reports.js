@@ -158,7 +158,9 @@ router.get('/sales', adminOnly, async (request, response) => {
       [from, to],
     ),
     pool.query(
-      `SELECT payment_method AS key, COUNT(DISTINCT order_id)::int AS orders, COALESCE(SUM(goods), 0)::numeric(12,2) AS sales
+      // QRPH (the GCash QR code) and GCASH (older GCash payments) are both
+      // GCash, so they share one row.
+      `SELECT CASE WHEN payment_method = 'QRPH' THEN 'GCASH' ELSE payment_method END AS key, COUNT(DISTINCT order_id)::int AS orders, COALESCE(SUM(goods), 0)::numeric(12,2) AS sales
          FROM (${paid}) paid GROUP BY 1 ORDER BY 1`,
       [from, to],
     ),
@@ -191,9 +193,7 @@ router.get('/sales', adminOnly, async (request, response) => {
     const row = rows.find((entry) => entry.key === key)
     return { key, orders: row?.orders ?? 0, sales: row?.sales ?? '0.00' }
   })
-  // QR Ph replaced PayMongo GCash (QRPH_PLAN.md, Q14); older GCash payments
-  // keep their own row.
-  const byMethod = breakdown(methodResult.rows, ['CASH', 'QRPH', 'GCASH'])
+  const byMethod = breakdown(methodResult.rows, ['CASH', 'GCASH'])
   const byType = breakdown(typeResult.rows, ['WALK_IN', 'PICKUP', 'DELIVERY'])
 
   // The export history (REPORTS_UI_PLAN.md U2): viewing the report is not
@@ -210,7 +210,7 @@ router.get('/sales', adminOnly, async (request, response) => {
     // and a preamble would push the real header off row 1 and break a
     // plain spreadsheet import. The date range travels in the filename.
     const typeNames = { WALK_IN: 'Walk-in / counter', PICKUP: 'Online pickup', DELIVERY: 'Delivery' }
-    const methodNames = { CASH: 'Cash', QRPH: 'QR Ph', GCASH: 'GCash' }
+    const methodNames = { CASH: 'Cash', GCASH: 'GCash' }
     const lines = [
       csvRow([`Period (${groupBy})`, 'Orders', 'Sales (excl. delivery fees)', 'Delivery fees']),
       ...buckets.map((bucket) => csvRow([bucket.period, bucket.orders, bucket.sales, bucket.deliveryFees])),

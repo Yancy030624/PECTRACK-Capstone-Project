@@ -142,7 +142,7 @@ export async function sendQrPaymentDecisionEmail({ orderId, confirmed, reason })
       text: [
         `Hello ${firstName(customer.name)},`,
         '',
-        `We could not confirm the QR Ph payment you sent for order ${bodyLabel(order)}.`,
+        `We could not confirm the GCash payment you sent for order ${bodyLabel(order)}.`,
         `Reason: ${reason}`,
         '',
         'The order was cancelled. If you did pay, call us with your reference number and we will sort it out.',
@@ -163,7 +163,7 @@ export async function sendQrPaymentDecisionEmail({ orderId, confirmed, reason })
     text: [
       `Hello ${firstName(customer.name)},`,
       '',
-      `We confirmed your QR Ph payment for order ${bodyLabel(order)}. The order is ready for delivery${customer.requested_fulfillment_time ? ` at ${formatTime(customer.requested_fulfillment_time)}` : ''}.`,
+      `We confirmed your GCash payment for order ${bodyLabel(order)}. The order is ready for delivery${customer.requested_fulfillment_time ? ` at ${formatTime(customer.requested_fulfillment_time)}` : ''}.`,
       'We will email you again when it leaves the bakery.',
       '',
       `See your orders: ${accountLink()}`,

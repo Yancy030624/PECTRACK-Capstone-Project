@@ -206,7 +206,7 @@ function QrPhSettings() {
 
   return (
     <Card className="min-w-0 p-6">
-      <h2 className="text-lg font-semibold text-ink-900">Bakery QR Ph code</h2>
+      <h2 className="text-lg font-semibold text-ink-900">Bakery GCash QR code</h2>
       <p className="mt-1 text-sm text-ink-500">The code customers scan to pay. Download it from the bakery's GCash, Maya or bank app ("Receive money" → QR code) and upload it here.</p>
       {notice && <div className="mt-4"><Alert variant="success">{notice}</Alert></div>}
       {message && <div className="mt-4"><Alert variant="error">{message}</Alert></div>}
@@ -215,7 +215,7 @@ function QrPhSettings() {
       ) : (
         <div className="mt-4 space-y-4">
           {settings.configured
-            ? <img src={settings.imageUrl} alt="The bakery's QR Ph code" className="mx-auto w-48 max-w-full rounded-panel border border-line-200 bg-white p-2" />
+            ? <img src={settings.imageUrl} alt="The bakery's GCash QR code" className="mx-auto w-48 max-w-full rounded-panel border border-line-200 bg-white p-2" />
             : <p className="rounded-panel bg-status-fail-bg p-3 text-sm font-semibold text-status-fail-fg">No QR code yet — customers cannot pay online until one is uploaded.</p>}
           <label className={`inline-flex min-h-11 cursor-pointer items-center rounded-control border border-line-200 bg-surface px-4 text-sm font-medium text-ink-700 hover:bg-surface-sunk md:min-h-9 ${busy ? 'pointer-events-none opacity-60' : ''}`}>
             {settings.configured ? 'Replace QR code' : 'Upload QR code'}

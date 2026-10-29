@@ -257,7 +257,7 @@ export function WalkInOrderForm({ onCreated }) {
                 <div className="flex justify-between"><dt>Change</dt><dd className="tabular-nums">{formatPeso(receipt.cashReceived - receipt.total)}</dd></div>
               </>
             ) : (
-              <div className="flex justify-between"><dt>QR Ph ref.</dt><dd>{receipt.gcashReference}</dd></div>
+              <div className="flex justify-between"><dt>GCash ref.</dt><dd>{receipt.gcashReference}</dd></div>
             )}
           </dl>
           <p className="mt-4 text-center text-xs text-ink-500">Paid in full. Thank you!</p>
@@ -447,7 +447,7 @@ export function WalkInOrderForm({ onCreated }) {
             <div className="mt-4 border-t border-brand-100 pt-4">
               <p className="text-xs font-semibold text-ink-700">Payment</p>
               <div role="group" aria-label="Payment method" className="mt-2 grid grid-cols-2 gap-2">
-                {[['CASH', 'Cash'], ['QRPH', 'QR Ph']].map(([key, label]) => (
+                {[['CASH', 'Cash'], ['QRPH', 'GCash']].map(([key, label]) => (
                   <Button key={key} type="button" size="sm" variant={method === key ? 'primary' : 'secondary'} aria-pressed={method === key} onClick={() => { setMethod(key); setErrors({}) }}>{label}</Button>
                 ))}
               </div>

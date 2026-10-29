@@ -241,9 +241,11 @@ router.get('/', billingRoles, async (request, response) => {
 
   if (request.query.method != null) {
     const method = normalize(request.query.method).toUpperCase()
-    if (!paymentMethods.has(method)) return response.status(422).json({ message: 'Select cash, QR Ph or GCash.', errors: { method: 'Select cash, QR Ph or GCash.' } })
-    params.push(method)
-    filters.push(`p.payment_method = $${params.length}`)
+    if (!paymentMethods.has(method)) return response.status(422).json({ message: 'Select cash or GCash.', errors: { method: 'Select cash or GCash.' } })
+    // GCash covers both kinds: QRPH (the GCash QR code) and GCASH (older
+    // PayMongo and counter GCash payments).
+    params.push(method === 'GCASH' || method === 'QRPH' ? ['GCASH', 'QRPH'] : [method])
+    filters.push(`p.payment_method = ANY($${params.length}::text[])`)
   }
 
   if (request.query.status != null) {
@@ -321,7 +323,7 @@ router.post('/', requireRole('CASHIER', 'ADMIN'), async (request, response) => {
   const errors = {}
 
   const method = normalize(request.body.method).toUpperCase()
-  if (!paymentMethods.has(method)) errors.method = 'Select cash or QR Ph.'
+  if (!paymentMethods.has(method)) errors.method = 'Select cash or GCash.'
 
   // Decision 3: 0 and negative amounts are refused here — the column's
   // CHECK (amount >= 0) alone would let a zero-amount row through, and a

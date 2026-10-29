@@ -605,7 +605,7 @@ function CustomerOrders({ user }) {
               the bakery checks the reference, or was not accepted. */}
           {orderDetail.status === 'AWAITING_PAYMENT' && (
             <p className="rounded-panel bg-surface-warm p-3 text-sm text-ink-700">
-              The bakery is checking your QR Ph payment.{' '}
+              The bakery is checking your GCash payment.{' '}
               <Link to={`/receipt/${orderDetail.id}`} className="font-semibold text-brand-700 hover:underline">Open order</Link>
             </p>
           )}

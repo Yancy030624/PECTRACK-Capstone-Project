@@ -209,7 +209,7 @@ describe('reporting & analytics', () => {
     const body = await response.json()
     assert.deepEqual(body.buckets, [])
     assert.deepEqual(body.totals, { sales: '0.00', orders: 0, averageOrder: '0.00', deliveryFees: '0.00', unpaidCash: { orders: 0, amount: '0.00' } })
-    assert.deepEqual(body.byMethod, [{ key: 'CASH', orders: 0, sales: '0.00' }, { key: 'QRPH', orders: 0, sales: '0.00' }, { key: 'GCASH', orders: 0, sales: '0.00' }])
+    assert.deepEqual(body.byMethod, [{ key: 'CASH', orders: 0, sales: '0.00' }, { key: 'GCASH', orders: 0, sales: '0.00' }])
     assert.deepEqual(body.byType.map((row) => row.key), ['WALK_IN', 'PICKUP', 'DELIVERY'])
   })
 
@@ -234,6 +234,19 @@ describe('reporting & analytics', () => {
     assert.equal(body.totals.deliveryFees, '50.00')
     assert.equal(body.buckets[0].deliveryFees, '50.00')
     assert.deepEqual(body.byMethod.find((row) => row.key === 'GCASH'), { key: 'GCASH', orders: 1, sales: '100.00' })
+  })
+
+  test('a GCash QR payment (QRPH) and an older GCash payment share one GCash row', async () => {
+    const qrOrder = await placeOrderAt('2021-07-09 10:00:00+08')
+    const olderOrder = await placeOrderAt('2021-07-09 11:00:00+08')
+    for (const [orderId, method] of [[qrOrder, 'QRPH'], [olderOrder, 'GCASH']]) {
+      const paid = await fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ orderId, method, amount: 100, gatewayReference: `${Date.now()}${orderId}` }) })
+      assert.equal(paid.status, 201, method)
+      await pool.query('UPDATE payments SET payment_date = $1 WHERE order_id = $2', ['2021-07-09 12:00:00+08', orderId])
+    }
+    const body = await (await getSales({ from: '2021-07-09', to: '2021-07-09' })).json()
+    assert.deepEqual(body.byMethod.map((row) => row.key), ['CASH', 'GCASH'])
+    assert.deepEqual(body.byMethod.find((row) => row.key === 'GCASH'), { key: 'GCASH', orders: 2, sales: '200.00' })
   })
 
   test('a practice (ASSUMED) order never counts as money, in the report or the payment log (ANALYTICS_PLAN A1)', async () => {

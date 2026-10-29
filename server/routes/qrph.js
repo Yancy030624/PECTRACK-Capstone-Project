@@ -75,7 +75,7 @@ router.get('/', async (_request, response) => {
 router.get('/image', async (_request, response) => {
   const found = await pool.query(`SELECT value, data FROM app_settings WHERE key = 'qrph_image'`)
   const image = found.rows[0]
-  if (!image?.data) return response.status(404).json({ message: 'The bakery has not set up its QR Ph code yet.' })
+  if (!image?.data) return response.status(404).json({ message: 'The bakery has not set up its GCash QR code yet.' })
   response.set('Cache-Control', 'private, max-age=86400')
   return response.type(image.value).send(image.data)
 })
@@ -85,7 +85,7 @@ router.put('/image', requireRole('ADMIN'), express.raw({ type: [...allowedImageT
   const image = readImage(request)
   if (!image) return response.status(422).json({ message: 'Upload the QR code as a JPEG or PNG image.', errors: { file: 'Upload a JPEG or PNG image.' } })
   await putSetting('qrph_image', image.contentType, image.bytes, request.user.id)
-  return response.json({ message: 'QR Ph code saved.' })
+  return response.json({ message: 'GCash QR code saved.' })
 })
 
 // PATCH /api/qrph — the account name shown under the code.
@@ -272,7 +272,7 @@ router.post('/payments/:id/verify', staffOnly, async (request, response) => {
       await applyCancellationEffects(client, orderId, request.user.id)
       await client.query(
         'INSERT INTO order_status_history (order_id, updated_by, status, note) VALUES ($1, $2, $3, $4)',
-        [orderId, request.user.id, 'CANCELLED', `QR Ph payment not accepted: ${reason}`],
+        [orderId, request.user.id, 'CANCELLED', `GCash payment not accepted: ${reason}`],
       )
       outcome = 'CANCELLED'
     } else {

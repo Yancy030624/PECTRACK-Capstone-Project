@@ -37,7 +37,7 @@ import { PrintHeader, PrintThisButton } from '../../components/PrintReport.jsx'
 
 const emptyPaymentForm = { method: 'CASH', amount: '', gatewayReference: '' }
 // QRPH: QR Ph; GCASH: an older PayMongo or counter GCash payment.
-const methodName = (method) => ({ QRPH: 'QR Ph', GCASH: 'GCash', CASH: 'Cash' })[method] ?? method
+const methodName = (method) => ({ QRPH: 'GCash', GCASH: 'GCash', CASH: 'Cash' })[method] ?? method
 
 function DetailPanel({ open, onClose, labelledBy, children }) {
   const isLarge = useMediaQuery('(min-width: 1536px)')
@@ -311,7 +311,7 @@ export function PaymentBilling({ user, params }) {
               <Field label="Method" error={paymentErrors.method}>
                 <Select value={paymentForm.method} onChange={(event) => setPaymentForm({ ...paymentForm, method: event.target.value })}>
                   <option value="CASH">Cash</option>
-                  <option value="QRPH">QR Ph</option>
+                  <option value="QRPH">GCash</option>
                 </Select>
               </Field>
               <Field label="Amount" error={paymentErrors.amount} help={`${formatPeso(orderDetail.payment.balanceDue)} still owed`}>

@@ -133,7 +133,7 @@ export function ReceiptPage({ user }) {
       <section className="mx-auto max-w-2xl px-4 py-14 text-center sm:px-7">
         <div className="rounded-2xl border border-cream-200 bg-white p-8">
           <h1 className="text-xl font-extrabold text-cocoa-900">Payment not accepted</h1>
-          <p className="mt-3 text-sm text-cocoa-500">The bakery could not confirm the QR Ph payment for order {orderLabel(order)}, so the order was cancelled and nothing was set aside.</p>
+          <p className="mt-3 text-sm text-cocoa-500">The bakery could not confirm the GCash payment for order {orderLabel(order)}, so the order was cancelled and nothing was set aside.</p>
           {rejected?.rejectedReason && <p className="mt-3 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-800">Reason: {rejected.rejectedReason}</p>}
           <p className="mt-3 text-xs text-cocoa-500">If you did pay, call us at {bakery.phones.join(' or ')} with your reference number{rejected?.gatewayReference ? ` (${rejected.gatewayReference})` : ''}.</p>
           <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">

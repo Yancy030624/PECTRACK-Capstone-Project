@@ -425,7 +425,7 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
   let staffPayment = null
   if (request.user.role !== 'CUSTOMER') {
     const method = normalize(request.body.payment?.method).toUpperCase()
-    if (method !== 'CASH' && method !== 'QRPH' && method !== 'GCASH') return response.status(422).json({ message: 'Take the payment first: choose cash or QR Ph.', errors: { payment: 'Choose cash or QR Ph.' } })
+    if (method !== 'CASH' && method !== 'QRPH' && method !== 'GCASH') return response.status(422).json({ message: 'Take the payment first: choose cash or GCash.', errors: { payment: 'Choose cash or GCash.' } })
     let gatewayReference = null
     if (method !== 'CASH') {
       gatewayReference = normalize(request.body.payment?.gatewayReference)
@@ -454,8 +454,8 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
   if (request.user.role === 'CUSTOMER' && request.body.paymentMode != null) {
     paymentMode = normalize(request.body.paymentMode).toUpperCase()
     if (paymentMode === 'QRPH') paymentMode = 'GCASH'
-    if (paymentMode !== 'CASH' && paymentMode !== 'GCASH') return response.status(422).json({ message: 'Choose cash or QR Ph.', errors: { paymentMode: 'Choose cash or QR Ph.' } })
-    if (paymentMode === 'CASH' && orderType !== 'PICKUP') return response.status(422).json({ message: 'Delivery orders are paid with QR Ph.', errors: { paymentMode: 'Delivery orders are paid with QR Ph.' } })
+    if (paymentMode !== 'CASH' && paymentMode !== 'GCASH') return response.status(422).json({ message: 'Choose cash or GCash.', errors: { paymentMode: 'Choose cash or GCash.' } })
+    if (paymentMode === 'CASH' && orderType !== 'PICKUP') return response.status(422).json({ message: 'Delivery orders are paid with GCash.', errors: { paymentMode: 'Delivery orders are paid with GCash.' } })
   }
   const payAtPickup = request.user.role === 'CUSTOMER' && paymentMode === 'CASH'
 
@@ -493,7 +493,7 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
       const open = await client.query(openCashOrderSql, [customerId])
       if (open.rows[0]) {
         await client.query('ROLLBACK')
-        const message = `You already have a cash order waiting for pickup (#${open.rows[0].order_id}). Pay for or collect it first, or pay this one with QR Ph.`
+        const message = `You already have a cash order waiting for pickup (#${open.rows[0].order_id}). Pay for or collect it first, or pay this one with GCash.`
         return response.status(409).json({ message, errors: { paymentMode: message }, openOrderId: open.rows[0].order_id })
       }
     }
@@ -689,7 +689,7 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     const receiptUrl = receiptToken ? `${config.clientOrigin}/r/${receiptToken}` : null
     if (receiptUrl) sendReservationNotices({ orderId, receiptUrl })
     return response.status(201).json({
-      message: guest?.isReservation ? `Advanced order placed and paid. The order number is on its way by SMS${guest.email ? ', and the receipt by email' : ''}.` : staffPayment ? 'Order placed and paid.' : payAtPickup ? 'Order placed. Pay in cash when you pick it up.' : 'Order saved. Pay with QR Ph within 15 minutes to place it.',
+      message: guest?.isReservation ? `Advanced order placed and paid. The order number is on its way by SMS${guest.email ? ', and the receipt by email' : ''}.` : staffPayment ? 'Order placed and paid.' : payAtPickup ? 'Order placed. Pay in cash when you pick it up.' : 'Order saved. Pay with GCash within 15 minutes to place it.',
       order: { id: orderId, orderNumber, orderDay, status, totalAmount, orderType, paymentMode, isReservation: guest?.isReservation ?? false, receiptUrl },
     })
   } catch (error) {
