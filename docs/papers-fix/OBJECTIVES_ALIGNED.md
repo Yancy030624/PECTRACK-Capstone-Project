@@ -14,19 +14,8 @@
 | 4 | Update the parts that describe the old system | Rewrite a few paragraphs |
 | 4b | Add the QR Ph limitation | Paste one paragraph |
 | 5 | Fix the references | Edit the reference list |
+| 6 | Align the Background of the Problem with the Objectives | Paste two problems, replace a few sentences |
 
----
-
-## Step 1. Decide the title
-
-The paper uses two different titles:
-
-- **The cover page:** "PECTRACK: A Web-Based Order Management System with Predictive Analytics and **Inventory System** for Pecto's Bakery in Lucban, Quezon"
-- **The text, in 9 places:** "…with Predictive Analytics and **Automated Inventory**…"
-
-☐ Agree on one title, then use it everywhere: the cover, the endorsement form, the Project Context (end), the Background of the Problem (end), the Purpose and Description, the Objectives, and the Scope and Limitations.
-
-> The objectives in Step 2 use the cover title. If you choose "Automated Inventory" instead, change the general objective to match.
 
 
 ## Step 4. Update the parts that describe the old system
@@ -69,6 +58,69 @@ The system changed after the mock defense, and these parts still describe the ol
 | ☐ | Utami & Sudarmiatin (2022) | No record of this paper could be found | Remove it, and its citation in the text |
 | ☐ | Cruz, M., et al. (2022); Sharma, R., et al. (2023); Singh, A., et al. (2024) | No full author list, volume or DOI | Find the real papers and complete them, or remove them |
 | ☐ | Culili (2026), Orquesta (2026), Pattnaike (2025), Krishnamurthy (2024), Mansur (2024) | Not checked yet | Search each on Google Scholar to confirm it exists |
+
+---
+
+## Step 6. Align the Background of the Problem with the Objectives
+
+**Page numbers in this step** are from `PECTRACK_REVISED (4).pdf`.
+
+**Why:** the Background of the Problem lists five problems, and Objectives 1–5 answer them. Objectives 6 (inventory) and 7 (reports and forecasting) answer no problem: the Background only adds them in one paragraph on p. 10 ("In addition to addressing these operational challenges…"). The panel will ask why the system has inventory and predictive analytics if no problem calls for them. Two new problems fix this. Every problem then has an objective, and every objective has a problem.
+
+### 6a. Add two problems (Background of the Problem, p. 10)
+
+☐ Paste these two bullets **after** "Manual Payment Verification and Order Release" (it ends "…in accordance with the bakery's payment policies."):
+
+> ● **Manual Inventory Monitoring and Production Planning:** Based on the follow-up consultations with the management, soft breads are baked every morning up to a daily standard quantity, while hard breads are baked again once their stock falls to a minimum level. Demand also rises on weekends and during events such as Holy Week, the Pahiyas Festival, and Christmas. At present, the stock on the shelves is checked manually, and the quantities to bake are decided from experience. During busy periods, this makes it difficult to know how many pieces of each product are left, which products need to be baked, and how much more to prepare for a coming weekend or event. To address this problem, PECTRACK will deduct stock automatically as orders are placed, update the counts on screen in real time, list what to bake each day based on the daily standards, minimum levels, weekends, events, and advanced orders, and warn the staff when a product runs low.
+>
+> ● **No Sales History for Planning:** Because orders and sales are recorded on paper, the bakery has no organized record of its past sales by product and by day. Production quantities therefore rely on experience, and the bakery cannot readily review which products sell more on particular days, weekends, or events. For the same reason, actual historical sales data are not available for this study. To address this problem, PECTRACK will record every sale by product and date, so that a sales history builds up from the first day of use. The system will report sales, best-selling products, and peak ordering periods, and will demonstrate demand forecasting on this history. Until enough actual sales are recorded, the forecast will be demonstrated on assumed historical data, as approved by the adviser, and it will switch to actual sales after 56 days.
+
+> If Mrs. Abillar mentioned products selling out or being left over, add that as one sentence in the first bullet. It is the strongest evidence for this problem.
+
+☐ **Delete** the paragraph on p. 10 that begins "In addition to addressing these operational challenges, PECTRACK will incorporate predictive analytics…". The two new problems now cover it.
+
+☐ In the next paragraph, the list "…decentralized order management, manual record-keeping, customer information retrieval, order status monitoring, and payment verification" becomes:
+
+> "…decentralized order management, manual record-keeping, customer information retrieval, order status monitoring, payment verification, inventory monitoring and production planning, and the lack of a sales history."
+
+### 6b. Replace the solution of "Manual Payment Verification and Order Release" (p. 10)
+
+☐ Keep the problem as it is. Replace its last two sentences ("PECTRACK aims to address this concern by providing a centralized means… in accordance with the bakery's payment policies.") with:
+
+> PECTRACK aims to address this concern by linking every payment to its order. A customer who pays online scans the bakery's QR Ph code and enters the payment's reference number, and the order is held until a staff member confirms that payment. The system refuses a reference number that was already used, records who confirmed each payment and when, and releases an order only once it is paid. Staff no longer need to match payments with messages and paper records, although the check against the bakery's bank or e-wallet app remains a manual step, as stated in the Scope and Limitations.
+
+> **If the panel asks "so payment verification is still manual?":** yes, the check itself is. What the system removes is the matching: each reference arrives already attached to its order and amount, appears in one list, can be used only once, and the order cannot be released before it is confirmed. Automatic confirmation needs a paid payment gateway, which charges a fee on every payment.
+
+### 6c. Objectives (p. 21–22)
+
+| ☐ | Objective | Change |
+|---|---|---|
+| ☐ | 3 | "Customers have accounts that keep their contact details…" becomes "Customers **with accounts** keep their contact details…" |
+| ☐ | 4 | Replace the whole explanation (from "Customers choose a pickup or delivery time…" to the end) with: "Customers choose a pickup or delivery time in 30-minute slots from 6:00 AM, an hour after the 5:00 AM bake, so the breads have cooled before release, and staff see which orders are needed next. Each order moves through Ready for pickup or Ready for delivery, Out for delivery, and Completed; staff update the status in the system, and customers see it on their orders and receive email updates. Advanced orders reserve their bread when they are placed: hard breads are taken from the stock, and soft breads are added to the bake list for the pickup day. Customers see when their order is ready instead of messaging the bakery to ask." This answers the Background's own example (an order for 6:00 not ready until 7:00). |
+| ☐ | 5 | Use the new wording in Step 4 (the Objective 5 row). |
+| ☐ | 7 | Add at the start: "Every sale is recorded by product and date, building a sales history the bakery did not have." |
+
+Objectives 1, 2 and 6 stay as they are.
+
+### 6d. Add to the Limitations (Scope and Limitations)
+
+☐ Add these two paragraphs, together with the QR Ph paragraph in Step 4b:
+
+> Customer records and order history cover customers who have accounts. A walk-in order keeps the customer's name, and the contact number for an advanced order, but it is not linked to a customer record.
+
+> The system does not read the bakery's Facebook messages. The bakery's Facebook page directs customers to the PECTRACK storefront, and an order received through a message is entered by a staff member on the counter screen as a walk-in or advanced order.
+
+### How each problem is solved (for the paper and the defense)
+
+| Problem | Objective | Module | How the system solves it |
+|---|---|---|---|
+| Decentralized Order Management | 1 | Order Management | Online orders come through the storefront, and walk-in and advanced orders through the counter screen. All of them appear in one order list that every authorized staff member sees. |
+| Manual Order Recording and Processing | 2 | Order Management | Every order is saved with its items, quantities, prices, time, and a daily order number, with a printable receipt. The stock is deducted automatically. |
+| Lack of Centralized Customer Information and Order History | 3 | Login and Customer Account | Accounts keep contact details, saved addresses, and past orders with receipts. Access is protected by an SMS code, the administrator's email code, a 15-minute lockout after five failed sign-ins, and roles. |
+| Limited Visibility into Order Status and Scheduling | 4 | Order Management and Notifications | Customers choose a time in 30-minute slots from 6:00 AM, after the 5:00 AM bake has cooled. Walk-in sales start at 5:00 AM. Advanced orders reserve their bread. Staff see orders due within the hour. Customers see the status and receive emails. |
+| Manual Payment Verification and Order Release | 5 | Payment and Billing | Each QR Ph reference is attached to its order and used only once. The order is held until a staff member confirms it, who confirmed it is recorded, and the payment log can be exported as a PDF. |
+| Manual Inventory Monitoring and Production Planning (new) | 6 | Inventory Management | Stock is deducted and returned automatically and updates in real time. The Production list shows what to bake each day. A low-stock warning appears, and every stock change is logged with who made it. |
+| No Sales History for Planning (new) | 7 | Reporting and Analytics | Every sale is recorded by product and date. Reports show sales, best-selling products, and peak periods. A 7-day forecast compares three methods, uses assumed data until 56 days of actual sales exist, then switches. |
 
 ---
 
