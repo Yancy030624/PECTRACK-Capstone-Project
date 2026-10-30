@@ -707,6 +707,8 @@ Labastida et al. (2024) is already in the reference list.
 > Velasquez Jimenez, L., Grados Espinoza, H., Rubiños Jimenez, S., Grados Gamarra, J., & Marrujo-Ingunza, C. (2024). Software design aimed at proper order management in SMEs. *International Journal of Advanced Computer Science and Applications, 15*(12), 86–94. https://doi.org/10.14569/IJACSA.2024.0151209
 >
 > Wu, M., Gao, J., Hayat, N., Long, S., Yang, Q., & Al Mamun, A. (2024). Modelling the significance of food delivery service quality on customer satisfaction and reuse intention. *PLOS ONE, 19*(2), Article e0293914. https://doi.org/10.1371/journal.pone.0293914
+>
+> Yoo, S., & Park, M. (2025). Determining optimal data length for short-term business forecasting: An empirical study in catering services. *Journal of International Logistics and Trade, 23*(2), 118–130. https://doi.org/10.1108/JILT-09-2024-0068
 
 **Before printing:**
 - Add the page ranges for Cerqueira et al. (2020), Fries and Ludwig (2024), and Sinaga and Johan (2024).
@@ -818,3 +820,17 @@ Replace the last sentence of each paragraph, so it names the PECTRACK feature it
 Also in these paragraphs, use APA 7 citations ("Lo et al. (2025)", not "Lo, Tolentino, and their colleagues (2025)"), and replace "The researchers of Comparative Study of AutoML and Machine Learning in Retail Forecasting (2025)" with "Kristian and Suri (2025)".
 
 **Order in Chapter 2:** Local Literature keeps the teammate's five local sources. Foreign Literature keeps her four foreign sources (without Krishnamurthy), followed by the Round 4a subsection "Forecasting Methods, Evaluation, and Data Requirements" (now without Petropoulos), then "Forecasting in Bakeries" and "Learning from Generated Data".
+
+---
+
+## Round 13: the teammate's updated Chapter 2 (accepted 2026-10-30)
+
+☐ **Paste `CHAPTER2_FINAL.md` over the whole of Chapter 2.** It contains the complete chapter with every decision applied:
+
+- The 6 sources that could not be found came back in the teammate's version (Cruz; Lopez; Santos & Villanueva; Taqueban & Villamor; Salazar; Alzoubi & Snider), and so did Krishnamurthy. All 7 are removed again.
+- **Yoo and Park (2025) is kept.** It was verified on Crossref and against the full open-access text: 84 days gave lower errors than 56 for both Holt-Winters and the Hidden Markov Model, and the authors propose three months for their data. It is placed under "Minimum Data", and framed as follows: 56 days is the earliest point at which accuracy can be measured; the system keeps learning after that, and the measured accuracy is shown.
+- **Fact corrected:** the teammate's version said the system uses "56 days of simulated data" ("an eight-week dataset"). The assumed history is **one year**, and 56 days is when the forecast switches to **actual** sales.
+- The forecasting-method literature (Round 4a), the verified local and foreign studies (Rounds 4b and 7a), van der Haar et al. (2024), the POS paragraph, APA citations, the Round 12b relevance sentences, and the system years now match the reference list.
+- The teammate's Synthesis structure and tone are kept, with the facts corrected and the tense changed to present.
+- Yoo and Park (2025) is added to the final reference list (8b).
+
