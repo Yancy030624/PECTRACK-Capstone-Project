@@ -293,7 +293,7 @@ body {
 
 /* Inventory becomes compact stock cards on phones; every value and action
  * remains visible without swiping across a six-column desktop table. */
-@media (max-width: 639px) {
+@media (max-width: 767px) {
   .inventory-table,
   .inventory-table tbody {
     display: block;

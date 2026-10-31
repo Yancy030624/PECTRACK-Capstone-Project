@@ -9,7 +9,7 @@ import { forwardRef } from 'react'
 // in one row. This is the one shape, exported so Select and Textarea can
 // share it exactly rather than each keeping a near-identical copy.
 export const FIELD_SHAPE =
-  'w-full rounded-control border border-line-200 bg-surface px-3 text-sm text-ink-900 ' +
+  'ui-field w-full rounded-control border border-line-200 bg-surface px-3 text-sm text-ink-900 ' +
   'placeholder:text-ink-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-500/25 ' +
   'aria-invalid:border-red-500 disabled:cursor-not-allowed disabled:opacity-60'
 

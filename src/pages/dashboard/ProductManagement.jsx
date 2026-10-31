@@ -371,7 +371,7 @@ export function ProductManagement() {
 
       <Card className="mt-4 p-5">
         {!loading && categories.length > 1 && (
-          <div role="group" aria-label="Category" className="mb-4 flex flex-wrap gap-2">
+          <div role="group" aria-label="Category" className="staff-filter-group mb-4 flex flex-wrap gap-2">
             {['ALL', ...categories.map((category) => category.name)].map((name) => {
               const active = categoryFilter === name
               const count = products.filter((product) => matchesSearch(product) && (name === 'ALL' || product.categoryName === name)).length

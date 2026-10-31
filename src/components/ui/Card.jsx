@@ -5,7 +5,7 @@ export function Card({ className = '', children, ...props }) {
   return (
     // No outline (the adviser, 2026-10-23): a soft shadow sets the card
     // off the page instead.
-    <div className={`min-w-0 rounded-panel bg-surface shadow-raised ${className}`} {...props}>
+    <div className={`ui-card min-w-0 rounded-panel bg-surface shadow-raised ${className}`} {...props}>
       {children}
     </div>
   )

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import './customer-account.css'
 import { MarketingHeader } from '../../components/MarketingHeader.jsx'
 import { VerifyEmailBanner } from '../../components/VerifyEmailBanner.jsx'
 import { SiteFooter } from '../customer-storefront/StorefrontLayout.jsx'
@@ -11,7 +12,7 @@ import { OrderManagement } from '../dashboard/OrderManagement.jsx'
 // `storefront-skin` wrapper (index.css).
 //
 // Simplified (the user, 2026-10-28): a compact profile header — who is
-// signed in, with Sign out — and two tabs, Profile and Orders. The My
+// signed in, with Sign out — and two sections, Profile and Orders. The My
 // Payments tab and the "Orders placed" / "Total ordered" cards are gone: a
 // customer pays at checkout or at the counter, and every order's receipt,
 // payment included, opens from My Orders.
@@ -54,11 +55,12 @@ export function CustomerAccount({ user, onLogout, onUserUpdated }) {
       <MarketingHeader user={user} onLogout={onLogout} />
       <VerifyEmailBanner user={user} />
 
-      <main className="mx-auto w-full max-w-4xl flex-1 px-4 pb-10 pt-8 sm:px-7 sm:pt-10">
+      <main className="customer-account-main mx-auto w-full max-w-6xl flex-1 px-4 pb-10 pt-8 sm:px-7 sm:pt-10">
         {/* Who is signed in, in one compact card. */}
-        <div className="flex flex-wrap items-center gap-4 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-cream-200 sm:p-6">
-          <div className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-crust-600 font-display text-2xl font-bold text-white" aria-hidden="true">{user.name[0]}</div>
+        <div className="customer-account-identity">
+          <div className="customer-account-avatar" aria-hidden="true">{user.name[0]}</div>
           <div className="min-w-0 flex-1">
+            <p className="customer-account-caption">Your account</p>
             <h1 className="break-words font-display text-2xl font-bold text-cocoa-900">{user.name}</h1>
             <p className="text-sm text-cocoa-500 [overflow-wrap:anywhere]">{[user.email, user.contactNumber].filter(Boolean).join(' · ')}</p>
           </div>
@@ -69,7 +71,7 @@ export function CustomerAccount({ user, onLogout, onUserUpdated }) {
         </div>
 
         {/* Two tabs, as an underlined bar. */}
-        <nav aria-label="Account sections" className="mt-6 flex gap-1 border-b border-cream-300">
+        <nav aria-label="Account sections" className="customer-account-nav mt-6 flex gap-1 border-b border-cream-300">
           {tabs.map((tab) => {
             const active = tab.key === activeTab
             return (
@@ -89,7 +91,7 @@ export function CustomerAccount({ user, onLogout, onUserUpdated }) {
 
         {/* The panels keep their own inner layout; the page gives them the
             width. No onLogout here: Sign out is in the card above. */}
-        <div className="-mx-4 pt-2 sm:-mx-7">
+        <div className={activeTab === 'profile' ? 'customer-account-panel' : '-mx-4 pt-2 sm:-mx-7'}>
           <ActivePanel user={user} onUserUpdated={onUserUpdated} onNavigate={navigateToModule} />
         </div>
       </main>

@@ -43,8 +43,8 @@ export function Table({ caption, children, className = '', stickyFirstColumn = f
   return (
     <div>
       <div className="relative">
-        <div ref={scrollerRef} tabIndex={0} role="region" aria-label={caption ? `${caption}, scroll horizontally for more columns` : 'Table, scroll horizontally for more columns'} className="overflow-x-auto overscroll-x-contain rounded-panel bg-surface">
-          <table className={`w-full text-left text-sm ${stickyFirstColumn ? 'md:[&_tr>:first-child:not([colspan])]:sticky md:[&_tr>:first-child:not([colspan])]:left-0 md:[&_tr>:first-child:not([colspan])]:z-10 md:[&_tr>:first-child:not([colspan])]:max-w-48 md:[&_tr>:first-child:not([colspan])]:break-words md:[&_tr>:first-child:not([colspan])]:bg-surface md:[&_tr.bg-brand-50>:first-child:not([colspan])]:bg-brand-50 md:[&_tr:hover>:first-child:not([colspan])]:bg-surface-sunk md:[&_tr>:first-child:not([colspan])]:shadow-[1px_0_0_var(--color-line-200)] print:[&_tr>:first-child]:static print:[&_tr>:first-child]:shadow-none' : ''} ${className}`}>
+        <div ref={scrollerRef} tabIndex={0} role="region" aria-label={caption ? `${caption}, scroll horizontally for more columns` : 'Table, scroll horizontally for more columns'} className="ui-table-region overflow-x-auto overscroll-x-contain rounded-panel bg-surface">
+          <table className={`ui-table w-full text-left text-sm ${stickyFirstColumn ? 'md:[&_tr>:first-child:not([colspan])]:sticky md:[&_tr>:first-child:not([colspan])]:left-0 md:[&_tr>:first-child:not([colspan])]:z-10 md:[&_tr>:first-child:not([colspan])]:max-w-48 md:[&_tr>:first-child:not([colspan])]:break-words md:[&_tr>:first-child:not([colspan])]:bg-surface md:[&_tr.bg-brand-50>:first-child:not([colspan])]:bg-brand-50 md:[&_tr:hover>:first-child:not([colspan])]:bg-surface-sunk md:[&_tr>:first-child:not([colspan])]:shadow-[1px_0_0_var(--color-line-200)] print:[&_tr>:first-child]:static print:[&_tr>:first-child]:shadow-none' : ''} ${className}`}>
             {caption && <caption className="sr-only">{caption}</caption>}
             {children}
           </table>

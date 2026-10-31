@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Button } from '../../components/ui/Button.jsx'
+import { ModuleHeader } from '../../components/ui/ModuleHeader.jsx'
 import { CustomerManagement } from './CustomerManagement.jsx'
 import { StaffManagement } from './StaffManagement.jsx'
 
@@ -10,11 +11,10 @@ export function UserManagement({ user }) {
   const tabs = user.role === 'ADMIN' ? ['Customers', 'Staff'] : ['Customers']
   const [tab, setTab] = useState('Customers')
   return (
-    <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
-      <h1 className="mt-1 text-2xl font-semibold text-ink-900">User Management</h1>
+    <section className="staff-module min-w-0 flex-1 px-4 pb-10 sm:px-7">
+      <ModuleHeader role={user.role} title="User Management" description="Manage customer records and staff accounts." />
       {tabs.length > 1 && (
-        <div className="mt-4 flex gap-2" role="tablist">
+        <div className="staff-tabs mt-6 flex flex-wrap gap-2" role="tablist" aria-label="User sections">
           {tabs.map((name) => (
             <Button key={name} type="button" size="sm" role="tab" aria-selected={tab === name} variant={tab === name ? 'primary' : 'secondary'} onClick={() => setTab(name)}>
               {name}

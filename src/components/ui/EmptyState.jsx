@@ -4,7 +4,7 @@
 // form. This is the empty-state half of that normalisation.
 export function EmptyState({ title, description, action }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-1 px-4 py-12 text-center">
+    <div className="ui-empty-state flex flex-col items-center justify-center gap-1 px-4 py-12 text-center">
       <p className="text-sm font-semibold text-ink-700">{title}</p>
       {description && <p className="text-xs text-ink-500">{description}</p>}
       {action && <div className="mt-3">{action}</div>}

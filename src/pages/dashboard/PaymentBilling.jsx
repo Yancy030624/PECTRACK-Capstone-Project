@@ -19,6 +19,7 @@ import { apiGet, apiPatch, apiPost } from '../../api/client.js'
 import { Modal } from '../../components/Modal.jsx'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Button } from '../../components/ui/Button.jsx'
+import { ModuleHeader } from '../../components/ui/ModuleHeader.jsx'
 import { Card } from '../../components/ui/Card.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Field } from '../../components/ui/Field.jsx'
@@ -217,7 +218,7 @@ export function PaymentBilling({ user, params }) {
         </div>
       </div>
       {!selectedOrderId ? (
-        <p className="mt-4 text-sm text-ink-500">Select an order to view its receipt.</p>
+        <div className="staff-detail-placeholder"><EmptyState title="Select an order" description="Select an order to view its receipt." /></div>
       ) : detailLoading ? (
         <LoadingRows className="mt-4" />
       ) : orderDetail ? (
@@ -333,11 +334,12 @@ export function PaymentBilling({ user, params }) {
   )
 
   return (
-    <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
+    <section className="staff-module min-w-0 flex-1 px-4 pb-10 sm:px-7">
       {/* The account page already says whose it is; the portal label is for staff. */}
-      {user.role !== 'CUSTOMER' && <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>}
-      <h1 className="mt-1 text-2xl font-semibold text-ink-900">{isStaff ? 'Payment & Billing' : 'My Payments'}</h1>
-      <p className="mt-2 text-sm text-ink-500">{isStaff ? 'Every payment is taken when the order is placed. Receipts and the payment log.' : 'Your orders and their receipts.'}</p>
+      {isStaff ? <ModuleHeader role={user.role} title="Payment & Billing" description="Every payment is taken when the order is placed. Receipts and the payment log." /> : <>
+        <h1 className="mt-1 text-2xl font-semibold text-ink-900">My Payments</h1>
+        <p className="mt-2 text-sm text-ink-500">Your orders and their receipts.</p>
+      </>}
 
       {message && (
         <div className="mt-4">
@@ -345,9 +347,9 @@ export function PaymentBilling({ user, params }) {
         </div>
       )}
 
-      <div className="mt-6 flex gap-2">
+      <div className="staff-tabs mt-6 flex flex-wrap gap-2" role="group" aria-label="Payment sections">
         {tabs.map((tab) => (
-          <Button type="button" key={tab.key} size="sm" variant={activeTab === tab.key ? 'primary' : 'secondary'} onClick={() => setActiveTab(tab.key)}>
+          <Button type="button" key={tab.key} size="sm" aria-pressed={activeTab === tab.key} variant={activeTab === tab.key ? 'primary' : 'secondary'} onClick={() => setActiveTab(tab.key)}>
             {tab.label}
           </Button>
         ))}
@@ -358,11 +360,11 @@ export function PaymentBilling({ user, params }) {
       {activeTab === 'confirm' && <PaymentsToConfirm user={user} onChanged={() => { loadToConfirmCount(); loadOrders() }} />}
 
       {activeTab === 'billing' && (
-        <div className="mt-6 grid gap-4 2xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+        <div className="staff-master-detail mt-6 grid items-start gap-5 2xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
           <Card className="min-w-0 p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-ink-900">{isStaff ? 'Orders' : 'Your orders'}</h2>
-              <div role="group" aria-label="Filter orders" className="flex flex-wrap gap-2">
+              <div role="group" aria-label="Filter orders" className="staff-filter-group flex flex-wrap gap-2">
                 {billingFilters.map((filter) => (
                   <Button key={filter.key} type="button" size="sm" variant={billingFilter === filter.key ? 'primary' : 'secondary'} aria-pressed={billingFilter === filter.key} onClick={() => setBillingFilter(filter.key)}>
                     {filter.label} <span className="tabular-nums opacity-70">{orders.filter((order) => order.status === filter.key).length}</span>

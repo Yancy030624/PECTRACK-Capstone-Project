@@ -3,6 +3,7 @@ import { apiGet, apiPatch } from '../../api/client.js'
 import { AddressForm } from '../../components/AddressForm.jsx'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Button } from '../../components/ui/Button.jsx'
+import { ModuleHeader } from '../../components/ui/ModuleHeader.jsx'
 import { Card } from '../../components/ui/Card.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Field } from '../../components/ui/Field.jsx'
@@ -33,49 +34,42 @@ const emptyPasswordForm = { currentPassword: '', newPassword: '', confirmPasswor
 // pass.
 export function MyProfile({ user, onUserUpdated, onLogout }) {
   const isCustomer = user.role === 'CUSTOMER'
-  const tabs = isCustomer ? ['Profile', 'Addresses', 'Password'] : ['Profile', 'Password']
+  const tabs = ['Profile', 'Password']
   const [activeTab, setActiveTab] = useState('Profile')
 
+  if (isCustomer) return (
+    <div className="customer-settings">
+      <section className="customer-settings-section" aria-labelledby="account-personal-heading">
+        <div className="customer-settings-heading"><h2 id="account-personal-heading">Personal information</h2><p>Your name, email, and contact number.</p></div>
+        <ProfileTab user={user} onUserUpdated={onUserUpdated} />
+      </section>
+      <section className="customer-settings-section" aria-labelledby="account-addresses-heading">
+        <div className="customer-settings-heading"><h2 id="account-addresses-heading">Delivery addresses</h2><p>Choose where your orders are delivered.</p></div>
+        <AddressesTab />
+      </section>
+      <section className="customer-settings-section" aria-labelledby="account-password-heading">
+        <div className="customer-settings-heading"><h2 id="account-password-heading">Password</h2><p>Change the password for your account.</p></div>
+        <PasswordTab unified />
+      </section>
+      {onLogout && <Button type="button" variant="destructive" onClick={onLogout}>Sign out</Button>}
+    </div>
+  )
+
   return (
-    <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
+    <section className="staff-module min-w-0 flex-1 px-4 pb-10 sm:px-7">
       {/* The customer's account page already has a header with the name
           (the user, 2026-10-28), so the title is staff-only there. */}
       {!isCustomer && (
-        <>
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
-          <h1 className="mt-1 text-2xl font-semibold text-ink-900">My Profile</h1>
-          <p className="mt-2 text-sm text-ink-500">Update your own name, email, and contact number.</p>
-        </>
+        <ModuleHeader role={user.role} title="My Profile" description="Update your own name, email, and contact number." />
       )}
 
-      {isCustomer ? (
-        // A segmented control, as account pages usually have.
-        <div role="tablist" aria-label="Profile sections" className="mt-4 inline-flex rounded-full bg-cream-200/70 p-1">
-          {tabs.map((tab) => (
-            <button
-              type="button"
-              key={tab}
-              role="tab"
-              aria-selected={activeTab === tab}
-              onClick={() => setActiveTab(tab)}
-              className={`min-h-9 rounded-full px-4 text-sm font-semibold transition ${activeTab === tab ? 'bg-white text-cocoa-900 shadow-sm' : 'text-cocoa-500 hover:text-cocoa-900'}`}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <div className="mt-6 flex gap-2">
-          {tabs.map((tab) => (
-            <Button type="button" key={tab} size="sm" variant={activeTab === tab ? 'primary' : 'secondary'} onClick={() => setActiveTab(tab)}>
-              {tab}
-            </Button>
-          ))}
-        </div>
-      )}
+      <div className="staff-tabs mt-6 flex gap-2" role="group" aria-label="Profile sections">
+        {tabs.map((tab) => (
+          <Button type="button" key={tab} size="sm" aria-pressed={activeTab === tab} variant={activeTab === tab ? 'primary' : 'secondary'} onClick={() => setActiveTab(tab)}>{tab}</Button>
+        ))}
+      </div>
 
       {activeTab === 'Profile' && <ProfileTab user={user} onUserUpdated={onUserUpdated} />}
-      {activeTab === 'Addresses' && isCustomer && <AddressesTab />}
       {activeTab === 'Password' && <PasswordTab />}
 
       {/* Sign out lives here too (the user, 2026-10-20): on a phone the
@@ -130,7 +124,8 @@ function ProfileTab({ user, onUserUpdated }) {
   }
 
   return (
-    <Card className="mt-6 max-w-lg p-6">
+    <Card className={`mt-6 max-w-lg p-6 ${isCustomer ? 'customer-settings-card' : 'staff-profile-card'}`}>
+      {!isCustomer && <h2 className="mb-5 text-base font-semibold text-ink-900">Personal details</h2>}
       <form className="space-y-3" onSubmit={handleSubmit} noValidate>
         <Field label="Username">
           <Input value={user.username} disabled />
@@ -168,7 +163,7 @@ function ProfileTab({ user, onUserUpdated }) {
 }
 
 // --- Password tab -----------------------------------------------------------
-function PasswordTab() {
+function PasswordTab({ unified = false }) {
   const [passwordForm, setPasswordForm] = useState(emptyPasswordForm)
   const [passwordErrors, setPasswordErrors] = useState({})
   const [passwordMessage, setPasswordMessage] = useState('')
@@ -200,8 +195,9 @@ function PasswordTab() {
 
   return (
     <>
-      <p className="mt-6 max-w-lg text-sm text-ink-500">You'll stay signed in here, but any other device using your account will be signed out.</p>
-      <Card className="mt-4 max-w-lg p-6">
+      {!unified && <p className="mt-6 max-w-lg text-sm text-ink-500">You'll stay signed in here, but any other device using your account will be signed out.</p>}
+      <Card className={`mt-4 max-w-lg p-6 ${unified ? 'customer-settings-card' : ''}`}>
+        {unified && <p className="customer-password-notice">You'll stay signed in here, but any other device using your account will be signed out.</p>}
         <form className="space-y-3" onSubmit={handlePasswordSubmit} noValidate>
           <Field label="Current password" error={passwordErrors.currentPassword}>
             <PasswordInput value={passwordForm.currentPassword} onChange={(event) => updatePasswordField('currentPassword', event.target.value)} autoComplete="current-password" />
@@ -285,7 +281,7 @@ function AddressesTab() {
   }
 
   return (
-    <Card className="mt-6 p-6">
+    <Card className="customer-settings-card mt-6 p-6">
       <p className="text-sm text-ink-500">Saved delivery addresses for your account. Your first address becomes the default automatically.</p>
       {message && (
         <div className="mt-3">
@@ -294,8 +290,8 @@ function AddressesTab() {
       )}
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-line-100 pt-4">
-        <h2 className="text-lg font-semibold text-ink-900">Your addresses</h2>
-        <div className="flex items-center gap-3">
+        <h3 className="text-base font-semibold text-ink-900">Saved addresses</h3>
+        <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-1.5 text-xs font-medium text-ink-500">
             <input type="checkbox" checked={includeInactive} onChange={(event) => setIncludeInactive(event.target.checked)} />
             Show deactivated
@@ -306,7 +302,7 @@ function AddressesTab() {
 
       {showForm && (
         <div className="mt-4 border-t border-line-100 pt-4">
-          <AddressForm variant="dashboard" onSaved={handleAddressSaved} onCancel={() => setShowForm(false)} />
+          <AddressForm variant="storefront" onSaved={handleAddressSaved} onCancel={() => setShowForm(false)} />
         </div>
       )}
 
@@ -320,7 +316,7 @@ function AddressesTab() {
             {addresses.map((address) => (
               <li key={address.id} className="py-3 text-sm">
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
+                  <div className="min-w-0 flex-1 [overflow-wrap:anywhere]">
                     <p className="font-semibold text-ink-900">
                       {address.label}
                       {address.isDefault && <span className="ml-2 rounded-full bg-status-done-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-done-fg">Default</span>}
@@ -334,7 +330,7 @@ function AddressesTab() {
                     </p>
                     {address.deliveryNotes && <p className="mt-0.5 text-xs text-ink-500">"{address.deliveryNotes}"</p>}
                   </div>
-                  <div className="flex shrink-0 flex-wrap gap-2">
+                  <div className="customer-address-actions flex flex-wrap gap-2">
                     {address.isActive && !address.isDefault && (
                       <Button type="button" size="sm" variant="secondary" onClick={() => handleSetDefault(address.id)} disabled={actingOnId === address.id}>Set as default</Button>
                     )}

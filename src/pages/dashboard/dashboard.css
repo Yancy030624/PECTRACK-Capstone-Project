@@ -1,0 +1,167 @@
+/* Staff-only workspace. Keep storefront branding and shared status meanings intact. */
+/* Colours come from the bakery palette in index.css (.staff-skin); no override here. */
+.staff-skin h1 { font-family: var(--font-body); }
+.staff-workspace { background: var(--color-surface-sunk); }
+.staff-topbar { min-height: 80px; background: #fff; border-bottom: 1px solid #e9e5de; }
+.staff-brand { padding: 12px 8px; }
+.staff-topbar-actions { padding-right: 12px; }
+.staff-avatar { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 50%; background: var(--color-brand-100); color: var(--color-brand-700); font-weight: 800; }
+.staff-sidebar { background: #302920; color: #eee4d6; }
+.staff-workspace-label { position: relative; margin: 22px 24px 12px; padding: 0 0 20px 20px; border-bottom: 1px solid #ffffff18; font-size: 13px; font-weight: 700; }
+.staff-bakery-dot { position: absolute; top: 6px; left: 0; width: 7px; height: 7px; background: var(--color-butter-300); border-radius: 50%; }
+.staff-workspace-caption { display: block; margin-top: 3px; color: #c1b5a6; font-size: 11px; font-weight: 400; }
+.staff-nav-label { margin: 24px 12px 10px; color: #c1b5a6; font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.staff-nav-item { display: flex; width: 100%; min-height: 48px; align-items: center; gap: 12px; margin-top: 4px; padding: 11px 12px; border-radius: 10px; color: #ddd2c4; text-align: left; font-size: 13px; line-height: 1.4; transition: background .18s, color .18s; }
+.staff-nav-item > svg { width: 19px; height: 19px; }
+.staff-nav-item > span:first-of-type { flex: 1; }
+.staff-nav-item:hover { background: #ffffff0d; color: #fff; }
+.staff-nav-item.is-active { background: #f0ddbd; color: #49311e; font-weight: 800; }
+.staff-nav-indicator { width: 5px; height: 5px; flex-shrink: 0; border-radius: 50%; background: #925c2c; }
+.staff-sidebar :focus-visible { outline-color: #f0ddbd; }
+.staff-sidebar-footer { margin: 16px 24px 24px; padding-top: 20px; border-top: 1px solid #ffffff18; }
+.staff-sidebar-footer p { color: #c1b5a6; font-size: 11px; }
+.staff-store-link { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; color: #f0ddbd; font-size: 12px; font-weight: 700; }
+.staff-store-link:hover { text-decoration: underline; }
+.staff-drawer-title { color: #f0ddbd; font-size: 17px; font-weight: 800; letter-spacing: .04em; }
+.staff-drawer-title span { display: block; margin-top: 2px; color: #c1b5a6; font-size: 11px; font-weight: 400; letter-spacing: 0; }
+.staff-close-menu { color: #eee4d6; }
+.staff-close-menu:hover { background: #ffffff12; }
+.staff-mobile-account { color: #c1b5a6; }
+.dashboard-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 18px; }
+.dashboard-eyebrow { color: var(--color-ink-500); font-size: 10px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
+.dashboard-title-dot { display: none; }
+.dashboard-heading-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.dashboard-date { display: inline-flex; align-items: center; gap: 8px; padding: 10px 13px; border: 1px solid #e2ddd4; border-radius: 9px; color: var(--color-ink-700); font-size: 12px; font-weight: 600; background: #faf9f6; }
+.dashboard-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 24px; }
+.dashboard-figure { min-width: 0; padding: 20px 24px; border-radius: 16px; background: #fff; box-shadow: var(--shadow-raised); }
+.dashboard-figure-label { color: var(--color-ink-700); font-size: 13px; font-weight: 600; }
+.dashboard-figure-icon, .dashboard-action-icon, .dashboard-panel-icon { display: grid; width: 36px; height: 36px; flex-shrink: 0; place-items: center; border-radius: 11px; }
+.dashboard-figure-icon { background: var(--color-brand-50); color: var(--color-brand-700); }
+.dashboard-figure-value { margin-top: 10px; color: var(--color-ink-900); font-size: clamp(1.6rem, 2.5vw, 2.25rem); font-weight: 800; letter-spacing: -.04em; line-height: 1.25; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.dashboard-figure-note { margin-top: 8px; color: var(--color-ink-500); font-size: 11px; }
+.dashboard-figure.is-featured { background: var(--color-brand-600); }
+.dashboard-figure.is-featured .dashboard-figure-label { color: #fff3e2; }
+.dashboard-figure.is-featured .dashboard-figure-value { color: #fff; }
+.dashboard-figure.is-featured .dashboard-figure-note { color: #fde7cc; }
+.dashboard-figure.is-featured .dashboard-figure-icon { background: #ffffff24; color: #fff; }
+.dashboard-action-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 14px; }
+.dashboard-action-card { display: flex; min-width: 0; height: 100%; flex-direction: column; padding: 18px; border-radius: 14px; background: #fff; text-align: left; box-shadow: var(--shadow-raised); transition: box-shadow .18s, transform .18s; }
+.dashboard-action-card.is-link:hover { transform: translateY(-2px); box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-brand-600) 40%, transparent), 0 8px 20px #3a231414; }
+.dashboard-action-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 12px; }
+.dashboard-action-arrow { display: grid; width: 25px; height: 25px; flex-shrink: 0; place-items: center; border-radius: 50%; background: var(--color-brand-50); color: var(--color-brand-700); font-size: 16px; }
+.dashboard-good-summary { padding: 10px 2px; }
+.dashboard-panel { box-shadow: var(--shadow-raised); }
+.dashboard-panel-icon { background: #f0eee8; color: #625b50; }
+.dashboard-stock-row:first-child { padding-top: 18px; }
+.dashboard-empty { margin-top: 20px; padding: 24px 16px; border-radius: 10px; background: #f8f7f3; color: var(--color-ink-500); text-align: center; font-size: 13px; }
+.dashboard-all-clear { padding: 20px; border-radius: 14px; background: var(--color-status-done-bg); color: var(--color-status-done-fg); font-size: 14px; }
+.dashboard-skeleton { background: #e8e5de; }
+.dashboard-recent li:nth-child(even) { background: #faf9f6; }
+.dashboard-recent li { border-radius: 8px; }
+@media (min-width: 1024px) {
+  .staff-brand { width: 16rem; align-self: stretch; padding: 16px 24px; background: #302920; }
+  .staff-brand > a > div > span:last-child { color: #f0ddbd; font-family: var(--font-body); font-size: 19px; font-weight: 800; letter-spacing: .02em; }
+  .staff-brand img { box-shadow: none; }
+  .staff-topbar-actions { padding-right: 28px; }
+}
+/* Five alert categories form two balanced rows on laptop and tablet widths. */
+@media (min-width: 768px) and (max-width: 1599px) {
+  .dashboard-action-grid:has(> :nth-child(5):last-child) { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .dashboard-action-grid:has(> :nth-child(5):last-child) > * { grid-column: span 2; }
+  .dashboard-action-grid:has(> :nth-child(5):last-child) > :nth-child(n+4) { grid-column: span 3; }
+}
+@media (min-width: 640px) and (max-width: 767px) {
+  .dashboard-action-grid:has(> :nth-child(5):last-child) > :last-child { grid-column: 1 / -1; }
+}
+@media (max-width: 639px) {
+  .staff-topbar { min-height: 70px; gap: 4px; }
+  .staff-brand { gap: 0; padding-left: 4px; }
+  .staff-brand > a > div { gap: 6px; }
+  .staff-brand > a > div > span:first-child { width: 36px; height: 36px; }
+  .staff-brand > a > div > span:last-child { font-size: 15px; }
+  .staff-topbar-actions { gap: 2px; padding-right: 6px; }
+  .dashboard-figures { grid-template-columns: 1fr; gap: 10px; margin-top: 20px; }
+  .dashboard-figure { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 14px; padding: 16px 18px; }
+  .dashboard-figure > div { grid-column: 1; grid-row: 1; justify-content: start; flex-direction: row-reverse; }
+  .dashboard-figure-icon { width: 30px; height: 30px; border-radius: 8px; }
+  .dashboard-figure-icon svg { width: 17px; height: 17px; }
+  .dashboard-figure-value { grid-column: 2; grid-row: 1 / 3; max-width: 45vw; margin: 0; text-align: right; font-size: 1.6rem; }
+  .dashboard-figure-note { grid-column: 1; grid-row: 2; margin: 0; font-size: 10px; }
+  .dashboard-action-grid { grid-template-columns: 1fr; gap: 10px; }
+  .dashboard-action-card { padding: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .staff-workspace *, .staff-workspace *::before, .staff-workspace *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+@media print {
+  .staff-workspace { background: #fff; }
+  .dashboard-heading-tools { display: none; }
+  .dashboard-figure, .dashboard-action-card, .dashboard-panel { break-inside: avoid; box-shadow: none; }
+}
+
+/* Shared module surfaces, controls and hierarchy. Scoped to the staff theme,
+   including dialog portals; customer account and storefront styles are retained. */
+.staff-skin .staff-module-header h1 { margin-top: 6px; color: var(--color-ink-900); font-size: clamp(1.5rem, 2.1vw, 2rem); font-weight: 750; line-height: 1.25; letter-spacing: -.035em; }
+.staff-skin .staff-module-kicker { color: var(--color-ink-500); font-size: 10px; font-weight: 700; letter-spacing: .12em; }
+.staff-skin .staff-module-description { max-width: 85ch; margin-top: 10px; color: var(--color-ink-500); font-size: 13px; line-height: 1.7; }
+.staff-skin .ui-card { border-radius: 14px; }
+.staff-skin .ui-button { border-radius: 8px; font-weight: 600; }
+.staff-skin .ui-button--secondary { background: #fff; border-color: var(--color-line-200); color: var(--color-ink-700); }
+.staff-skin .ui-button--secondary:hover { background: #f4f3ef; border-color: #726b60; }
+.staff-skin .ui-button--ghost { color: var(--color-ink-700); }
+.staff-skin .ui-field { border-color: var(--color-line-200); border-radius: 8px; background: #fff; box-shadow: 0 1px 2px #30292003; transition: border-color .15s, box-shadow .15s; }
+.staff-skin .ui-field:hover:not(:disabled) { border-color: #726b60; }
+.staff-skin .ui-field:focus { border-color: var(--color-brand-600); outline: 2px solid color-mix(in srgb, var(--color-brand-600) 25%, transparent); outline-offset: 1px; }
+.staff-skin .ui-field[aria-invalid=true] { border-color: #dc2626; }
+.staff-skin .ui-field:disabled { background: #f5f4f0; color: #746b61; opacity: 1; }
+.staff-skin .staff-tabs { align-items: stretch; gap: 0 20px; border-bottom: 1px solid #dfdbd2; }
+.staff-skin .staff-tabs > .ui-button { position: relative; min-height: 45px; padding: 10px 2px; border: 0; border-radius: 0; background: transparent; color: var(--color-ink-500); font-size: 13px; box-shadow: none; }
+.staff-skin .staff-tabs > .ui-button:hover { color: var(--color-ink-900); background: transparent; }
+.staff-skin .staff-tabs > .ui-button[aria-pressed=true],
+.staff-skin .staff-tabs > .ui-button[aria-selected=true] { color: var(--color-brand-700); font-weight: 800; box-shadow: inset 0 -2px var(--color-brand-600); }
+.staff-skin .staff-tabs > span { display: flex; align-items: center; padding: 4px 0 4px 12px; }
+.staff-skin .staff-filter-group > button { min-height: 36px; padding: 7px 11px; border: 1px solid transparent; border-radius: 7px; background: #f3f2ee; color: var(--color-ink-700); font-size: 12px; font-weight: 600; line-height: 1.4; box-shadow: none; }
+.staff-skin .staff-filter-group > button:hover { background: #eae8e1; color: var(--color-ink-900); }
+.staff-skin .staff-filter-group > button[aria-pressed=true] { border-color: var(--color-brand-500); background: var(--color-brand-50); color: var(--color-brand-700); }
+.staff-skin .staff-filter-group > label { margin-left: 6px; }
+.staff-skin .ui-table-region { border: 1px solid #e9e5dd; border-radius: 10px; }
+.staff-skin .ui-table thead th { height: 43px; border-bottom: 1px solid #e4dfd6; background: #f6f5f1; color: #6c645a; font-size: 10px; letter-spacing: .065em; }
+.staff-skin .ui-table tbody td { padding-top: 14px; padding-bottom: 14px; vertical-align: middle; }
+.staff-skin .ui-table tbody tr { transition: background .15s; }
+.staff-skin .ui-empty-state { min-height: 170px; margin-top: 18px; padding: 36px 18px; gap: 6px; border: 1px dashed #d5cfc5; border-radius: 10px; background: #faf9f6; }
+.staff-skin .ui-empty-state > p:first-child { color: var(--color-ink-700); font-size: 14px; font-weight: 600; }
+.staff-skin .ui-empty-state > p + p { max-width: 45ch; line-height: 1.6; }
+.staff-skin .staff-master-detail > .ui-card { min-width: 0; }
+.staff-skin .staff-profile-card { max-width: 38rem; }
+@media (min-width: 1024px) {
+  .staff-skin .staff-module { padding-left: 32px; padding-right: 32px; }
+}
+@media (max-width: 639px) {
+  .staff-skin .ui-card { padding: 18px; border-radius: 12px; }
+  .staff-skin .staff-tabs { column-gap: 17px; }
+  .staff-skin .staff-tabs > .ui-button { min-height: 44px; font-size: 12px; }
+  .staff-skin .staff-filter-group > button { min-height: 44px; }
+  .staff-skin .staff-filter-group > label { width: 100%; margin: 6px 0 0; }
+}
+@media print {
+  .staff-skin .ui-card, .staff-skin .ui-table-region { box-shadow: none; }
+  .staff-skin .ui-empty-state { min-height: 0; }
+  .staff-skin .staff-module { padding: 0; }
+}
+
+/* Inventory cards own their spacing, rather than inheriting desktop table
+   cell padding. Match the card breakpoint to the other mobile lists. */
+@media (max-width: 767px) {
+  .staff-skin .ui-card.inventory-stock-panel { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+  .staff-skin .inventory-stock-filters { padding: 16px; border-radius: 12px; background: #fff; box-shadow: var(--shadow-raised); }
+  .staff-skin .inventory-stock-panel .ui-table-region { border: 0; border-radius: 0; background: transparent; }
+  .staff-skin .inventory-stock-panel .inventory-table { border-collapse: separate; border-spacing: 0; background: transparent; }
+  .staff-skin .inventory-stock-panel .inventory-table tbody tr { gap: 12px 16px; padding: 16px; border-color: #ded8ce; border-radius: 12px; }
+  .staff-skin .inventory-stock-panel .inventory-table tbody td { padding: 0; line-height: 1.5; }
+  .staff-skin .inventory-stock-panel .inventory-table tbody td:first-child:not([colspan]) { padding-bottom: 12px; }
+  .staff-skin .inventory-stock-panel .inventory-table tbody td:last-child:not([colspan]) { padding-top: 12px; border-top: 1px solid var(--color-line-100); }
+  .staff-skin .inventory-stock-actions { width: 100%; flex-wrap: nowrap; }
+  .staff-skin .inventory-stock-actions > button { flex: 1; min-height: 44px; font-size: 13px; }
+  .staff-skin .inventory-stock-panel .row-form { min-width: 0; max-width: 100%; }
+  .staff-skin .inventory-stock-panel .row-form [role=tab] { min-height: 44px; }
+}

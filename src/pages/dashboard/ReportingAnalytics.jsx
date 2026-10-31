@@ -3,6 +3,7 @@ import Chart from 'chart.js/auto'
 import { apiGet } from '../../api/client.js'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Button } from '../../components/ui/Button.jsx'
+import { ModuleHeader } from '../../components/ui/ModuleHeader.jsx'
 import { Card } from '../../components/ui/Card.jsx'
 import { Field } from '../../components/ui/Field.jsx'
 import { Input } from '../../components/ui/Input.jsx'
@@ -217,7 +218,7 @@ export function ReportingAnalytics({ user }) {
   // here: it is a raw developer file (REPORTS_UI_PLAN.md U1).
 
   return (
-    <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
+    <section className="staff-module min-w-0 flex-1 px-4 pb-10 sm:px-7">
       {/* PHASE10 B3 — what the printed page opens with. The on-screen
           heading, tabs and range form are hidden when printing. */}
       <PrintHeader
@@ -225,13 +226,11 @@ export function ReportingAnalytics({ user }) {
         subtitle={appliedRange && activeTab !== 'Forecast' && activeTab !== 'Export history' ? `${formatDate(`${appliedRange.from}T00:00:00`)} – ${formatDate(`${appliedRange.to}T00:00:00`)}${appliedRange.includeDemo ? ' · includes demo data' : ''}` : activeTab === 'Forecast' ? 'Next seven days' : undefined}
         user={user}
       />
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600 print:hidden">{user.role} PORTAL</p>
-      <h1 className="mt-1 text-2xl font-semibold text-ink-900 print:hidden">Reporting &amp; Analytics</h1>
-      <p className="mt-2 text-sm text-ink-500 print:hidden">Pick a date range for the sales, product and inventory reports, or see the next 7 days' forecast. Payments are listed in Payment &amp; Billing.</p>
+      <ModuleHeader role={user.role} title="Reporting & Analytics" description="Pick a date range for the sales, product and inventory reports, or see the next 7 days' forecast. Payments are listed in Payment & Billing." className="print:hidden" />
 
-      <div className="mt-6 flex flex-wrap items-center gap-2 print:hidden">
+      <div className="staff-tabs mt-6 flex flex-wrap items-center gap-2 print:hidden" role="group" aria-label="Report sections">
         {tabs.map((tab) => (
-          <Button type="button" key={tab} size="sm" variant={activeTab === tab ? 'primary' : 'secondary'} onClick={() => setActiveTab(tab)}>
+          <Button type="button" key={tab} size="sm" aria-pressed={activeTab === tab} variant={activeTab === tab ? 'primary' : 'secondary'} onClick={() => setActiveTab(tab)}>
             {tab}
           </Button>
         ))}
@@ -243,7 +242,7 @@ export function ReportingAnalytics({ user }) {
           looks forward from today and has no range to pick. */}
       <div hidden={activeTab === 'Export history' || activeTab === 'Forecast'} className="print:hidden">
         <Card className="mt-6 p-6">
-          <div role="group" aria-label="Report date presets" className="mb-4 flex flex-wrap gap-2">
+          <div role="group" aria-label="Report date presets" className="staff-filter-group mb-4 flex flex-wrap gap-2">
             {[{ label: 'Today', days: 1 }, { label: 'Last 7 days', days: 7 }, { label: 'Last 30 days', days: 30 }].map(({ label, days }) => (
               <Button key={label} type="button" size="sm" variant={fromInput === manilaDateFromToday(1 - days) && toInput === manilaDate() ? 'primary' : 'secondary'} aria-pressed={fromInput === manilaDateFromToday(1 - days) && toInput === manilaDate()} onClick={() => { setFromInput(manilaDateFromToday(1 - days)); setToInput(manilaDate()) }}>
                 {label}
@@ -366,9 +365,9 @@ export function ReportingAnalytics({ user }) {
       <div hidden={activeTab !== 'Products'}>
         {/* Soft and hard breads are stocked differently (the client,
             2026-10-23), so the report can show one kind at a time. */}
-        <div className="mt-6 flex flex-wrap items-center gap-2 print:hidden">
+        <div className="staff-filter-group mt-6 flex flex-wrap items-center gap-2 print:hidden" role="group" aria-label="Product bread type">
           {[['', 'All breads'], ['SOFT', 'Soft breads'], ['HARD', 'Hard breads']].map(([value, label]) => (
-            <Button key={value || 'all'} type="button" size="sm" variant={productType === value ? 'primary' : 'secondary'} onClick={() => setProductType(value)}>{label}</Button>
+            <Button key={value || 'all'} type="button" size="sm" aria-pressed={productType === value} variant={productType === value ? 'primary' : 'secondary'} onClick={() => setProductType(value)}>{label}</Button>
           ))}
         </div>
         {products ? (

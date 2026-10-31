@@ -15,6 +15,7 @@ import { apiGet, apiPatch } from '../../api/client.js'
 import { Modal } from '../../components/Modal.jsx'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Button } from '../../components/ui/Button.jsx'
+import { ModuleHeader } from '../../components/ui/ModuleHeader.jsx'
 import { Card } from '../../components/ui/Card.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Input } from '../../components/ui/Input.jsx'
@@ -310,7 +311,7 @@ function StaffOrderManagement({ user, params }) {
         <Button type="button" size="sm" variant="ghost" className="2xl:hidden" onClick={closeDetail}>Close</Button>
       </div>
       {!selectedOrderId ? (
-        <p className="mt-4 text-sm text-ink-500">Select an order to view its details.</p>
+        <div className="staff-detail-placeholder"><EmptyState title="Select an order" description="Select an order to view its details." /></div>
       ) : detailLoading ? (
         <LoadingRows className="mt-4" />
       ) : orderDetail ? (
@@ -412,16 +413,14 @@ function StaffOrderManagement({ user, params }) {
   )
 
   return (
-    <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
+    <section className="staff-module min-w-0 flex-1 px-4 pb-10 sm:px-7">
       {/* The account page already says whose it is; the portal label is for staff. */}
-      {user.role !== 'CUSTOMER' && <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>}
-      <h1 className="mt-1 text-2xl font-semibold text-ink-900">Order Management</h1>
-      <p className="mt-2 text-sm text-ink-500">{isCashier ? 'Ring up a walk-in customer, or manage every order already placed.' : 'Every order placed, pickup and delivery.'}</p>
+      <ModuleHeader role={user.role} title="Order Management" description={isCashier ? 'Ring up a walk-in customer, or manage every order already placed.' : 'Every order placed, pickup and delivery.'} />
 
       {isCashier && (
-        <div className="mt-6 flex gap-2">
+        <div className="staff-tabs mt-6 flex gap-2" role="group" aria-label="Order sections">
           {['Orders', 'Walk-in'].map((tab) => (
-            <Button type="button" key={tab} size="sm" variant={activeTab === tab ? 'primary' : 'secondary'} onClick={() => setActiveTab(tab)}>
+            <Button type="button" key={tab} size="sm" aria-pressed={activeTab === tab} variant={activeTab === tab ? 'primary' : 'secondary'} onClick={() => setActiveTab(tab)}>
               {tab}
             </Button>
           ))}
@@ -437,7 +436,7 @@ function StaffOrderManagement({ user, params }) {
       {/* min-w-0 on both Cards is load-bearing: below lg the single
           implicit column gives each grid item min-width:auto, so a Card
           holding a table refuses to shrink and the page grows sideways. */}
-      <div hidden={activeTab !== 'Orders'} className="mt-7 grid gap-4 2xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+      <div hidden={activeTab !== 'Orders'} className="staff-master-detail mt-6 grid items-start gap-5 2xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <Card className="min-w-0 p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold text-ink-900">Orders</h2>
@@ -445,7 +444,7 @@ function StaffOrderManagement({ user, params }) {
               <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Order # or customer" aria-label="Search orders" className="w-44" />
             </div>
           </div>
-          <div role="group" aria-label="Filter by day" className="mt-3 flex flex-wrap gap-1.5">
+          <div role="group" aria-label="Filter by day" className="staff-filter-group mt-5 flex flex-wrap gap-1.5">
             {dayFilters.map((filter) => {
               const count = orders.filter((order) => matchesDay(order, filter.key, today) && matchesFilter(order, statusFilter)).length
               return (
@@ -459,7 +458,7 @@ function StaffOrderManagement({ user, params }) {
               <Input type="date" value={isPickedDate(dayFilter) ? dayFilter : ''} min={today} onChange={(event) => setDayFilter(event.target.value || 'TODAY')} aria-label="Show the orders for one date" className="w-40" />
             </label>
           </div>
-          <div role="group" aria-label="Filter by status" className="mt-2 flex flex-wrap gap-1.5">
+          <div role="group" aria-label="Filter by status" className="staff-filter-group mt-3 flex flex-wrap gap-1.5">
             {statusFilters.map((filter) => {
               const count = orders.filter((order) => matchesDay(order, dayFilter, today) && matchesFilter(order, filter.key)).length
               return (
@@ -641,7 +640,7 @@ function CustomerOrders({ user }) {
   )
 
   return (
-    <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
+    <section className="staff-module min-w-0 flex-1 px-4 pb-10 sm:px-7">
       {/* The account page already says whose it is; the portal label is for staff. */}
       {user.role !== 'CUSTOMER' && <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>}
       <h1 className="mt-1 text-2xl font-semibold text-ink-900">My Orders</h1>

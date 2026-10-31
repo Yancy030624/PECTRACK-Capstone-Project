@@ -4,6 +4,7 @@ import { apiGet } from '../../api/client.js'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Card } from '../../components/ui/Card.jsx'
 import { Button } from '../../components/ui/Button.jsx'
+import { ModuleIcon } from '../../components/ui/ModuleIcon.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { NotPaidTag } from '../../components/ui/PaymentStatus.jsx'
 import { formatPeso } from '../../lib/format.js'
@@ -97,6 +98,7 @@ export function DashboardHome({ user, onNavigate }) {
       // never restocked during the day, so it is "about to be sold out";
       // a hard bread at its minimum is "low stock" — time to produce.
       label: 'Soft breads about to be sold out',
+      icon: 'products',
       goodLabel: 'soft breads',
       value: stockCounts.SELLING_OUT + stockCounts.SOLD_OUT,
       tone: stockCounts.SELLING_OUT + stockCounts.SOLD_OUT > 0 ? 'okay' : 'good',
@@ -105,6 +107,7 @@ export function DashboardHome({ user, onNavigate }) {
     },
     {
       label: 'Hard breads low stock',
+      icon: 'inventory',
       goodLabel: 'hard breads',
       value: stockCounts.LOW,
       tone: stockCounts.LOW > 0 ? 'attention' : 'good',
@@ -113,6 +116,7 @@ export function DashboardHome({ user, onNavigate }) {
     },
     {
       label: 'Ingredients low stock',
+      icon: 'production',
       goodLabel: 'ingredients',
       value: ingredientCounts.LOW,
       tone: ingredientCounts.LOW > 0 ? 'attention' : 'good',
@@ -123,6 +127,7 @@ export function DashboardHome({ user, onNavigate }) {
     // the bakery's app (QRPH_PLAN.md, Q11). Red once one waits too long.
     {
       label: 'Payments to confirm',
+      icon: 'payments',
       goodLabel: 'payments',
       value: summary.paymentsToConfirm ?? 0,
       tone: summary.paymentsOverdue > 0 ? 'attention' : summary.paymentsToConfirm > 0 ? 'okay' : 'good',
@@ -131,6 +136,7 @@ export function DashboardHome({ user, onNavigate }) {
     },
     {
       label: 'Orders',
+      icon: 'orders',
       goodLabel: 'orders',
       value: summary.ordersToPrepare,
       tone: summary.ordersOverdue > 0 ? 'attention' : summary.ordersToPrepare > 0 ? 'okay' : 'good',
@@ -159,55 +165,55 @@ export function DashboardHome({ user, onNavigate }) {
   const goodTiles = tiles.filter((tile) => tile.tone === 'good')
 
   return (
-    <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    <section className="dashboard-home min-w-0 flex-1 px-4 pb-10 sm:px-7 lg:px-8">
+      <div className="dashboard-heading">
         <div>
-          <h1 className="text-2xl font-semibold text-ink-900">Dashboard</h1>
-          <p className="mt-1 text-sm text-ink-500">
+          <p className="dashboard-eyebrow">The daily overview</p>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight text-ink-900 sm:text-4xl">Dashboard<span className="dashboard-title-dot">.</span></h1>
+          <p className="mt-2 text-sm text-ink-500">
             {loaded
               ? attentionCount > 0
-                ? `Hi ${user.name.split(' ')[0]} — ${attentionCount} thing${attentionCount === 1 ? ' needs' : 's need'} your attention.`
-                : `Hi ${user.name.split(' ')[0]} — everything looks good.`
+                ? `Hi ${user.name.split(' ')[0]}, ${attentionCount} thing${attentionCount === 1 ? ' needs' : 's need'} your attention.`
+                : `Hi ${user.name.split(' ')[0]}, everything looks good.`
               : `Welcome back, ${user.name}.`}
           </p>
         </div>
-        {/* Today at a glance: plain figures, no colour — they are facts,
-            not problems. */}
-        <div className="grid w-full grid-cols-3 gap-4 rounded-panel bg-surface px-4 py-3 shadow-raised sm:w-auto sm:gap-8 sm:px-5">
-          {/* The Sales report's terms (REPORTS_UI_PLAN.md U3): orders paid
-              today, their sales without delivery fees, and the cash
-              pickups still to be paid at the counter. */}
-          <TodayFigure label="Orders today" value={summary ? summary.today.orders : '—'} />
-          <TodayFigure label="Sales today" value={summary ? formatPeso(summary.today.sales) : '—'} />
-          <TodayFigure label="Cash not yet paid" value={summary ? summary.today.unpaidCash.orders : '—'} />
+        <div className="dashboard-heading-tools">
+          <span className="dashboard-date">
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3" /><path d="M16 3v4M8 3v4M3 11h18" /></svg>
+            {new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'Asia/Manila' }).format(new Date())}
+          </span>
+          {user.role === 'CASHIER' && (
+            <Button type="button" size="touch" onClick={() => onNavigate('Order Management', { tab: 'Walk-in' })}><span aria-hidden="true">+</span> New walk-in order</Button>
+          )}
         </div>
       </div>
 
-      {user.role === 'CASHIER' && (
-        <div className="mt-5">
-          <Button type="button" size="touch" onClick={() => onNavigate('Order Management', { tab: 'Walk-in' })}>New walk-in order</Button>
-        </div>
-      )}
+      <div className="dashboard-figures" aria-label="Today at a glance">
+        <TodayFigure label="Orders today" value={summary ? summary.today.orders : '\u2014'} icon="orders" note="Orders paid today" />
+        <TodayFigure label="Sales today" value={summary ? formatPeso(summary.today.sales) : '\u2014'} icon="reports" note="Sales excluding delivery fees" featured />
+        <TodayFigure label="Cash not yet paid" value={summary ? summary.today.unpaidCash.orders : '\u2014'} icon="payments" note="Pickup orders awaiting payment" />
+      </div>
 
       {error && <div className="mt-4"><Alert variant="error">{error}</Alert></div>}
 
       <div className="mt-7 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-ink-900">Needs action now</h2>
+        <h2 className="text-lg font-bold text-ink-900">Needs action now</h2>
         <Legend />
       </div>
       {!loaded ? (
-        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-32 animate-pulse rounded-panel bg-surface-sunk" />)}
+        <div className="dashboard-action-grid mt-3">
+          {Array.from({ length: 4 }).map((_, index) => <div key={index} className="dashboard-skeleton h-40 animate-pulse rounded-panel" />)}
         </div>
       ) : actionTiles.length === 0 ? (
-        <p className="mt-3 rounded-panel border-l-4 border-l-emerald-500 bg-surface p-4 shadow-raised text-sm text-ink-700 shadow-raised">Nothing needs action right now.</p>
+        <p className="dashboard-all-clear mt-3">Nothing needs action right now.</p>
       ) : (
-        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="dashboard-action-grid mt-3">
           {actionTiles.map((tile) => <StatusTile key={tile.label} tile={tile} linkable={allowed.has(tile.to[0])} onOpen={() => onNavigate(...tile.to)} />)}
         </div>
       )}
       {loaded && goodTiles.length > 0 && (
-        <p className="mt-3 flex items-start gap-2 text-sm text-ink-500">
+        <p className="dashboard-good-summary mt-3 flex items-start gap-2 text-sm text-ink-500">
           <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${TONES.good.dot}`} aria-hidden="true" />
           <span><span className="font-semibold text-ink-700">All good:</span> {[...new Set(goodTiles.map((tile) => tile.goodLabel))].join(', ')}.</span>
         </p>
@@ -233,12 +239,12 @@ const manilaDay = (value) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/
 // without leaving the page; the full list is a click away.
 function RestockFirst({ loaded, lowItems, canOpen, onViewAll }) {
   return (
-    <Card className="p-6">
+    <Card className="dashboard-panel p-5 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-lg font-semibold text-ink-900">
-          <span className={`h-2.5 w-2.5 rounded-full ${lowItems.length > 0 ? TONES.attention.dot : TONES.good.dot}`} aria-hidden="true" />
-          Running out
-        </h2>
+        <div className="flex items-center gap-3">
+          <span className="dashboard-panel-icon"><ModuleIcon name="inventory" /></span>
+          <div><h2 className="text-base font-bold text-ink-900">Running out</h2><p className="mt-0.5 text-xs text-ink-500">Products nearing their stock limit</p></div>
+        </div>
         {canOpen && lowItems.length > 0 && (
           <button type="button" onClick={onViewAll} className="text-sm font-semibold text-brand-700 hover:underline">
             View all {lowItems.length} →
@@ -248,13 +254,13 @@ function RestockFirst({ loaded, lowItems, canOpen, onViewAll }) {
       {!loaded ? (
         <div className="mt-3 h-32 animate-pulse rounded-control bg-surface-sunk" />
       ) : lowItems.length === 0 ? (
-        <p className="mt-3 text-sm text-ink-500">Nothing is running out.</p>
+        <p className="dashboard-empty">Nothing is running out.</p>
       ) : (
         <ul className="mt-3 divide-y divide-line-100">
           {lowItems.slice(0, restockRows).map((item) => {
             const status = stockStatus(item)
             return (
-              <li key={item.productId} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2.5 text-sm">
+              <li key={item.productId} className="dashboard-stock-row flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3.5 text-sm">
                 <span className="min-w-0 flex-1">
                   <span className="font-semibold text-ink-900">{item.productName}</span>
                   {item.variant && <span className="text-ink-500"> · {item.variant}</span>}
@@ -292,15 +298,15 @@ function NeededBy({ orders, canOpen, onOpen, onViewAll }) {
   const now = Date.now()
   const today = manilaDay(new Date())
   return (
-    <Card className="p-6">
+    <Card className="dashboard-panel p-5 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-ink-900">Needed by</h2>
+        <div className="flex items-center gap-3"><span className="dashboard-panel-icon"><ModuleIcon name="deliveries" /></span><div><h2 className="text-base font-bold text-ink-900">Needed by</h2><p className="mt-0.5 text-xs text-ink-500">Pickup & delivery, soonest first</p></div></div>
         {canOpen && orders?.length > 0 && <button type="button" onClick={onViewAll} className="text-sm font-semibold text-brand-700 hover:underline">View all {orders.length} →</button>}
       </div>
       {orders === null ? (
         <div className="mt-3 h-32 animate-pulse rounded-control bg-surface-sunk" />
       ) : orders.length === 0 ? (
-        <p className="mt-3 text-sm text-ink-500">No orders waiting to be picked up or delivered.</p>
+        <p className="dashboard-empty">No orders waiting to be picked up or delivered.</p>
       ) : (
         <ul className="mt-3 divide-y divide-line-100">
           {orders.slice(0, dueRows).map((order) => {
@@ -327,7 +333,7 @@ function NeededBy({ orders, canOpen, onOpen, onViewAll }) {
             return (
               <li key={order.id}>
                 {canOpen
-                  ? <button type="button" onClick={() => onOpen(order)} aria-label={`Open order ${orderLabel(order)} in Payment & Billing`} className="grid w-full grid-cols-2 items-center gap-3 rounded-control px-2 py-2.5 sm:flex sm:flex-wrap xl:flex-nowrap text-left text-sm transition hover:bg-surface-sunk">{row}</button>
+                  ? <button type="button" onClick={() => onOpen(order)} aria-label={`Open order ${orderLabel(order)} in Payment & Billing`} className="grid w-full grid-cols-2 items-center gap-3 rounded-control px-2 py-3.5 sm:flex sm:flex-wrap xl:flex-nowrap text-left text-sm transition hover:bg-surface-sunk">{row}</button>
                   : <div className="grid grid-cols-2 items-center gap-3 px-2 py-2.5 text-sm sm:flex sm:flex-wrap xl:flex-nowrap">{row}</div>}
               </li>
             )
@@ -350,15 +356,15 @@ function paymentState(order) {
 // order in Order Management.
 function RecentOrders({ orders, canOpen, onOpen, onViewAll }) {
   return (
-    <Card className="mt-6 p-6">
+    <Card className="dashboard-panel dashboard-recent mt-6 p-5 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-ink-900">Recent orders</h2>
+        <div className="flex items-center gap-3"><span className="dashboard-panel-icon"><ModuleIcon name="orders" /></span><div><h2 className="text-base font-bold text-ink-900">Recent orders</h2><p className="mt-0.5 text-xs text-ink-500">Latest orders and payment status</p></div></div>
         {canOpen && <button type="button" onClick={onViewAll} className="text-sm font-semibold text-brand-700 hover:underline">All orders →</button>}
       </div>
       {orders === null ? (
         <div className="mt-3 h-32 animate-pulse rounded-control bg-surface-sunk" />
       ) : orders.length === 0 ? (
-        <p className="mt-3 text-sm text-ink-500">No orders yet.</p>
+        <p className="dashboard-empty">No orders yet.</p>
       ) : (
         <ul className="mt-3 divide-y divide-line-100">
           {orders.map((order) => {
@@ -380,7 +386,7 @@ function RecentOrders({ orders, canOpen, onOpen, onViewAll }) {
             return (
               <li key={order.id}>
                 {canOpen
-                  ? <button type="button" onClick={() => onOpen(order)} aria-label={`Open order ${orderLabel(order)}`} className="grid w-full grid-cols-2 items-center gap-3 rounded-control px-2 py-2.5 sm:flex sm:flex-wrap xl:flex-nowrap text-left text-sm transition hover:bg-surface-sunk">{row}</button>
+                  ? <button type="button" onClick={() => onOpen(order)} aria-label={`Open order ${orderLabel(order)}`} className="grid w-full grid-cols-2 items-center gap-3 rounded-control px-2 py-3.5 sm:flex sm:flex-wrap xl:flex-nowrap text-left text-sm transition hover:bg-surface-sunk">{row}</button>
                   : <div className="grid grid-cols-2 items-center gap-3 px-2 py-2.5 text-sm sm:flex sm:flex-wrap xl:flex-nowrap">{row}</div>}
               </li>
             )
@@ -394,32 +400,38 @@ function RecentOrders({ orders, canOpen, onOpen, onViewAll }) {
 function StatusTile({ tile, linkable, onOpen }) {
   const tone = TONES[tile.tone]
   const body = (
-    <div className="flex h-full flex-col sm:min-h-32">
+    <>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium text-ink-700">{tile.label}</p>
-        <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${tone.pill}`}>
-          <span className={`h-2 w-2 rounded-full ${tone.dot}`} aria-hidden="true" />
-          {tone.short}
+        <span className={`dashboard-action-icon ${tone.soft} ${tone.text}`}><ModuleIcon name={tile.icon} /></span>
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-semibold ${tone.pill}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} aria-hidden="true" />{tone.short}
         </span>
       </div>
-      <p className={`mt-1 text-2xl font-semibold tabular-nums sm:mt-3 sm:text-3xl ${tile.tone === 'attention' ? tone.text : 'text-ink-900'}`}>{tile.value}</p>
-      <p className="mt-auto pt-1 text-xs text-ink-500 sm:pt-3">{tile.note}{linkable ? <span className="font-semibold text-brand-700"> · View →</span> : null}</p>
-    </div>
+      <div className="mt-3 flex items-baseline gap-3">
+        <p className={`text-3xl font-bold tabular-nums ${tile.tone === 'attention' ? tone.text : 'text-ink-900'}`}>{tile.value}</p>
+        <p className="text-sm font-semibold leading-snug text-ink-700">{tile.label}</p>
+      </div>
+      <div className="dashboard-action-footer">
+        <p className="text-xs leading-relaxed text-ink-500">{tile.note}</p>
+        {linkable && <span className="dashboard-action-arrow" aria-hidden="true">&#8599;</span>}
+      </div>
+    </>
   )
-  const shell = `rounded-panel border-l-4 ${tone.edge} bg-surface p-4 text-left shadow-raised sm:p-5`
-  // Hover keeps the tile's own white and lifts it with an outline and a
-  // deeper shadow (the panel, 2026-10-26; MINOR_REVISIONS_PLAN.md M10): the
-  // old hover turned it the page's own colour, so it seemed to vanish.
+  const shell = `dashboard-action-card ${linkable ? 'is-link' : ''}`
   return linkable
-    ? <button type="button" onClick={onOpen} className={`${shell} transition hover:-translate-y-0.5 hover:shadow-lg hover:ring-2 hover:ring-brand-600/40`} aria-label={`${tile.label}: ${tile.value}, ${tone.label}. Open.`}>{body}</button>
+    ? <button type="button" onClick={onOpen} className={shell} aria-label={`${tile.label}: ${tile.value}, ${tone.label}. Open.`}>{body}</button>
     : <div className={shell}>{body}</div>
 }
 
-function TodayFigure({ label, value }) {
+function TodayFigure({ label, value, icon, note, featured = false }) {
   return (
-    <div className="min-w-0">
-      <p className="text-xs font-medium text-ink-500">{label}</p>
-      <p className="mt-1 truncate text-lg font-semibold text-ink-900 tabular-nums sm:text-2xl">{value}</p>
+    <div className={`dashboard-figure ${featured ? 'is-featured' : ''}`}>
+      <div className="flex items-center justify-between gap-3">
+        <p className="dashboard-figure-label">{label}</p>
+        <span className="dashboard-figure-icon"><ModuleIcon name={icon} /></span>
+      </div>
+      <p className="dashboard-figure-value">{value}</p>
+      <p className="dashboard-figure-note">{note}</p>
     </div>
   )
 }

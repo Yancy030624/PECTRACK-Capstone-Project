@@ -1,0 +1,71 @@
+.bakery-header { position: sticky; top: 0; z-index: 40; border-top: 3px solid #a85b1e; border-bottom: 1px solid #ede3d4; background: #fffcf6f5; backdrop-filter: blur(12px); }
+.bakery-header-inner { display: flex; min-height: 72px; max-width: 1280px; align-items: center; justify-content: space-between; gap: 16px; margin: 0 auto; padding: 10px 24px; }
+.bakery-brand { display: flex; min-width: 0; align-items: center; gap: 10px; }
+.bakery-brand > img { width: 44px; height: 44px; flex-shrink: 0; border-radius: 50%; box-shadow: 0 1px 4px #3a231415; }
+.bakery-brand-name { display: block; color: #3a2314; font-family: var(--font-display); font-size: 21px; font-weight: 700; line-height: 1.2; white-space: nowrap; }
+.bakery-brand-tagline { display: block; margin-top: 5px; color: #8a4716; font-size: 9px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+.bakery-desktop-nav { display: none; align-items: center; gap: 24px; }
+.bakery-nav-link { display: inline-flex; min-height: 44px; align-items: center; border-bottom: 2px solid transparent; color: #5c3b26; font-size: 14px; font-weight: 600; transition: color .15s, background .15s; }
+.bakery-nav-link:hover { color: #8a4716; }
+.bakery-nav-link.is-active { border-bottom-color: #a85b1e; color: #8a4716; }
+/* Restore the storefront's original serif navigation and warm underline. */
+.bakery-desktop-nav .bakery-nav-link { position: relative; border-bottom: 0; color: #3a2314; font-family: var(--font-display); font-size: 1.05rem; font-weight: 600; }
+.bakery-desktop-nav .bakery-nav-link:hover,
+.bakery-desktop-nav .bakery-nav-link.is-active { color: #a85b1e; }
+.bakery-desktop-nav .bakery-nav-link.is-active::after { position: absolute; right: 0; bottom: 2px; left: 0; height: 2px; border-radius: 999px; background: #c4702a; content: ''; }
+.bakery-header-tools { display: flex; flex-shrink: 0; align-items: center; gap: 8px; }
+.bakery-icon-button, .bakery-header-tools > button { display: inline-grid; width: 44px; height: 44px; flex-shrink: 0; place-items: center; border: 1px solid #dccbb5; border-radius: 50%; background: #fff; color: #5c3b26; transition: background .15s; }
+.bakery-icon-button:hover { background: #fbf4e6; }
+.bakery-header-tools .bakery-desktop-control, .bakery-header-tools .bakery-order-button { display: none; }
+.bakery-header-tools .bakery-account-control { display: inline-grid; }
+.bakery-text-button { min-height: 44px; padding: 0 8px; color: #5c3b26; font-size: 13px; font-weight: 600; }
+.bakery-primary-button { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; padding: 10px 18px; border: 0; border-radius: 9px; background: #a85b1e; color: #fff; font-size: 13px; font-weight: 700; transition: background .15s; }
+.bakery-primary-button:hover { background: #8a4716; }
+.storefront-menu-dialog > div { z-index: 60; align-items: stretch; justify-items: stretch; padding: 0; }
+.storefront-menu-dialog [role=dialog] { height: 100%; max-height: 100dvh; align-items: stretch; justify-content: flex-end; }
+.bakery-menu-panel { display: flex; width: min(360px, 90vw); min-height: 100%; flex-shrink: 0; flex-direction: column; padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom)); background: #fffcf6; color: #5c3b26; box-shadow: -8px 0 32px #3a23141a; }
+.bakery-menu-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 24px; border-bottom: 1px solid #eadfce; }
+.bakery-menu-caption { color: #7a5a45; font-size: 11px; }
+.bakery-menu-heading h2 { margin-top: 4px; font-family: var(--font-display); font-size: 26px; font-weight: 600; }
+.bakery-drawer-links { display: flex; flex-direction: column; gap: 4px; margin-top: 16px; }
+.bakery-drawer-links .bakery-nav-link { justify-content: space-between; padding: 14px 12px; border: 0; border-radius: 8px; font-size: 16px; }
+.bakery-drawer-links .bakery-nav-link.is-active { background: #f3e7d4; }
+.bakery-drawer-links .bakery-nav-link:hover { background: #fbf4e6; }
+.bakery-menu-account { display: flex; flex-direction: column; gap: 8px; margin-top: auto; padding-top: 32px; }
+.bakery-menu-name { margin-bottom: 8px; color: #3a2314; font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+.bakery-menu-account-link { display: flex; min-height: 44px; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #eadfce; font-size: 13px; }
+.bakery-menu-account-link > span { flex-shrink: 0; color: #7a5a45; font-size: 12px; }
+.bakery-menu-signout, .bakery-menu-signin { min-height: 44px; text-align: left; font-size: 13px; font-weight: 700; }
+.bakery-menu-signout { color: #991b1b; }
+@media (min-width: 1024px) {
+  .bakery-header-inner { min-height: 80px; }
+  .bakery-desktop-nav { display: flex; }
+  .bakery-header-tools .bakery-desktop-control { display: inline-flex; align-items: center; }
+  .bakery-header-tools > .bakery-text-button { width: auto; border: 0; border-radius: 8px; background: transparent; }
+  .bakery-header-tools > .bakery-primary-button { width: auto; border: 0; border-radius: 9px; background: #a85b1e; color: #fff; }
+  .bakery-header-tools .bakery-menu-button { display: none; }
+}
+@media (min-width: 1280px) {
+  .bakery-header-tools .bakery-order-button { display: inline-flex; }
+}
+@media (max-width: 639px) {
+  .bakery-header-inner { gap: 8px; padding: 10px 16px; }
+  .bakery-brand { gap: 8px; }
+  .bakery-brand > img { width: 36px; height: 36px; }
+  .bakery-brand-name { font-size: 16px; }
+  .bakery-brand-tagline { display: none; }
+  .bakery-header-tools { gap: 6px; }
+  .bakery-header-tools .bakery-account-control { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bakery-header *, .bakery-menu-panel * { transition: none !important; }
+}
+@media print {
+  .bakery-header, .storefront-menu-dialog { display: none; }
+}
+
+/* Original rounded guest actions, matching the bakery's storefront. */
+.bakery-header-tools > .bakery-signin-button { padding: 0 16px; border-radius: 999px; font-size: 14px; font-weight: 700; }
+.bakery-header-tools > .bakery-signin-button:hover { background: #fbf4e6; color: #a85b1e; }
+.bakery-header-tools > .bakery-register-button { padding: 0 20px; border-radius: 999px; font-size: 14px; font-weight: 700; box-shadow: 0 1px 2px #0000000d; }
+.bakery-header-tools > .bakery-register-button:hover { background: #8a4716; }

@@ -3,19 +3,10 @@ import { useCart } from '../cart/CartContext.jsx'
 
 // The cart that follows you down the page.
 //
-// The header's cart icon scrolls away, so a customer three screens into
-// the menu had to scroll back to the top to reach their cart — the moment
-// they are most likely to want it is exactly when it is off screen. This
-// pins it to the bottom-right corner instead.
-//
-// It appears ONLY when the cart has something in it. An empty cart is not
-// a destination, and a permanent floating button over every page would be
-// clutter that earns nothing; arriving the instant the first item is added
-// also doubles as the confirmation that the item landed.
-//
-// Hidden on the three pages where it would be pointing at the page you are
-// already on, or at a step you have finished.
-const hiddenOn = new Set(['/cart', '/checkout'])
+// A checkout shortcut while browsing, shown only for a non-empty customer
+// cart. Account forms use the sticky header's cart instead, keeping their
+// Save and address actions clear of floating controls.
+const hiddenOn = new Set(['/cart', '/checkout', '/account'])
 
 export function CartFab({ user }) {
   const { itemCount } = useCart()

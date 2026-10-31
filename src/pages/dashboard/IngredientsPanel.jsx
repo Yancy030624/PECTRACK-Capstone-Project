@@ -266,7 +266,7 @@ export function IngredientsPanel({ user, initialFilter }) {
         {ingredients && ingredients.length > 0 && (
           <div className="mb-5">
             <p id="ingredient-filter-label" className="text-xs font-semibold uppercase tracking-wide text-ink-500">Status</p>
-            <div role="group" aria-labelledby="ingredient-filter-label" className="mt-2 flex flex-wrap gap-2">
+            <div role="group" aria-labelledby="ingredient-filter-label" className="staff-filter-group mt-2 flex flex-wrap gap-2">
               {filters.map((option) => {
                 const count = ingredients.filter((ingredient) => option.key === 'ALL' || statusOf(ingredient) === option.key).length
                 const active = filter === option.key

@@ -6,6 +6,7 @@ import { useLiveStock } from '../../lib/useLiveStock.js'
 import { ProductionPanel } from './ProductionPanel.jsx'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Button } from '../../components/ui/Button.jsx'
+import { ModuleHeader } from '../../components/ui/ModuleHeader.jsx'
 import { Card } from '../../components/ui/Card.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Field } from '../../components/ui/Field.jsx'
@@ -65,10 +66,9 @@ export function InventoryManagement({ user, params }) {
   const tabs = user.role === 'ADMIN' ? ['Products', 'Production', 'Ingredients', 'Edit Products'] : ['Products', 'Production', 'Ingredients']
   const [tab, setTab] = useState(tabs.includes(params?.tab) ? params.tab : 'Products')
   return (
-    <section className="min-w-0 flex-1 px-4 pb-10 sm:px-7">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">{user.role} PORTAL</p>
-      <h1 className="mt-1 text-2xl font-semibold text-ink-900">Inventory Management</h1>
-      <div className="mt-4 flex flex-wrap gap-2" role="tablist">
+    <section className="staff-module min-w-0 flex-1 px-4 pb-10 sm:px-7">
+      <ModuleHeader role={user.role} title="Inventory Management" description="Monitor stock, plan production, and manage ingredients and products." />
+      <div className="staff-tabs mt-6 flex flex-wrap gap-2" role="tablist" aria-label="Inventory sections">
         {tabs.map((name) => (
           <Button key={name} type="button" size="sm" role="tab" aria-selected={tab === name} variant={tab === name ? 'primary' : 'secondary'} onClick={() => setTab(name)}>
             {name}
@@ -257,11 +257,11 @@ function ProductStock({ user, params }) {
         </div>
       )}
 
-      <Card className="mt-6 p-6">
+      <Card className="inventory-stock-panel mt-6 p-6">
         {!loading && inventory.length > 0 && (
-          <div className="mb-5">
+          <div className="inventory-stock-filters mb-5">
             <p id="stock-filter-label" className="text-xs font-semibold uppercase tracking-wide text-ink-500">Status</p>
-            <div role="group" aria-labelledby="stock-filter-label" className="mt-2 flex flex-wrap gap-2">
+            <div role="group" aria-labelledby="stock-filter-label" className="staff-filter-group mt-2 flex flex-wrap gap-2">
               {stockFilters.map((filter) => {
                 const count = inventory.filter((item) => matchesFilter(item, filter.key) && inCategory(item)).length
                 const active = stockFilter === filter.key
@@ -290,7 +290,7 @@ function ProductStock({ user, params }) {
                     </option>
                   ))}
                 </Select>
-                <div role="group" aria-labelledby="category-filter-label" className="mt-2 hidden flex-wrap gap-2 lg:flex">
+                <div role="group" aria-labelledby="category-filter-label" className="staff-filter-group mt-2 hidden flex-wrap gap-2 lg:flex">
                   {['ALL', ...categories].map((category) => {
                     const active = categoryFilter === category
                     const count = ofType.filter((item) => matchesFilter(item, stockFilter) && (category === 'ALL' || item.categoryName === category)).length
@@ -456,9 +456,9 @@ function ProductStock({ user, params }) {
                       <Td>
                         {/* Add and, for the admin, Deduct (the panel, 2026-10-26;
                             MINOR_REVISIONS_PLAN.md M12). */}
-                        <div className="flex flex-wrap gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => startEdit(item)} aria-label={`Add stock to ${item.productName}`}>Add</Button>
-                          {isAdmin && <Button size="sm" variant="ghost" onClick={() => startCount(item)} aria-label={`Deduct stock from ${item.productName}`}>Deduct</Button>}
+                        <div className="inventory-stock-actions flex flex-wrap gap-2">
+                          <Button type="button" size="sm" onClick={() => startEdit(item)} aria-label={`Add stock to ${item.productName}`}><span aria-hidden="true">+</span> Add</Button>
+                          {isAdmin && <Button type="button" size="sm" variant="secondary" onClick={() => startCount(item)} aria-label={`Deduct stock from ${item.productName}`}><span aria-hidden="true">&#8722;</span> Deduct</Button>}
                         </div>
                       </Td>
                     </Tr>
