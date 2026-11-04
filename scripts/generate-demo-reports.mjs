@@ -35,7 +35,7 @@ if (onRailway) console.log('Writing to the Railway database.')
 
 const MARKER = '[demo-reports]'
 const DAYS = 60
-const DELIVERY_FEE = 50
+const DELIVERY_FEE = 20
 
 // A small seeded random generator (mulberry32), so every run is the same.
 let seed = 20261025

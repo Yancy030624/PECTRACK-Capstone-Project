@@ -29,7 +29,8 @@ export const bakery = {
 export const deliveryTown = 'Lucban'
 // The flat fee on a delivery order, in pesos (RULES-PLANS/DELIVERY_FEE_PLAN.md).
 // Shown at checkout; the server's config.orders.deliveryFee is what is charged.
-export const deliveryFee = 50
+// ₱20, as confirmed by the client (2026-11-04).
+export const deliveryFee = 20
 export const isDeliverable = (address) => address?.municipality?.trim().toLowerCase() === deliveryTown.toLowerCase()
 
 export const bakeryAddress = `${bakery.street}, ${bakery.town}`

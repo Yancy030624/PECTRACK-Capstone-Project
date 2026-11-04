@@ -85,11 +85,12 @@ export const config = {
   // lib/orderHours.test.js turn it on to test the rule itself.
   //
   // deliveryFee: the flat fee added to every delivery order, in pesos (the
-  // user, 2026-10-25, RULES-PLANS/DELIVERY_FEE_PLAN.md). src/lib/bakery.js
-  // shows the same figure at checkout; this one is what is charged.
+  // user, 2026-10-25, RULES-PLANS/DELIVERY_FEE_PLAN.md; ₱20 as confirmed by
+  // the client, 2026-11-04). src/lib/bakery.js shows the same figure at
+  // checkout; this one is what is charged.
   orders: {
     enforceNowHours: !process.env.NODE_TEST_CONTEXT,
-    deliveryFee: Number(process.env.DELIVERY_FEE ?? 50),
+    deliveryFee: Number(process.env.DELIVERY_FEE ?? 20),
   },
   // SMS (lib/sms.js, RULES-PLANS/RESERVE_SMS_PLAN.md). Two providers:
   // textbee.dev (the team's choice, 2026-10-21: free, sends from the
