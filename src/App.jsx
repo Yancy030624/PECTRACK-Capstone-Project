@@ -6,6 +6,7 @@ import { CartFab } from './components/CartFab.jsx'
 import { CartProvider } from './cart/CartContext.jsx'
 import { CustomerAccount } from './pages/customer-account/CustomerAccount.jsx'
 import { Dashboard } from './pages/dashboard/Dashboard.jsx'
+import { modules } from './pages/dashboard/modules.js'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage.jsx'
 import { ResetPasswordPage } from './pages/ResetPasswordPage.jsx'
 import { VerifyEmailPage } from './pages/VerifyEmailPage.jsx'
@@ -24,7 +25,7 @@ import { StorefrontLayout } from './pages/customer-storefront/StorefrontLayout.j
 const staffRoles = new Set(['ADMIN', 'CASHIER', 'DELIVERY PERSONNEL'])
 // Where a person goes the moment they sign in. Staff land on /dashboard,
 // which opens each role on its own first screen (Dashboard.jsx's
-// defaultModuleFor: an admin or cashier on the overview, a driver on My
+// defaultPathFor: an admin or cashier on the overview, a driver on My
 // Deliveries). A customer lands on the Menu, which is where ordering
 // starts — not on an internal dashboard they have no use for.
 function landingPathFor(user) {
@@ -220,7 +221,11 @@ function AppRoutes() {
         {/* A real page for the same reason: the confirmation link is opened
             from an email, often on another device, with no session. */}
         <Route path="/verify-email" element={<VerifyEmailPage onVerified={refreshUser} />} />
-        <Route path="/dashboard" element={<RequireStaff user={user} openAuth={openAuth}><Dashboard user={user} onLogout={handleLogout} onUserUpdated={setUser} /></RequireStaff>} />
+        {/* One shell around every staff module, so moving between them never
+            remounts it. Dashboard reads the open module from the address. */}
+        <Route element={<RequireStaff user={user} openAuth={openAuth}><Dashboard user={user} onLogout={handleLogout} onUserUpdated={setUser} /></RequireStaff>}>
+          {modules.map((module) => <Route key={module.path} path={module.path} element={null} />)}
+        </Route>
         <Route path="/account" element={<RequireCustomerAccount user={user} openAuth={openAuth}><CustomerAccount user={user} onLogout={handleLogout} onUserUpdated={setUser} /></RequireCustomerAccount>} />
         <Route element={<StorefrontLayout user={user} onOpenAuth={openAuth} onLogout={handleLogout} />}>
           <Route path="/" element={<HomePage />} />

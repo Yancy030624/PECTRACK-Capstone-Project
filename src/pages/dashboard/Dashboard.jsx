@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import './dashboard.css'
-import { Link } from 'react-router-dom'
+import { Link, matchPath, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Brand } from '../../components/Brand.jsx'
 import { NotificationBell } from '../../components/NotificationBell.jsx'
 import { Button } from '../../components/ui/Button.jsx'
@@ -30,13 +30,16 @@ const moduleComponents = {
 // to /account instead), so there is no CUSTOMER case to answer here.
 const navigationGroupFor = (name) => name === 'My Profile' ? 'Account' : ['Reporting & Analytics', 'User Management'].includes(name) ? 'Business' : 'Daily operations'
 
-const defaultModuleFor = (role) => {
-  if (role === 'DELIVERY PERSONNEL') return 'My Deliveries'
-  return 'Dashboard'
+const defaultPathFor = (role) => {
+  if (role === 'DELIVERY PERSONNEL') return '/my-deliveries'
+  return '/dashboard'
 }
 export function Dashboard({ user, onLogout, onUserUpdated }) {
-  // Track which permitted module is currently active.
-  const [activeModule, setActiveModule] = useState(() => defaultModuleFor(user.role))
+  const navigate = useNavigate()
+  const { pathname, state: locationState } = useLocation()
+  // The address names the open module, limited to what this role may open.
+  const allowedModules = modules.filter((module) => module.roles.includes(user.role))
+  const activeModule = allowedModules.find((module) => matchPath(module.path, pathname))?.name
   // The bakery palette and type for staff screens (index.css .staff-skin).
   // Set on <html>, not this component's root, so modals rendered in
   // portals and charts that read the colour tokens from the document
@@ -52,11 +55,12 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
   }, [])
   // Optional hints for the module being opened — the Dashboard's Low stock
   // tile opens Inventory with { stockFilter: 'LOW' }. The sidebar opens a
-  // module plain, so a hint never lingers into the next visit.
-  const [moduleParams, setModuleParams] = useState(null)
+  // module plain, so a hint never lingers into the next visit. The hint
+  // travels in the history entry, so Back returns to the same view.
+  const moduleParams = locationState?.moduleParams ?? null
   const openModule = (name, params = null) => {
-    setActiveModule(name)
-    setModuleParams(params)
+    const path = modules.find((module) => module.name === name)?.path ?? defaultPathFor(user.role)
+    navigate(path, { state: params && { moduleParams: params }, replace: path === pathname })
     setMenuOpen(false)
   }
   // Phones and tablets (the user, 2026-10-24): every module in a drawer
@@ -64,6 +68,8 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
   // modules sat off the screen and nobody knew to swipe for them.
   const [menuOpen, setMenuOpen] = useState(false)
   const drawerRef = useRef(null)
+  // The Back button changes module too, and must not leave the drawer open.
+  useEffect(() => { setMenuOpen(false) }, [pathname])
   useEffect(() => {
     if (!menuOpen) return
     const opener = document.activeElement
@@ -106,8 +112,8 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
     else if (item.type === 'payment_to_confirm') openModule('Payment & Billing', { tab: 'confirm', at: Date.now() })
     else openModule('Order Management', { orderId: item.orderId, at: Date.now() })
   }
-  // Calculate the navigation items for the signed-in role.
-  const allowedModules = modules.filter((module) => module.roles.includes(user.role))
+  // A module this role may not open, typed or bookmarked: their first screen.
+  if (!activeModule) return <Navigate to={defaultPathFor(user.role)} replace />
   const ActiveModuleComponent = moduleComponents[activeModule]
 
   const navigation = allowedModules.map((module, index) => (
