@@ -4,14 +4,14 @@
 // published (DEPLOY_PLAN.md, Step 3).
 //
 // Written from what PECTRACK actually stores and does (checked against the
-// schema and routes on 2026-10-14) — not a generic template. Change the
+// schema and routes on 2026-11-06) — not a generic template. Change the
 // wording here when the system changes. It is the team's draft for the
 // adviser and the bakery to review; it is not legal advice.
 import { Link } from 'react-router-dom'
 import { PageBanner } from '../../components/storefront/PageBanner.jsx'
-import { bakery, bakeryAddress, deliveryTown, telHref } from '../../lib/bakery.js'
+import { bakery, bakeryAddress, deliveryFee, deliveryTown, telHref } from '../../lib/bakery.js'
 
-const lastUpdated = 'October 15, 2026'
+const lastUpdated = 'November 6, 2026'
 
 function LegalPage({ eyebrow, title, lead, sections }) {
   return (
@@ -68,11 +68,12 @@ const privacySections = [
     title: 'What we collect',
     body: (
       <List items={[
-        <><strong>Your account:</strong> full name, username, email address and contact number. Your password is stored only as a one-way hash, so nobody — not even the bakery — can read it.</>,
+        <><strong>Your account:</strong> first and last name, username, email address and mobile number, which you confirm with a code sent by text. Your password is stored only as a one-way hash, so nobody — not even the bakery — can read it.</>,
         <><strong>Delivery addresses you save:</strong> a label, the recipient's name and contact number, the street, barangay, town, province, postal code and any delivery notes.</>,
         <><strong>Your orders:</strong> the items, prices and totals, pickup or delivery, the date and time you asked for, special instructions, and each change of status.</>,
-        <><strong>Payments:</strong> the method (cash or GCash), the amount, the date, the reference number of a GCash payment, and a screenshot of it if you choose to attach one. You pay the bakery's GCash QR code in your own GCash app; we never see or store your login, PIN or account details.</>,
-        <><strong>Delivery records:</strong> who delivered your order, when, and the photo taken as proof of delivery.</>,
+        <><strong>Payments:</strong> the method (cash or GCash), the amount, the date, the cash you handed over at the counter, the reference number of a GCash payment, and a screenshot of it if you choose to attach one. You pay the bakery's GCash QR code in your own GCash app; we never see or store your login, PIN or account details.</>,
+        <><strong>Delivery records:</strong> the progress of your delivery, when it was delivered, and any note staff add. Records of older deliveries may also name the person who delivered them and hold a proof photo; these are kept but no longer shown.</>,
+        <><strong>Counter orders:</strong> a walk-in order may carry your name. An advanced order also needs your mobile number, confirmed with a code, and may carry your email, so that we can send you the order number and receipt.</>,
         <><strong>Security records:</strong> sign-ins, failed sign-in attempts and account changes, with the time, the internet (IP) address and the browser used, so we can spot and stop someone trying to get into your account.</>,
       ]} />
     ),
@@ -82,10 +83,10 @@ const privacySections = [
     title: 'Why we use it',
     body: (
       <List items={[
-        'To create and run your account, and to confirm your email address.',
-        'To prepare, deliver and hand over your orders, and to let you follow them.',
-        'To take and record payments and issue receipts.',
-        'To keep your account safe: one-time sign-in codes for the bakery\'s administrator, locking an account after repeated wrong passwords, and the security records above.',
+        'To create and run your account, and to confirm your mobile number.',
+        'To prepare, deliver and hand over your orders, and to tell you about them by email or text.',
+        'To check and record payments and issue receipts.',
+        'To keep your account safe: one-time sign-in codes for the bakery\'s administrator, locking an account after repeated wrong passwords, keeping each account signed in on one device at a time, and the security records above.',
         'To run the bakery: sales and stock reports, and estimates of how much to bake. These use totals, not your personal details.',
       ]} />
     ),
@@ -96,10 +97,11 @@ const privacySections = [
     body: (
       <>
         <List items={[
-          <><strong>Bakery staff</strong>, only as their role needs: the administrator and cashiers see customer records, orders and payments; a delivery person sees only the name, contact number and address for the deliveries assigned to them.</>,
-          <><strong>GCash</strong> processes your payment under its own terms; we only receive the reference number you send us.</>,
-          <><strong>Google</strong> delivers the emails we send you (email confirmation, password reset, notices about your account).</>,
-          <><strong>Our hosting provider</strong> stores the system and its database on our behalf.</>,
+          <><strong>Bakery staff</strong>, only as their role needs. The administrator and cashiers see orders, payments and the delivery details needed to hand over an order, and can look up a customer's record to take an order. Only the administrator can edit customer accounts or open the reports.</>,
+          <><strong>GCash</strong> processes your payment under its own terms. We receive only the reference number, and the screenshot if you attach one. Bakery staff check them against the bakery's GCash account.</>,
+          <><strong>Google</strong> delivers the emails we send you through Gmail (password reset, receipts, notices about your orders and your account).</>,
+          <><strong>Textbee</strong> sends our text messages, such as sign-up codes and advanced-order numbers, through a connected phone. It receives your mobile number and the message.</>,
+          <><strong>Railway</strong>, our hosting provider, runs the system and stores its database on our behalf.</>,
         ]} />
         <p>We do not sell your information, and we do not share it for advertising.</p>
       </>
@@ -108,7 +110,7 @@ const privacySections = [
   {
     id: 'cookies',
     title: 'Cookies and your browser',
-    body: <p>We use one cookie, to keep you signed in. Your cart is kept in your own browser until you order. We use no advertising or tracking cookies and no analytics services.</p>,
+    body: <p>We use one cookie, to keep you signed in. An administrator who chooses to trust a device for 30 days gets a second cookie for that. Your cart is kept in your own browser until you order. We use no advertising or tracking cookies and no analytics services.</p>,
   },
   {
     id: 'keep',
@@ -118,7 +120,7 @@ const privacySections = [
   {
     id: 'protect',
     title: 'How we protect it',
-    body: <p>The site uses an encrypted (HTTPS) connection. Passwords are hashed, staff see only what their role needs, accounts are locked after five wrong passwords in a row, and the administrator must also enter a one-time code sent by email. Online payments are handled entirely by PayMongo.</p>,
+    body: <p>The site uses an encrypted (HTTPS) connection. Passwords are hashed, staff see only what their role needs, accounts are locked after five wrong passwords in a row, and the administrator must also enter a one-time code sent by email. Each account stays signed in on one device at a time, so a new sign-in ends the older one.</p>,
   },
   {
     id: 'rights',
@@ -148,9 +150,10 @@ const termsSections = [
     title: 'Your account',
     body: (
       <List items={[
-        'Give your real name and a working email address and contact number. You must confirm your email before you can place an order.',
+        'Give your real name, a working email address, and a Philippine mobile number. You confirm the number with a code sent by text when you register.',
         'Keep your password to yourself. You are responsible for orders placed from your account.',
         'After five wrong passwords in a row, your account is locked for 15 minutes to protect it.',
+        'Your account stays signed in on one device at a time. Signing in on another device signs out the first one.',
         'The bakery may deactivate an account that is used to place false orders or to misuse the site.',
       ]} />
     ),
@@ -161,9 +164,10 @@ const termsSections = [
     body: (
       <List items={[
         'Prices are in Philippine pesos and are the prices shown when you place the order.',
-        'An order is accepted only if the products are in stock and not past their date; the menu shows only what is available.',
-        'You may ask for a pickup or delivery date and time from today up to 30 days ahead, between 6:00 AM and 10:00 PM. Pickup and delivery start at 6:00 AM so the morning breads can cool. An order for right now can be placed between 6:00 AM and 10:00 PM.',
-        'Every order is paid first. An order is placed only once it is paid; it is then ready for pickup, or ready to be delivered, on the day you chose.',
+        'An order is accepted only if there is enough stock when you place it. The menu shows how many are left. Adding a product to your cart does not reserve it.',
+        'You may choose a pickup or delivery date from today up to 30 days ahead, and a time in 30-minute steps between 6:00 AM and 10:00 PM. Pickup and delivery start at 6:00 AM so the morning breads can cool. An order for right now can be placed between 6:00 AM and 10:00 PM.',
+        'An order paid by GCash is placed once the bakery confirms the payment. A pickup paid in cash is placed right away, and you pay at the counter. You may have one unpaid cash pickup at a time.',
+        'Please collect your order on the day you chose. Once that day is over, a paid order is closed as completed, and an unpaid order is cancelled.',
         'Once placed, the items in an order cannot be changed.',
       ]} />
     ),
@@ -173,9 +177,11 @@ const termsSections = [
     title: 'Payment',
     body: (
       <List items={[
-        "Online orders are paid by scanning the bakery's GCash QR code when you place them, and are released once the bakery confirms the payment. A pickup may also be paid in cash at the counter. Walk-in orders are paid in cash or QR Ph before they are rung up.",
-        'If you do not finish paying, the order is held for 15 minutes and then let go; nothing is charged. We do not offer cash on delivery.',
-        'Online payments are processed by PayMongo, and PayMongo\'s own terms apply to them.',
+        "Online orders are paid by scanning the bakery's GCash QR code in your GCash app, then sending the reference number. Bakery staff check it against the bakery's GCash account before releasing the order. A pickup may also be paid in cash at the counter. Walk-in orders are paid in cash or GCash at the counter.",
+        'Please send the right reference number. A number already used for another payment is refused. If the bakery cannot find your payment, it rejects it and cancels the order, and the stock goes back on sale.',
+        `Delivery orders are paid in full by GCash, with a flat delivery fee of ₱${deliveryFee}. We do not offer cash on delivery.`,
+        'If you do not send your payment, the order is held for 15 minutes and then let go, and its stock goes back on sale.',
+        'GCash\'s own terms apply to payments made through it.',
       ]} />
     ),
   },
@@ -186,7 +192,7 @@ const termsSections = [
       <List items={[
         `Delivery is available only to addresses in ${deliveryTown}. Pickup is at the bakery, ${bakeryAddress}.`,
         'Please give an address and contact number where someone can receive the order. If a delivery cannot be completed, the bakery will contact you to arrange another try or a pickup.',
-        'Our delivery staff take a photo when they hand over an order, as proof of delivery.',
+        'The bakery will email you when your order leaves and when it is marked delivered. If you did not receive it, call the bakery the same day.',
       ]} />
     ),
   },
@@ -195,15 +201,15 @@ const termsSections = [
     title: 'Cancellations',
     body: (
       <List items={[
-        'Before you pay, you can cancel the order from the payment page; nothing is charged.',
-        'The bakery does not give refunds. Once an order has been paid, it can no longer be cancelled; for any problem with a paid order, please contact the bakery.',
+        'Before you pay, you can cancel a GCash order from the payment page. You can cancel a cash pickup until it is paid.',
+        'Once an order has been paid, it can no longer be cancelled, and the bakery does not give refunds. For any problem with a paid order, including a payment sent after the order was let go, please contact the bakery.',
       ]} />
     ),
   },
   {
     id: 'use',
     title: 'Using the site',
-    body: <p>Please do not try to get into other people's accounts, interfere with the site, or place orders you do not mean to collect or pay for. The bakery may suspend an account that does.</p>,
+    body: <p>Please do not try to get into other people's accounts, interfere with the site, or place orders you do not mean to collect or pay for. The bakery may deactivate an account that does.</p>,
   },
   {
     id: 'changes',
@@ -217,5 +223,5 @@ export function PrivacyPage() {
 }
 
 export function TermsPage() {
-  return <LegalPage eyebrow="Terms" title="Terms of Service" lead="The terms for ordering from Pecto's Bakery online: accounts, orders, payment, delivery and cancellations." sections={termsSections} />
+  return <LegalPage eyebrow="Terms" title="Terms of Service" lead="The terms for ordering from Pecto's Bakery: accounts, orders, payment, delivery and cancellations." sections={termsSections} />
 }
