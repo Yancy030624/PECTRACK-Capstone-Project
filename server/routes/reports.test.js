@@ -117,6 +117,8 @@ describe('reporting & analytics', () => {
 
     const cashierCreate = await fetch(`${baseUrl}/api/staff`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ ...cashier, confirmPassword: cashier.password }) })
     assert.equal(cashierCreate.status, 201)
+    // Fixture: this account skips the first sign-in setup, tested in auth.test.js.
+    await pool.query('UPDATE users SET must_set_credentials = FALSE WHERE username = $1', [cashier.username])
     const cashierRow = await pool.query('SELECT user_id FROM users WHERE username = $1', [cashier.username])
     createdUserIds.push(cashierRow.rows[0].user_id)
     const cashierLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: cashier.username, password: cashier.password }) })
@@ -134,6 +136,8 @@ describe('reporting & analytics', () => {
 
     const driverCreate = await fetch(`${baseUrl}/api/staff`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ ...driver, confirmPassword: driver.password }) })
     assert.equal(driverCreate.status, 201)
+    // Fixture: this account skips the first sign-in setup, tested in auth.test.js.
+    await pool.query('UPDATE users SET must_set_credentials = FALSE WHERE username = $1', [driver.username])
     const driverRow = await pool.query('SELECT user_id FROM users WHERE username = $1', [driver.username])
     createdUserIds.push(driverRow.rows[0].user_id)
     const driverLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: driver.username, password: driver.password }) })

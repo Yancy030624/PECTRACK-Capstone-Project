@@ -12,7 +12,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { digitsOnly } from '../../lib/phone.js'
-import { nameOnly } from '../../lib/inputFilters.js'
+import { nameOnly, noCopy, noPaste } from '../../lib/inputFilters.js'
 
 const emptyForm = { role: 'CASHIER', name: '', username: '', email: '', contactNumber: '', password: '', confirmPassword: '' }
 const roleLabels = { CASHIER: 'Cashier', DELIVERY_PERSONNEL: 'Delivery Personnel' }
@@ -92,7 +92,7 @@ export function StaffManagement({ embedded = false } = {}) {
     try {
       await apiPost('/api/staff', form)
       setForm(emptyForm)
-      setMessage('Staff account created.')
+      setMessage('Staff account created. They will choose their own username and password at first sign-in.')
       setMessageFailed(false)
       await loadStaff()
     } catch (error) {
@@ -281,7 +281,7 @@ export function StaffManagement({ embedded = false } = {}) {
                           <form onSubmit={(event) => submitReset(event, person)} className="flex flex-col items-start gap-2">
                             <div className="w-44">
                               <Field label={`New password for ${person.name}`} error={resetErrors.password}>
-                                <PasswordInput value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} autoComplete="new-password" placeholder="New password" className="h-8 text-xs" />
+                                <PasswordInput {...noCopy} value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} autoComplete="new-password" placeholder="New password" className="h-8 text-xs" />
                               </Field>
                             </div>
                             <div className="flex gap-2">
@@ -335,10 +335,10 @@ export function StaffManagement({ embedded = false } = {}) {
           </Field>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Password" error={errors.password}>
-              <PasswordInput value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" placeholder="Set an initial password" />
+              <PasswordInput {...noCopy} value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" placeholder="Set an initial password" />
             </Field>
             <Field label="Confirm password" error={errors.confirmPassword}>
-              <PasswordInput value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} autoComplete="new-password" placeholder="Repeat password" />
+              <PasswordInput {...noCopy} {...noPaste} value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} autoComplete="new-password" placeholder="Repeat password" />
             </Field>
           </div>
           <Button type="submit" size="sm" disabled={submitting}>{submitting ? 'Creating account…' : 'Create account'}</Button>

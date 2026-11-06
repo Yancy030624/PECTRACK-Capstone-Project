@@ -78,6 +78,8 @@ describe('QR Ph payments', () => {
     adminCookie = (await json('POST', '/api/auth/verify-otp', undefined, { challengeToken, code: rawCode })).headers.get('set-cookie').split(';')[0]
 
     assert.equal((await json('POST', '/api/staff', adminCookie, { ...cashier, confirmPassword: cashier.password })).status, 201)
+    // Fixture: this account skips the first sign-in setup, tested in auth.test.js.
+    await pool.query('UPDATE users SET must_set_credentials = FALSE WHERE username = $1', [cashier.username])
     createdUserIds.push((await pool.query('SELECT user_id FROM users WHERE username = $1', [cashier.username])).rows[0].user_id)
     cashierCookie = (await json('POST', '/api/auth/login', undefined, { identifier: cashier.username, password: cashier.password })).headers.get('set-cookie').split(';')[0]
 

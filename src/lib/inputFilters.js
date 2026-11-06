@@ -2,6 +2,13 @@
 // The server still checks every value (server/lib/validation.js): a request
 // can be sent without using these forms.
 
+// A new password must be typed, not carried from one box to another. Copying
+// is off in both password boxes, and pasting is off in the confirmation only,
+// so a password manager can still fill the new password.
+const stop = (event) => event.preventDefault()
+export const noCopy = { onCopy: stop, onCut: stop, onDragStart: stop }
+export const noPaste = { onPaste: stop, onDrop: stop, title: 'Type your password again. Pasting is turned off here.' }
+
 // A person's name: letters, spaces, periods, apostrophes and hyphens, the
 // same characters the server's name rules allow.
 export const nameOnly = (value) => String(value ?? '').replace(/[^\p{L}\s.'-]/gu, '')

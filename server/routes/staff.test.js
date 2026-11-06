@@ -119,6 +119,8 @@ describe('staff routes require an authenticated admin', () => {
     const createBody = await createResponse.json()
     assert.equal(createBody.user.username, cashier.username)
     assert.equal(createBody.user.role, 'CASHIER')
+    const flag = await pool.query('SELECT must_set_credentials FROM users WHERE username = $1', [cashier.username])
+    assert.equal(flag.rows[0].must_set_credentials, true, 'a new staff account chooses its own details at first sign-in')
 
     const { rows } = await pool.query('SELECT user_id FROM users WHERE username = $1', [cashier.username])
     createdUserIds.push(rows[0].user_id)
@@ -293,6 +295,9 @@ describe('editing and deactivating a staff account', () => {
 
     const oldLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: secondCashier.username, password: secondCashier.password }) })
     assert.equal(oldLogin.status, 401)
+
+    const flag = await pool.query('SELECT must_set_credentials FROM users WHERE user_id = $1', [secondRowUserId])
+    assert.equal(flag.rows[0].must_set_credentials, true, 'a password the admin chose must be replaced at the next sign-in')
   })
 
   test('PATCH /api/staff/:id rejects a weak password with 422 and changes nothing — the old password still works', async () => {

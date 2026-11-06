@@ -73,8 +73,8 @@ router.post('/', async (request, response) => {
 
     const passwordHash = await bcrypt.hash(values.password, bcryptRounds)
     const userResult = await client.query(
-      `INSERT INTO users (username, password_hash, user_type)
-       VALUES ($1, $2, $3)
+      `INSERT INTO users (username, password_hash, user_type, must_set_credentials)
+       VALUES ($1, $2, $3, TRUE)
        RETURNING user_id, username`,
       [values.username, passwordHash, role],
     )
@@ -86,7 +86,7 @@ router.post('/', async (request, response) => {
     )
     await client.query('COMMIT')
     recordSecurityEvent({ request, type: 'ACCOUNT_CREATED', userId: user.user_id, username: user.username, detail: `${role}, created by ${request.user.username}` })
-    return response.status(201).json({ message: 'Staff account created.', user: { username: user.username, role } })
+    return response.status(201).json({ message: 'Staff account created. They will choose their own username and password at first sign-in.', user: { username: user.username, role } })
   } catch (error) {
     await client.query('ROLLBACK')
     if (error.code === '23505') return response.status(409).json({ message: 'An account already uses that username, email, or contact number.' })
@@ -206,7 +206,7 @@ router.patch('/:id', async (request, response) => {
     // and there's no reason to pay it before the duplicate-email check
     // above has had a chance to fail fast.
     const passwordHash = updates.password !== undefined ? await bcrypt.hash(updates.password, bcryptRounds) : null
-    await client.query('UPDATE users SET is_active = COALESCE($1, is_active), password_hash = COALESCE($2, password_hash) WHERE user_id = $3', [updates.isActive ?? null, passwordHash, userId])
+    await client.query('UPDATE users SET is_active = COALESCE($1, is_active), password_hash = COALESCE($2::text, password_hash), must_set_credentials = must_set_credentials OR $2::text IS NOT NULL WHERE user_id = $3', [updates.isActive ?? null, passwordHash, userId])
     if (passwordHash) await forgetTrustedDevices(client, userId)
 
     // LOGIN_SPLIT_PLAN.md Decision 5 — a reset ends ALL of this account's

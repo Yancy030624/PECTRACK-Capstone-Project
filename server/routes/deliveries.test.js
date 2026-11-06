@@ -109,6 +109,8 @@ describe('delivery management', () => {
 
     const cashierCreate = await fetch(`${baseUrl}/api/staff`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ ...cashier, confirmPassword: cashier.password }) })
     assert.equal(cashierCreate.status, 201)
+    // Fixture: this account skips the first sign-in setup, tested in auth.test.js.
+    await pool.query('UPDATE users SET must_set_credentials = FALSE WHERE username = $1', [cashier.username])
     const cashierRow = await pool.query('SELECT user_id FROM users WHERE username = $1', [cashier.username])
     createdUserIds.push(cashierRow.rows[0].user_id)
     const cashierLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: cashier.username, password: cashier.password }) })
@@ -134,6 +136,8 @@ describe('delivery management', () => {
 
     const firstDriverCreate = await fetch(`${baseUrl}/api/staff`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ ...firstDriver, confirmPassword: firstDriver.password }) })
     assert.equal(firstDriverCreate.status, 201)
+    // Fixture: this account skips the first sign-in setup, tested in auth.test.js.
+    await pool.query('UPDATE users SET must_set_credentials = FALSE WHERE username = $1', [firstDriver.username])
     const firstDriverRow = await pool.query('SELECT user_id, (SELECT delivery_personnel_id FROM delivery_personnel WHERE user_id = users.user_id) AS delivery_personnel_id FROM users WHERE username = $1', [firstDriver.username])
     createdUserIds.push(firstDriverRow.rows[0].user_id)
     firstDriverId = firstDriverRow.rows[0].delivery_personnel_id
@@ -142,6 +146,8 @@ describe('delivery management', () => {
 
     const secondDriverCreate = await fetch(`${baseUrl}/api/staff`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ ...secondDriver, confirmPassword: secondDriver.password }) })
     assert.equal(secondDriverCreate.status, 201)
+    // Fixture: this account skips the first sign-in setup, tested in auth.test.js.
+    await pool.query('UPDATE users SET must_set_credentials = FALSE WHERE username = $1', [secondDriver.username])
     const secondDriverRow = await pool.query('SELECT user_id, (SELECT delivery_personnel_id FROM delivery_personnel WHERE user_id = users.user_id) AS delivery_personnel_id FROM users WHERE username = $1', [secondDriver.username])
     createdUserIds.push(secondDriverRow.rows[0].user_id)
     secondDriverId = secondDriverRow.rows[0].delivery_personnel_id

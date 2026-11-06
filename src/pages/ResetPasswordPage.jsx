@@ -4,6 +4,7 @@ import { apiPost } from '../api/client.js'
 import { passwordHint as describePassword, strongPasswordHint } from '../lib/password.js'
 import { PasswordToggle } from '../components/PasswordToggle.jsx'
 import { AuthShell, authButtonClass, authErrorClass, authInputClass, authLinkClass, authSuccessClass } from './AuthShell.jsx'
+import { noCopy, noPaste } from '../lib/inputFilters.js'
 
 // Step two of email password recovery — reached only from the link in the
 // email. The same strength rules as registration apply (routes/auth.js
@@ -83,7 +84,7 @@ export function ResetPasswordPage() {
           <div>
             <label htmlFor="reset-password" className="mb-1.5 block text-xs font-bold">New password</label>
             <div className="relative">
-              <input id="reset-password" type={shown ? 'text' : 'password'} value={form.newPassword} onChange={(event) => setForm({ ...form, newPassword: event.target.value })} autoComplete="new-password" autoFocus className={`${authInputClass} pr-11`} aria-invalid={Boolean(errors.newPassword)} />
+              <input {...noCopy} id="reset-password" type={shown ? 'text' : 'password'} value={form.newPassword} onChange={(event) => setForm({ ...form, newPassword: event.target.value })} autoComplete="new-password" autoFocus className={`${authInputClass} pr-11`} aria-invalid={Boolean(errors.newPassword)} />
               <PasswordToggle shown={shown} onToggle={() => setShown(!shown)} />
             </div>
             {errors.newPassword && <p className="mt-1 text-xs font-medium text-red-700">{errors.newPassword}</p>}
@@ -91,7 +92,7 @@ export function ResetPasswordPage() {
           <div>
             <label htmlFor="reset-confirm" className="mb-1.5 block text-xs font-bold">Confirm new password</label>
             <div className="relative">
-              <input id="reset-confirm" type={shown ? 'text' : 'password'} value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} autoComplete="new-password" className={`${authInputClass} pr-11`} aria-invalid={Boolean(errors.confirmPassword)} />
+              <input {...noCopy} {...noPaste} id="reset-confirm" type={shown ? 'text' : 'password'} value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} autoComplete="new-password" className={`${authInputClass} pr-11`} aria-invalid={Boolean(errors.confirmPassword)} />
               <PasswordToggle shown={shown} onToggle={() => setShown(!shown)} />
             </div>
             {errors.confirmPassword && <p className="mt-1 text-xs font-medium text-red-700">{errors.confirmPassword}</p>}

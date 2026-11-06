@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from
 import { apiGet, apiPost, sessionEndedEvent } from './api/client.js'
 import { AuthModal } from './components/AuthModal.jsx'
 import { CartFab } from './components/CartFab.jsx'
+import { CredentialSetup } from './components/CredentialSetup.jsx'
 import { CartProvider } from './cart/CartContext.jsx'
 import { CustomerAccount } from './pages/customer-account/CustomerAccount.jsx'
 import { Dashboard } from './pages/dashboard/Dashboard.jsx'
@@ -204,8 +205,19 @@ function AppRoutes() {
     }
   }
 
+  // The server ended every session when the new details were saved, so this
+  // person signs in again with what they just chose.
+  const handleCredentialsSet = () => {
+    navigate(afterLogoutPath, { replace: true })
+    setUser(null)
+    setAuthRequest({ view: 'login', mode: 'staff', returnTo: null, notice: 'Your new username and password are saved. Sign in with them to continue.' })
+  }
+
   // Avoid flashing a guarded page while the session check is still in flight.
   if (checkingSession) return null
+
+  // Nothing else opens until this account has its own username and password.
+  if (user?.mustSetCredentials) return <CredentialSetup user={user} onDone={handleCredentialsSet} onLogout={handleLogout} />
 
   return (
     <CartProvider user={user}>

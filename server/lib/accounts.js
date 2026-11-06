@@ -36,6 +36,8 @@ export function toPublicUser(row) {
     email: row.email,
     contactNumber: row.contact_num,
   }
+  // Migration 044: left off unless true, like emailVerified for staff.
+  if (row.must_set_credentials) user.mustSetCredentials = true
   if (row.user_type === 'CUSTOMER') {
     user.emailVerified = row.email_verified_at != null
     // Migration 026: a customer's name in its two parts, for My Profile.

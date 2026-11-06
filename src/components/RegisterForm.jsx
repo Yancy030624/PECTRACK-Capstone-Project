@@ -5,7 +5,7 @@ import { PasswordToggle } from './PasswordToggle.jsx'
 import { passwordHint as describePassword, strongPasswordHint } from '../lib/password.js'
 import { usePhoneVerification } from '../lib/usePhoneVerification.js'
 import { digitsOnly } from '../lib/phone.js'
-import { nameOnly } from '../lib/inputFilters.js'
+import { nameOnly, noCopy, noPaste } from '../lib/inputFilters.js'
 
 // The registration form itself, lifted out of the old RegistrationPage so
 // it can live inside the auth pop-up — the same move LoginForm already
@@ -221,12 +221,12 @@ export function RegisterForm({ onSwitchToLogin }) {
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <RequiredLabel htmlFor="register-password">Password</RequiredLabel>
-                <div className="relative"><input id="register-password" type={showPassword ? 'text' : 'password'} value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" placeholder="Create password" className={passwordFieldClass('password')} {...fieldProps('password')} aria-invalid={isWrong('password') || undefined} /><PasswordToggle shown={showPassword} onToggle={() => setShowPassword(!showPassword)} /></div>
+                <div className="relative"><input {...noCopy} id="register-password" type={showPassword ? 'text' : 'password'} value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" placeholder="Create password" className={passwordFieldClass('password')} {...fieldProps('password')} aria-invalid={isWrong('password') || undefined} /><PasswordToggle shown={showPassword} onToggle={() => setShowPassword(!showPassword)} /></div>
                 <FieldError id="password-error" message={errors.password} />
               </div>
               <div>
                 <RequiredLabel htmlFor="confirm-password">Confirm password</RequiredLabel>
-                <div className="relative"><input id="confirm-password" type={showConfirm ? 'text' : 'password'} value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} autoComplete="new-password" placeholder="Repeat password" className={passwordFieldClass('confirmPassword')} {...fieldProps('confirmPassword')} aria-invalid={isWrong('confirmPassword') || undefined} /><PasswordToggle shown={showConfirm} onToggle={() => setShowConfirm(!showConfirm)} /></div>
+                <div className="relative"><input {...noCopy} {...noPaste} id="confirm-password" type={showConfirm ? 'text' : 'password'} value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} autoComplete="new-password" placeholder="Repeat password" className={passwordFieldClass('confirmPassword')} {...fieldProps('confirmPassword')} aria-invalid={isWrong('confirmPassword') || undefined} /><PasswordToggle shown={showConfirm} onToggle={() => setShowConfirm(!showConfirm)} /></div>
                 <FieldError id="confirmPassword-error" message={errors.confirmPassword} />
               </div>
             </div>

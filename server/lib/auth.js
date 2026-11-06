@@ -110,7 +110,7 @@ export const backgroundRequestHeader = 'x-pectrack-background'
 // that has just timed out (and is now deleted), or {} for anything else.
 async function resolveSession(sessionId, request) {
   const result = await pool.query(
-    `SELECT u.user_id, u.username, u.user_type, u.is_active,
+    `SELECT u.user_id, u.username, u.user_type, u.is_active, u.must_set_credentials,
             ($4::boolean AND u.user_type <> 'CUSTOMER' AND s.last_seen_at < CURRENT_TIMESTAMP - make_interval(mins => $2)) AS idle,
             (s.last_seen_at < CURRENT_TIMESTAMP - make_interval(secs => $3)) AS stale,
             ${profileColumnsSql}
@@ -135,6 +135,10 @@ async function resolveSession(sessionId, request) {
   return { user: toPublicUser(row) }
 }
 
+// An account that must still choose its own username and password can use
+// only these (migration 044). Everything else waits until that is done.
+const allowedDuringSetup = new Set(['/api/auth/me', '/api/auth/setup-credentials'])
+
 export async function requireAuth(request, response, next) {
   const sessionId = parseCookies(request.headers.cookie)[sessionCookieName]
   const { user, idle } = sessionId ? await resolveSession(sessionId, request) : {}
@@ -144,6 +148,9 @@ export async function requireAuth(request, response, next) {
   // A cookie with no live session behind it means the session ended under
   // this browser, most often because the account signed in somewhere else.
   if (!user) return response.status(401).json({ code: 'SIGNED_OUT', message: sessionId ? 'Your session ended. This account may have signed in on another device. Sign in again to continue.' : 'Sign in to continue.' })
+  if (user.mustSetCredentials && !allowedDuringSetup.has(`${request.baseUrl}${request.path}`)) {
+    return response.status(403).json({ code: 'SETUP_REQUIRED', message: 'Choose your new username and password first.' })
+  }
   request.user = user
   request.sessionId = sessionId
   next()
@@ -162,7 +169,7 @@ export async function requireAuth(request, response, next) {
 export async function optionalAuth(request, response, next) {
   const sessionId = parseCookies(request.headers.cookie)[sessionCookieName]
   const { user } = sessionId ? await resolveSession(sessionId, request) : {}
-  if (user) {
+  if (user && !user.mustSetCredentials) {
     request.user = user
     request.sessionId = sessionId
   }

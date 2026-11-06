@@ -16,7 +16,7 @@ import { consumeVerifiedPhone } from '../lib/phoneVerification.js'
 import { normalizePhone } from '../lib/sms.js'
 import { forgetTrustedDevices, isTrustedDevice, trustDevice, trustedDeviceCookieName, trustedDeviceCookieOptions } from '../lib/trustedDevices.js'
 import { sendEmailChangedNotice, sendMail, sendOtpEmail } from '../lib/mail.js'
-import { normalize, normalizeEmail, validateContactNumberField, validateCustomerRegistration, validateEmailField, validateName, validatePasswordField, validatePersonName } from '../lib/validation.js'
+import { normalize, normalizeEmail, validateContactNumberField, validateCustomerRegistration, validateEmailField, validateName, validatePasswordField, validatePersonName, validateUsername } from '../lib/validation.js'
 
 const router = express.Router()
 
@@ -194,7 +194,7 @@ router.post('/login', authLimiter, loginAccountLimiter, async (request, response
   if (!identifier || !password) return response.status(422).json({ message: 'Enter your username or email and password.' })
 
   const result = await pool.query(
-    `SELECT u.user_id, u.username, u.password_hash, u.user_type, u.is_active, u.locked_until,
+    `SELECT u.user_id, u.username, u.password_hash, u.user_type, u.is_active, u.locked_until, u.must_set_credentials,
             ${profileColumnsSql}
      FROM users u
      ${profileJoinsSql}
@@ -505,7 +505,7 @@ router.post('/verify-otp', authLimiter, async (request, response) => {
   // steps.
   const otpResult = await pool.query(
     `SELECT o.otp_id, o.code_hash, o.attempt_count,
-            u.user_id, u.username, u.user_type, u.is_active,
+            u.user_id, u.username, u.user_type, u.is_active, u.must_set_credentials,
             a.name, a.email, a.contact_num
      FROM otp_codes o
      JOIN users u ON u.user_id = o.user_id
@@ -529,7 +529,7 @@ router.post('/verify-otp', authLimiter, async (request, response) => {
   }
 
   await pool.query('UPDATE otp_codes SET consumed_at = CURRENT_TIMESTAMP WHERE otp_id = $1', [otp.otp_id])
-  const user = { user_id: otp.user_id, username: otp.username, user_type: otp.user_type, name: otp.name, email: otp.email, contact_num: otp.contact_num }
+  const user = { user_id: otp.user_id, username: otp.username, user_type: otp.user_type, name: otp.name, email: otp.email, contact_num: otp.contact_num, must_set_credentials: otp.must_set_credentials }
   const { sessionId, endedSessions } = await createSession(user.user_id)
   recordSecurityEvent({ request, type: 'OTP_SUCCESS', userId: user.user_id, username: user.username })
   recordSecurityEvent({ request, type: 'LOGIN_SUCCESS', userId: user.user_id, username: user.username, detail: `ADMIN, second factor verified${endedSessionsNote(endedSessions)}` })
@@ -555,6 +555,55 @@ router.post('/logout', async (request, response) => {
 
 router.get('/me', requireAuth, (request, response) => {
   return response.json({ user: request.user })
+})
+
+// POST /api/auth/setup-credentials: an account handed to someone by another
+// person chooses its own username and password (migration 044). All of its
+// sessions then end, so the person signs in again with what they just chose.
+router.post('/setup-credentials', authLimiter, requireAuth, async (request, response) => {
+  if (!request.user.mustSetCredentials) return response.status(409).json({ message: 'This account is already set up.' })
+
+  const username = normalize(request.body.username).toLowerCase()
+  const newPassword = String(request.body.newPassword ?? '')
+  const confirmPassword = String(request.body.confirmPassword ?? '')
+  const errors = {}
+
+  const usernameError = validateUsername(username)
+  if (usernameError) errors.username = usernameError
+  else if (username === request.user.username.toLowerCase()) errors.username = 'Choose a username different from the one you were given.'
+  const passwordError = validatePasswordField(newPassword, { username, email: request.user.email })
+  if (passwordError) errors.newPassword = passwordError
+  if (newPassword !== confirmPassword) errors.confirmPassword = 'Passwords do not match.'
+  if (!errors.newPassword) {
+    const current = await pool.query('SELECT password_hash FROM users WHERE user_id = $1', [request.user.id])
+    if (await bcrypt.compare(newPassword, current.rows[0].password_hash)) errors.newPassword = 'Choose a password different from the one you were given.'
+  }
+  if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
+
+  const taken = { message: 'That username is already taken.', errors: { username: 'That username is already taken.' } }
+  const passwordHash = await bcrypt.hash(newPassword, bcryptRounds)
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    if (await findDuplicateAccount(client, { username, email: null, contactNumber: null }, request.user.id)) {
+      await client.query('ROLLBACK')
+      return response.status(409).json(taken)
+    }
+    await client.query('UPDATE users SET username = $1, password_hash = $2, must_set_credentials = FALSE, failed_login_attempts = 0, locked_until = NULL WHERE user_id = $3', [username, passwordHash, request.user.id])
+    await client.query('DELETE FROM sessions WHERE user_id = $1', [request.user.id])
+    await forgetTrustedDevices(client, request.user.id)
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    if (error.code === '23505') return response.status(409).json(taken)
+    throw error
+  } finally {
+    client.release()
+  }
+
+  recordSecurityEvent({ request, type: 'PASSWORD_CHANGED', userId: request.user.id, username, detail: `first sign-in setup; was ${request.user.username}; all sessions ended` })
+  response.clearCookie(sessionCookieName, { path: '/' })
+  return response.json({ message: 'Your new username and password are saved.' })
 })
 
 // PATCH /api/auth/password — self-service password change, for any role.

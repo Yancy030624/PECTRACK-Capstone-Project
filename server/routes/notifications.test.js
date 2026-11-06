@@ -114,6 +114,8 @@ describe('notification feed', () => {
 
     for (const person of [cashier, firstDriver, secondDriver]) {
       assert.equal((await json('POST', '/api/staff', adminCookie, { ...person, confirmPassword: person.password })).status, 201)
+      // Fixture: this account skips the first sign-in setup, tested in auth.test.js.
+      await pool.query('UPDATE users SET must_set_credentials = FALSE WHERE username = $1', [person.username])
       createdUserIds.push((await pool.query('SELECT user_id FROM users WHERE username = $1', [person.username])).rows[0].user_id)
     }
     cashierCookie = await login(cashier.username, cashier.password)

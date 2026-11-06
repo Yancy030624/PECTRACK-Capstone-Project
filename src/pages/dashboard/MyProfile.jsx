@@ -11,7 +11,7 @@ import { Input } from '../../components/ui/Input.jsx'
 import { PasswordInput } from '../../components/ui/PasswordInput.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { digitsOnly } from '../../lib/phone.js'
-import { nameOnly } from '../../lib/inputFilters.js'
+import { nameOnly, noCopy, noPaste } from '../../lib/inputFilters.js'
 
 const emptyPasswordForm = { currentPassword: '', newPassword: '', confirmPassword: '' }
 
@@ -204,10 +204,10 @@ function PasswordTab({ unified = false }) {
             <PasswordInput value={passwordForm.currentPassword} onChange={(event) => updatePasswordField('currentPassword', event.target.value)} autoComplete="current-password" />
           </Field>
           <Field label="New password" error={passwordErrors.newPassword}>
-            <PasswordInput value={passwordForm.newPassword} onChange={(event) => updatePasswordField('newPassword', event.target.value)} autoComplete="new-password" />
+            <PasswordInput {...noCopy} value={passwordForm.newPassword} onChange={(event) => updatePasswordField('newPassword', event.target.value)} autoComplete="new-password" />
           </Field>
           <Field label="Confirm new password" error={passwordErrors.confirmPassword}>
-            <PasswordInput value={passwordForm.confirmPassword} onChange={(event) => updatePasswordField('confirmPassword', event.target.value)} autoComplete="new-password" />
+            <PasswordInput {...noCopy} {...noPaste} value={passwordForm.confirmPassword} onChange={(event) => updatePasswordField('confirmPassword', event.target.value)} autoComplete="new-password" />
           </Field>
           <p className="text-xs text-ink-500">At least 12 characters, with an uppercase letter, a lowercase letter, a number, and a symbol.</p>
           {passwordMessage && <Alert variant={passwordFailed ? 'error' : 'success'}>{passwordMessage}</Alert>}

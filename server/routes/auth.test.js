@@ -702,6 +702,70 @@ describe('admin login and the email OTP second factor', () => {
     assert.equal((await me(cookieOf(verified))).status, 200)
   })
 
+  describe('first sign-in setup', () => {
+    const setupUser = { username: `setup_${runId}`, password: 'Temporary-Password-7!' }
+    const newUsername = `chosen_${runId}`
+    const newPassword = 'Chosen-Password-8!'
+    let setupUserId
+    let cookie
+    const signIn = (identifier, password) => fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier, password }) })
+    const setup = (body) => fetch(`${baseUrl}/api/auth/setup-credentials`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(body) })
+
+    before(async () => {
+      const hash = await bcrypt.hash(setupUser.password, 4)
+      const created = await pool.query(`INSERT INTO users (username, password_hash, user_type, must_set_credentials) VALUES ($1, $2, 'CASHIER', TRUE) RETURNING user_id`, [setupUser.username, hash])
+      setupUserId = created.rows[0].user_id
+      await pool.query('INSERT INTO cashiers (user_id, name, contact_num, email) VALUES ($1, $2, $3, $4)', [setupUserId, 'Setup Cashier', randomContactNumber(), `setup_${runId}@example.com`])
+    })
+
+    after(async () => {
+      await pool.query('DELETE FROM cashiers WHERE user_id = $1', [setupUserId])
+      await pool.query('DELETE FROM users WHERE user_id = $1', [setupUserId])
+    })
+
+    test('the account can do nothing else until it is set up', async () => {
+      const signedIn = await signIn(setupUser.username, setupUser.password)
+      assert.equal(signedIn.status, 200)
+      assert.equal((await signedIn.json()).user.mustSetCredentials, true)
+      cookie = signedIn.headers.get('set-cookie').split(';')[0]
+
+      const me = await fetch(`${baseUrl}/api/auth/me`, { headers: { Cookie: cookie } })
+      assert.equal((await me.json()).user.mustSetCredentials, true)
+      const blocked = await fetch(`${baseUrl}/api/orders`, { headers: { Cookie: cookie } })
+      assert.equal(blocked.status, 403)
+      assert.equal((await blocked.json()).code, 'SETUP_REQUIRED')
+    })
+
+    test('it refuses the old details, a weak password, and a mismatch', async () => {
+      const sameUsername = await setup({ username: setupUser.username, newPassword, confirmPassword: newPassword })
+      assert.ok((await sameUsername.json()).errors.username)
+      const samePassword = await setup({ username: newUsername, newPassword: setupUser.password, confirmPassword: setupUser.password })
+      assert.ok((await samePassword.json()).errors.newPassword)
+      const weak = await setup({ username: newUsername, newPassword: 'short', confirmPassword: 'short' })
+      assert.ok((await weak.json()).errors.newPassword)
+      const mismatch = await setup({ username: newUsername, newPassword, confirmPassword: 'Something-Else-8!' })
+      assert.equal(mismatch.status, 422)
+      assert.ok((await mismatch.json()).errors.confirmPassword)
+      const taken = await setup({ username: admin.username, newPassword, confirmPassword: newPassword })
+      assert.equal(taken.status, 409)
+    })
+
+    test('saving ends the session, and only the new details work afterwards', async () => {
+      const saved = await setup({ username: newUsername, newPassword, confirmPassword: newPassword })
+      assert.equal(saved.status, 200)
+      assert.equal((await fetch(`${baseUrl}/api/auth/me`, { headers: { Cookie: cookie } })).status, 401)
+
+      assert.equal((await signIn(setupUser.username, setupUser.password)).status, 401)
+      const again = await signIn(newUsername, newPassword)
+      assert.equal(again.status, 200)
+      assert.equal((await again.json()).user.mustSetCredentials, undefined)
+      cookie = again.headers.get('set-cookie').split(';')[0]
+
+      assert.equal((await fetch(`${baseUrl}/api/orders`, { headers: { Cookie: cookie } })).status, 200)
+      assert.equal((await setup({ username: `other_${runId}`, newPassword, confirmPassword: newPassword })).status, 409)
+    })
+  })
+
   // Seeds a known OTP directly rather than going through /login's random
   // code generation, so a test controls the exact code without scraping the
   // console.log the route uses as a stand-in for SMS. Returns the challenge
