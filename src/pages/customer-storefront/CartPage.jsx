@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { apiGet } from '../../api/client.js'
 import { useCart } from '../../cart/CartContext.jsx'
 import { formatPeso } from '../../lib/format.js'
+import { useLiveStock } from '../../lib/useLiveStock.js'
 
 export function CartPage() {
   const { lines, setQuantity, removeItem } = useCart()
@@ -14,6 +15,11 @@ export function CartPage() {
       .then((data) => setProducts(data.products))
       .catch((error) => setMessage(error.message))
   }, [])
+
+  // Another customer's order lowers the most this cart can hold, at once.
+  useLiveStock('inventory', () => {
+    apiGet('/api/products', { background: true }).then((data) => setProducts(data.products)).catch(() => {})
+  }, '/api/products/live')
 
   const loading = products === null
   const productsById = loading ? new Map() : new Map(products.map((product) => [product.id, product]))

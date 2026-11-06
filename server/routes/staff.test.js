@@ -108,6 +108,15 @@ describe('staff routes require an authenticated admin', () => {
     assert.equal(response.status, 422)
   })
 
+  test('POST /api/staff no longer creates delivery personnel', async () => {
+    const response = await fetch(`${baseUrl}/api/staff`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
+      body: JSON.stringify({ role: 'DELIVERY_PERSONNEL', name: 'No Rider', username: `norider_${runId}`, email: `norider_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Another-Password-9!', confirmPassword: 'Another-Password-9!' }),
+    })
+    assert.equal(response.status, 422)
+  })
+
   test('POST /api/staff creates a cashier account, and GET /api/staff lists it', async () => {
     const cashier = { role: 'CASHIER', name: 'Test Cashier', username: `cashier_${runId}`, email: `cashier_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!', confirmPassword: 'Cashier-Password-9!' }
     const createResponse = await fetch(`${baseUrl}/api/staff`, {
@@ -150,7 +159,7 @@ describe('staff routes require an authenticated admin', () => {
     const response = await fetch(`${baseUrl}/api/staff`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
-      body: JSON.stringify({ role: 'DELIVERY_PERSONNEL', name: 'Duplicate', username: `cashier_${runId}`, email: `duplicate_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Another-Password-9!', confirmPassword: 'Another-Password-9!' }),
+      body: JSON.stringify({ role: 'CASHIER', name: 'Duplicate', username: `cashier_${runId}`, email: `duplicate_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Another-Password-9!', confirmPassword: 'Another-Password-9!' }),
     })
     assert.equal(response.status, 409)
   })

@@ -115,16 +115,6 @@ async function main() {
   })
 
   await createStaffOrCustomer({
-    username: 'delivery1',
-    password: 'luzaDelivery#1',
-    userType: 'DELIVERY_PERSONNEL',
-    table: 'delivery_personnel',
-    name: 'Christian Luza',
-    email: 'christianluza@gmail.com',
-    contactNumber: '09183327764',
-  })
-
-  await createStaffOrCustomer({
     username: 'customer1',
     password: 'valenciaCustomer#1',
     userType: 'CUSTOMER',
@@ -137,7 +127,6 @@ async function main() {
   console.log('\nDone. Credentials:')
   console.log('  admin1    /', adminPassword)
   console.log('  cashier1  / carlaCashier#1')
-  console.log('  delivery1 / luzaDelivery#1')
   console.log('  customer1 / valenciaCustomer#1')
   console.log('\nAdmin login no longer needs an OTP step (see routes/auth.js) — a correct password signs in immediately.')
   console.log('Next: with the API server running, `node scripts/seed-demo-data.mjs` to populate orders/payments/deliveries.')

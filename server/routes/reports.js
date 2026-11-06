@@ -286,9 +286,7 @@ router.get('/summary', async (_request, response) => {
     // Only deliveries someone can still act on: a row whose order is
     // already COMPLETED or CANCELLED cannot be assigned (routes/deliveries.js
     // refuses it), so counting it here sent staff to a queue of dead work.
-    // Waiting for a driver only — the Dashboard tile is "Deliveries to
-    // assign" and opens exactly this list. An ASSIGNED delivery already
-    // has one; it is the driver's to move, not the counter's.
+    // Paid deliveries still waiting to go out.
     pool.query(`SELECT COUNT(*)::int AS n FROM deliveries d JOIN orders o ON o.order_id = d.order_id WHERE d.status = 'PENDING_ASSIGNMENT' AND o.status NOT IN ('COMPLETED', 'CANCELLED') AND o.data_source <> 'ASSUMED'`),
     // Orders to prepare (payment first, the adviser 2026-10-16): paid
     // orders still to hand over or send out whose day is today (or came

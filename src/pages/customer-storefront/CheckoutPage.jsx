@@ -7,6 +7,7 @@ import { formatPeso } from '../../lib/format.js'
 import { deliveryFee, isDeliverable } from '../../lib/bakery.js'
 import { NeededByFields } from '../../components/NeededByFields.jsx'
 import { checkPicked, toRequestedTime } from '../../lib/orderHours.js'
+import { useLiveStock } from '../../lib/useLiveStock.js'
 
 export function CheckoutPage({ user }) {
   // Migration 016 — the server refuses an order from an unconfirmed email
@@ -54,6 +55,11 @@ export function CheckoutPage({ user }) {
       if (defaultAddress) setAddressId(defaultAddress.id)
     }).catch(() => setAddresses([]))
   }, [])
+
+  // Another customer's order can change what is left while this page is open.
+  useLiveStock('inventory', () => {
+    apiGet('/api/products', { background: true }).then((data) => setProducts(data.products)).catch(() => {})
+  }, '/api/products/live')
 
   const loading = products === null || addresses === null
   const productsById = loading ? new Map() : new Map(products.map((product) => [product.id, product]))

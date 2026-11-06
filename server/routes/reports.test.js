@@ -134,10 +134,10 @@ describe('reporting & analytics', () => {
     const customerLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: customer.username, password: customer.password }) })
     customerCookie = customerLogin.headers.get('set-cookie').split(';')[0]
 
-    const driverCreate = await fetch(`${baseUrl}/api/staff`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ ...driver, confirmPassword: driver.password }) })
-    assert.equal(driverCreate.status, 201)
-    // Fixture: this account skips the first sign-in setup, tested in auth.test.js.
-    await pool.query('UPDATE users SET must_set_credentials = FALSE WHERE username = $1', [driver.username])
+    // Fixture: an old rider account still active in the database, written
+    // directly because the app no longer creates them. Reports must refuse it.
+    const driverInsert = await pool.query(`INSERT INTO users (username, password_hash, user_type) VALUES ($1, $2, 'DELIVERY_PERSONNEL') RETURNING user_id`, [driver.username, await bcrypt.hash(driver.password, 4)])
+    await pool.query('INSERT INTO delivery_personnel (user_id, name, contact_num, email) VALUES ($1, $2, $3, $4)', [driverInsert.rows[0].user_id, driver.name, driver.contactNumber, driver.email])
     const driverRow = await pool.query('SELECT user_id FROM users WHERE username = $1', [driver.username])
     createdUserIds.push(driverRow.rows[0].user_id)
     const driverLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: driver.username, password: driver.password }) })

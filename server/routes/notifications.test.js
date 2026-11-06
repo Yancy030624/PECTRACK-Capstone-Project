@@ -43,9 +43,6 @@ describe('notification feed', () => {
   let adminCookie
   let cashierCookie
   let customerCookie
-  let firstDriverCookie
-  let secondDriverCookie
-  let firstDriverId
   let addressId
   let productId
   let categoryId
@@ -55,8 +52,6 @@ describe('notification feed', () => {
   const admin = { username: `notifadmin_${runId}`, password: 'Admin-Only-Password-9!' }
   const cashier = { role: 'CASHIER', name: 'Notif Cashier', username: `notifcash_${runId}`, email: `notifcash_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
   const customer = { name: 'Notif Customer', firstName: 'Notif', lastName: 'Customer', agree: true, username: `notifcust_${runId}`, email: `notifcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
-  const firstDriver = { role: 'DELIVERY_PERSONNEL', name: 'Notif Driver One', username: `notifdp1_${runId}`, email: `notifdp1_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Driver-Password-9!' }
-  const secondDriver = { role: 'DELIVERY_PERSONNEL', name: 'Notif Driver Two', username: `notifdp2_${runId}`, email: `notifdp2_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Driver-Password-9!' }
 
   const json = (method, path, cookie, body) => fetch(`${baseUrl}${path}`, {
     method,
@@ -88,11 +83,10 @@ describe('notification feed', () => {
     }
     return order
   }
-  // A paid delivery order (so ready for delivery) assigned to the first driver.
-  const assignedDelivery = async () => {
+  // A paid delivery order, so ready for delivery.
+  const paidDelivery = async () => {
     const order = await placeOrder({ orderType: 'DELIVERY' })
     const delivery = (await pool.query('SELECT delivery_id FROM deliveries WHERE order_id = $1', [order.id])).rows[0].delivery_id
-    assert.equal((await json('PATCH', `/api/deliveries/${delivery}/assign`, cashierCookie, { deliveryPersonnelId: firstDriverId })).status, 200)
     return { order, delivery }
   }
   const setStatus = (deliveryId, status, cookie, note) => json('PATCH', `/api/deliveries/${deliveryId}/status`, cookie, { status, note })
@@ -112,16 +106,13 @@ describe('notification feed', () => {
     await pool.query(`INSERT INTO otp_codes (user_id, code_hash, challenge_token, expires_at) VALUES ($1, $2, $3, CURRENT_TIMESTAMP + INTERVAL '5 minutes')`, [adminResult.rows[0].user_id, crypto.createHash('sha256').update(rawCode).digest('hex'), challengeToken])
     adminCookie = (await json('POST', '/api/auth/verify-otp', '', { challengeToken, code: rawCode })).headers.get('set-cookie').split(';')[0]
 
-    for (const person of [cashier, firstDriver, secondDriver]) {
+    for (const person of [cashier]) {
       assert.equal((await json('POST', '/api/staff', adminCookie, { ...person, confirmPassword: person.password })).status, 201)
       // Fixture: this account skips the first sign-in setup, tested in auth.test.js.
       await pool.query('UPDATE users SET must_set_credentials = FALSE WHERE username = $1', [person.username])
       createdUserIds.push((await pool.query('SELECT user_id FROM users WHERE username = $1', [person.username])).rows[0].user_id)
     }
     cashierCookie = await login(cashier.username, cashier.password)
-    firstDriverCookie = await login(firstDriver.username, firstDriver.password)
-    secondDriverCookie = await login(secondDriver.username, secondDriver.password)
-    firstDriverId = (await pool.query('SELECT delivery_personnel_id FROM delivery_personnel dp JOIN users u ON u.user_id = dp.user_id WHERE u.username = $1', [firstDriver.username])).rows[0].delivery_personnel_id
 
     await json('POST', '/api/auth/register', '', { ...customer, confirmPassword: customer.password })
     await pool.query('UPDATE customers SET email_verified_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT user_id FROM users WHERE username = $1)', [customer.username])
@@ -219,27 +210,28 @@ describe('notification feed', () => {
   })
 
   test('a delivery going out, arriving, or failing each reaches the staff once', async () => {
-    const delivered = await assignedDelivery()
-    assert.equal((await setStatus(delivered.delivery, 'OUT_FOR_DELIVERY', firstDriverCookie)).status, 200)
-    assert.equal((await setStatus(delivered.delivery, 'DELIVERED', firstDriverCookie)).status, 200)
+    const delivered = await paidDelivery()
+    assert.equal((await setStatus(delivered.delivery, 'OUT_FOR_DELIVERY', adminCookie)).status, 200)
+    assert.equal((await setStatus(delivered.delivery, 'DELIVERED', adminCookie)).status, 200)
 
-    const failed = await assignedDelivery()
-    assert.equal((await setStatus(failed.delivery, 'OUT_FOR_DELIVERY', firstDriverCookie)).status, 200)
-    assert.equal((await setStatus(failed.delivery, 'FAILED', firstDriverCookie, 'Gate locked\nNobody home')).status, 200)
+    const failed = await paidDelivery()
+    assert.equal((await setStatus(failed.delivery, 'OUT_FOR_DELIVERY', adminCookie)).status, 200)
+    assert.equal((await setStatus(failed.delivery, 'FAILED', adminCookie, 'Gate locked\nNobody home')).status, 200)
 
-    for (const cookie of [adminCookie, cashierCookie]) {
+    // Staff do not hear about what they did themselves, so the cashier reads
+    // what the admin moved.
+    for (const cookie of [cashierCookie]) {
       const { body } = await feed(cookie)
       const forDelivered = eventsFor(body, delivered.order.id).map((event) => event.type)
       assert.equal(forDelivered.filter((type) => type === 'out_for_delivery').length, 1)
       assert.equal(forDelivered.filter((type) => type === 'delivered').length, 1)
       const arrival = eventsFor(body, delivered.order.id).find((event) => event.type === 'delivered')
-      assert.equal(arrival.actorName, firstDriver.name)
       assert.equal(arrival.recipientName, 'Notif Recipient')
       assert.equal(arrival.barangay, 'Ayuti')
 
       const failure = eventsFor(body, failed.order.id).find((event) => event.type === 'delivery_failed')
       assert.ok(failure, 'the failure is in the feed')
-      assert.equal(failure.note, 'Nobody home', "the driver's latest note only")
+      assert.equal(failure.note, 'Nobody home', "the latest note only")
     }
   })
 
@@ -295,33 +287,24 @@ describe('notification feed', () => {
     try { await run() } finally { config.mail.gmail = original; gmailFails = false }
   }
 
-  test('assigning a delivery emails the driver, with the address and items', () => withGmail(async () => {
-    const { order } = await assignedDelivery()
-    const [mail] = await waitForMail(firstDriver.email, `New delivery #${order.orderNumber}`)
-    assert.ok(mail, 'the driver got the email')
-    assert.match(mail.text, /1 Bell St/)
-    assert.match(mail.text, /Notif Recipient/)
-    assert.match(mail.text, new RegExp(`Notif Test Bread ${runId} × 1`))
-  }))
-
   test('the customer is emailed when the delivery leaves, arrives, or fails', () => withGmail(async () => {
-    const delivered = await assignedDelivery()
-    await setStatus(delivered.delivery, 'OUT_FOR_DELIVERY', firstDriverCookie)
+    const delivered = await paidDelivery()
+    await setStatus(delivered.delivery, 'OUT_FOR_DELIVERY', adminCookie)
     const [onTheWay] = await waitForMail(customer.email, `Your order #${delivered.order.orderNumber} is on the way`)
     assert.ok(onTheWay)
-    assert.match(onTheWay.text, /Notif/, "names the rider")
-    await setStatus(delivered.delivery, 'DELIVERED', firstDriverCookie)
+    assert.doesNotMatch(onTheWay.text, /rider/i, 'no rider in the wording')
+    await setStatus(delivered.delivery, 'DELIVERED', adminCookie)
     const [arrived] = await waitForMail(customer.email, `Your order #${delivered.order.orderNumber} was delivered`)
     assert.ok(arrived)
     assert.match(arrived.text, /If you did not receive this order, call us today/)
     assert.match(arrived.text, /1 Bell St/, 'says where it went')
 
-    const failed = await assignedDelivery()
-    await setStatus(failed.delivery, 'OUT_FOR_DELIVERY', firstDriverCookie)
-    await setStatus(failed.delivery, 'FAILED', firstDriverCookie, 'Dog at the gate')
+    const failed = await paidDelivery()
+    await setStatus(failed.delivery, 'OUT_FOR_DELIVERY', adminCookie)
+    await setStatus(failed.delivery, 'FAILED', adminCookie, 'Dog at the gate')
     const [failure] = await waitForMail(customer.email, `We could not deliver order #${failed.order.orderNumber}`)
     assert.ok(failure)
-    assert.doesNotMatch(failure.text, /Dog at the gate/, "the driver's note stays internal")
+    assert.doesNotMatch(failure.text, /Dog at the gate/, "the staff note stays internal")
   }))
 
   test('a ready pickup order emails its customer; a walk-in order emails no one', () => withGmail(async () => {
@@ -340,10 +323,10 @@ describe('notification feed', () => {
   }))
 
   test('no email to an unconfirmed address, and none for a refused change', () => withGmail(async () => {
-    const { order, delivery } = await assignedDelivery()
+    const { order, delivery } = await paidDelivery()
     await pool.query('UPDATE customers SET email_verified_at = NULL WHERE email = $1', [customer.email])
     try {
-      assert.equal((await setStatus(delivery, 'OUT_FOR_DELIVERY', firstDriverCookie)).status, 200)
+      assert.equal((await setStatus(delivery, 'OUT_FOR_DELIVERY', adminCookie)).status, 200)
       await settle()
       assert.equal(mailTo(customer.email, `#${order.orderNumber} is on the way`).length, 0)
     } finally {
@@ -352,15 +335,15 @@ describe('notification feed', () => {
 
     // OUT_FOR_DELIVERY again: the wrong source state, refused with 409.
     const before = mailTo(customer.email, `#${order.orderNumber}`).length
-    assert.equal((await setStatus(delivery, 'OUT_FOR_DELIVERY', firstDriverCookie)).status, 409)
+    assert.equal((await setStatus(delivery, 'OUT_FOR_DELIVERY', adminCookie)).status, 409)
     await settle()
     assert.equal(mailTo(customer.email, `#${order.orderNumber}`).length, before)
   }))
 
   test('an email that fails to send does not fail the change', () => withGmail(async () => {
     gmailFails = true
-    const { order, delivery } = await assignedDelivery()
-    const response = await setStatus(delivery, 'OUT_FOR_DELIVERY', firstDriverCookie)
+    const { order, delivery } = await paidDelivery()
+    const response = await setStatus(delivery, 'OUT_FOR_DELIVERY', adminCookie)
     assert.equal(response.status, 200)
     const state = await pool.query('SELECT status FROM orders WHERE order_id = $1', [order.id])
     assert.equal(state.rows[0].status, 'OUT_FOR_DELIVERY')
@@ -379,19 +362,6 @@ describe('notification feed', () => {
     assert.ok(due, 'due within the hour')
     assert.ok(due.neededAt)
     assert.equal(eventsFor(body, later.id).filter((event) => event.type === 'due_soon').length, 0, 'not yet')
-  })
-
-  test('a driver hears only about deliveries assigned to them', async () => {
-    const { order } = await assignedDelivery()
-    const mine = await feed(firstDriverCookie)
-    assert.equal(mine.status, 200)
-    const assigned = eventsFor(mine.body, order.id)
-    assert.equal(assigned.length, 1)
-    assert.equal(assigned[0].type, 'assigned')
-    assert.ok(mine.body.notifications.every((event) => event.type === 'assigned'), 'none of the staff events')
-
-    const other = await feed(secondDriverCookie)
-    assert.equal(eventsFor(other.body, order.id).length, 0, "never another driver's delivery")
   })
 })
 

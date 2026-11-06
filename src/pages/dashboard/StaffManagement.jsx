@@ -15,7 +15,7 @@ import { digitsOnly } from '../../lib/phone.js'
 import { nameOnly, noCopy, noPaste } from '../../lib/inputFilters.js'
 
 const emptyForm = { role: 'CASHIER', name: '', username: '', email: '', contactNumber: '', password: '', confirmPassword: '' }
-const roleLabels = { CASHIER: 'Cashier', DELIVERY_PERSONNEL: 'Delivery Personnel' }
+const roleLabels = { CASHIER: 'Cashier' }
 
 // Stage 5.5 (RULES-PLANS/UI_AUDIT.md) — admin-only screen, converted onto
 // the same primitive kit as PaymentBilling/InventoryRequests: Field/Input/

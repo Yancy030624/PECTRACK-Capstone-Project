@@ -23,11 +23,9 @@ import { ReceiptPage } from './pages/customer-storefront/ReceiptPage.jsx'
 import { ReservationReceiptPage } from './pages/customer-storefront/ReservationReceiptPage.jsx'
 import { StorefrontLayout } from './pages/customer-storefront/StorefrontLayout.jsx'
 
-const staffRoles = new Set(['ADMIN', 'CASHIER', 'DELIVERY PERSONNEL'])
+const staffRoles = new Set(['ADMIN', 'CASHIER'])
 // Where a person goes the moment they sign in. Staff land on /dashboard,
-// which opens each role on its own first screen (Dashboard.jsx's
-// defaultPathFor: an admin or cashier on the overview, a driver on My
-// Deliveries). A customer lands on the Menu, which is where ordering
+// the overview. A customer lands on the Menu, which is where ordering
 // starts — not on an internal dashboard they have no use for.
 function landingPathFor(user) {
   if (staffRoles.has(user?.role)) return '/dashboard'
@@ -55,6 +53,8 @@ function RequireStaff({ user, openAuth, children }) {
   // account page instead of being shown a shell full of modules their
   // role cannot open.
   if (user.role === 'CUSTOMER') return <Navigate to="/account" replace />
+  // An old account of a removed role has no screens to open here.
+  if (!staffRoles.has(user.role)) return <Navigate to="/" replace />
   return children
 }
 

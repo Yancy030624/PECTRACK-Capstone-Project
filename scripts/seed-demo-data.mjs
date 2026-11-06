@@ -166,10 +166,6 @@ async function main() {
   log('Logging in...')
   const cashierCookie = await login('cashier1', 'carlaCashier#1')
   const customerCookie = await login('customer1', 'valenciaCustomer#1')
-  // The driver's own session: a delivery order only reaches COMPLETED
-  // once its delivery is DELIVERED, and only the assigned driver can
-  // drive ASSIGNED -> OUT_FOR_DELIVERY -> DELIVERED (Phase 7, Pattern H).
-  const driverCookie = await login('delivery1', 'luzaDelivery#1')
   const { cookie: adminCookie, userId: seedAdminUserId } = await createTempAdmin()
   log('Logged in as cashier1, customer1, and a helper admin (see createTempAdmin\'s own comment).\n')
 
@@ -185,12 +181,6 @@ async function main() {
   const addressesResult = await call('GET', `/api/addresses?${new URLSearchParams({ customerId: customer1.customerId })}`, cashierCookie)
   const address = addressesResult.body.addresses[0]
   if (!address) throw new Error('customer1 has no saved address — DELIVERY orders in this seed need one. Save one via My Profile > Addresses first.')
-
-  // Must be delivery1 specifically — driverCookie above is what moves the
-  // deliveries assigned here, and a driver can only move their own.
-  const driverRow = (await pool.query(`SELECT dp.delivery_personnel_id, dp.name FROM delivery_personnel dp JOIN users u ON u.user_id = dp.user_id WHERE u.username = 'delivery1'`)).rows[0]
-  if (!driverRow) throw new Error('delivery1 has no delivery_personnel row — run create-test-accounts.mjs first.')
-  const driver = { id: driverRow.delivery_personnel_id, name: driverRow.name }
 
   // Randomly builds 1-3 lines, mostly from `pool`, occasionally reaching
   // into rareProducts for variety — never from scarceProducts (those are
@@ -249,15 +239,11 @@ async function main() {
     if (result.status !== 200) throw new Error(`Status update to ${status} failed for order ${orderId}: ${JSON.stringify(result.body)}`)
   }
 
-  // Hands a DELIVERY order's delivery to delivery1 and drives it to
-  // DELIVERED through the real routes. Assignment needs the order
-  // CONFIRMED or later (routes/deliveries.js), so callers confirm first.
+  // Drives a paid DELIVERY order to DELIVERED through the real routes.
   async function deliverOrder(orderId) {
     const delivery = (await pool.query('SELECT delivery_id FROM deliveries WHERE order_id = $1', [orderId])).rows[0]
-    const assigned = await call('PATCH', `/api/deliveries/${delivery.delivery_id}/assign`, cashierCookie, { deliveryPersonnelId: driver.id })
-    if (assigned.status !== 200) throw new Error(`Delivery assignment failed for order ${orderId}: ${JSON.stringify(assigned.body)}`)
     for (const status of ['OUT_FOR_DELIVERY', 'DELIVERED']) {
-      const moved = await call('PATCH', `/api/deliveries/${delivery.delivery_id}/status`, driverCookie, { status })
+      const moved = await call('PATCH', `/api/deliveries/${delivery.delivery_id}/status`, cashierCookie, { status })
       if (moved.status !== 200) throw new Error(`Delivery ${status} failed for order ${orderId}: ${JSON.stringify(moved.body)}`)
     }
   }
@@ -291,11 +277,10 @@ async function main() {
   async function backdateOrder(orderId, instant) {
     await pool.query('UPDATE orders SET order_date = $1 WHERE order_id = $2', [sqlInstant(instant), orderId])
     // A historical delivery order's delivery happened when the order did,
-    // not on the day the seed ran. The driver flow above stamped both
-    // columns with "now"; move them alongside the order, an hour apart.
+    // not on the day the seed ran. The flow above stamped delivered_at with
+    // "now"; move it alongside the order.
     await pool.query(
-      `UPDATE deliveries SET assigned_at = $1::timestamptz + INTERVAL '1 hour', delivered_at = CASE WHEN delivered_at IS NULL THEN NULL ELSE $1::timestamptz + INTERVAL '2 hours' END
-        WHERE order_id = $2 AND assigned_at IS NOT NULL`,
+      `UPDATE deliveries SET delivered_at = $1::timestamptz + INTERVAL '2 hours' WHERE order_id = $2 AND delivered_at IS NOT NULL`,
       [sqlInstant(instant), orderId],
     )
   }
@@ -322,7 +307,7 @@ async function main() {
     await advanceStatus(order.id, 'CONFIRMED')
     await advanceStatus(order.id, 'IN_PRODUCTION')
     // A DELIVERY order's status is driven by deliveries.js, not this
-    // route (Phase 7, Decision 2): the driver's own routes take it to
+    // route (Phase 7, Decision 2): the status route takes it to
     // OUT_FOR_DELIVERY and DELIVERED, and COMPLETED requires DELIVERED.
     if (isDelivery) await deliverOrder(order.id)
     else await advanceStatus(order.id, 'READY_FOR_PICKUP')
@@ -383,15 +368,10 @@ async function main() {
     addressId: address.id,
     items: randomItems(commonProducts),
   })
-  // Paid up front (no cash on delivery), then accepted by the kitchen —
-  // assignment requires both.
+  // Paid up front (no cash on delivery), then accepted by the kitchen.
   await recordPayment(deliveryOrder.id, deliveryOrder.totalAmount, 'GCASH')
   await advanceStatus(deliveryOrder.id, 'CONFIRMED')
-  const queue = await call('GET', '/api/deliveries?status=PENDING_ASSIGNMENT', cashierCookie)
-  const queueRow = queue.body.deliveries.find((d) => String(d.orderId) === String(deliveryOrder.id))
-  const assignResult = await call('PATCH', `/api/deliveries/${queueRow.id}/assign`, cashierCookie, { deliveryPersonnelId: driver.id })
-  if (assignResult.status !== 200) throw new Error(`Delivery assignment failed: ${JSON.stringify(assignResult.body)}`)
-  log(`  Delivery for order #${deliveryOrder.id} assigned to ${driver.name}.\n`)
+  log(`  Delivery for order #${deliveryOrder.id} is waiting to go out.\n`)
 
   // ============ 7b. (removed) No delivery waits for payment any more ============
 

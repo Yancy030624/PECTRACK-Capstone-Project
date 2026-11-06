@@ -25,10 +25,9 @@
 //   3. Production           — what has to be ready, by when
 //   4. Inventory Management — is there stock to sell
 //   5. Payment & Billing    — getting paid
-//   6. Delivery Management  — getting orders out the door
-//   7. Reporting & Analytics — looking back, planning ahead
-//   8. User Management      — customers and staff accounts
-//   9. My Profile           — your own account
+//   6. Reporting & Analytics — looking back, planning ahead
+//   7. User Management      — customers and staff accounts
+//   8. My Profile           — your own account
 // (2026-10-16: Product Management moved into Inventory Management as its
 // Edit Products tab; Customer and Staff Management became User Management.)
 // Each role sees only its own entries, in this same relative order.
@@ -41,25 +40,12 @@ export const modules = [
   // anywhere via the header — a second, INTERNAL landing page one level
   // deeper was a redundant stop, not a second front door.
   //
-  // DELIVERY PERSONNEL was removed for the same reason (CHECKOUT_PLAN.md
-  // follow-on work) — their 'Dashboard' only ever showed a fabricated
-  // "8 deliveries today" (DashboardHome.jsx's old roleMetrics), since the
-  // real numbers live in Reporting & Analytics, which that role can't
-  // reach. Delivery Management is a driver's actual work queue and is now
-  // where they land instead (Dashboard.jsx's defaultPathFor) — the same
-  // "send them to real content, not a placeholder" call already made for
-  // customers.
-  //
   // `path` is the module's address, so the browser's address bar names the
   // open module and a refresh or the Back button stays true to it. App.jsx
   // builds its routes from these.
   { name: 'Dashboard', path: '/dashboard', icon: 'dashboard', roles: ['ADMIN', 'CASHIER'] },
-  // Staff manage every order; a customer only ever needs their own — two
-  // different screens with two different names, not one screen wearing
-  // two labels. Both map to the SAME component (OrderManagement.jsx,
-  // Dashboard.jsx's moduleComponents), which dispatches on role
-  // internally — the exact shape Delivery Management already established
-  // for ADMIN/CASHIER vs DELIVERY PERSONNEL below.
+  // Staff manage every order; a customer only ever needs their own. Both
+  // use the SAME component (OrderManagement.jsx), which dispatches on role.
   { name: 'Order Management', path: '/order-management', icon: 'orders', roles: ['ADMIN', 'CASHIER'] },
   // No Production module (the adviser, 2026-10-16): the bakery bakes its
   // day's stock before opening, not per order. Today's orders are in Order
@@ -68,9 +54,7 @@ export const modules = [
   { name: 'Payment & Billing', path: '/payment-billing', icon: 'payments', roles: ['ADMIN', 'CASHIER'] },
   // No Delivery Management module and no rider accounts (the panel,
   // 2026-10-26; MINOR_REVISIONS_PLAN.md M13): staff mark a delivery order
-  // Out for delivery, then Delivered, in Order Management. Migration 042
-  // deactivated the rider accounts, so My Deliveries has no one to show.
-  { name: 'My Deliveries', path: '/my-deliveries', icon: 'deliveries', roles: ['DELIVERY PERSONNEL'] },
+  // Out for delivery, then Delivered, in Order Management.
   // Product Management is now the Edit Products tab of Inventory
   // Management (the user, 2026-10-16), admin only there as before.
   // Admin only (the user, 2026-10-25). The cashier's Dashboard still reads
@@ -81,5 +65,5 @@ export const modules = [
   // seniors' consultation (SENIOR_CONSULT_PLAN.md, S5); the cashier's
   // walk-in form still reads /api/customers.
   { name: 'User Management', path: '/user-management', icon: 'staff', roles: ['ADMIN'] },
-  { name: 'My Profile', path: '/my-profile', icon: 'profile', roles: ['ADMIN', 'CASHIER', 'DELIVERY PERSONNEL'] },
+  { name: 'My Profile', path: '/my-profile', icon: 'profile', roles: ['ADMIN', 'CASHIER'] },
 ]

@@ -9,8 +9,7 @@
 //
 // The admin and cashier hear about orders, online payments, deliveries,
 // and products running low.
-// A driver hears about the deliveries assigned to them. Customers are told
-// by email instead (lib/notices.js) and are refused here.
+// Customers are told by email instead (lib/notices.js) and are refused here.
 //
 // Each event carries the facts, not a sentence: the screen words it, with
 // the same order label (#7, or #7 · Oct 15 on another day) and peso format
@@ -23,7 +22,7 @@ const router = express.Router()
 
 const feedLimit = 20
 
-router.use(requireAuth, requireRole('ADMIN', 'CASHIER', 'DELIVERY_PERSONNEL'))
+router.use(requireAuth, requireRole('ADMIN', 'CASHIER'))
 
 // Compared at millisecond precision, like GET /api/orders/recent: the time
 // the bell sends back came from JSON, which drops Postgres's microseconds,
@@ -147,28 +146,15 @@ const staffQueries = {
      ORDER BY at DESC LIMIT $3`,
 }
 
-// $1 since (or null), $2 the driver's delivery_personnel_id, $3 the limit.
-// A delivery the admin sends back to the queue loses its driver, so it
-// leaves this feed too — the driver sees it gone from My Deliveries.
-const driverQuery = `
-  SELECT ${orderColumns}, d.delivery_id AS source_id, d.assigned_at AS at, a.recipient_name, a.barangay
-    FROM deliveries d
-    JOIN orders o ON o.order_id = d.order_id
-    LEFT JOIN customers c ON c.customer_id = o.customer_id
-    LEFT JOIN customer_addresses a ON a.address_id = o.address_id
-   WHERE d.delivery_personnel_id = $2 AND d.assigned_at IS NOT NULL AND ${after('d.assigned_at')}
-   ORDER BY at DESC LIMIT $3`
-
-// The driver's latest note only: deliveries.note keeps every note, one per
+// The latest note only: deliveries.note keeps every note, one per
 // line, and the newest is the reason for this failure.
 const lastLine = (text) => (text ? text.split('\n').at(-1).slice(0, 120) : null)
 
 function mapEvent(type, row) {
   const at = new Date(row.at)
   return {
-    // Unique per event. An assignment includes its time, so a delivery
-    // assigned to the same driver again after a retry is news again.
-    key: type === 'assigned' ? `${type}:${row.source_id}:${at.getTime()}` : `${type}:${row.source_id}`,
+    // Unique per event.
+    key: `${type}:${row.source_id}`,
     type,
     at: at.toISOString(),
     orderId: row.order_id,
@@ -197,22 +183,13 @@ router.get('/', async (request, response) => {
     if (Number.isNaN(sinceDate.getTime())) return response.status(422).json({ message: 'Enter a valid time.', errors: { since: 'Enter a valid time.' } })
   }
 
-  let events
-  if (request.user.role === 'DELIVERY PERSONNEL') {
-    const personnel = await pool.query('SELECT delivery_personnel_id FROM delivery_personnel WHERE user_id = $1', [request.user.id])
-    const personnelId = personnel.rows[0]?.delivery_personnel_id
-    if (!personnelId) return response.json({ notifications: [] })
-    const result = await pool.query(driverQuery, [sinceDate, personnelId, feedLimit])
-    events = result.rows.map((row) => mapEvent('assigned', row))
-  } else {
-    const results = await Promise.all(
-      Object.entries(staffQueries).map(async ([name, sql]) => [name, (await pool.query(sql, [sinceDate, request.user.id, feedLimit])).rows]),
-    )
-    events = results.flatMap(([name, rows]) => rows.map((row) => {
-      if (name !== 'order_history') return mapEvent(name, row)
-      return mapEvent(row.history_status === 'CANCELLED' ? 'order_cancelled' : 'out_for_delivery', row)
-    }))
-  }
+  const results = await Promise.all(
+    Object.entries(staffQueries).map(async ([name, sql]) => [name, (await pool.query(sql, [sinceDate, request.user.id, feedLimit])).rows]),
+  )
+  const events = results.flatMap(([name, rows]) => rows.map((row) => {
+    if (name !== 'order_history') return mapEvent(name, row)
+    return mapEvent(row.history_status === 'CANCELLED' ? 'order_cancelled' : 'out_for_delivery', row)
+  }))
 
   events.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
   return response.json({ notifications: events.slice(0, feedLimit) })

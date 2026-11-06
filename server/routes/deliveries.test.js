@@ -1,7 +1,7 @@
-// Lightweight integration tests for delivery assignment, the driver's own
-// status workflow, and proof of delivery (Phase 7 — see PHASE7_PLAN.md).
-// Same approach as the other route tests: real Express app on an
-// ephemeral port, real database. Run with: npm test
+// Integration tests for moving a delivery order along. Staff send it out and
+// mark it delivered; there are no rider accounts. Same approach as the other
+// route tests: real Express app on an ephemeral port, real database.
+// Run with: npm test
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import { after, before, beforeEach, describe, test } from 'node:test'
@@ -9,7 +9,6 @@ import bcrypt from 'bcrypt'
 import app from '../app.js'
 import { resetRateLimits } from '../lib/security.js'
 import { pool } from '../db.js'
-import { filePath } from '../lib/storage.js'
 import { config } from '../config.js'
 
 const runId = crypto.randomUUID().slice(0, 8)
@@ -28,10 +27,6 @@ describe('delivery management', () => {
   let adminCookie
   let cashierCookie
   let customerCookie
-  let firstDriverCookie
-  let secondDriverCookie
-  let firstDriverId
-  let secondDriverId
   let customerId
   let addressId
   let availableProductId
@@ -42,8 +37,6 @@ describe('delivery management', () => {
   const admin = { username: `delivadmin_${runId}`, password: 'Admin-Only-Password-9!' }
   const cashier = { role: 'CASHIER', name: 'Deliv Cashier', username: `delivcash_${runId}`, email: `delivcash_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
   const customer = { name: 'Deliv Customer', firstName: 'Deliv', lastName: 'Customer', agree: true, username: `delivcust_${runId}`, email: `delivcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
-  const firstDriver = { role: 'DELIVERY_PERSONNEL', name: 'First Driver', username: `delivdp1_${runId}`, email: `delivdp1_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Driver-Password-9!' }
-  const secondDriver = { role: 'DELIVERY_PERSONNEL', name: 'Second Driver', username: `delivdp2_${runId}`, email: `delivdp2_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Driver-Password-9!' }
 
   // Places a fresh DELIVERY order as the test customer and returns its id
   // — every workflow test below needs its own order at PENDING_ASSIGNMENT
@@ -78,9 +71,6 @@ describe('delivery management', () => {
     const delivery = await pool.query('SELECT delivery_id FROM deliveries WHERE order_id = $1', [body.order.id])
     return { orderId: body.order.id, deliveryId: delivery.rows[0]?.delivery_id ?? null }
   }
-
-  const assign = (deliveryId, deliveryPersonnelId, cookie = cashierCookie) =>
-    fetch(`${baseUrl}/api/deliveries/${deliveryId}/assign`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ deliveryPersonnelId }) })
 
   const setStatus = (deliveryId, status, cookie, note) =>
     fetch(`${baseUrl}/api/deliveries/${deliveryId}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ status, note }) })
@@ -129,30 +119,10 @@ describe('delivery management', () => {
 
     const address = await pool.query(
       `INSERT INTO customer_addresses (customer_id, recipient_name, contact_num, address_line_1, is_default)
-       VALUES ($1, 'Deliv Test Customer', $2, '1 Driver Ave', TRUE) RETURNING address_id`,
+       VALUES ($1, 'Deliv Test Customer', $2, '1 Bell Ave', TRUE) RETURNING address_id`,
       [customerId, randomContactNumber()],
     )
     addressId = address.rows[0].address_id
-
-    const firstDriverCreate = await fetch(`${baseUrl}/api/staff`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ ...firstDriver, confirmPassword: firstDriver.password }) })
-    assert.equal(firstDriverCreate.status, 201)
-    // Fixture: this account skips the first sign-in setup, tested in auth.test.js.
-    await pool.query('UPDATE users SET must_set_credentials = FALSE WHERE username = $1', [firstDriver.username])
-    const firstDriverRow = await pool.query('SELECT user_id, (SELECT delivery_personnel_id FROM delivery_personnel WHERE user_id = users.user_id) AS delivery_personnel_id FROM users WHERE username = $1', [firstDriver.username])
-    createdUserIds.push(firstDriverRow.rows[0].user_id)
-    firstDriverId = firstDriverRow.rows[0].delivery_personnel_id
-    const firstDriverLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: firstDriver.username, password: firstDriver.password }) })
-    firstDriverCookie = firstDriverLogin.headers.get('set-cookie').split(';')[0]
-
-    const secondDriverCreate = await fetch(`${baseUrl}/api/staff`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ ...secondDriver, confirmPassword: secondDriver.password }) })
-    assert.equal(secondDriverCreate.status, 201)
-    // Fixture: this account skips the first sign-in setup, tested in auth.test.js.
-    await pool.query('UPDATE users SET must_set_credentials = FALSE WHERE username = $1', [secondDriver.username])
-    const secondDriverRow = await pool.query('SELECT user_id, (SELECT delivery_personnel_id FROM delivery_personnel WHERE user_id = users.user_id) AS delivery_personnel_id FROM users WHERE username = $1', [secondDriver.username])
-    createdUserIds.push(secondDriverRow.rows[0].user_id)
-    secondDriverId = secondDriverRow.rows[0].delivery_personnel_id
-    const secondDriverLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: secondDriver.username, password: secondDriver.password }) })
-    secondDriverCookie = secondDriverLogin.headers.get('set-cookie').split(';')[0]
 
     const categoryResult = await pool.query('INSERT INTO categories (category_name) VALUES ($1) RETURNING category_id', [`Deliv Test Category ${runId}`])
     categoryId = categoryResult.rows[0].category_id
@@ -183,124 +153,6 @@ describe('delivery management', () => {
     await new Promise((resolve) => server.close(resolve))
   })
 
-  test('GET /api/deliveries requires authentication', async () => {
-    const response = await fetch(`${baseUrl}/api/deliveries`)
-    assert.equal(response.status, 401)
-  })
-
-  test('GET /api/deliveries is staff-only — a driver is refused', async () => {
-    const response = await fetch(`${baseUrl}/api/deliveries`, { headers: { Cookie: firstDriverCookie } })
-    assert.equal(response.status, 403)
-  })
-
-  // The assignment dropdown's data source. GET /api/staff is ADMIN-only,
-  // but a CASHIER can also assign a driver, so this narrower endpoint
-  // must work for both.
-  test('GET /api/deliveries/personnel lists active drivers for admin and cashier, but not a driver', async () => {
-    const asAdmin = await fetch(`${baseUrl}/api/deliveries/personnel`, { headers: { Cookie: adminCookie } })
-    assert.equal(asAdmin.status, 200)
-    const adminBody = await asAdmin.json()
-    assert.ok(adminBody.personnel.some((person) => person.id === firstDriverId))
-    assert.ok(adminBody.personnel.some((person) => person.id === secondDriverId))
-
-    const asCashier = await fetch(`${baseUrl}/api/deliveries/personnel`, { headers: { Cookie: cashierCookie } })
-    assert.equal(asCashier.status, 200)
-
-    const asDriver = await fetch(`${baseUrl}/api/deliveries/personnel`, { headers: { Cookie: firstDriverCookie } })
-    assert.equal(asDriver.status, 403)
-  })
-
-  // Addresses are deactivated, never deleted (PHASE7_PLAN.md, Decision 1) —
-  // exactly so an existing order can always still say where it went. This
-  // is the delivery side of that guarantee: deliverySelectQuery's JOIN to
-  // customer_addresses carries no is_active filter, so a delivery already
-  // pointing at an address must keep showing its full details even after
-  // the customer deactivates it — the picker hides it for NEW orders, not
-  // the historical record of where this one is headed.
-  test('a deactivated address still resolves in full on an existing delivery', async () => {
-    const { deliveryId } = await placeDeliveryOrder()
-    const deactivate = await fetch(`${baseUrl}/api/addresses/${addressId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ isActive: false }) })
-    assert.equal(deactivate.status, 200)
-
-    const response = await fetch(`${baseUrl}/api/deliveries?status=PENDING_ASSIGNMENT`, { headers: { Cookie: adminCookie } })
-    const found = (await response.json()).deliveries.find((delivery) => delivery.id === deliveryId)
-    assert.ok(found, 'the delivery must still be listed')
-    assert.equal(found.address.addressLine1, '1 Driver Ave')
-    assert.equal(found.address.recipientName, 'Deliv Test Customer')
-
-    // Reactivate so later tests in this file get a normal, active address
-    // to work with again — this test's side effect must not leak forward.
-    await fetch(`${baseUrl}/api/addresses/${addressId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ isActive: true }) })
-  })
-
-  test('GET /api/deliveries shows admin and cashier the PENDING_ASSIGNMENT queue', async () => {
-    const { deliveryId } = await placeDeliveryOrder()
-    const asAdmin = await fetch(`${baseUrl}/api/deliveries?status=PENDING_ASSIGNMENT`, { headers: { Cookie: adminCookie } })
-    assert.equal(asAdmin.status, 200)
-    const adminBody = await asAdmin.json()
-    assert.ok(adminBody.deliveries.some((delivery) => delivery.id === deliveryId))
-
-    const asCashier = await fetch(`${baseUrl}/api/deliveries?status=PENDING_ASSIGNMENT`, { headers: { Cookie: cashierCookie } })
-    assert.equal(asCashier.status, 200)
-    assert.ok((await asCashier.json()).deliveries.some((delivery) => delivery.id === deliveryId))
-  })
-
-  test('PATCH /api/deliveries/:id/assign claims a PENDING_ASSIGNMENT delivery for a driver', async () => {
-    const { deliveryId } = await placeDeliveryOrder()
-    const response = await assign(deliveryId, firstDriverId)
-    assert.equal(response.status, 200)
-    const body = await response.json()
-    assert.equal(body.delivery.status, 'ASSIGNED')
-    assert.equal(body.delivery.deliveryPersonnelId, firstDriverId)
-    assert.ok(body.delivery.assignedAt)
-  })
-
-  test('PATCH /api/deliveries/:id/assign is refused a second time — 409, not silently reassigned', async () => {
-    const { deliveryId } = await placeDeliveryOrder()
-    const first = await assign(deliveryId, firstDriverId)
-    assert.equal(first.status, 200)
-    const second = await assign(deliveryId, secondDriverId)
-    assert.equal(second.status, 409)
-
-    const { rows } = await pool.query('SELECT delivery_personnel_id FROM deliveries WHERE delivery_id = $1', [deliveryId])
-    assert.equal(rows[0].delivery_personnel_id, firstDriverId, 'the first assignment must stick')
-  })
-
-  test('PATCH /api/deliveries/:id/assign rejects a nonexistent delivery person', async () => {
-    const { deliveryId } = await placeDeliveryOrder()
-    const response = await assign(deliveryId, '999999999999999999')
-    assert.equal(response.status, 422)
-  })
-
-  // A deactivated driver cannot sign in, so a delivery handed to them is
-  // stuck in ASSIGNED with nobody able to move it. GET /personnel already
-  // hid them from the dropdown; the write itself now refuses too.
-  test('PATCH /api/deliveries/:id/assign refuses a deactivated delivery person', async () => {
-    const { deliveryId } = await placeDeliveryOrder()
-    await pool.query('UPDATE users SET is_active = FALSE WHERE user_id = (SELECT user_id FROM delivery_personnel WHERE delivery_personnel_id = $1)', [secondDriverId])
-    try {
-      const response = await assign(deliveryId, secondDriverId)
-      assert.equal(response.status, 422)
-      assert.match((await response.json()).message, /deactivated/)
-    } finally {
-      await pool.query('UPDATE users SET is_active = TRUE WHERE user_id = (SELECT user_id FROM delivery_personnel WHERE delivery_personnel_id = $1)', [secondDriverId])
-    }
-    const { rows } = await pool.query('SELECT status FROM deliveries WHERE delivery_id = $1', [deliveryId])
-    assert.equal(rows[0].status, 'PENDING_ASSIGNMENT')
-  })
-
-  test('PATCH /api/deliveries/:id/assign refuses a delivery whose order is not paid', async () => {
-    const { deliveryId } = await placeDeliveryOrder({ pay: false, legacyRow: true })
-    const response = await assign(deliveryId, firstDriverId)
-    assert.equal(response.status, 409)
-    assert.match((await response.json()).message, /not paid yet/)
-  })
-
-  // Cash on delivery: the driver standing at the door records what they
-  // collected, scoped to their own in-progress delivery and CASH only.
-  // NO_COD_PLAN — the client does not allow cash on delivery: a delivery
-  // order is paid in full before it is confirmed, and assigned only when
-  // paid; the driver never records money.
   // Payment first: an unpaid delivery checkout waits (hidden) with no
   // delivery row; part paid it still waits; the payment that settles it
   // makes it Ready for delivery and puts it in the assignment queue.
@@ -340,34 +192,6 @@ describe('delivery management', () => {
     assert.equal(await orderStatus(order.id), 'READY_FOR_PICKUP')
   })
 
-  test('PATCH /api/deliveries/:id/assign refuses an order that is not fully paid', async () => {
-    // Old data: an order confirmed unpaid before the rule existed, forced
-    // here in SQL because the route itself no longer allows it.
-    const { orderId, deliveryId } = await placeDeliveryOrder({ pay: false, legacyRow: true })
-    await pool.query(`UPDATE orders SET status = 'CONFIRMED' WHERE order_id = $1`, [orderId])
-    const refused = await assign(deliveryId, firstDriverId)
-    assert.equal(refused.status, 409)
-    assert.match((await refused.json()).message, /not fully paid/)
-    assert.equal((await pool.query('SELECT status FROM deliveries WHERE delivery_id = $1', [deliveryId])).rows[0].status, 'PENDING_ASSIGNMENT')
-
-    assert.equal((await recordPayment(orderId, 45.5)).status, 201)
-    assert.equal((await assign(deliveryId, firstDriverId)).status, 200)
-  })
-
-  test('a driver cannot record payments any more, and sees the order as paid', async () => {
-    const { orderId, deliveryId } = await placeDeliveryOrder()
-    assert.equal((await assign(deliveryId, firstDriverId)).status, 200)
-    assert.equal((await setStatus(deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)).status, 200)
-
-    const recorded = await recordPayment(orderId, 1, firstDriverCookie)
-    assert.equal(recorded.status, 403)
-    const listing = await fetch(`${baseUrl}/api/payments`, { headers: { Cookie: firstDriverCookie } })
-    assert.equal(listing.status, 403)
-
-    const mine = await (await fetch(`${baseUrl}/api/deliveries/mine`, { headers: { Cookie: firstDriverCookie } })).json()
-    assert.equal(mine.deliveries.find((delivery) => delivery.id === deliveryId).isFullyPaid, true)
-  })
-
   test('a payment and a hand move to ready racing on one delivery order: ready once, and only when paid', async () => {
     for (let round = 0; round < 5; round++) {
       const { orderId } = await placeDeliveryOrder({ pay: false })
@@ -386,104 +210,20 @@ describe('delivery management', () => {
     }
   })
 
-  test('PATCH /api/deliveries/:id/assign refuses a delivery whose order is already finished', async () => {
-    const { orderId, deliveryId } = await placeDeliveryOrder()
-    // Bypasses the route's own rules (COMPLETED needs DELIVERED) to reach
-    // the one state this guard exists for: a finished order with a
-    // delivery row still sitting in the queue.
-    await pool.query(`UPDATE orders SET status = 'COMPLETED' WHERE order_id = $1`, [orderId])
-    const response = await assign(deliveryId, firstDriverId)
-    assert.equal(response.status, 409)
-    assert.match((await response.json()).message, /already completed/)
-  })
-
-  test('PATCH /api/deliveries/:id/assign is staff-only — a driver cannot self-assign', async () => {
-    const { deliveryId } = await placeDeliveryOrder()
-    const response = await assign(deliveryId, firstDriverId, firstDriverCookie)
-    assert.equal(response.status, 403)
-  })
-
-  // Decision 9 / Pattern H — a driver's own id, resolved from the session,
-  // scopes GET /mine. Another driver's assignment must not show up.
-  test('GET /api/deliveries/mine is scoped to the driver\'s own assignments (Pattern H)', async () => {
-    const { deliveryId } = await placeDeliveryOrder()
-    await assign(deliveryId, firstDriverId)
-
-    const asFirstDriver = await fetch(`${baseUrl}/api/deliveries/mine`, { headers: { Cookie: firstDriverCookie } })
-    assert.equal(asFirstDriver.status, 200)
-    assert.ok((await asFirstDriver.json()).deliveries.some((delivery) => delivery.id === deliveryId))
-
-    const asSecondDriver = await fetch(`${baseUrl}/api/deliveries/mine`, { headers: { Cookie: secondDriverCookie } })
-    assert.ok(!(await asSecondDriver.json()).deliveries.some((delivery) => delivery.id === deliveryId))
-  })
-
-  // CLIENT_REVISIONS_PLAN.md, R1 — the driver checks what they hand over.
-  test('a driver sees the items of each assigned order', async () => {
-    const { deliveryId } = await placeDeliveryOrder()
-    await assign(deliveryId, firstDriverId)
-    const mine = await (await fetch(`${baseUrl}/api/deliveries/mine`, { headers: { Cookie: firstDriverCookie } })).json()
-    const card = mine.deliveries.find((delivery) => delivery.id === deliveryId)
-    assert.equal(card.items.length, 1)
-    assert.equal(card.items[0].quantity, 1)
-    assert.ok(card.items[0].name, 'each item has its product name')
-  })
-
-  // NOTIFICATIONS_PLAN.md, N6 — the account holder's number, for when the
-  // recipient does not answer. Never their email: that stays server-side.
-  test("a driver gets the account holder's number, not their email", async () => {
-    const { deliveryId } = await placeDeliveryOrder()
-    await assign(deliveryId, firstDriverId)
-    const mine = await (await fetch(`${baseUrl}/api/deliveries/mine`, { headers: { Cookie: firstDriverCookie } })).json()
-    const card = mine.deliveries.find((delivery) => delivery.id === deliveryId)
-    assert.equal(card.customerContactNumber, customer.contactNumber)
-    assert.ok(!JSON.stringify(card).includes(customer.email), 'no customer email in the API')
-  })
-
-  // --- The workflow: ASSIGNED -> OUT_FOR_DELIVERY -> DELIVERED | FAILED --
-
-  test('a driver cannot skip ahead — OUT_FOR_DELIVERY from PENDING_ASSIGNMENT (unassigned) is refused', async () => {
-    const { deliveryId } = await placeDeliveryOrder()
-    const response = await setStatus(deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)
-    // Not assigned to anyone, so ownership itself fails first -- 404, the
-    // same "don't confirm it exists" shape as any other unowned resource.
-    assert.equal(response.status, 404)
-  })
-
-  test('a driver cannot jump straight to DELIVERED from ASSIGNED — wrong source state is 409', async () => {
-    const { deliveryId } = await placeDeliveryOrder()
-    await assign(deliveryId, firstDriverId)
-    const response = await setStatus(deliveryId, 'DELIVERED', firstDriverCookie)
-    assert.equal(response.status, 409)
-  })
-
-  // Decision 9 — a driver must never be able to transition a delivery
-  // assigned to somebody else, and the failure must be a 404 (don't even
-  // confirm the delivery exists), not a 403.
-  test('a driver cannot transition a delivery assigned to someone else — 404, not 403', async () => {
-    const { deliveryId } = await placeDeliveryOrder()
-    await assign(deliveryId, firstDriverId)
-    const response = await setStatus(deliveryId, 'OUT_FOR_DELIVERY', secondDriverCookie)
-    assert.equal(response.status, 404)
-
-    const { rows } = await pool.query('SELECT status FROM deliveries WHERE delivery_id = $1', [deliveryId])
-    assert.equal(rows[0].status, 'ASSIGNED', 'the wrong driver\'s attempt must not have moved it')
-  })
-
   // Pattern F — the order follows its delivery. OUT_FOR_DELIVERY always
   // syncs; DELIVERED completes the order when it is fully paid
   // (NOTIFICATIONS_PLAN.md, N2, replacing PHASE7 Decision 4 for DELIVERED).
   test('OUT_FOR_DELIVERY syncs orders.status; DELIVERED completes a paid order', async () => {
     const { orderId, deliveryId } = await placeDeliveryOrder()
-    await assign(deliveryId, firstDriverId)
 
-    const outForDelivery = await setStatus(deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)
+    const outForDelivery = await setStatus(deliveryId, 'OUT_FOR_DELIVERY', cashierCookie)
     assert.equal(outForDelivery.status, 200)
     const afterOutForDelivery = await pool.query('SELECT status FROM orders WHERE order_id = $1', [orderId])
     assert.equal(afterOutForDelivery.rows[0].status, 'OUT_FOR_DELIVERY', 'Pattern F must sync the order')
     const history = await pool.query(`SELECT COUNT(*)::int AS n FROM order_status_history WHERE order_id = $1 AND status = 'OUT_FOR_DELIVERY'`, [orderId])
     assert.equal(history.rows[0].n, 1)
 
-    const delivered = await setStatus(deliveryId, 'DELIVERED', firstDriverCookie)
+    const delivered = await setStatus(deliveryId, 'DELIVERED', cashierCookie)
     assert.equal(delivered.status, 200)
     const deliveredBody = await delivered.json()
     assert.equal(deliveredBody.delivery.status, 'DELIVERED')
@@ -493,42 +233,36 @@ describe('delivery management', () => {
     const afterDelivered = await pool.query('SELECT status FROM orders WHERE order_id = $1', [orderId])
     assert.equal(afterDelivered.rows[0].status, 'COMPLETED', 'a paid order is done once it is delivered')
     const completedHistory = await pool.query(
-      `SELECT h.note FROM order_status_history h JOIN delivery_personnel dp ON dp.user_id = h.updated_by
-        WHERE h.order_id = $1 AND h.status = 'COMPLETED' AND dp.delivery_personnel_id = $2`,
-      [orderId, firstDriverId],
+      `SELECT note FROM order_status_history WHERE order_id = $1 AND status = 'COMPLETED'`,
+      [orderId],
     )
-    assert.equal(completedHistory.rows.length, 1, 'one COMPLETED history row, written by the driver')
+    assert.equal(completedHistory.rows.length, 1, 'one COMPLETED history row')
   })
 
   test('DELIVERED leaves an unpaid order (old data) OUT_FOR_DELIVERY for staff to settle', async () => {
     const { orderId, deliveryId } = await placeDeliveryOrder({ pay: false, legacyRow: true })
-    // Assignment refuses an unpaid order, so put it on the road directly:
+    // Staff cannot send out an unpaid order, so put it on the road directly:
     // the state only data from before NO_COD_PLAN can be in.
     await pool.query(`UPDATE orders SET status = 'OUT_FOR_DELIVERY' WHERE order_id = $1`, [orderId])
-    await pool.query(
-      `UPDATE deliveries SET status = 'OUT_FOR_DELIVERY', delivery_personnel_id = $2, assigned_at = CURRENT_TIMESTAMP WHERE delivery_id = $1`,
-      [deliveryId, firstDriverId],
-    )
+    await pool.query(`UPDATE deliveries SET status = 'OUT_FOR_DELIVERY' WHERE delivery_id = $1`, [deliveryId])
 
-    assert.equal((await setStatus(deliveryId, 'DELIVERED', firstDriverCookie)).status, 200)
+    assert.equal((await setStatus(deliveryId, 'DELIVERED', cashierCookie)).status, 200)
     const after = await pool.query('SELECT status FROM orders WHERE order_id = $1', [orderId])
     assert.equal(after.rows[0].status, 'OUT_FOR_DELIVERY')
   })
 
   // The user, 2026-10-16: a failed delivery puts its paid order back to
-  // Ready for delivery, so it can be assigned again — it used to stay
+  // Ready for delivery, so it can go out again — it used to stay
   // "Out for delivery" for good.
-  test('OUT_FOR_DELIVERY can also end in FAILED, which sends the delivery back to the queue and the order to READY_FOR_DELIVERY', async () => {
+  test('an admin can call back a delivery: it waits to go out again and the order is READY_FOR_DELIVERY', async () => {
     const { orderId, deliveryId } = await placeDeliveryOrder()
-    await assign(deliveryId, firstDriverId)
-    await setStatus(deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)
+    await setStatus(deliveryId, 'OUT_FOR_DELIVERY', cashierCookie)
     assert.equal((await pool.query('SELECT status FROM orders WHERE order_id = $1', [orderId])).rows[0].status, 'OUT_FOR_DELIVERY')
 
-    const failed = await setStatus(deliveryId, 'FAILED', firstDriverCookie, 'Customer not home')
+    const failed = await setStatus(deliveryId, 'FAILED', adminCookie, 'Customer not home')
     assert.equal(failed.status, 200)
     const back = (await failed.json()).delivery
-    assert.equal(back.status, 'PENDING_ASSIGNMENT', 'straight back in the queue')
-    assert.equal(back.deliveryPersonnelId, null)
+    assert.equal(back.status, 'PENDING_ASSIGNMENT', 'waiting to go out again')
     assert.ok(back.failedAt, 'the failed attempt is still on record')
     assert.match(back.note, /Customer not home/)
 
@@ -537,23 +271,20 @@ describe('delivery management', () => {
     const history = await pool.query(`SELECT note FROM order_status_history WHERE order_id = $1 AND status = 'READY_FOR_DELIVERY' ORDER BY history_id DESC LIMIT 1`, [orderId])
     assert.equal(history.rows[0].note, 'Delivery failed: Customer not home')
 
-    // Nothing for staff to clear first: it can be assigned again at once.
-    assert.equal((await assign(deliveryId, secondDriverId)).status, 200)
+    // Nothing for staff to clear first: it can go out again at once.
+    assert.equal((await setStatus(deliveryId, 'OUT_FOR_DELIVERY', cashierCookie)).status, 200)
   })
 
   // Decision 5's one deliberate exception — only an ADMIN may retry a
   // FAILED delivery back to PENDING_ASSIGNMENT, and must say why. A failed
   // delivery goes back to the queue by itself now; a FAILED row is left only
   // by older data, put here in SQL.
-  test('an admin can retry a FAILED delivery back to PENDING_ASSIGNMENT; a cashier and a driver cannot', async () => {
+  test('an admin can retry a FAILED delivery back to PENDING_ASSIGNMENT; a cashier cannot', async () => {
     const { deliveryId } = await placeDeliveryOrder()
-    await assign(deliveryId, firstDriverId)
     await pool.query(`UPDATE deliveries SET status = 'FAILED', failed_at = CURRENT_TIMESTAMP, note = 'Nobody answered' WHERE delivery_id = $1`, [deliveryId])
 
     const cashierAttempt = await setStatus(deliveryId, 'PENDING_ASSIGNMENT', cashierCookie, 'retry')
     assert.equal(cashierAttempt.status, 403)
-    const driverAttempt = await setStatus(deliveryId, 'PENDING_ASSIGNMENT', firstDriverCookie, 'retry')
-    assert.equal(driverAttempt.status, 403)
 
     const noNoteAttempt = await setStatus(deliveryId, 'PENDING_ASSIGNMENT', adminCookie)
     assert.equal(noNoteAttempt.status, 422, 'the retry must explain why')
@@ -562,15 +293,10 @@ describe('delivery management', () => {
     assert.equal(adminRetry.status, 200)
     const body = await adminRetry.json()
     assert.equal(body.delivery.status, 'PENDING_ASSIGNMENT')
-    assert.equal(body.delivery.deliveryPersonnelId, null, 'a retried delivery is genuinely unassigned again')
-    assert.equal(body.delivery.assignedAt, null)
 
-    // And it's really back in the assignable queue, not just LOOKING like it.
-    const reassign = await assign(deliveryId, secondDriverId)
-    assert.equal(reassign.status, 200)
+    // And it can really go out again, not just LOOK like it.
+    assert.equal((await setStatus(deliveryId, 'OUT_FOR_DELIVERY', cashierCookie)).status, 200)
   })
-
-  // --- Phase 7 review fixes ------------------------------------------------
 
   // LOCK ORDERING. Two write paths touch both `orders` and `deliveries`
   // for the same pair of rows: PATCH /api/orders/:id -> CANCELLED (claims
@@ -588,7 +314,6 @@ describe('delivery management', () => {
   // would already be holding that delivery lock, and NOWAIT would fail.
   test('the delivery transition takes the ORDER lock before the delivery lock (no ABBA deadlock with order cancellation)', async () => {
     const { orderId, deliveryId } = await placeDeliveryOrder()
-    await assign(deliveryId, firstDriverId)
 
     const holder = await pool.connect()
     const prober = await pool.connect()
@@ -598,7 +323,7 @@ describe('delivery management', () => {
       await holder.query('SELECT status FROM orders WHERE order_id = $1 FOR UPDATE', [orderId])
 
       // Started, not awaited — it must block on the order row above.
-      const inFlight = setStatus(deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)
+      const inFlight = setStatus(deliveryId, 'OUT_FOR_DELIVERY', cashierCookie)
       await new Promise((resolve) => setTimeout(resolve, 400))
 
       await prober.query('BEGIN')
@@ -627,7 +352,6 @@ describe('delivery management', () => {
   // orders.status, so nothing downstream ever looks wrong.
   test('a retry cannot resurrect the delivery of a CANCELLED order', async () => {
     const { orderId, deliveryId } = await placeDeliveryOrder()
-    await assign(deliveryId, firstDriverId)
 
     // A delivery order is paid before it is confirmed, and a paid order can
     // no longer be cancelled (no refunds, CLIENT_REVISIONS_PLAN.md R2) — so
@@ -644,159 +368,24 @@ describe('delivery management', () => {
     const after = await pool.query('SELECT status FROM deliveries WHERE delivery_id = $1', [deliveryId])
     assert.equal(after.rows[0].status, 'FAILED', 'the delivery must stay resolved')
 
-    const reassign = await assign(deliveryId, firstDriverId)
-    assert.equal(reassign.status, 409, 'and must not be assignable to anyone')
-  })
-
-  // Every forward transition is scoped to the ONE driver holding the
-  // delivery, and FAILED was reachable only from that driver's own hands.
-  // Deactivate a driver mid-run — ordinary staff admin — and that
-  // in-flight delivery was unreachable by everyone: the driver 401s, and
-  // admin/cashier were both refused. The only escape was cancelling the
-  // whole order, which refunds and restocks it.
-  test('an admin can recover an in-flight delivery whose driver can no longer act', async () => {
-    const { deliveryId } = await placeDeliveryOrder()
-    await assign(deliveryId, firstDriverId)
-    await setStatus(deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)
-
-    await pool.query('UPDATE users SET is_active = FALSE WHERE user_id = (SELECT user_id FROM delivery_personnel WHERE delivery_personnel_id = $1)', [firstDriverId])
-    try {
-      const stranded = await setStatus(deliveryId, 'DELIVERED', firstDriverCookie)
-      assert.equal(stranded.status, 401, 'the deactivated driver genuinely cannot act any more')
-
-      const cashierAttempt = await setStatus(deliveryId, 'FAILED', cashierCookie, 'driver unreachable')
-      assert.equal(cashierAttempt.status, 403, 'this is an admin-only override, not a cashier one')
-
-      const noNote = await setStatus(deliveryId, 'FAILED', adminCookie)
-      assert.equal(noNote.status, 422, 'the override must say why')
-
-      const recalled = await setStatus(deliveryId, 'FAILED', adminCookie, 'Driver account disabled mid-run')
-      assert.equal(recalled.status, 200)
-      assert.equal((await recalled.json()).delivery.status, 'PENDING_ASSIGNMENT', 'taken back, it is in the queue again')
-
-      const reassign = await assign(deliveryId, secondDriverId)
-      assert.equal(reassign.status, 200, 'and it can now genuinely go to someone else')
-    } finally {
-      await pool.query('UPDATE users SET is_active = TRUE WHERE user_id = (SELECT user_id FROM delivery_personnel WHERE delivery_personnel_id = $1)', [firstDriverId])
-    }
+    const sendOut = await setStatus(deliveryId, 'OUT_FOR_DELIVERY', cashierCookie)
+    assert.equal(sendOut.status, 409, 'and must not go out')
   })
 
   // deliveries.note is the ONLY place a failure reason is recorded —
   // there is deliberately no delivery_status_history table. Overwriting
   // it on retry destroys the single most useful thing to know when
   // deciding whether the retry was even a good idea.
-  test('a failed delivery keeps the driver\'s reason when it goes out again', async () => {
+  test('a failed delivery keeps its reason when it goes out again', async () => {
     const { deliveryId } = await placeDeliveryOrder()
-    await assign(deliveryId, firstDriverId)
-    await setStatus(deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)
-    await setStatus(deliveryId, 'FAILED', firstDriverCookie, 'Customer refused — wrong flavour')
-    assert.equal((await assign(deliveryId, secondDriverId)).status, 200)
-    await setStatus(deliveryId, 'OUT_FOR_DELIVERY', secondDriverCookie)
-    await setStatus(deliveryId, 'FAILED', secondDriverCookie, 'Gate locked')
+    await setStatus(deliveryId, 'OUT_FOR_DELIVERY', cashierCookie)
+    await setStatus(deliveryId, 'FAILED', adminCookie, 'Customer refused — wrong flavour')
+    await setStatus(deliveryId, 'OUT_FOR_DELIVERY', cashierCookie)
+    await setStatus(deliveryId, 'FAILED', adminCookie, 'Gate locked')
 
     const note = (await pool.query('SELECT note FROM deliveries WHERE delivery_id = $1', [deliveryId])).rows[0].note
     assert.match(note, /wrong flavour/, 'the first failure reason must survive')
     assert.match(note, /Gate locked/, 'alongside the second')
-  })
-
-  // express.raw() matches via type-is, which PARSES the media type, while
-  // the extension lookup was an exact case-sensitive string match — so a
-  // legal Content-Type variant was read in full and then rejected as "not
-  // an image". Browsers send the bare lowercase form, which is why the
-  // app's own UI never hit this and only another client would.
-  test('a proof upload is accepted with a parameterised or differently-cased Content-Type', async () => {
-    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0xff, 0xd9])
-    for (const contentType of ['image/jpeg; charset=binary', 'IMAGE/JPEG', 'image/jpeg']) {
-      const { deliveryId } = await placeDeliveryOrder()
-      await assign(deliveryId, firstDriverId)
-      await setStatus(deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)
-      const response = await fetch(`${baseUrl}/api/deliveries/${deliveryId}/proof`, { method: 'POST', headers: { 'Content-Type': contentType, Cookie: firstDriverCookie }, body: jpeg })
-      assert.equal(response.status, 201, `Content-Type "${contentType}" must be accepted`)
-
-      const key = (await pool.query('SELECT storage_key FROM delivery_proofs WHERE delivery_id = $1', [deliveryId])).rows[0].storage_key
-      assert.match(key, /^[0-9a-f-]{36}\.jpg$/, 'and still get a server-generated key with the right extension')
-      const fs = await import('node:fs/promises')
-      await fs.unlink(filePath(key)).catch(() => {})
-    }
-  })
-
-  test('proof uploads are capped per delivery, and a refused one leaves no orphan file', async () => {
-    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0xff, 0xd9])
-    const upload = (deliveryId) => fetch(`${baseUrl}/api/deliveries/${deliveryId}/proof`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Cookie: firstDriverCookie }, body: jpeg })
-    const { deliveryId } = await placeDeliveryOrder()
-    await assign(deliveryId, firstDriverId)
-    await setStatus(deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)
-
-    // The cap is 5; the 6th must be refused rather than accepted forever.
-    for (let i = 0; i < 5; i += 1) assert.equal((await upload(deliveryId)).status, 201, `upload ${i + 1} of 5`)
-
-    // The bytes reach disk BEFORE the row can be refused, so the route has
-    // to clean up after itself or every rejected upload leaks a file that
-    // nothing references and nothing will ever collect. Measured as a
-    // before/after DELTA around the one refused request rather than
-    // against the whole directory: uploads/ is shared with every other
-    // test in this file (and with whatever earlier runs left behind), so
-    // "no unexpected files exist" is not a thing any single test can
-    // honestly assert — "this request added none" is.
-    const fs = await import('node:fs/promises')
-    const before = new Set(await fs.readdir(filePath('')).catch(() => []))
-    assert.equal((await upload(deliveryId)).status, 409, 'the 6th upload must be refused')
-    const after = await fs.readdir(filePath('')).catch(() => [])
-    // Other test FILES run in parallel and write to the same folder
-    // (product photos, other proofs), so a new file is only a leak if no
-    // row points at it — an orphan is exactly a file nothing references.
-    const referenced = new Set((await pool.query(
-      `SELECT storage_key AS key FROM delivery_proofs UNION SELECT image_key FROM products WHERE image_key IS NOT NULL`,
-    )).rows.map((row) => row.key))
-    const leaked = after.filter((file) => !before.has(file) && !referenced.has(file))
-    assert.deepEqual(leaked, [], 'a rejected upload must clean up the bytes it already wrote')
-
-    const keys = (await pool.query('SELECT storage_key FROM delivery_proofs WHERE delivery_id = $1', [deliveryId])).rows.map((r) => r.storage_key)
-    assert.equal(keys.length, 5, 'and must not have been written to the database either')
-
-    for (const key of keys) await fs.unlink(filePath(key)).catch(() => {})
-  })
-
-  // Deliberately a delivery with ZERO proofs on it, so a 409 here can only
-  // have come from the finished-delivery check. Folded in with the cap
-  // test above, this assertion passed against broken code — the delivery
-  // had already hit the cap by then, so the right status arrived for
-  // entirely the wrong reason.
-  test('proof uploads are refused once a delivery is finished', async () => {
-    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0xff, 0xd9])
-    const { deliveryId } = await placeDeliveryOrder()
-    await assign(deliveryId, firstDriverId)
-    await setStatus(deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)
-    await setStatus(deliveryId, 'DELIVERED', firstDriverCookie)
-
-    const response = await fetch(`${baseUrl}/api/deliveries/${deliveryId}/proof`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Cookie: firstDriverCookie }, body: jpeg })
-    assert.equal(response.status, 409, 'a finished delivery accepts no more proof')
-
-    const stored = await pool.query('SELECT COUNT(*)::int AS n FROM delivery_proofs WHERE delivery_id = $1', [deliveryId])
-    assert.equal(stored.rows[0].n, 0, 'and nothing is written for it')
-  })
-
-  // The row and the file can disagree — a restored backup, a hand-cleaned
-  // uploads/, a future move to object storage that missed one. That is a
-  // knowable condition with an honest answer ("it's gone"), not a server
-  // fault, and this codebase treats a generic 500 for a knowable condition
-  // as a defect in its own right.
-  test('a proof whose file has vanished from disk is a 404, not a 500', async () => {
-    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0xff, 0xd9])
-    const { deliveryId } = await placeDeliveryOrder()
-    await assign(deliveryId, firstDriverId)
-    await setStatus(deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)
-    const upload = await fetch(`${baseUrl}/api/deliveries/${deliveryId}/proof`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Cookie: firstDriverCookie }, body: jpeg })
-    const proofId = (await upload.json()).proof.id
-
-    // Delete the bytes out from under the row, leaving the row behind.
-    const key = (await pool.query('SELECT storage_key FROM delivery_proofs WHERE proof_id = $1', [proofId])).rows[0].storage_key
-    const fs = await import('node:fs/promises')
-    await fs.unlink(filePath(key))
-
-    const response = await fetch(`${baseUrl}/api/deliveries/${deliveryId}/proof/${proofId}`, { headers: { Cookie: adminCookie } })
-    assert.equal(response.status, 404, 'a missing file must be a clean 404')
-    assert.ok(response.status < 500, 'and never a server error')
   })
 
   test('an admin retrying a delivery that is not FAILED is refused with 409', async () => {
@@ -805,175 +394,8 @@ describe('delivery management', () => {
     assert.equal(response.status, 409)
   })
 
-  // --- Proof of delivery ---------------------------------------------------
-
-  const tinyJpegBytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0xff, 0xd9])
-
-  const setUpOutForDeliveryOrder = async () => {
-    const { orderId, deliveryId } = await placeDeliveryOrder()
-    await assign(deliveryId, firstDriverId)
-    await setStatus(deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)
-    return { orderId, deliveryId }
-  }
-
-  test('POST /api/deliveries/:id/proof is refused for a non-image content type — 422, not 500', async () => {
-    const { deliveryId } = await setUpOutForDeliveryOrder()
-    const response = await fetch(`${baseUrl}/api/deliveries/${deliveryId}/proof?proofType=PHOTO`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain', Cookie: firstDriverCookie },
-      body: 'not an image',
-    })
-    assert.equal(response.status, 422)
-    const proofs = await pool.query('SELECT COUNT(*)::int AS n FROM delivery_proofs WHERE delivery_id = $1', [deliveryId])
-    assert.equal(proofs.rows[0].n, 0)
-  })
-
-  test('POST /api/deliveries/:id/proof over the size limit is refused cleanly, not with a 500', async () => {
-    const { deliveryId } = await setUpOutForDeliveryOrder()
-    const oversized = Buffer.alloc(6 * 1024 * 1024, 0xff) // over the 5mb limit
-    const response = await fetch(`${baseUrl}/api/deliveries/${deliveryId}/proof?proofType=PHOTO`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'image/jpeg', Cookie: firstDriverCookie },
-      body: oversized,
-    })
-    assert.equal(response.status, 413)
-    assert.ok(response.status < 500)
-  })
-
-  test('POST /api/deliveries/:id/proof is scoped to the driver\'s own delivery — 404 for someone else\'s', async () => {
-    const { deliveryId } = await setUpOutForDeliveryOrder()
-    const response = await fetch(`${baseUrl}/api/deliveries/${deliveryId}/proof?proofType=PHOTO`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'image/jpeg', Cookie: secondDriverCookie },
-      body: tinyJpegBytes,
-    })
-    assert.equal(response.status, 404)
-    const proofs = await pool.query('SELECT COUNT(*)::int AS n FROM delivery_proofs WHERE delivery_id = $1', [deliveryId])
-    assert.equal(proofs.rows[0].n, 0, 'nothing should have been written for an unowned delivery')
-  })
-
-  // PATTERN G — the security test of the phase. A file_name that looks
-  // like a path-traversal attempt must never reach the filesystem: the
-  // ACTUAL file on disk is always named from a server-generated UUID, and
-  // the traversal string is stored back only as an inert text label.
-  test('a path-traversal file_name writes a UUID-named file inside uploads/, never outside it (Pattern G)', async () => {
-    const { deliveryId } = await setUpOutForDeliveryOrder()
-    const maliciousName = encodeURIComponent('../../server/db.js')
-
-    const beforeContent = await import('node:fs/promises').then((fs) => fs.readFile(new URL('../db.js', import.meta.url), 'utf8'))
-
-    const response = await fetch(`${baseUrl}/api/deliveries/${deliveryId}/proof?proofType=PHOTO&fileName=${maliciousName}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'image/jpeg', Cookie: firstDriverCookie },
-      body: tinyJpegBytes,
-    })
-    assert.equal(response.status, 201)
-    const body = await response.json()
-    assert.equal(body.proof.fileName, '../../server/db.js', 'the traversal string is kept only as an inert label')
-
-    const stored = await pool.query('SELECT storage_key FROM delivery_proofs WHERE proof_id = $1', [body.proof.id])
-    const storageKey = stored.rows[0].storage_key
-    assert.match(storageKey, /^[0-9a-f-]{36}\.jpg$/, 'the actual on-disk name must be a server-generated UUID, not the client-supplied name')
-    assert.ok(!storageKey.includes('..'), 'the storage key must never contain a path-traversal sequence')
-
-    const fs = await import('node:fs/promises')
-    const written = await fs.readFile(filePath(storageKey))
-    assert.deepEqual(written, tinyJpegBytes, 'the uploaded bytes must land at the UUID path inside uploads/')
-
-    // The real target of the attack — server/db.js — must be untouched.
-    const afterContent = await fs.readFile(new URL('../db.js', import.meta.url), 'utf8')
-    assert.equal(afterContent, beforeContent, 'a path-traversal file_name must never write outside uploads/')
-
-    await fs.unlink(filePath(storageKey)).catch(() => {})
-  })
-
-  test('a successful proof upload is listed for staff and the uploading driver, and its bytes are fetchable', async () => {
-    const { deliveryId } = await setUpOutForDeliveryOrder()
-    const upload = await fetch(`${baseUrl}/api/deliveries/${deliveryId}/proof?proofType=PHOTO`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'image/jpeg', Cookie: firstDriverCookie },
-      body: tinyJpegBytes,
-    })
-    assert.equal(upload.status, 201)
-    const proofId = (await upload.json()).proof.id
-
-    const staffList = await fetch(`${baseUrl}/api/deliveries/${deliveryId}/proof`, { headers: { Cookie: adminCookie } })
-    assert.equal(staffList.status, 200)
-    assert.ok((await staffList.json()).proofs.some((proof) => proof.id === proofId))
-
-    const otherDriverList = await fetch(`${baseUrl}/api/deliveries/${deliveryId}/proof`, { headers: { Cookie: secondDriverCookie } })
-    assert.equal(otherDriverList.status, 404, 'a driver who does not own this delivery must not see its proofs either')
-
-    const file = await fetch(`${baseUrl}/api/deliveries/${deliveryId}/proof/${proofId}`, { headers: { Cookie: adminCookie } })
-    assert.equal(file.status, 200)
-    const bytes = Buffer.from(await file.arrayBuffer())
-    assert.deepEqual(bytes, tinyJpegBytes)
-
-    const storageKey = (await pool.query('SELECT storage_key FROM delivery_proofs WHERE proof_id = $1', [proofId])).rows[0].storage_key
-    const fs = await import('node:fs/promises')
-    await fs.unlink(filePath(storageKey)).catch(() => {})
-  })
-
-  // PHASE10 B4 — the driver's own delivery history and its counts.
-  test("GET /api/deliveries/mine/history lists only the driver's own finished deliveries, with counts that match", async () => {
-    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())
-    const history = async (cookie, query = `from=${today}&to=${today}`) => {
-      const response = await fetch(`${baseUrl}/api/deliveries/mine/history?${query}`, { headers: { Cookie: cookie } })
-      return { status: response.status, body: await response.json() }
-    }
-    // Earlier tests in this suite finish deliveries too, so compare
-    // before and after rather than against absolute numbers.
-    const before = (await history(firstDriverCookie)).body
-
-    const delivered = await placeDeliveryOrder()
-    assert.equal((await assign(delivered.deliveryId, firstDriverId)).status, 200)
-    assert.equal((await setStatus(delivered.deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)).status, 200)
-    assert.equal((await setStatus(delivered.deliveryId, 'DELIVERED', firstDriverCookie)).status, 200)
-
-    const failed = await placeDeliveryOrder()
-    assert.equal((await assign(failed.deliveryId, firstDriverId)).status, 200)
-    assert.equal((await setStatus(failed.deliveryId, 'OUT_FOR_DELIVERY', firstDriverCookie)).status, 200)
-    assert.equal((await setStatus(failed.deliveryId, 'FAILED', firstDriverCookie, 'Nobody home')).status, 200)
-
-    const open = await placeDeliveryOrder()
-    assert.equal((await assign(open.deliveryId, firstDriverId)).status, 200)
-
-    const afterFinishing = await history(firstDriverCookie)
-    assert.equal(afterFinishing.status, 200)
-    const { counts, deliveries } = afterFinishing.body
-    assert.equal(counts.delivered, before.counts.delivered + 1)
-    // A failed delivery goes back to the bakery's queue (the user,
-    // 2026-10-16), so it is no longer this driver's; it is not in their
-    // history.
-    assert.equal(counts.failed, before.counts.failed)
-    assert.ok(counts.assignedNow >= 1, 'the still-assigned delivery counts as work in hand')
-    const ids = deliveries.map((delivery) => delivery.id)
-    assert.ok(ids.includes(delivered.deliveryId))
-    assert.ok(!ids.includes(failed.deliveryId), 'returned to the queue, not history')
-    assert.ok(!ids.includes(open.deliveryId), 'an unfinished delivery is not history yet')
-    assert.equal(deliveries.length, counts.delivered + counts.failed, 'the list and the counts agree')
-
-    const other = await history(secondDriverCookie)
-    const otherIds = other.body.deliveries.map((delivery) => delivery.id)
-    assert.ok(!otherIds.includes(delivered.deliveryId) && !otherIds.includes(failed.deliveryId), "another driver's history is invisible")
-
-    const longAgo = await history(firstDriverCookie, 'from=2020-01-01&to=2020-01-31')
-    assert.equal(longAgo.body.deliveries.length, 0)
-    assert.equal(longAgo.body.counts.delivered, 0)
-
-    assert.equal((await history(firstDriverCookie, '')).status, 422, 'a range is required')
-    assert.equal((await history(cashierCookie)).status, 403, 'drivers only')
-
-    // The failed attempt went back to the queue on its own, with no driver,
-    // keeping when it failed.
-    const returned = await pool.query('SELECT status, delivery_personnel_id, failed_at FROM deliveries WHERE delivery_id = $1', [failed.deliveryId])
-    assert.equal(returned.rows[0].status, 'PENDING_ASSIGNMENT')
-    assert.equal(returned.rows[0].delivery_personnel_id, null)
-    assert.ok(returned.rows[0].failed_at)
-  })
-
   // MINOR_REVISIONS_PLAN.md M13 — no riders: staff send a paid delivery
-  // out and mark it delivered, and the order follows as it did for a driver.
+  // out and mark it delivered, and the order follows.
   test('a cashier sends a paid delivery out with no rider, then marks it delivered, which completes the order', async () => {
     const { orderId, deliveryId } = await placeDeliveryOrder()
 
@@ -990,6 +412,39 @@ describe('delivery management', () => {
     const { deliveryId } = await placeDeliveryOrder({ pay: false, legacyRow: true })
     const out = await setStatus(deliveryId, 'OUT_FOR_DELIVERY', adminCookie)
     assert.equal(out.status, 409)
+  })
+
+  test('the rider routes are gone', async () => {
+    const { deliveryId } = await placeDeliveryOrder()
+    const routes = [
+      ['GET', '/api/deliveries'],
+      ['GET', '/api/deliveries/personnel'],
+      ['GET', '/api/deliveries/mine'],
+      ['GET', '/api/deliveries/mine/history'],
+      ['PATCH', `/api/deliveries/${deliveryId}/assign`],
+      ['POST', `/api/deliveries/${deliveryId}/proof`],
+      ['GET', `/api/deliveries/${deliveryId}/proof`],
+    ]
+    for (const [method, path] of routes) {
+      const response = await fetch(`${baseUrl}${path}`, { method, headers: { Cookie: adminCookie } })
+      assert.equal(response.status, 404, `${method} ${path}`)
+    }
+  })
+
+  test('moving a delivery needs a signed-in admin or cashier', async () => {
+    const { deliveryId } = await placeDeliveryOrder()
+    assert.equal((await fetch(`${baseUrl}/api/deliveries/${deliveryId}/status`, { method: 'PATCH' })).status, 401)
+    assert.equal((await setStatus(deliveryId, 'OUT_FOR_DELIVERY', customerCookie)).status, 403)
+
+    // An old rider account, if one were still active, is refused too.
+    const username = `oldrider_${runId}`
+    const password = 'Old-Rider-Password-9!'
+    const rider = await pool.query(`INSERT INTO users (username, password_hash, user_type) VALUES ($1, $2, 'DELIVERY_PERSONNEL') RETURNING user_id`, [username, await bcrypt.hash(password, 4)])
+    createdUserIds.push(rider.rows[0].user_id)
+    await pool.query('INSERT INTO delivery_personnel (user_id, name, contact_num, email) VALUES ($1, $2, $3, $4)', [rider.rows[0].user_id, 'Old Rider', randomContactNumber(), `${username}@example.com`])
+    const login = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: username, password }) })
+    const riderCookie = login.headers.get('set-cookie').split(';')[0]
+    assert.equal((await setStatus(deliveryId, 'OUT_FOR_DELIVERY', riderCookie)).status, 403)
   })
 })
 

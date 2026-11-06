@@ -255,12 +255,10 @@ router.get('/:id', async (request, response) => {
   // /api/deliveries router does not admit customers at all, so this is
   // how they see it. Read-only,
   // and only the fields a customer or cashier needs to answer "where is
-  // it": no address (they know it), no note (the driver's own log).
+  // it": no address (they know it), no note (staff's own log).
   const deliveryResult = order.order_type === 'DELIVERY'
     ? await pool.query(
-      `SELECT d.delivery_id, d.status, d.assigned_at, d.delivered_at, dp.name AS delivery_personnel_name
-         FROM deliveries d LEFT JOIN delivery_personnel dp ON dp.delivery_personnel_id = d.delivery_personnel_id
-        WHERE d.order_id = $1`,
+      'SELECT d.delivery_id, d.status, d.delivered_at FROM deliveries d WHERE d.order_id = $1',
       [order.order_id],
     )
     : null
@@ -268,11 +266,9 @@ router.get('/:id', async (request, response) => {
   const delivery = deliveryRow
     ? {
         status: deliveryRow.status,
-        deliveryPersonnelName: deliveryRow.delivery_personnel_name,
-        assignedAt: deliveryRow.assigned_at,
         deliveredAt: deliveryRow.delivered_at,
-        // Staff only: the id Order Management's "Assign rider" sends to
-        // PATCH /api/deliveries/:id/assign. A customer gets where it stands.
+        // Staff only: the id Order Management's delivery buttons send to
+        // PATCH /api/deliveries/:id/status. A customer gets where it stands.
         ...(request.user.role !== 'CUSTOMER' && { id: deliveryRow.delivery_id }),
       }
     : null
@@ -610,7 +606,18 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
       )
       if (deducted.rowCount === 0) {
         await client.query('ROLLBACK')
-        return response.status(409).json({ message: `Not enough stock for product ${item.productId}.`, errors: { items: `Not enough stock for product ${item.productId}.` } })
+        // Named for the person reading it, with what is left right now. On
+        // this same connection: asking the pool for another while holding
+        // this one freezes the server once every connection waits like this.
+        const short = await client.query(
+          `SELECT p.product_name, p.variant, COALESCE(i.stock_quantity, 0) AS stock_left
+             FROM products p LEFT JOIN inventory i ON i.product_id = p.product_id WHERE p.product_id = $1`,
+          [item.productId],
+        )
+        const name = `${short.rows[0]?.product_name ?? 'This product'}${short.rows[0]?.variant ? ` (${short.rows[0].variant})` : ''}`
+        const left = Number(short.rows[0]?.stock_left ?? 0)
+        const message = left > 0 ? `Only ${left} ${name} left. Lower the quantity to continue.` : `${name} just sold out.`
+        return response.status(409).json({ message, errors: { items: message } })
       }
 
       await client.query('INSERT INTO order_details (order_id, product_id, quantity, unit_price) VALUES ($1, $2, $3, $4)', [orderId, item.productId, item.quantity, product.price])
@@ -776,8 +783,8 @@ router.patch('/:id', async (request, response) => {
       return response.status(409).json({ message: 'A pickup order cannot be marked ready for delivery.' })
     }
     // OUT_FOR_DELIVERY is never written by this route at all. For a
-    // PICKUP order it is untrue; for a DELIVERY order it belongs to the
-    // driver's own workflow — PATCH /api/deliveries/:id/status — because
+    // PICKUP order it is untrue; for a DELIVERY order it belongs to
+    // PATCH /api/deliveries/:id/status, because
     // deliveries.status is the source of truth and orders.status is synced
     // FROM it, one direction only (PHASE7_PLAN.md, Decision 2 / Pattern
     // F). A manual write here could disagree with deliveries.status with
@@ -787,7 +794,7 @@ router.patch('/:id', async (request, response) => {
       return response.status(409).json({
         message: lockedOrder.order_type === 'PICKUP'
           ? 'A pickup order cannot be marked out for delivery.'
-          : "This order's delivery status is managed through Delivery Management, not here.",
+          : "Use the Out for delivery button on this order.",
       })
     }
 

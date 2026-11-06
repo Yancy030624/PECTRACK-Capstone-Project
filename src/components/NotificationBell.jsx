@@ -1,7 +1,7 @@
 // Notifications for the staff header (CLIENT_REVISIONS_PLAN.md R4, widened
 // by NOTIFICATIONS_PLAN.md N3). The admin and cashier hear about new
 // orders, online payments, cancellations, and deliveries leaving, arriving
-// or failing; a driver hears about every delivery assigned to them. The
+// or failing. The
 // events come from GET /api/notifications, one feed for every role.
 //
 // No server push: the screen asks every 20 seconds.
@@ -54,10 +54,9 @@ const wording = {
   ],
   payment_to_confirm: (item) => [`Payment to confirm for ${orderLabel(item)}`, `GCash ${formatPeso(item.amount)} from ${item.customerName ?? 'a customer'} — check the reference number`],
   order_cancelled: (item) => [`Order ${orderLabel(item)} cancelled`, item.actorIsCustomer ? 'By the customer' : `By ${item.actorName ?? 'staff'}`],
-  out_for_delivery: (item) => [`Order ${orderLabel(item)} is on the way`, `With ${item.actorName ?? 'the driver'}`],
-  delivered: (item) => [`Order ${orderLabel(item)} delivered`, [`By ${item.actorName ?? 'the driver'}`, [item.recipientName, item.barangay].filter(Boolean).join(', ')].filter(Boolean).join(' · ')],
-  delivery_failed: (item) => [`Delivery failed for ${orderLabel(item)}`, item.note || `By ${item.actorName ?? 'the driver'}`],
-  assigned: (item) => [`New delivery ${orderLabel(item)}`, [item.customerName ?? 'Customer', item.barangay].filter(Boolean).join(', ')],
+  out_for_delivery: (item) => [`Order ${orderLabel(item)} is on the way`, `Marked by ${item.actorName ?? 'staff'}`],
+  delivered: (item) => [`Order ${orderLabel(item)} delivered`, [item.actorName ? `By ${item.actorName}` : 'Marked by staff', [item.recipientName, item.barangay].filter(Boolean).join(', ')].filter(Boolean).join(' · ')],
+  delivery_failed: (item) => [`Delivery failed for ${orderLabel(item)}`, item.note || 'Marked by staff'],
   low_stock: (item) => [`Low stock: ${item.productName}`, `${item.stockQuantity} left (minimum ${item.minStockLevel}) — restock soon`],
   due_soon: (item) => [
     `Order ${orderLabel(item)} is due within the hour`,

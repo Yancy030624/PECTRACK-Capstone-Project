@@ -6,7 +6,6 @@ import { NotificationBell } from '../../components/NotificationBell.jsx'
 import { Button } from '../../components/ui/Button.jsx'
 import { ModuleIcon } from '../../components/ui/ModuleIcon.jsx'
 import { DashboardHome } from './DashboardHome.jsx'
-import { DeliveryManagement } from './DeliveryManagement.jsx'
 import { InventoryManagement } from './InventoryManagement.jsx'
 import { modules } from './modules.js'
 import { MyProfile } from './MyProfile.jsx'
@@ -22,18 +21,13 @@ const moduleComponents = {
   'My Profile': MyProfile,
   'Order Management': OrderManagement,
   'Payment & Billing': PaymentBilling,
-  'Delivery Management': DeliveryManagement,
-  'My Deliveries': DeliveryManagement,
   'Reporting & Analytics': ReportingAnalytics,
 }
 // Staff only — a customer never reaches this shell (App.jsx routes them
 // to /account instead), so there is no CUSTOMER case to answer here.
 const navigationGroupFor = (name) => name === 'My Profile' ? 'Account' : ['Reporting & Analytics', 'User Management'].includes(name) ? 'Business' : 'Daily operations'
 
-const defaultPathFor = (role) => {
-  if (role === 'DELIVERY PERSONNEL') return '/my-deliveries'
-  return '/dashboard'
-}
+const defaultPath = '/dashboard'
 export function Dashboard({ user, onLogout, onUserUpdated }) {
   const navigate = useNavigate()
   const { pathname, state: locationState } = useLocation()
@@ -59,7 +53,7 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
   // travels in the history entry, so Back returns to the same view.
   const moduleParams = locationState?.moduleParams ?? null
   const openModule = (name, params = null) => {
-    const path = modules.find((module) => module.name === name)?.path ?? defaultPathFor(user.role)
+    const path = modules.find((module) => module.name === name)?.path ?? defaultPath
     navigate(path, { state: params && { moduleParams: params }, replace: path === pathname })
     setMenuOpen(false)
   }
@@ -103,9 +97,8 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
   // module since MINOR_REVISIONS_PLAN.md M13). `at` makes a second click on
   // the same order open it again.
   const openNotified = (item) => {
-    if (item.type === 'assigned') openModule('My Deliveries')
     // A product running low (SENIOR_CONSULT_PLAN.md, S4): its stock.
-    else if (item.type === 'low_stock') openModule('Inventory Management')
+    if (item.type === 'low_stock') openModule('Inventory Management')
     // Due within the hour: the order's receipt, where Needed by lives.
     else if (item.type === 'due_soon') openModule('Payment & Billing', { orderId: item.orderId, at: Date.now() })
     // A QR Ph reference to check (QRPH_PLAN.md, Q11).
@@ -113,7 +106,7 @@ export function Dashboard({ user, onLogout, onUserUpdated }) {
     else openModule('Order Management', { orderId: item.orderId, at: Date.now() })
   }
   // A module this role may not open, typed or bookmarked: their first screen.
-  if (!activeModule) return <Navigate to={defaultPathFor(user.role)} replace />
+  if (!activeModule) return <Navigate to={defaultPath} replace />
   const ActiveModuleComponent = moduleComponents[activeModule]
 
   const navigation = allowedModules.map((module, index) => (

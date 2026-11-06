@@ -1,6 +1,6 @@
 // Admin-only staff account management. Admins are seeded directly into the
 // database (not created through the API) — this router is how an admin
-// creates CASHIER and DELIVERY_PERSONNEL accounts, per the agreed model
+// creates CASHIER accounts, per the agreed model
 // where self-registration only ever creates CUSTOMER accounts. Mounted at
 // /api/staff in app.js.
 import bcrypt from 'bcrypt'
@@ -15,11 +15,10 @@ import { forgetTrustedDevices } from '../lib/trustedDevices.js'
 const router = express.Router()
 
 // Maps the role a caller asks to create to the profile table it belongs
-// in. Deliberately only these two — creating another ADMIN through this
+// in. Deliberately only this one — creating another ADMIN through this
 // endpoint is out of scope (admins are seeded manually, agreed earlier).
 const staffRoleTables = {
   CASHIER: 'cashiers',
-  DELIVERY_PERSONNEL: 'delivery_personnel',
 }
 
 // Shared by GET / and PATCH /:id, so both return staff rows in the exact
@@ -47,7 +46,7 @@ const staffSelectQuery = `SELECT u.user_id, u.username, u.user_type, u.is_active
 router.use(requireAuth, requireRole('ADMIN'))
 
 router.get('/', async (_request, response) => {
-  const result = await pool.query(`${staffSelectQuery} WHERE u.user_type IN ('CASHIER', 'DELIVERY_PERSONNEL') ORDER BY u.created_at DESC`)
+  const result = await pool.query(`${staffSelectQuery} WHERE u.user_type = 'CASHIER' ORDER BY u.created_at DESC`)
   return response.json({ staff: result.rows.map(mapStaffRow) })
 })
 
@@ -58,7 +57,7 @@ router.post('/', async (request, response) => {
   // into the INSERT below is not a SQL-injection risk despite being a
   // dynamic identifier.
   const table = staffRoleTables[role]
-  if (!table) return response.status(422).json({ message: 'Role must be CASHIER or DELIVERY_PERSONNEL.', errors: { role: 'Select a valid staff role.' } })
+  if (!table) return response.status(422).json({ message: 'Role must be CASHIER.', errors: { role: 'Select a valid staff role.' } })
 
   const { errors, values } = validateAccountFields(request.body)
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
@@ -103,7 +102,7 @@ router.post('/', async (request, response) => {
 // and recreate" than an edit), and username isn't meant to change once
 // set.
 //
-// This route staying scoped to CASHIER/DELIVERY_PERSONNEL (the WHERE
+// This route staying scoped to CASHIER (the WHERE
 // below) and the router-wide requireRole('ADMIN') (staff.js:45 at the
 // top of this file) together are exactly what keeps this a *staff*
 // password reset and not a way for an admin to reach another admin's
@@ -125,7 +124,7 @@ router.patch('/:id', async (request, response) => {
      FROM users u
      LEFT JOIN cashiers ca ON ca.user_id = u.user_id
      LEFT JOIN delivery_personnel d ON d.user_id = u.user_id
-     WHERE u.user_id = $1 AND u.user_type IN ('CASHIER', 'DELIVERY_PERSONNEL')`,
+     WHERE u.user_id = $1 AND u.user_type = 'CASHIER'`,
     [userId],
   )
   const target = current.rows[0]

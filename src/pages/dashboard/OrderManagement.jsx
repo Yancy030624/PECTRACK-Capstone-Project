@@ -92,6 +92,8 @@ function statusActions(order) {
   return actions
 }
 const humanize = (status) => status.replaceAll('_', ' ')
+// The two older status names both mean the order has not left yet.
+const deliveryStatusLabel = (status) => (['PENDING_ASSIGNMENT', 'ASSIGNED'].includes(status) ? 'waiting to go out' : humanize(status))
 
 export function OrderManagement({ user, params }) {
   return user.role === 'ADMIN' || user.role === 'CASHIER' ? <StaffOrderManagement user={user} params={params} /> : <CustomerOrders user={user} />
@@ -171,8 +173,7 @@ function DeliveryProgress({ delivery }) {
   if (!delivery) return null
   return (
     <div className="rounded-panel bg-surface-warm p-3 text-xs text-ink-700">
-      <p className="font-semibold text-ink-900">Delivery: {humanize(delivery.status)}</p>
-      {delivery.deliveryPersonnelName && <p className="mt-0.5">Driver: {delivery.deliveryPersonnelName}</p>}
+      <p className="font-semibold text-ink-900">Delivery: {deliveryStatusLabel(delivery.status)}</p>
       {delivery.deliveredAt && <p className="mt-0.5">Delivered {formatDateTime(delivery.deliveredAt)}</p>}
     </div>
   )
@@ -372,7 +373,7 @@ function StaffOrderManagement({ user, params }) {
               {statusActions(orderDetail).length === 0 ? (
                 <p className="text-xs text-ink-500">
                   {orderDetail.orderType === 'DELIVERY'
-                    ? 'Nothing to do by hand: it goes into production once paid, the driver marks it out for delivery and delivered, and delivered completes it.'
+                    ? 'Mark it out for delivery, then delivered. Delivered completes it.'
                     : 'Paid orders cannot be cancelled. Nothing else to do by hand.'}
                 </p>
               ) : (

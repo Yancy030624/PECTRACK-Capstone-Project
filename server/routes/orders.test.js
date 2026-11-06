@@ -535,7 +535,7 @@ describe('order management', () => {
     const delivery = await (await fetch(`${baseUrl}/api/orders/${deliveryOrderId}`, { headers: { Cookie: customerCookie } })).json()
     assert.ok(delivery.order.delivery)
     assert.ok(['PENDING_ASSIGNMENT', 'ASSIGNED', 'FAILED'].includes(delivery.order.delivery.status))
-    assert.deepEqual(Object.keys(delivery.order.delivery).sort(), ['assignedAt', 'deliveredAt', 'deliveryPersonnelName', 'status'], 'no address, no driver note — only where it stands')
+    assert.deepEqual(Object.keys(delivery.order.delivery).sort(), ['deliveredAt', 'status'], 'no address, no driver note — only where it stands')
   })
 
   test('POST /api/orders rejects a non-numeric customerId and an out-of-range quantity with 422, never 500', async () => {
@@ -1033,6 +1033,22 @@ describe('order management', () => {
 
     const { rows } = await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [stockTestProductId])
     assert.equal(rows[0].stock_quantity, 0, 'stock must land at exactly 0, never negative')
+  })
+
+  // Every refused order reads the stock to word its message. Doing that on a
+  // second pooled connection while holding the first froze the server once
+  // ten refusals ran together, so this sends more than the pool can hold.
+  test('many orders refused at once are all answered, and say what is left', async () => {
+    await pool.query('UPDATE inventory SET stock_quantity = 2 WHERE product_id = $1', [stockTestProductId])
+    const placeOne = () => fetch(`${baseUrl}/api/orders`, { method: 'POST', signal: AbortSignal.timeout(15000), headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ items: [{ productId: stockTestProductId, quantity: 5 }] }) })
+    const responses = await Promise.all(Array.from({ length: 25 }, placeOne))
+    assert.ok(responses.every((response) => response.status === 409))
+    assert.match((await responses[0].json()).message, /^Only 2 .* left\./)
+
+    await pool.query('UPDATE inventory SET stock_quantity = 0 WHERE product_id = $1', [stockTestProductId])
+    const soldOut = await placeOne()
+    assert.equal(soldOut.status, 409)
+    assert.match((await soldOut.json()).message, /just sold out/)
   })
 
   // The mirror image of the race above, on the RESTORE side. Cancelling

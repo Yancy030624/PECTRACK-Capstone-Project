@@ -1,10 +1,5 @@
-// The emails that tell people an order moved (NOTIFICATIONS_PLAN.md, N4 and
-// N5). All the wording is here, in one file; the routes only pass facts.
+// The emails that tell people an order moved (NOTIFICATIONS_PLAN.md, N5). All the wording is here, in one file; the routes only pass facts.
 //
-// - The driver: a new delivery was assigned to them. The in-app bell only
-//   works while PECTRACK is open in front; a phone pauses it. The Gmail
-//   app on the driver's phone shows this email even with the browser
-//   closed.
 // - The customer: a pickup order is ready; a delivery is on the way, was
 //   delivered, or could not be delivered. The "delivered" email is the
 //   wrong-house safeguard: the customer learns within a minute that the
@@ -49,33 +44,6 @@ export function sendInBackground(what, send) {
   Promise.resolve()
     .then(send)
     .catch((error) => console.error(`Could not send the ${what} email:`, error))
-}
-
-// N4 — to the driver, when a delivery is assigned to them.
-export function sendDeliveryAssignedEmail({ to, driverName, order, customerName, address, items, requestedFulfillmentTime, instructions }) {
-  return sendMail({
-    to,
-    subject: `New delivery ${subjectNumber(order)} — ${bakery.name}`,
-    text: [
-      `Hello ${firstName(driverName)},`,
-      '',
-      `Order ${bodyLabel(order)} has been assigned to you.`,
-      '',
-      `Deliver to: ${address?.recipientName ?? customerName ?? 'the customer'}${address?.contactNumber ? `, ${address.contactNumber}` : ''}`,
-      `Address: ${formatAddress(address)}`,
-      ...(address?.deliveryNotes ? [`Directions: ${address.deliveryNotes}`] : []),
-      ...(requestedFulfillmentTime ? [`Needed by: ${formatTime(requestedFulfillmentTime)}`] : []),
-      ...(instructions ? [`Instructions: ${instructions}`] : []),
-      '',
-      'Items:',
-      ...itemLines(items),
-      '',
-      'The order is already paid; there is nothing to collect.',
-      `Open My Deliveries to start it: ${config.clientOrigin}/dashboard`,
-      '',
-      ...signOff,
-    ].join('\n'),
-  })
 }
 
 // N5 — to the customer, when their pickup order is ready.
@@ -173,22 +141,22 @@ export async function sendQrPaymentDecisionEmail({ orderId, confirmed, reason })
   })
 }
 
-// N5 — to the customer, when the driver leaves with their order.
-export function sendOutForDeliveryEmail({ to, name, order, driverName, address, items }) {
+// N5 — to the customer, when their order leaves the bakery.
+export function sendOutForDeliveryEmail({ to, name, order, address, items }) {
   return sendMail({
     to,
     subject: `Your order ${subjectNumber(order)} is on the way`,
     text: [
       `Hello ${firstName(name)},`,
       '',
-      `Your order ${bodyLabel(order)} has left the bakery${driverName ? ` with ${firstName(driverName)}, our rider` : ''}.`,
+      `Your order ${bodyLabel(order)} has left the bakery.`,
       '',
       `Delivering to: ${address?.recipientName ? `${address.recipientName}, ` : ''}${formatAddress(address)}`,
       '',
       'Your order:',
       ...itemLines(items),
       '',
-      'Please keep your phone nearby; the rider may call or text when they arrive.',
+      'Please keep your phone nearby; the bakery may call or text when your order arrives.',
       `See your orders: ${accountLink()}`,
       '',
       ...signOff,
@@ -196,7 +164,7 @@ export function sendOutForDeliveryEmail({ to, name, order, driverName, address, 
   })
 }
 
-// N5 — to the customer, when the driver marks the order delivered.
+// N5 — to the customer, when staff mark the order delivered.
 export function sendDeliveredEmail({ to, name, order, deliveredAt, address }) {
   return sendMail({
     to,
@@ -217,8 +185,8 @@ export function sendDeliveredEmail({ to, name, order, deliveredAt, address }) {
   })
 }
 
-// N5 — to the customer, when a delivery could not be completed. The
-// driver's own note stays internal.
+// N5 — to the customer, when a delivery could not be completed. The staff
+// note stays internal.
 export function sendDeliveryFailedEmail({ to, name, order }) {
   return sendMail({
     to,
