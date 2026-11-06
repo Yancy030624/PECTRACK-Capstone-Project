@@ -731,6 +731,24 @@ describe('reporting & analytics', () => {
       assert.equal((await (await getProducts({ from: '2023-03-15', to: '2023-03-15', sort: 'revenue' })).json()).sort, 'revenue')
     })
 
+    test('gives the whole range\'s totals and the lowest sellers for the printed summary', async () => {
+      await placeOrderAt('2023-04-12 10:00:00+08')
+      await placeOrderAt('2023-04-12 11:00:00+08')
+      const unsold = await fetch(`${baseUrl}/api/products`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ categoryId: createdCategoryIds[0], name: `Report Unsold Loaf ${runId}`, price: 20 }) })
+      const unsoldId = (await unsold.json()).product.id
+      createdProductIds.push(unsoldId)
+
+      const body = await (await getProducts({ from: '2023-04-12', to: '2023-04-12', limit: 1 })).json()
+      assert.equal(body.products.length, 1)
+      assert.equal(body.products[0].productId, productId)
+      assert.equal(body.totals.pieces, body.products[0].quantitySold, 'only this product sold that day')
+      assert.equal(body.totals.revenue, body.products[0].revenue)
+      assert.equal(body.totals.productsSold, 1)
+      assert.ok(body.lowest.length <= 5)
+      assert.ok(!body.lowest.some((row) => row.productId === productId), 'a ranked product is not listed twice')
+      assert.ok(body.lowest.every((row) => row.quantitySold === 0), 'a product with no sales counts as 0')
+    })
+
     test('limit is honoured up to the cap, and an out-of-range limit is capped rather than rejected', async () => {
       const withinRange = await getProducts({ from: '2023-01-01', to: '2023-01-01', limit: 5 })
       assert.equal(withinRange.status, 200)
@@ -795,6 +813,24 @@ describe('reporting & analytics', () => {
       } finally {
         await pool.query(`UPDATE inventory_movements SET data_source = 'RECORDED' WHERE inventory_id = $1`, [inventoryOfId])
       }
+    })
+
+    test('lists each deduction with its reason, newest first, for the printed summary', async () => {
+      const testDate = '2023-03-20'
+      const start = (await pool.query('SELECT stock_quantity FROM inventory WHERE product_id = $1', [inventoryProductId])).rows[0].stock_quantity
+      const deduct = await fetch(`${baseUrl}/api/inventory/${inventoryProductId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify({ deductQuantity: 3, note: 'Burnt' }) })
+      assert.equal(deduct.status, 200)
+      const movement = await pool.query('SELECT movement_id FROM inventory_movements WHERE inventory_id = $1 ORDER BY movement_id DESC LIMIT 1', [inventoryOfId])
+      await pool.query('UPDATE inventory_movements SET created_at = $1 WHERE movement_id = $2', [`${testDate} 09:00:00+08`, movement.rows[0].movement_id])
+
+      const body = await (await getInventory({ from: testDate, to: testDate })).json()
+      const row = body.deductions.find((entry) => entry.id === movement.rows[0].movement_id)
+      assert.ok(row, 'the deduction is listed')
+      assert.equal(row.pieces, 3)
+      assert.equal(row.note, 'Burnt')
+      assert.ok(body.deductionsTotal >= 1)
+
+      await pool.query('UPDATE inventory SET stock_quantity = $1 WHERE product_id = $2', [start, inventoryProductId])
     })
 
     test('an open alert appears in lowStockAlerts; resolving it removes it', async () => {

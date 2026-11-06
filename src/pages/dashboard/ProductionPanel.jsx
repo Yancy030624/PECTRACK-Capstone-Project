@@ -69,6 +69,7 @@ export function ProductionPanel({ user }) {
         {data?.forecastShortCount > 0 && (
           <p className="mt-2 rounded-panel bg-amber-50 px-3 py-2 text-sm text-ink-900">
             Forecast says bake more: <strong>{data.forecastShortCount} product{data.forecastShortCount === 1 ? '' : 's'}</strong>. See the Forecast column.
+            {data.forecastAssumed && <> This forecast uses <strong>practice data (assumed)</strong>, not the bakery&apos;s actual sales.</>}
           </p>
         )}
         {!data ? (
@@ -136,7 +137,7 @@ export function ProductionPanel({ user }) {
                 </Table>
               </div>
             )}
-            <p className="mt-4 text-xs text-ink-500">Soft "To bake" uses what is on the shelf now; it is smaller if more sells today. Advanced orders for soft breads are baked on their pickup day, outside the shelf stock. Hard breads are built up to their stop level × 2 from Thursday for the weekend, and × the event's multiplier from a week before an event. Forecast is the latest forecast's expected sales for the day; "+N" means it expects N more than the plan will have.</p>
+            <p className="mt-4 text-xs text-ink-500">Soft "To bake" uses what is on the shelf now; it is smaller if more sells today. Advanced orders for soft breads are baked on their pickup day, outside the shelf stock. Hard breads are built up to their stop level × 2 from Thursday for the weekend, and × the event's multiplier from a week before an event. Forecast is the latest forecast's expected sales for the day; "+N" means it expects N more than the plan will have.{data.forecastAssumed && ' It uses practice data (assumed) until 56 days of actual sales are recorded.'}</p>
           </>
         )}
       </Card>

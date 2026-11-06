@@ -129,10 +129,17 @@ export async function productionFor(day) {
                WHERE od.product_id = p.product_id AND o.is_reservation AND o.status NOT IN ('CANCELLED', 'AWAITING_PAYMENT')
                  AND (o.requested_fulfillment_time AT TIME ZONE 'Asia/Manila')::date = $1::date
             ), 0)::int AS advanced,
-            (SELECT f.predicted FROM forecasts f WHERE f.product_id = p.product_id AND f.forecast_date = $1::date ORDER BY f.run_id DESC LIMIT 1) AS forecast
+            latest_forecast.predicted AS forecast,
+            latest_forecast.assumed AS forecast_assumed
        FROM products p
        JOIN inventory i ON i.product_id = p.product_id
        JOIN categories c ON c.category_id = p.category_id
+       LEFT JOIN LATERAL (
+         SELECT f.predicted, 'ASSUMED'::data_source = ANY(r.sources) AS assumed
+           FROM forecasts f JOIN forecast_runs r ON r.run_id = f.run_id
+          WHERE f.product_id = p.product_id AND f.forecast_date = $1::date
+          ORDER BY f.run_id DESC LIMIT 1
+       ) latest_forecast ON TRUE
       WHERE p.availability_status
       ORDER BY p.stock_type DESC, c.category_name, p.product_name`,
     [day],
@@ -146,6 +153,7 @@ export async function productionFor(day) {
       stockType: row.stock_type,
       onHand: row.stock_quantity,
       forecast: row.forecast == null ? null : Math.round(Number(row.forecast)),
+      forecastAssumed: row.forecast_assumed === true,
     }
     if (row.stock_type === 'SOFT') {
       const standard = Math.round(row.standard_stock * boosts.soft.factor)
@@ -165,5 +173,6 @@ export async function productionFor(day) {
 // The production list with the reasons the day is boosted.
 export async function productionPlan(day) {
   const [items, boosts] = await Promise.all([productionFor(day), boostsFor(day)])
-  return { items, boosts, forecastShortCount: items.filter((item) => item.forecastShort != null).length }
+  // A forecast trained on practice data has to say so wherever it is shown.
+  return { items, boosts, forecastShortCount: items.filter((item) => item.forecastShort != null).length, forecastAssumed: items.some((item) => item.forecastAssumed) }
 }

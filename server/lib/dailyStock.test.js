@@ -6,7 +6,7 @@ import crypto from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { pool } from '../db.js'
 import { applyCancellationEffects } from './orderStatus.js'
-import { forecastShortfall, productionFor, runDailyStockReset } from './dailyStock.js'
+import { forecastShortfall, productionFor, productionPlan, runDailyStockReset } from './dailyStock.js'
 
 const runId = crypto.randomUUID().slice(0, 8)
 // Days far in the future, so they never collide with a real top-up.
@@ -48,6 +48,21 @@ describe('soft and hard breads', () => {
     await pool.query('DELETE FROM products WHERE product_id = ANY($1)', [[soft, hard]])
     await pool.query('DELETE FROM categories WHERE category_id = $1', [categoryId])
     await pool.end()
+  })
+
+  test('the production list says when its forecast comes from practice data', async () => {
+    const day = futureDay(50)
+    const run = (await pool.query(`INSERT INTO forecast_runs (horizon_days, sources, products_forecast, products_skipped) VALUES (7, ARRAY['ASSUMED']::data_source[], 1, 0) RETURNING run_id`)).rows[0].run_id
+    try {
+      await pool.query('INSERT INTO forecasts (run_id, product_id, forecast_date, predicted, low, high) VALUES ($1, $2, $3, 500, 400, 600)', [run, soft, day])
+      assert.equal((await productionFor(day)).find((item) => item.productId === soft).forecastAssumed, true)
+      await pool.query(`UPDATE forecast_runs SET sources = ARRAY['RECORDED']::data_source[] WHERE run_id = $1`, [run])
+      const real = await productionPlan(day)
+      assert.equal(real.items.find((item) => item.productId === soft).forecastAssumed, false)
+      assert.equal(real.forecastAssumed, false)
+    } finally {
+      await pool.query('DELETE FROM forecast_runs WHERE run_id = $1', [run])
+    }
   })
 
   test('before 5:00 AM nothing is topped up', async () => {

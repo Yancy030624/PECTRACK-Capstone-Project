@@ -13,6 +13,7 @@ import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
 import { ForecastPanel } from './ForecastPanel.jsx'
 import { PeakPeriods } from './PeakPeriods.jsx'
+import { InventoryPrintSummary, ProductsPrintSummary, SalesPrintSummary } from './ReportPrintSummary.jsx'
 import { PrintButton, PrintHeader } from '../../components/PrintReport.jsx'
 import { manilaDate, manilaDateFromToday } from '../../lib/dates.js'
 import { exportLabels, logPrint } from '../../lib/exportLog.js'
@@ -21,6 +22,9 @@ import { wholeNumber } from '../../lib/inputFilters.js'
 
 const logsLimit = 20
 const inventoryPageSize = 10
+// Why these figures need not match each other, on screen and on paper.
+const revenueNote = 'Revenue counts orders placed in this range that were not cancelled, including cash not yet paid. Sales counts money received, by payment date, so the two can differ.'
+const inventorySoldNote = 'Sold follows the date stock moved, and a cancelled order is returned on the day it was cancelled, so this can differ from the Products report.'
 
 
 // UI_AUDIT.md Stage 5.5's specific instruction for this screen: "Chart
@@ -79,6 +83,7 @@ export function ReportingAnalytics({ user }) {
   const [products, setProducts] = useState(null)
   const [inventory, setInventory] = useState(null)
   const [inventoryPage, setInventoryPage] = useState(1)
+  const [peak, setPeak] = useState(null)
   const [appliedRange, setAppliedRange] = useState(null)
   const [generating, setGenerating] = useState(false)
   const [errors, setErrors] = useState({})
@@ -235,8 +240,8 @@ export function ReportingAnalytics({ user }) {
             {tab}
           </Button>
         ))}
-        {/* Prints whichever tab is open: the others are `hidden`, so the
-            printout is exactly the report on screen. */}
+        {/* Prints the summary of whichever tab is open, not the charts: see
+            ReportPrintSummary.jsx. */}
         <span className="ml-auto"><PrintButton onPrint={() => printTypes[activeTab] && logPrint(printTypes[activeTab])} /></span>
       </div>
       {/* The date-range form drives the historical reports only; a forecast
@@ -308,6 +313,8 @@ export function ReportingAnalytics({ user }) {
       </div>
 
       <div hidden={activeTab !== 'Sales'}>
+        <SalesPrintSummary sales={sales} peak={peak} />
+        <div className="print:hidden">
         {sales ? (
           <>
             {/* The money the bakery received (REPORTS_UI_PLAN.md U3). */}
@@ -359,11 +366,14 @@ export function ReportingAnalytics({ user }) {
             </Card>
           </>
         ) : <p className="mt-6 text-sm text-ink-500">Loading the sales report…</p>}
+        </div>
         {/* PHASE10 B2 — driven by the same applied date range. */}
-        <PeakPeriods range={appliedRange} includeDemo={Boolean(appliedRange?.includeDemo)} />
+        <PeakPeriods range={appliedRange} includeDemo={Boolean(appliedRange?.includeDemo)} onSummary={setPeak} />
       </div>
 
       <div hidden={activeTab !== 'Products'}>
+        <ProductsPrintSummary products={products} note={revenueNote} />
+        <div className="print:hidden">
         {/* Soft and hard breads are stocked differently (the client,
             2026-10-23), so the report can show one kind at a time. */}
         <div className="staff-filter-group mt-6 flex flex-wrap items-center gap-2 print:hidden" role="group" aria-label="Product bread type">
@@ -379,7 +389,8 @@ export function ReportingAnalytics({ user }) {
                 <div className="relative mt-4" style={{ height: `${Math.max(240, products.products.length * 32)}px` }}><canvas ref={productsCanvasRef} role="img" aria-label="Pieces sold per product" /></div>
               )}
             </Card>
-            <div className="mt-6">
+            <p className="mt-6 text-xs text-ink-500">{revenueNote}</p>
+            <div className="mt-3">
               <Table caption="Product performance">
                 <Thead>
                   <Tr className="hover:bg-transparent">
@@ -403,9 +414,12 @@ export function ReportingAnalytics({ user }) {
             </div>
           </>
         ) : <p className="mt-6 text-sm text-ink-500">Loading product performance…</p>}
+        </div>
       </div>
 
       <div hidden={activeTab !== 'Inventory'}>
+        <InventoryPrintSummary inventory={inventory} note={inventorySoldNote} />
+        <div className="print:hidden">
         {/* Baked, sold and lost in the range, real movements only (the user,
             2026-10-25): the one place that sets what went on the shelf
             against what sold. Ingredients have their own history on the
@@ -419,6 +433,8 @@ export function ReportingAnalytics({ user }) {
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Sold</p><p className="mt-3 text-4xl font-semibold text-ink-900 tabular-nums">{inventory.totals.sold.toLocaleString()}</p><p className="mt-1 text-xs text-ink-500">Pieces in orders, cancelled ones returned</p></Card>
               <Card className="p-6"><p className="text-sm font-medium text-ink-500">Deducted</p><p className="mt-3 text-4xl font-semibold text-ink-900 tabular-nums">{inventory.totals.lost.toLocaleString()}</p><p className="mt-1 text-xs text-ink-500">Pieces deducted in Inventory</p></Card>
             </div>
+
+            <p className="mt-3 text-xs text-ink-500">{inventorySoldNote}</p>
 
             <Card className="mt-6 p-6">
               <h2 className="text-lg font-semibold text-ink-900">By product</h2>
@@ -458,6 +474,7 @@ export function ReportingAnalytics({ user }) {
             </Card>
           </>
         ) : <p className="mt-6 text-sm text-ink-500">Loading inventory activity…</p>}
+        </div>
       </div>
       <div hidden={activeTab !== 'Forecast'}>
         <ForecastPanel user={user} active={activeTab === 'Forecast'} />

@@ -5,8 +5,7 @@ import { formatDateTime } from '../lib/format.js'
 //
 // The browser makes the PDF: "Print / Save as PDF" opens the print dialog,
 // where every current browser offers Save as PDF. No PDF library, nothing
-// server-side, and the charts come out exactly as they look on screen —
-// a generated PDF would have had to redraw them. What this file adds is
+// server-side. What this file adds is
 // what a printout needs and a screen does not: a heading that says whose
 // report it is, for what dates, printed by whom and when. The shell's
 // navigation and every control are hidden by `print:hidden` classes.

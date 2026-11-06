@@ -10,6 +10,7 @@ import { Select } from '../../components/ui/Select.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { formatDateTime } from '../../lib/format.js'
+import { PrintHeading, PrintNote, PrintStats, PrintTable } from './ReportPrintSummary.jsx'
 import { cssVar } from '../../lib/theme.js'
 
 // Reporting & Analytics → Forecast. Phase 9B,
@@ -188,6 +189,40 @@ export function ForecastPanel({ user, active }) {
 
   return (
     <div>
+      {/* The printed summary (the user, 2026-11-07): no chart, and each
+          product's own measured miss. The baseline's error is left out on the
+          adviser's advice, here and on screen. */}
+      <div className="hidden print:block">
+        {!data?.run ? <PrintNote>No forecast yet.</PrintNote> : products.length === 0 ? <PrintNote>Not enough history to forecast yet.</PrintNote> : (
+          <>
+            <p className="text-[11px] text-ink-900">
+              <strong>Data: {isAssumed ? 'practice data (assumed), not the bakery\'s actual sales' : 'real sales'}.</strong>
+              {' '}Updated {formatDateTime(data.run.createdAt)}{data.run.runByName ? ` by ${data.run.runByName}` : ' automatically (nightly run)'}
+              {data.run.historyFrom && <>. Learned from {longDay(data.run.historyFrom)} – {longDay(data.run.historyTo)}</>}.
+            </p>
+            <PrintStats stats={[
+              { label: 'Expected in 7 days', value: `${whole(weekTotal)} items`, note: `Across ${products.length} products` },
+              { label: 'Busiest day ahead', value: busiest ? busiest.label : '—', note: busiest ? `About ${whole(busiest.total)} items expected` : undefined },
+              { label: 'Not forecast', value: data.skipped.length, note: data.skipped.length === 1 ? 'Product without enough history' : 'Products without enough history' },
+            ]} />
+            <PrintHeading>Top {shownProducts.length} of {tableProducts.length}, busiest first · {breadType === 'SOFT' ? 'Soft breads' : breadType === 'HARD' ? 'Hard breads' : 'All breads'}</PrintHeading>
+            <PrintTable
+              columns={[{ label: 'Product' }, { label: '7 days', right: true }, ...days.map((date, index) => ({ label: index === 0 ? 'Today' : index === 1 ? 'Tomorrow' : dayLabel(date), right: true })), { label: 'Usually within', right: true }]}
+              rows={shownProducts.map((product) => [
+                `${product.name}${product.variant ? ` (${product.variant})` : ''}`,
+                whole(product.total),
+                ...product.days.map((day) => whole(day.predicted)),
+                product.mae == null ? 'Not measured' : `±${whole(Math.max(1, product.mae))} a day`,
+              ])}
+            />
+            <PrintNote>
+              &ldquo;Usually within&rdquo; is the average miss in pieces per day (mean absolute error) when the selected method was tested on four past weeks it did not learn from{isAssumed ? ', on the practice data and not on the bakery\'s actual sales' : ''}.
+            </PrintNote>
+          </>
+        )}
+      </div>
+
+      <div className="print:hidden">
       <Card className="mt-6 p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
@@ -355,6 +390,7 @@ export function ForecastPanel({ user, active }) {
           )}
         </>
       )}
+      </div>
     </div>
   )
 }

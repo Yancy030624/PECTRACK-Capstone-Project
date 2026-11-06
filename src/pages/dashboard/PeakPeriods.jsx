@@ -55,7 +55,9 @@ function BarChart({ labels, values, label, color, highlight }) {
 
 // `includeDemo` is the report screen's Demo data switch: real orders by
 // default, like every report (REPORTS_UI_PLAN.md U1).
-export function PeakPeriods({ range, includeDemo = false }) {
+// `onSummary` hands the busiest hour and day to the printed Sales summary,
+// which has no charts.
+export function PeakPeriods({ range, includeDemo = false, onSummary }) {
   const includeAssumed = includeDemo
   const [data, setData] = useState(null)
   const [message, setMessage] = useState('')
@@ -63,8 +65,14 @@ export function PeakPeriods({ range, includeDemo = false }) {
   useEffect(() => {
     if (!range) return
     const params = new URLSearchParams({ from: range.from, to: range.to, includeAssumed: String(includeAssumed) })
-    apiGet(`/api/reports/peak?${params}`).then(setData).catch((error) => setMessage(error.message))
-  }, [range, includeAssumed])
+    apiGet(`/api/reports/peak?${params}`).then((peak) => {
+      setData(peak)
+      onSummary?.(peak.totalOrders === 0 ? { orders: 0 } : { orders: peak.totalOrders, day: WEEKDAYS[peak.busiestWeekday], hour: `${hourLabel(peak.busiestHour)}–${hourLabel((peak.busiestHour + 1) % 24)}` })
+    }).catch((error) => {
+      setMessage(error.message)
+      onSummary?.(null)
+    })
+  }, [range, includeAssumed, onSummary])
 
   if (!range) return null
   const brand = cssVar('--color-brand-600')
@@ -75,7 +83,7 @@ export function PeakPeriods({ range, includeDemo = false }) {
   const hours = data ? data.byHour.filter((row) => row.hour >= 5 && row.hour <= 22) : []
 
   return (
-    <Card className="mt-6 p-6">
+    <Card className="mt-6 p-6 print:hidden">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-lg font-semibold text-ink-900">Peak ordering periods</h2>

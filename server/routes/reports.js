@@ -345,6 +345,7 @@ const maxProductsLimit = 50
 // price. Cancelled orders are excluded, same reasoning as /sales: their
 // stock was restored and any payment refunded, so counting their items as
 // sold would contradict both.
+const lowestProductsLimit = 5
 router.get('/products', adminOnly, async (request, response) => {
   const { from, to, errors } = parseDateRange(request.query)
   // REPORTS_UI_PLAN.md U4: soft and hard breads are stocked differently, so
@@ -359,6 +360,7 @@ router.get('/products', adminOnly, async (request, response) => {
   const orderBy = sort === 'revenue' ? 'revenue DESC, quantity_sold DESC' : 'quantity_sold DESC, revenue DESC'
   const includeDemo = includeDemoOf(request.query)
 
+  const soldSql = `${sourceSql('o', includeDemo)} AND o.status NOT IN ('CANCELLED', 'AWAITING_PAYMENT') AND ${dateRangeSql('o.order_date')}`
   const result = await pool.query(
     `SELECT p.product_id, p.product_name, p.variant, p.stock_type,
             SUM(od.quantity)::int AS quantity_sold,
@@ -366,7 +368,7 @@ router.get('/products', adminOnly, async (request, response) => {
        FROM order_details od
        JOIN orders o ON o.order_id = od.order_id
        JOIN products p ON p.product_id = od.product_id
-      WHERE ${sourceSql('o', includeDemo)} AND o.status NOT IN ('CANCELLED', 'AWAITING_PAYMENT') AND ${dateRangeSql('o.order_date')}
+      WHERE ${soldSql}
         AND ($4::text IS NULL OR p.stock_type::text = $4)
       GROUP BY p.product_id, p.product_name, p.variant, p.stock_type
       ORDER BY ${orderBy}
@@ -374,20 +376,62 @@ router.get('/products', adminOnly, async (request, response) => {
     [from, to, limit, type || null],
   )
 
+  // For the printed summary: the whole range's totals, so a top-N list can
+  // say how much it leaves out, and the products on sale that sold least,
+  // counting a product with no sales as 0. A product already ranked above is
+  // not listed twice.
+  const [totalsResult, lowestResult] = await Promise.all([
+    pool.query(
+      `SELECT COALESCE(SUM(od.quantity), 0)::int AS pieces,
+              COALESCE(SUM(od.quantity * od.unit_price), 0)::numeric(12,2) AS revenue,
+              COUNT(DISTINCT od.product_id)::int AS products_sold
+         FROM order_details od
+         JOIN orders o ON o.order_id = od.order_id
+         JOIN products p ON p.product_id = od.product_id
+        WHERE ${soldSql} AND ($3::text IS NULL OR p.stock_type::text = $3)`,
+      [from, to, type || null],
+    ),
+    pool.query(
+      `SELECT p.product_id, p.product_name, p.variant, p.stock_type,
+              COALESCE(s.quantity_sold, 0)::int AS quantity_sold,
+              COALESCE(s.revenue, 0)::numeric(12,2) AS revenue
+         FROM products p
+         LEFT JOIN (
+           SELECT od.product_id, SUM(od.quantity) AS quantity_sold, SUM(od.quantity * od.unit_price) AS revenue
+             FROM order_details od JOIN orders o ON o.order_id = od.order_id
+            WHERE ${soldSql}
+            GROUP BY od.product_id
+         ) s ON s.product_id = p.product_id
+        WHERE p.availability_status
+          AND ($3::text IS NULL OR p.stock_type::text = $3)
+          AND NOT (p.product_id::text = ANY($4::text[]))
+        ORDER BY quantity_sold, p.product_name, p.variant
+        LIMIT $5`,
+      [from, to, type || null, result.rows.map((row) => String(row.product_id)), lowestProductsLimit],
+    ),
+  ])
+  const productRow = (row) => ({
+    productId: row.product_id,
+    productName: row.product_name,
+    variant: row.variant,
+    stockType: row.stock_type,
+    quantitySold: row.quantity_sold,
+    revenue: row.revenue,
+  })
+
   return response.json({
     from,
     to,
     type: type || null,
     sort,
     includeDemo,
-    products: result.rows.map((row) => ({
-      productId: row.product_id,
-      productName: row.product_name,
-      variant: row.variant,
-      stockType: row.stock_type,
-      quantitySold: row.quantity_sold,
-      revenue: row.revenue,
-    })),
+    totals: {
+      pieces: totalsResult.rows[0].pieces,
+      revenue: totalsResult.rows[0].revenue,
+      productsSold: totalsResult.rows[0].products_sold,
+    },
+    products: result.rows.map(productRow),
+    lowest: lowestResult.rows.map(productRow),
   })
 })
 
@@ -409,13 +453,16 @@ router.get('/products', adminOnly, async (request, response) => {
 const addedReasons = ['RESTOCK', 'DAILY_STOCK', 'PRODUCTION']
 const soldReasons = ['ORDER_PLACED', 'ORDER_CANCELLED']
 const lostReasons = ['REJECT', 'SPOILAGE', 'PRODUCTION_LOSS', 'EXPIRED', 'DAMAGED']
+// The printed summary's list of deductions, newest first. The reason chosen
+// on the Inventory screen is stored as the movement's note.
+const deductionsLimit = 20
 
 router.get('/inventory', adminOnly, async (request, response) => {
   const { from, to, errors } = parseDateRange(request.query)
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
 
   const includeDemo = includeDemoOf(request.query)
-  const [productsResult, lowStockAlerts] = await Promise.all([
+  const [productsResult, lowStockAlerts, deductionsResult] = await Promise.all([
     pool.query(
       `SELECT p.product_id, p.product_name, p.variant, p.stock_type,
               COALESCE(SUM(im.quantity_change) FILTER (WHERE im.reason::text = ANY($3::text[]) OR (im.reason = 'CORRECTION' AND im.quantity_change > 0)), 0)::int AS added,
@@ -429,10 +476,21 @@ router.get('/inventory', adminOnly, async (request, response) => {
         ORDER BY p.stock_type, p.product_name, p.variant`,
       [from, to, addedReasons, soldReasons, lostReasons],
     ),
-    // The stock-alert rows (lib/inventory.js), kept in the reply for the
-    // older readers. What is low NOW is the Inventory screen's and the
-    // Dashboard's, not this report's.
+    // What is low when the report is made, for the printed summary. On
+    // screen, this belongs to the Inventory screen and the Dashboard.
     getLowStockAlerts(),
+    pool.query(
+      `SELECT im.movement_id, im.created_at, p.product_name, p.variant, -im.quantity_change AS pieces, im.note,
+              COUNT(*) OVER ()::int AS total
+         FROM inventory_movements im
+         JOIN inventory i ON i.inventory_id = im.inventory_id
+         JOIN products p ON p.product_id = i.product_id
+        WHERE ${sourceSql('im', includeDemo)} AND ${dateRangeSql('im.created_at')}
+          AND (im.reason::text = ANY($3::text[]) OR (im.reason = 'CORRECTION' AND im.quantity_change < 0))
+        ORDER BY im.created_at DESC, im.movement_id DESC
+        LIMIT $4`,
+      [from, to, lostReasons, deductionsLimit],
+    ),
   ])
 
   const products = productsResult.rows.map((row) => ({
@@ -454,6 +512,15 @@ router.get('/inventory', adminOnly, async (request, response) => {
     products,
     lowStockAlerts: lowStockAlerts.alerts,
     lowStockAlertsTotal: lowStockAlerts.total,
+    deductions: deductionsResult.rows.map((row) => ({
+      id: row.movement_id,
+      date: row.created_at,
+      productName: row.product_name,
+      variant: row.variant,
+      pieces: row.pieces,
+      note: row.note,
+    })),
+    deductionsTotal: deductionsResult.rows[0]?.total ?? 0,
   })
 })
 
