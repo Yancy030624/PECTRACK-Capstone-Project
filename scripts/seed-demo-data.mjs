@@ -108,7 +108,7 @@ async function createTempAdmin() {
     // it reads like a role, not like a script.
     await pool.query('INSERT INTO admins (user_id, name, contact_num, email) VALUES ($1, $2, $3, $4)', [userId, 'Store Admin', '09171234567', `${username}@pectrack.local`])
   }
-  const sessionId = await createSession(userId)
+  const { sessionId } = await createSession(userId)
   return { userId, cookie: `${sessionCookieName}=${sessionId}` }
 }
 

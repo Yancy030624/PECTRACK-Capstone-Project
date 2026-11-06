@@ -60,11 +60,31 @@ export async function pruneExpiredAuthRows() {
   return { sessions: sessions.rowCount, otpCodes: otpCodes.rowCount, resetTokens: resetTokens.rowCount }
 }
 
+// One live session per account, for every role (the user, 2026-11-06): the
+// newest sign-in wins and any older device is signed out on its next request.
+// Blocking the second sign-in instead could lock a person out for up to 7
+// days after losing a phone or closing a browser without logging out.
+//
+// The account row is locked first, so two sign-ins at the same moment cannot
+// both survive. FOR NO KEY UPDATE, not FOR UPDATE, so that this does not hold
+// up other requests inserting rows that reference this user.
 export async function createSession(userId) {
   const sessionId = crypto.randomBytes(32).toString('base64url')
   const expiresAt = new Date(Date.now() + sessionDurationMs)
-  await pool.query('INSERT INTO sessions (session_id, user_id, expires_at) VALUES ($1, $2, $3)', [sessionId, userId, expiresAt])
-  return sessionId
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query('SELECT 1 FROM users WHERE user_id = $1 FOR NO KEY UPDATE', [userId])
+    const ended = await client.query('DELETE FROM sessions WHERE user_id = $1', [userId])
+    await client.query('INSERT INTO sessions (session_id, user_id, expires_at) VALUES ($1, $2, $3)', [sessionId, userId, expiresAt])
+    await client.query('COMMIT')
+    return { sessionId, endedSessions: ended.rowCount }
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
 }
 
 // Inactivity timeout — PHASE10 B6, Decision D1; the thesis (p.92): "idle
@@ -121,7 +141,9 @@ export async function requireAuth(request, response, next) {
   // The code tells the client this was a session ending under it, not a
   // wrong password — it clears the account and opens the sign-in pop-up.
   if (idle) return response.status(401).json({ code: 'SESSION_IDLE', message: `You were signed out after ${staffIdleLimitMinutes} minutes without activity. Sign in again to continue.` })
-  if (!user) return response.status(401).json({ code: 'SIGNED_OUT', message: 'Sign in to continue.' })
+  // A cookie with no live session behind it means the session ended under
+  // this browser, most often because the account signed in somewhere else.
+  if (!user) return response.status(401).json({ code: 'SIGNED_OUT', message: sessionId ? 'Your session ended. This account may have signed in on another device. Sign in again to continue.' : 'Sign in to continue.' })
   request.user = user
   request.sessionId = sessionId
   next()

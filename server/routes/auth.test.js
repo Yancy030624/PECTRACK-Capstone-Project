@@ -196,6 +196,7 @@ describe('customer registration and session lifecycle', () => {
     // omitting the field — that is what keeps the seed scripts working.
     const noDoor = await login('something-else')
     assert.equal(noDoor.status, 200)
+    sessionCookie = noDoor.headers.get('set-cookie').split(';')[0]
   })
 
   test('POST /api/auth/login still answers 401, not 403, when the password is wrong at the other door', async () => {
@@ -305,6 +306,7 @@ describe('customer registration and session lifecycle', () => {
       // The old password must still work — nothing should have changed.
       const stillWorks = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: customer.username, password: customer.password }) })
       assert.equal(stillWorks.status, 200)
+      sessionCookie = stillWorks.headers.get('set-cookie').split(';')[0]
     })
 
     test('rejects a weak new password and a mismatched confirmation', async () => {
@@ -324,10 +326,12 @@ describe('customer registration and session lifecycle', () => {
     })
 
     test('changes the password, ends other sessions, and keeps the caller signed in', async () => {
-      // A second session for the same account, standing in for the same
-      // person signed in on another device — or an intruder.
-      const otherLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: customer.username, password: customer.password }) })
-      const otherCookie = otherLogin.headers.get('set-cookie').split(';')[0]
+      // A second session for the same account, standing in for an intruder.
+      // Signing in would now replace the caller's session, so it is written
+      // directly: sessions from before the one-session rule look like this.
+      const otherSessionId = crypto.randomBytes(32).toString('base64url')
+      await pool.query(`INSERT INTO sessions (session_id, user_id, expires_at) VALUES ($1, (SELECT user_id FROM users WHERE username = $2), CURRENT_TIMESTAMP + INTERVAL '1 day')`, [otherSessionId, customer.username])
+      const otherCookie = `${sessionCookieName}=${otherSessionId}`
       assert.equal((await fetch(`${baseUrl}/api/auth/me`, { headers: { Cookie: otherCookie } })).status, 200)
 
       const newPassword = 'Rotated-Password-9!'
@@ -347,9 +351,58 @@ describe('customer registration and session lifecycle', () => {
       assert.equal(oldPassword.status, 401)
       const withNew = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: customer.username, password: newPassword }) })
       assert.equal(withNew.status, 200)
+      sessionCookie = withNew.headers.get('set-cookie').split(';')[0]
 
       // Put it back, so the logout test below still has working credentials.
       customer.password = newPassword
+    })
+  })
+
+  describe('one live session per account', () => {
+    const signIn = () => fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: customer.username, password: customer.password }) })
+    const cookieOf = (response) => response.headers.get('set-cookie').split(';')[0]
+    const me = (cookie) => fetch(`${baseUrl}/api/auth/me`, { headers: cookie ? { Cookie: cookie } : {} })
+    const liveSessions = async () => (await pool.query('SELECT count(*)::int AS count FROM sessions s JOIN users u ON u.user_id = s.user_id WHERE u.username = $1', [customer.username])).rows[0].count
+
+    test('a new sign-in ends the older device, which is told why', async () => {
+      const older = cookieOf(await signIn())
+      const newer = cookieOf(await signIn())
+
+      assert.equal((await me(newer)).status, 200)
+      const signedOut = await me(older)
+      assert.equal(signedOut.status, 401)
+      const body = await signedOut.json()
+      assert.equal(body.code, 'SIGNED_OUT')
+      assert.match(body.message, /another device/)
+      assert.equal(await liveSessions(), 1)
+
+      // No cookie at all means nothing ended, so the message stays plain.
+      assert.equal((await (await me()).json()).message, 'Sign in to continue.')
+      sessionCookie = newer
+    })
+
+    test('two sign-ins at the same moment leave exactly one session', async () => {
+      const [first, second] = await Promise.all([signIn(), signIn()])
+      assert.equal(first.status, 200)
+      assert.equal(second.status, 200)
+      assert.equal(await liveSessions(), 1)
+
+      const firstStatus = (await me(cookieOf(first))).status
+      const secondStatus = (await me(cookieOf(second))).status
+      assert.deepEqual([firstStatus, secondStatus].sort(), [200, 401])
+      sessionCookie = firstStatus === 200 ? cookieOf(first) : cookieOf(second)
+    })
+
+    test('the replaced session is noted in the security log', async () => {
+      sessionCookie = cookieOf(await signIn())
+      // The event is written without holding up the sign-in, so allow it a moment.
+      let noted = false
+      for (let attempt = 0; attempt < 40 && !noted; attempt += 1) {
+        const logged = await pool.query(`SELECT 1 FROM security_events WHERE username = $1 AND event_type = 'LOGIN_SUCCESS' AND detail LIKE '%1 earlier session(s) ended'`, [customer.username])
+        noted = logged.rows.length > 0
+        if (!noted) await new Promise((resolve) => setTimeout(resolve, 25))
+      }
+      assert.ok(noted)
     })
   })
 
@@ -623,6 +676,30 @@ describe('admin login and the email OTP second factor', () => {
       body: JSON.stringify({ challengeToken: challenge.challengeToken, code: knownCode }),
     })
     assert.equal(replay.status, 401)
+  })
+
+  test('staff and the admin also keep one live session', async () => {
+    const me = (cookie) => fetch(`${baseUrl}/api/auth/me`, { headers: { Cookie: cookie } })
+    const signInCashier = () => fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: cashier.username, password: cashier.password }) })
+    const cookieOf = (response) => response.headers.get('set-cookie').split(';')[0]
+
+    const olderCashier = cookieOf(await signInCashier())
+    const newerCashier = cookieOf(await signInCashier())
+    assert.equal((await me(olderCashier)).status, 401)
+    assert.equal((await me(newerCashier)).status, 200)
+
+    // The admin's session starts after the emailed code, not at the password.
+    const { sessionId: olderAdminSession } = await createSession(adminUserId)
+    const olderAdmin = `${sessionCookieName}=${olderAdminSession}`
+    const challenge = await (await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: admin.username, password: admin.password }) })).json()
+    assert.equal((await me(olderAdmin)).status, 200, 'a correct password alone ends nothing')
+
+    const knownCode = '135792'
+    await pool.query('UPDATE otp_codes SET code_hash = $2 WHERE challenge_token = $1', [challenge.challengeToken, crypto.createHash('sha256').update(knownCode).digest('hex')])
+    const verified = await fetch(`${baseUrl}/api/auth/verify-otp`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challengeToken: challenge.challengeToken, code: knownCode }) })
+    assert.equal(verified.status, 200)
+    assert.equal((await me(olderAdmin)).status, 401)
+    assert.equal((await me(cookieOf(verified))).status, 200)
   })
 
   // Seeds a known OTP directly rather than going through /login's random
@@ -1283,7 +1360,7 @@ describe('inactivity timeout', () => {
   })
 
   const sessionIdle = async (userId, minutes) => {
-    const sessionId = await createSession(userId)
+    const { sessionId } = await createSession(userId)
     await pool.query(`UPDATE sessions SET last_seen_at = CURRENT_TIMESTAMP - make_interval(mins => $2) WHERE session_id = $1`, [sessionId, minutes])
     return sessionId
   }

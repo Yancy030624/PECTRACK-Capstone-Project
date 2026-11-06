@@ -20,6 +20,9 @@ import { normalize, normalizeEmail, validateContactNumberField, validateCustomer
 
 const router = express.Router()
 
+// For the security log: a sign-in that replaced a live session elsewhere.
+const endedSessionsNote = (count) => (count ? `; ${count} earlier session(s) ended` : '')
+
 const lockAfterAttempts = 5
 const lockDurationMinutes = 15
 const otpCodeDurationMs = 5 * 60 * 1000
@@ -302,9 +305,9 @@ router.post('/login', authLimiter, loginAccountLimiter, async (request, response
   // trusted after a correct code skips the code until the trust expires.
   // The password above was still checked in full.
   if (user.user_type === 'ADMIN' && await isTrustedDevice(user.user_id, parseCookies(request.headers.cookie)[trustedDeviceCookieName])) {
-    const trustedSessionId = await createSession(user.user_id)
+    const { sessionId: trustedSessionId, endedSessions } = await createSession(user.user_id)
     recordSecurityEvent({ request, type: 'OTP_SKIPPED_TRUSTED_DEVICE', userId: user.user_id, username: user.username })
-    recordSecurityEvent({ request, type: 'LOGIN_SUCCESS', userId: user.user_id, username: user.username, detail: 'ADMIN, trusted device' })
+    recordSecurityEvent({ request, type: 'LOGIN_SUCCESS', userId: user.user_id, username: user.username, detail: `ADMIN, trusted device${endedSessionsNote(endedSessions)}` })
     response.cookie(sessionCookieName, trustedSessionId, request.body.rememberMe === false ? sessionCookieOptionsForBrowserSession : sessionCookieOptions)
     return response.json({ user: toPublicUser(user) })
   }
@@ -326,8 +329,8 @@ router.post('/login', authLimiter, loginAccountLimiter, async (request, response
     return response.json({ otpRequired: true, username: user.username, challengeToken })
   }
 
-  const sessionId = await createSession(user.user_id)
-  recordSecurityEvent({ request, type: 'LOGIN_SUCCESS', userId: user.user_id, username: user.username, detail: user.user_type })
+  const { sessionId, endedSessions } = await createSession(user.user_id)
+  recordSecurityEvent({ request, type: 'LOGIN_SUCCESS', userId: user.user_id, username: user.username, detail: `${user.user_type}${endedSessionsNote(endedSessions)}` })
   // rememberMe defaults to TRUE — a caller that never sends the field
   // (an older client, a script) keeps the 7-day cookie every login has
   // always produced; only an explicit false asks for a browser-session
@@ -527,9 +530,9 @@ router.post('/verify-otp', authLimiter, async (request, response) => {
 
   await pool.query('UPDATE otp_codes SET consumed_at = CURRENT_TIMESTAMP WHERE otp_id = $1', [otp.otp_id])
   const user = { user_id: otp.user_id, username: otp.username, user_type: otp.user_type, name: otp.name, email: otp.email, contact_num: otp.contact_num }
-  const sessionId = await createSession(user.user_id)
+  const { sessionId, endedSessions } = await createSession(user.user_id)
   recordSecurityEvent({ request, type: 'OTP_SUCCESS', userId: user.user_id, username: user.username })
-  recordSecurityEvent({ request, type: 'LOGIN_SUCCESS', userId: user.user_id, username: user.username, detail: 'ADMIN, second factor verified' })
+  recordSecurityEvent({ request, type: 'LOGIN_SUCCESS', userId: user.user_id, username: user.username, detail: `ADMIN, second factor verified${endedSessionsNote(endedSessions)}` })
   response.cookie(sessionCookieName, sessionId, sessionCookieOptions)
   if (request.body.trustDevice === true) {
     response.cookie(trustedDeviceCookieName, await trustDevice(user.user_id, request.headers['user-agent']), trustedDeviceCookieOptions)
