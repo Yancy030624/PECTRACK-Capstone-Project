@@ -11,6 +11,7 @@ import { Input } from '../../components/ui/Input.jsx'
 import { PasswordInput } from '../../components/ui/PasswordInput.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { digitsOnly } from '../../lib/phone.js'
+import { nameOnly } from '../../lib/inputFilters.js'
 
 const emptyPasswordForm = { currentPassword: '', newPassword: '', confirmPassword: '' }
 
@@ -133,15 +134,15 @@ function ProfileTab({ user, onUserUpdated }) {
         {isCustomer ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="First name" error={errors.firstName}>
-              <Input value={form.firstName} onChange={(event) => updateField('firstName', event.target.value)} autoComplete="given-name" />
+              <Input value={form.firstName} onChange={(event) => updateField('firstName', nameOnly(event.target.value))} autoComplete="given-name" />
             </Field>
             <Field label="Last name" error={errors.lastName}>
-              <Input value={form.lastName} onChange={(event) => updateField('lastName', event.target.value)} autoComplete="family-name" />
+              <Input value={form.lastName} onChange={(event) => updateField('lastName', nameOnly(event.target.value))} autoComplete="family-name" />
             </Field>
           </div>
         ) : (
           <Field label="Full name" error={errors.name}>
-            <Input value={form.name} onChange={(event) => updateField('name', event.target.value)} autoComplete="name" />
+            <Input value={form.name} onChange={(event) => updateField('name', nameOnly(event.target.value))} autoComplete="name" />
           </Field>
         )}
         <Field label="Email" error={errors.email}>

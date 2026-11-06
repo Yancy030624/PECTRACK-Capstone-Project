@@ -138,6 +138,22 @@ describe('product catalog management', () => {
     assert.equal(rows.length, 0)
   })
 
+  test('POST /api/products takes a plain decimal price and a name with letters', async () => {
+    const post = (body) => fetch(`${baseUrl}/api/products`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
+      body: JSON.stringify({ categoryId, ...body }),
+    })
+    for (const price of ['Infinity', '1e3', '0x10', 'abc', '10000000000']) {
+      const response = await post({ name: `Odd Price Product ${runId}`, price })
+      assert.equal(response.status, 422, price)
+      assert.ok((await response.json()).errors.price)
+    }
+    const numbersOnly = await post({ name: '12345', price: 10 })
+    assert.equal(numbersOnly.status, 422)
+    assert.ok((await numbersOnly.json()).errors.name)
+  })
+
   test('PATCH /api/products/:id updates only the fields sent, including clearing description to null', async () => {
     const productId = createdProductIds[0]
     const response = await fetch(`${baseUrl}/api/products/${productId}`, {

@@ -4,7 +4,7 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
-import { normalize, parseId } from '../lib/validation.js'
+import { hasLetter, normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
 router.use(requireAuth, requireRole('ADMIN', 'CASHIER'))
@@ -27,7 +27,7 @@ function validate(body, partial) {
   const has = (field) => !partial || field in body
   if (has('name')) {
     const name = normalize(body.name)
-    if (!name || name.length > 100) errors.name = 'Enter the event name.'
+    if (!name || name.length > 100 || !hasLetter(name)) errors.name = 'Enter the event name.'
     else values.name = name
   }
   for (const field of ['startsOn', 'endsOn']) {

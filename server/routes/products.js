@@ -13,7 +13,7 @@ import express from 'express'
 import { pool } from '../db.js'
 import { optionalAuth, requireAuth, requireRole } from '../lib/auth.js'
 import { deleteFile, filePath, saveNamedFile } from '../lib/storage.js'
-import { normalize, parseId } from '../lib/validation.js'
+import { hasLetter, normalize, parseId } from '../lib/validation.js'
 import { hardDefaults } from '../lib/dailyStock.js'
 import { openStockStream } from '../lib/liveStock.js'
 
@@ -84,6 +84,7 @@ function validateProductFields(body, { partial }) {
   if (has('name')) {
     const name = normalize(body.name)
     if (!name || name.length > 150) errors.name = 'Enter a product name (1-150 characters).'
+    else if (!hasLetter(name)) errors.name = 'A product name needs letters, not only numbers or symbols.'
     else values.name = name
   }
   if (has('description')) {
@@ -91,11 +92,15 @@ function validateProductFields(body, { partial }) {
   }
   if (has('variant')) {
     const variant = body.variant == null ? '' : normalize(body.variant)
-    values.variant = variant === '' ? null : variant
+    if (variant.length > 100) errors.variant = 'Keep the variant to 100 characters or fewer.'
+    else values.variant = variant === '' ? null : variant
   }
   if (has('price')) {
-    const price = Number(body.price)
-    if (body.price === undefined || body.price === null || body.price === '' || Number.isNaN(price) || price < 0) errors.price = 'Enter a valid, non-negative price.'
+    // A plain decimal, inside what NUMERIC(12, 2) can hold. Number() alone
+    // would also take "Infinity", "1e9" and "0x10".
+    const priceText = normalize(body.price)
+    const price = Number(priceText)
+    if (!/^\d+(\.\d+)?$/.test(priceText) || price > 9999999999.99) errors.price = 'Enter a valid, non-negative price.'
     else values.price = Math.round(price * 100) / 100
   }
   if (has('categoryId')) {

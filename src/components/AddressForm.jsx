@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { apiPost } from '../api/client.js'
 import { deliveryTown } from '../lib/bakery.js'
 import { digitsOnly } from '../lib/phone.js'
+import { nameOnly, wholeNumber } from '../lib/inputFilters.js'
 
 const emptyAddressForm = { label: 'Home', recipientName: '', contactNumber: '', addressLine1: '', addressLine2: '', barangay: '', postalCode: '', deliveryNotes: '' }
 
@@ -65,7 +66,7 @@ export function AddressForm({ onSaved, onCancel, submitLabel = 'Save address', c
       </div>
       <div>
         <label htmlFor="addr-recipient" className={cls.label}>Recipient name</label>
-        <input id="addr-recipient" value={form.recipientName} onChange={(event) => updateField('recipientName', event.target.value)} className={cls.input} />
+        <input id="addr-recipient" value={form.recipientName} onChange={(event) => updateField('recipientName', nameOnly(event.target.value))} className={cls.input} />
         {errors.recipientName && <p className={cls.error}>{errors.recipientName}</p>}
       </div>
       <div>
@@ -100,7 +101,7 @@ export function AddressForm({ onSaved, onCancel, submitLabel = 'Save address', c
       </div>
       <div>
         <label htmlFor="addr-postal" className={cls.label}>Postal code (optional)</label>
-        <input id="addr-postal" value={form.postalCode} onChange={(event) => updateField('postalCode', event.target.value)} inputMode="numeric" className={cls.input} />
+        <input id="addr-postal" value={form.postalCode} onChange={(event) => updateField('postalCode', wholeNumber(event.target.value, 4))} inputMode="numeric" maxLength={4} placeholder="4328" className={cls.input} />
         {errors.postalCode && <p className={cls.error}>{errors.postalCode}</p>}
       </div>
       <div className="sm:col-span-2">

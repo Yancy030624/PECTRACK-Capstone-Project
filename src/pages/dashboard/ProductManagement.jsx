@@ -10,6 +10,7 @@ import { Select } from '../../components/ui/Select.jsx'
 import { Textarea } from '../../components/ui/Textarea.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatPeso } from '../../lib/format.js'
+import { decimalNumber } from '../../lib/inputFilters.js'
 
 const emptyForm = { categoryId: '', name: '', description: '', price: '', variant: '', availabilityStatus: true, stockType: 'SOFT' }
 
@@ -277,7 +278,7 @@ export function ProductManagement() {
                   <Input value={form.name} onChange={(event) => setField('name', event.target.value)} placeholder="e.g. Pandesal" />
                 </Field>
                 <Field label="Price (₱)" error={errors.price}>
-                  <Input type="number" min="0" step="0.01" inputMode="decimal" value={form.price} onChange={(event) => setField('price', event.target.value)} placeholder="0.00" />
+                  <Input inputMode="decimal" value={form.price} onChange={(event) => setField('price', decimalNumber(event.target.value))} placeholder="0.00" />
                 </Field>
                 <Field label="Category" error={errors.categoryId}>
                   <Select value={form.categoryId} onChange={(event) => setField('categoryId', event.target.value)}>

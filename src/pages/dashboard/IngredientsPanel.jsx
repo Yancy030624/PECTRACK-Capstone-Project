@@ -21,6 +21,7 @@ import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDateTime, formatQuantity } from '../../lib/format.js'
 import { STOCK_STATUSES, TONES, stockStatus } from '../../lib/stockHealth.js'
 import { useLiveStock } from '../../lib/useLiveStock.js'
+import { decimalNumber } from '../../lib/inputFilters.js'
 
 // "Add" (the adviser, 2026-10-23), the same as product stock: the amount
 // typed is ADDED to what is on hand and saved as a restock, after a
@@ -247,10 +248,10 @@ export function IngredientsPanel({ user, initialFilter }) {
                   </Select>
                 </Field>
                 <Field label="Minimum (optional)" error={newErrors.minStockLevel}>
-                  <Input value={newForm.minStockLevel} onChange={(event) => setNewForm({ ...newForm, minStockLevel: event.target.value })} inputMode="decimal" />
+                  <Input value={newForm.minStockLevel} onChange={(event) => setNewForm({ ...newForm, minStockLevel: decimalNumber(event.target.value, 3) })} inputMode="decimal" />
                 </Field>
                 <Field label="On hand now (optional)" error={newErrors.stockQuantity}>
-                  <Input value={newForm.stockQuantity} onChange={(event) => setNewForm({ ...newForm, stockQuantity: event.target.value })} inputMode="decimal" />
+                  <Input value={newForm.stockQuantity} onChange={(event) => setNewForm({ ...newForm, stockQuantity: decimalNumber(event.target.value, 3) })} inputMode="decimal" />
                 </Field>
               </div>
               <div className="mt-3 flex gap-2">
@@ -337,7 +338,7 @@ export function IngredientsPanel({ user, initialFilter }) {
                           <form onSubmit={(event) => reviewCount(event, ingredient)} noValidate className="mt-2">
                             <div className="grid gap-3 sm:grid-cols-3">
                               <Field label={`Amount on hand now (${ingredient.unit})`} error={rowErrors.quantity}>
-                                <Input value={moveForm.quantity} onChange={(event) => setMoveForm({ quantity: event.target.value.replace(/[^\d.]/g, '').slice(0, 12) })} inputMode="decimal" autoFocus />
+                                <Input value={moveForm.quantity} onChange={(event) => setMoveForm({ quantity: decimalNumber(event.target.value, 3) })} inputMode="decimal" autoFocus />
                               </Field>
                             </div>
                             <p className="mt-2 text-xs text-ink-500">The system has {formatQuantity(ingredient.stockQuantity, ingredient.unit)}. Enter what is really in the storeroom, for example after a stock check.</p>
@@ -363,7 +364,7 @@ export function IngredientsPanel({ user, initialFilter }) {
                           <form onSubmit={reviewMove} noValidate className="mt-2">
                             <div className="grid gap-3 sm:grid-cols-3">
                               <Field label={`Amount to add (${ingredient.unit})`} error={rowErrors.quantity ?? rowErrors.reason}>
-                                <Input value={moveForm.quantity} onChange={(event) => setMoveForm({ quantity: event.target.value.replace(/[^\d.]/g, '').slice(0, 12) })} inputMode="decimal" placeholder="e.g. 25" autoFocus />
+                                <Input value={moveForm.quantity} onChange={(event) => setMoveForm({ quantity: decimalNumber(event.target.value, 3) })} inputMode="decimal" placeholder="e.g. 25" autoFocus />
                               </Field>
                             </div>
                             {amountToAdd > 0 && <p className="mt-2 text-xs text-ink-500">{formatQuantity(ingredient.stockQuantity, ingredient.unit)} on hand + {formatQuantity(amountToAdd, ingredient.unit)} = <strong className="text-ink-900">{formatQuantity(Number(ingredient.stockQuantity) + amountToAdd, ingredient.unit)}</strong> after adding</p>}
@@ -385,7 +386,7 @@ export function IngredientsPanel({ user, initialFilter }) {
                               </Select>
                             </Field>
                             <Field label="Minimum" error={rowErrors.minStockLevel}>
-                              <Input value={editForm.minStockLevel} onChange={(event) => setEditForm({ ...editForm, minStockLevel: event.target.value })} inputMode="decimal" />
+                              <Input value={editForm.minStockLevel} onChange={(event) => setEditForm({ ...editForm, minStockLevel: decimalNumber(event.target.value, 3) })} inputMode="decimal" />
                             </Field>
                           </div>
                           <label className="mt-3 flex items-center gap-2 text-sm">

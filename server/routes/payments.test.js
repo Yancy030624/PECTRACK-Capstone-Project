@@ -735,7 +735,7 @@ describe('payment & billing', () => {
   test('the same GCash reference cannot be recorded twice', async () => {
     const { orderId: firstOrderId } = await createOrder(1)
     const { orderId: secondOrderId } = await createOrder(1)
-    const reference = `GCASH-DUP-${runId}`
+    const reference = `${Date.now()}${firstOrderId}`
 
     const first = await recordPayment({ orderId: firstOrderId, method: 'GCASH', amount: 100, gatewayReference: reference })
     assert.equal(first.status, 201)
@@ -789,21 +789,19 @@ describe('payment & billing', () => {
     assert.equal(oneCentavo.status, 201)
   })
 
-  // gateway_reference is VARCHAR(255). Nothing capped the input, so an
-  // over-long reference reached Postgres and came back as an unhandled
-  // 22001 — a 500 telling the cashier the service was broken, when the
-  // real problem was their input. Measured before the fix: 255 chars
-  // returned 201, 256 returned 500.
-  test('an over-long GCash reference is a clean 422, never a 500', async () => {
+  // A staff-entered GCash reference follows the customer's rule: 6 to 40
+  // digits, with spaces dropped.
+  test('a GCash reference must be 6 to 40 digits', async () => {
     const { orderId } = await createOrder(1)
 
-    const tooLong = await recordPayment({ orderId, method: 'GCASH', amount: 10, gatewayReference: 'X'.repeat(256) })
-    assert.equal(tooLong.status, 422)
-    assert.ok((await tooLong.json()).errors.gatewayReference)
+    for (const gatewayReference of ['ABC123456', '12345', '1'.repeat(41)]) {
+      const refused = await recordPayment({ orderId, method: 'GCASH', amount: 10, gatewayReference })
+      assert.equal(refused.status, 422, gatewayReference)
+      assert.ok((await refused.json()).errors.gatewayReference)
+    }
 
-    // Exactly at the column's width still works — the guard must not be
-    // off by one in the other direction.
-    const atTheLimit = await recordPayment({ orderId, method: 'GCASH', amount: 10, gatewayReference: `${'Y'.repeat(248)}${runId.slice(0, 7)}` })
+    // Exactly at the limit still works, so the guard is not off by one.
+    const atTheLimit = await recordPayment({ orderId, method: 'GCASH', amount: 10, gatewayReference: `${Date.now()}${orderId}`.padEnd(40, '0') })
     assert.equal(atTheLimit.status, 201)
 
     const order = await getOrder(orderId)
@@ -1000,7 +998,7 @@ describe('payment & billing', () => {
       const cash = await createOrder(1)
       await recordPayment({ orderId: cash.orderId, method: 'CASH', amount: 100 })
       const gcash = await createOrder(1)
-      await recordPayment({ orderId: gcash.orderId, method: 'GCASH', amount: 100, gatewayReference: `filter-test-${crypto.randomUUID()}` })
+      await recordPayment({ orderId: gcash.orderId, method: 'GCASH', amount: 100, gatewayReference: `${Date.now()}${gcash.orderId}` })
 
       const cashOnly = await (await fetch(`${baseUrl}/api/payments?method=CASH`, { headers: { Cookie: cashierCookie } })).json()
       assert.ok(cashOnly.payments.some((p) => p.orderId === cash.orderId), 'the CASH payment must appear under method=CASH')

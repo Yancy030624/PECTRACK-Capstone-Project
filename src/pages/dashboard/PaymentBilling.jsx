@@ -35,6 +35,7 @@ import { useMediaQuery } from '../../lib/useMediaQuery.js'
 import { PaymentLog } from './PaymentLog.jsx'
 import { PaymentsToConfirm } from './PaymentsToConfirm.jsx'
 import { PrintHeader, PrintThisButton } from '../../components/PrintReport.jsx'
+import { decimalNumber, wholeNumber } from '../../lib/inputFilters.js'
 
 const emptyPaymentForm = { method: 'CASH', amount: '', gatewayReference: '' }
 // QRPH: QR Ph; GCASH: an older PayMongo or counter GCash payment.
@@ -316,11 +317,11 @@ export function PaymentBilling({ user, params }) {
                 </Select>
               </Field>
               <Field label="Amount" error={paymentErrors.amount} help={`${formatPeso(orderDetail.payment.balanceDue)} still owed`}>
-                <Input value={paymentForm.amount} onChange={(event) => setPaymentForm({ ...paymentForm, amount: event.target.value })} inputMode="decimal" placeholder="0.00" />
+                <Input value={paymentForm.amount} onChange={(event) => setPaymentForm({ ...paymentForm, amount: decimalNumber(event.target.value) })} inputMode="decimal" placeholder="0.00" />
               </Field>
               {paymentForm.method === 'QRPH' && (
                 <Field label="Reference number" error={paymentErrors.gatewayReference}>
-                  <Input value={paymentForm.gatewayReference} onChange={(event) => setPaymentForm({ ...paymentForm, gatewayReference: event.target.value })} placeholder="From the bakery's app" />
+                  <Input value={paymentForm.gatewayReference} onChange={(event) => setPaymentForm({ ...paymentForm, gatewayReference: wholeNumber(event.target.value, 40) })} placeholder="From the bakery's app" />
                 </Field>
               )}
               <Button type="submit" size="sm" disabled={paymentSubmitting}>

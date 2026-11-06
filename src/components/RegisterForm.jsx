@@ -5,6 +5,7 @@ import { PasswordToggle } from './PasswordToggle.jsx'
 import { passwordHint as describePassword, strongPasswordHint } from '../lib/password.js'
 import { usePhoneVerification } from '../lib/usePhoneVerification.js'
 import { digitsOnly } from '../lib/phone.js'
+import { nameOnly } from '../lib/inputFilters.js'
 
 // The registration form itself, lifted out of the old RegistrationPage so
 // it can live inside the auth pop-up — the same move LoginForm already
@@ -191,12 +192,12 @@ export function RegisterForm({ onSwitchToLogin }) {
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <RequiredLabel htmlFor="first-name">First name</RequiredLabel>
-                <input id="first-name" value={form.firstName} onChange={(event) => updateField('firstName', event.target.value)} autoComplete="given-name" placeholder="e.g. Maria" className={fieldClass('firstName')} {...fieldProps('firstName')} />
+                <input id="first-name" value={form.firstName} onChange={(event) => updateField('firstName', nameOnly(event.target.value))} autoComplete="given-name" placeholder="e.g. Maria" className={fieldClass('firstName')} {...fieldProps('firstName')} />
                 <FieldError id="firstName-error" message={errors.firstName} />
               </div>
               <div>
                 <RequiredLabel htmlFor="last-name">Last name</RequiredLabel>
-                <input id="last-name" value={form.lastName} onChange={(event) => updateField('lastName', event.target.value)} autoComplete="family-name" placeholder="e.g. Dela Cruz" className={fieldClass('lastName')} {...fieldProps('lastName')} />
+                <input id="last-name" value={form.lastName} onChange={(event) => updateField('lastName', nameOnly(event.target.value))} autoComplete="family-name" placeholder="e.g. Dela Cruz" className={fieldClass('lastName')} {...fieldProps('lastName')} />
                 <FieldError id="lastName-error" message={errors.lastName} />
               </div>
             </div>

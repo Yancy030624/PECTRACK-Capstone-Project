@@ -12,15 +12,14 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
-import { normalize, parseId, validateContactNumberField, validateName } from '../lib/validation.js'
+import { hasLetter, normalize, parseId, validateContactNumberField, validateName } from '../lib/validation.js'
 
 const router = express.Router()
 
 // Mirrors each column's own VARCHAR width in the approved thesis schema —
 // named constants so the validation below and the schema can be seen to
-// agree, the same reasoning gatewayReferenceMaxLength uses in
-// routes/payments.js.
-const addressFieldLimits = { label: 50, addressLine1: 255, addressLine2: 255, barangay: 100, municipality: 100, province: 100, postalCode: 20 }
+// agree.
+const addressFieldLimits = { label: 50, addressLine1: 255, addressLine2: 255, barangay: 100, municipality: 100, province: 100 }
 // delivery_notes is TEXT (unbounded) in the schema, but a freeform note
 // field with no practical cap invites abuse — same reasoning
 // instructionsMaxLength uses in routes/orders.js for a column that is
@@ -74,6 +73,7 @@ function validateAddressFields(body, { partial }) {
   if (has('label')) {
     const label = normalize(body.label) || 'Home'
     if (label.length > addressFieldLimits.label) errors.label = `Label must be ${addressFieldLimits.label} characters or fewer.`
+    else if (!hasLetter(label)) errors.label = 'Enter a label with letters, like Home or Office.'
     else values.label = label
   }
   if (has('recipientName')) {
@@ -94,18 +94,25 @@ function validateAddressFields(body, { partial }) {
     const addressLine1 = normalize(body.addressLine1)
     if (!addressLine1) errors.addressLine1 = 'Enter the street address.'
     else if (addressLine1.length > addressFieldLimits.addressLine1) errors.addressLine1 = `Address line 1 must be ${addressFieldLimits.addressLine1} characters or fewer.`
+    else if (!hasLetter(addressLine1)) errors.addressLine1 = 'Enter the street name, not only numbers.'
     else values.addressLine1 = addressLine1
   }
   // addressLine2, barangay, postalCode: optional and NULLABLE — an empty
   // string is stored as NULL, not as an empty string, so the receipt-style
   // display elsewhere ("addressLine2 && <span>...") doesn't render a blank
   // line for a field that was never filled in.
-  for (const field of ['addressLine2', 'barangay', 'postalCode']) {
+  for (const field of ['addressLine2', 'barangay']) {
     if (has(field)) {
       const value = normalize(body[field])
       if (value.length > addressFieldLimits[field]) errors[field] = `${field} must be ${addressFieldLimits[field]} characters or fewer.`
+      else if (field === 'barangay' && value && !hasLetter(value)) errors.barangay = 'Enter the barangay name, not only numbers.'
       else values[field] = value || null
     }
+  }
+  if (has('postalCode')) {
+    const postalCode = normalize(body.postalCode)
+    if (postalCode && !/^\d{4}$/.test(postalCode)) errors.postalCode = 'Enter a 4-digit postal code.'
+    else values.postalCode = postalCode || null
   }
   // municipality/province: unlike recipientName/addressLine1, these have a
   // DEFAULT at the column level ('Lucban'/'Quezon' — a bakery in Lucban,

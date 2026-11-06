@@ -1181,6 +1181,22 @@ describe('order management', () => {
     assert.equal(listed.customerName, null)
   })
 
+  test('a walk-in customer name takes letters, and the GCash reference takes digits', async () => {
+    const post = (body) => fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ items: [{ productId: availableProductId, quantity: 1 }], ...body }) })
+
+    const numberName = await post({ customerName: '12345', payment: { method: 'CASH' } })
+    assert.equal(numberName.status, 422)
+    assert.ok((await numberName.json()).errors.customerName)
+
+    const letterReference = await post({ payment: { method: 'QRPH', gatewayReference: 'ABC12345' } })
+    assert.equal(letterReference.status, 422)
+    assert.ok((await letterReference.json()).errors.gatewayReference)
+
+    const accepted = await post({ customerName: "Ana Dela Cruz-O'Brien", payment: { method: 'CASH' } })
+    assert.equal(accepted.status, 201)
+    createdOrderIds.push((await accepted.json()).order.id)
+  })
+
   test('routes reject delivery personnel entirely for now', async () => {
     const dpPasswordHash = await bcrypt.hash('Delivery-Password-9!', 4)
     const dpResult = await pool.query(`INSERT INTO users (username, password_hash, user_type) VALUES ($1, $2, 'DELIVERY_PERSONNEL') RETURNING user_id`, [`orderdp_${runId}`, dpPasswordHash])

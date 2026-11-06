@@ -28,7 +28,7 @@ import { readyIfPaid } from '../lib/orderStatus.js'
 import { markGatewayPaymentFailed, markGatewayPaymentPaid } from '../lib/gatewayPayments.js'
 import { sendInBackground, sendOrderReadyEmailFor } from '../lib/notices.js'
 import { dateRangeSql, parseDateRange } from '../lib/reporting.js'
-import { normalize, parseId } from '../lib/validation.js'
+import { normalize, normalizeReference, parseId, referenceMessage, referencePattern } from '../lib/validation.js'
 
 const router = express.Router()
 
@@ -39,11 +39,6 @@ const router = express.Router()
 // QRPH: a scan of the bakery's QR Ph code (QRPH_PLAN.md); GCASH stays for
 // older screens and PayMongo rows.
 const paymentMethods = new Set(['CASH', 'QRPH', 'GCASH'])
-// Mirrors payments.gateway_reference's own VARCHAR(255) in the approved
-// thesis schema. Kept as a named constant so the validation below and the
-// column can be seen to agree, rather than a bare 255 sitting in a
-// condition with no stated connection to the schema.
-const gatewayReferenceMaxLength = 255
 // PHASE 8, DECISION 5 — payment_status mirrored here the same way
 // paymentMethods mirrors payment_method above, so GET / can validate a
 // ?status= filter without a round trip to the database just to ask "is
@@ -349,18 +344,12 @@ router.post('/', requireRole('CASHIER', 'ADMIN'), async (request, response) => {
   // itself. Required and validated only for GCASH.
   let gatewayReference = null
   if (method === 'GCASH' || method === 'QRPH') {
-    gatewayReference = normalize(request.body.gatewayReference)
+    gatewayReference = normalizeReference(request.body.gatewayReference)
     if (!gatewayReference) errors.gatewayReference = 'Enter the reference number from the payment.'
-    // REFUSED when too long, not silently truncated — unlike the free-text
-    // `reason`/`note` fields elsewhere in this app, which are .slice()d
-    // because losing their tail costs nothing. A gateway reference is an
-    // IDENTIFIER: it has to match a real GCash transaction exactly, so a
-    // truncated one is not a shorter version of the truth, it is a
-    // different (and wrong) reference — and one that would then occupy
-    // the UNIQUE slot the real reference needs. Without this the column's
-    // own VARCHAR(255) limit rejected it at the database instead, as an
-    // unhandled 22001 that surfaced to the cashier as a generic 500.
-    else if (gatewayReference.length > gatewayReferenceMaxLength) errors.gatewayReference = `A reference number cannot be longer than ${gatewayReferenceMaxLength} characters.`
+    // REFUSED when wrong, never corrected. A gateway reference is an
+    // IDENTIFIER: it has to match a real GCash transaction exactly, and a
+    // wrong one would occupy the UNIQUE slot the real reference needs.
+    else if (!referencePattern.test(gatewayReference)) errors.gatewayReference = referenceMessage
   }
 
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })

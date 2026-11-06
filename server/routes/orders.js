@@ -21,7 +21,7 @@ import { checkOrderTime } from '../lib/orderHours.js'
 import { applyCancellationEffects, readyIfPaid } from '../lib/orderStatus.js'
 import { sendInBackground, sendOrderReadyEmailFor } from '../lib/notices.js'
 import crypto from 'node:crypto'
-import { normalize, normalizeEmail, parseId, validateEmailField } from '../lib/validation.js'
+import { normalize, normalizeEmail, normalizeReference, parseId, referenceMessage, referencePattern, validateEmailField, validateName } from '../lib/validation.js'
 import { consumeVerifiedPhone } from '../lib/phoneVerification.js'
 import { normalizePhone } from '../lib/sms.js'
 import { sendReservationNotices } from '../lib/reservationNotices.js'
@@ -398,6 +398,8 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
   if (request.user.role !== 'CUSTOMER' && !customerId) {
     const name = normalize(request.body.customerName)
     if (name.length > 100) return response.status(422).json({ message: 'Keep the name to 100 characters or fewer.', errors: { customerName: 'Keep the name to 100 characters or fewer.' } })
+    const nameError = name ? validateName(name) : null
+    if (nameError) return response.status(422).json({ message: nameError, errors: { customerName: nameError } })
     guest = { name: name || null, isReservation: false }
     if (request.body.reservation) {
       const reservation = request.body.reservation
@@ -428,9 +430,9 @@ router.post('/', requireRole('CUSTOMER', 'CASHIER'), async (request, response) =
     if (method !== 'CASH' && method !== 'QRPH' && method !== 'GCASH') return response.status(422).json({ message: 'Take the payment first: choose cash or GCash.', errors: { payment: 'Choose cash or GCash.' } })
     let gatewayReference = null
     if (method !== 'CASH') {
-      gatewayReference = normalize(request.body.payment?.gatewayReference)
+      gatewayReference = normalizeReference(request.body.payment?.gatewayReference)
       if (!gatewayReference) return response.status(422).json({ message: 'Enter the reference number from the payment.', errors: { gatewayReference: 'Enter the reference number from the payment.' } })
-      if (gatewayReference.length > 255) return response.status(422).json({ message: 'A reference number cannot be longer than 255 characters.', errors: { gatewayReference: 'A reference number cannot be longer than 255 characters.' } })
+      if (!referencePattern.test(gatewayReference)) return response.status(422).json({ message: referenceMessage, errors: { gatewayReference: referenceMessage } })
     }
     // The bill the customer handed over, for the receipt's "Cash received
     // / Change" (migration 034). Optional; never less than the total,

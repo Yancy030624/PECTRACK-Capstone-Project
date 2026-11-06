@@ -203,6 +203,23 @@ describe('customer address management', () => {
     assert.ok((await response.json()).errors.contactNumber)
   })
 
+  test('POST accepts only a Philippine mobile number', async () => {
+    for (const contactNumber of ['1234567890', '08171234567', '123456789012345']) {
+      const response = await createAddress({ ...validAddress(), contactNumber })
+      assert.equal(response.status, 422, contactNumber)
+    }
+  })
+
+  test('POST takes digits only for the postal code, and letters for the place names', async () => {
+    for (const [field, value] of [['postalCode', 'ABCD'], ['postalCode', '43281'], ['barangay', '12345'], ['addressLine1', '12345'], ['label', '123']]) {
+      const response = await createAddress({ ...validAddress(), [field]: value })
+      assert.equal(response.status, 422, `${field}: ${value}`)
+      assert.ok((await response.json()).errors[field])
+    }
+    const accepted = await createAddress({ ...validAddress(), postalCode: '4328', barangay: 'Barangay 1' })
+    assert.equal(accepted.status, 201)
+  })
+
   test('a malformed or nonexistent address id is treated as "not found"', async () => {
     for (const badId of ['abc', 'undefined', '1.5', '999999999999999999999', '999999999']) {
       const response = await fetch(`${baseUrl}/api/addresses/${badId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ label: 'x' }) })

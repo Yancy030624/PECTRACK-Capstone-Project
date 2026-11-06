@@ -28,15 +28,13 @@ import { requireAuth, requireRole } from '../lib/auth.js'
 import { applyCancellationEffects, readyIfPaid } from '../lib/orderStatus.js'
 import { sendInBackground, sendQrPaymentDecisionEmail } from '../lib/notices.js'
 import { qrphOverdueMinutes as overdueMinutes } from '../lib/qrph.js'
-import { normalize, parseId } from '../lib/validation.js'
+import { hasLetter, normalize, normalizeReference, parseId, referenceMessage, referencePattern } from '../lib/validation.js'
 
 const router = express.Router()
 
 // The QR image and a payment screenshot: what a phone saves or screenshots.
 const allowedImageTypes = new Set(['image/jpeg', 'image/png'])
 const imageUploadLimit = '5mb'
-// Numeric payment references, with formatting spaces dropped.
-const referencePattern = /^[0-9]{6,40}$/
 const reasonMaxLength = 300
 
 router.use(requireAuth)
@@ -91,7 +89,7 @@ router.put('/image', requireRole('ADMIN'), express.raw({ type: [...allowedImageT
 // PATCH /api/qrph — the account name shown under the code.
 router.patch('/', requireRole('ADMIN'), async (request, response) => {
   const accountName = normalize(request.body.accountName)
-  if (!accountName || accountName.length > 100) return response.status(422).json({ message: 'Enter the account name, up to 100 characters.', errors: { accountName: 'Enter the account name, up to 100 characters.' } })
+  if (!accountName || accountName.length > 100 || !hasLetter(accountName)) return response.status(422).json({ message: 'Enter the account name, up to 100 characters.', errors: { accountName: 'Enter the account name, up to 100 characters.' } })
   await putSetting('qrph_account_name', accountName, null, request.user.id)
   return response.json({ accountName })
 })
@@ -101,9 +99,9 @@ router.patch('/', requireRole('ADMIN'), async (request, response) => {
 router.post('/', requireRole('CUSTOMER'), async (request, response) => {
   const orderId = parseId(request.body.orderId)
   if (!orderId) return response.status(422).json({ message: 'Select a valid order.', errors: { orderId: 'Select a valid order.' } })
-  const reference = normalize(request.body.reference).replace(/\s+/g, '')
+  const reference = normalizeReference(request.body.reference)
   if (!referencePattern.test(reference)) {
-    return response.status(422).json({ message: 'Enter the reference number from your payment app.', errors: { reference: 'Enter the 6-40 digit reference number shown in GCash.' } })
+    return response.status(422).json({ message: 'Enter the reference number from your payment app.', errors: { reference: referenceMessage } })
   }
 
   const customer = await pool.query('SELECT customer_id FROM customers WHERE user_id = $1', [request.user.id])

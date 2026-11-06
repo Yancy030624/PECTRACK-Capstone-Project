@@ -226,7 +226,7 @@ describe('reporting & analytics', () => {
     const orderId = await placeOrderAt('2021-07-07 10:00:00+08')
     // A ₱100 order carrying a ₱50 fee, as a delivery order is stored, paid in full.
     await pool.query('UPDATE orders SET delivery_fee = 50, total_amount = total_amount + 50 WHERE order_id = $1', [orderId])
-    const paid = await fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ orderId, method: 'GCASH', amount: 150, gatewayReference: `report-fee-${runId}` }) })
+    const paid = await fetch(`${baseUrl}/api/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cashierCookie }, body: JSON.stringify({ orderId, method: 'GCASH', amount: 150, gatewayReference: `${Date.now()}${orderId}` }) })
     assert.equal(paid.status, 201)
     await pool.query('UPDATE payments SET payment_date = $1 WHERE order_id = $2', ['2021-07-07 10:05:00+08', orderId])
     const body = await (await getSales({ from: '2021-07-07', to: '2021-07-07' })).json()

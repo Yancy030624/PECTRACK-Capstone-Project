@@ -5,6 +5,7 @@ import { Card } from '../../components/ui/Card.jsx'
 import { Field } from '../../components/ui/Field.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
+import { decimalNumber } from '../../lib/inputFilters.js'
 
 // The events calendar (migration 036, the client 2026-10-24), under the
 // production list: Holy Week, Pahiyas, Christmas, New Year, long weekends.
@@ -93,7 +94,7 @@ export function EventsCard({ user, onChanged }) {
               <Input type="date" value={form.endsOn} min={form.startsOn || undefined} onChange={(event) => setField('endsOn', event.target.value)} />
             </Field>
             <Field label="Make how many times the usual" error={errors.multiplier}>
-              <Input value={form.multiplier} onChange={(event) => setField('multiplier', event.target.value.replace(/[^\d.]/g, '').slice(0, 4))} inputMode="decimal" />
+              <Input value={form.multiplier} onChange={(event) => setField('multiplier', decimalNumber(event.target.value, 2, 4))} inputMode="decimal" />
             </Field>
             <Field label="For" error={errors.appliesTo}>
               <Select value={form.appliesTo} onChange={(event) => setField('appliesTo', event.target.value)}>

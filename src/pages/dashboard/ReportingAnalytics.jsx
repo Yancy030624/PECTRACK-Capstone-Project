@@ -17,6 +17,7 @@ import { PrintButton, PrintHeader } from '../../components/PrintReport.jsx'
 import { manilaDate, manilaDateFromToday } from '../../lib/dates.js'
 import { exportLabels, logPrint } from '../../lib/exportLog.js'
 import { cssVar } from '../../lib/theme.js'
+import { wholeNumber } from '../../lib/inputFilters.js'
 
 const logsLimit = 20
 const inventoryPageSize = 10
@@ -269,7 +270,7 @@ export function ReportingAnalytics({ user }) {
             )}
             {activeTab === 'Products' && (
               <Field label="Top products" help={Number(productLimit) > 50 ? 'Capped at 50.' : undefined}>
-                <Input value={productLimit} onChange={(event) => setProductLimit(event.target.value)} inputMode="numeric" className="w-20" />
+                <Input value={productLimit} onChange={(event) => setProductLimit(wholeNumber(event.target.value, 3))} inputMode="numeric" className="w-20" />
               </Field>
             )}
             <Button type="submit" size="sm" disabled={generating}>{generating ? 'Generating…' : 'Generate report'}</Button>

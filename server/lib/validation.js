@@ -60,10 +60,21 @@ export function validateEmailField(email) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return 'Enter a valid email address.'
 }
 
-// Expects contactNumber already stripped of spaces/parens/hyphens.
+// Expects contactNumber already stripped of spaces/parens/hyphens. A
+// Philippine mobile number (the adviser, 2026-10-23): 09XXXXXXXXX, or the
+// same number as +639XXXXXXXXX.
 export function validateContactNumberField(contactNumber) {
-  if (!/^\+?[0-9]{10,15}$/.test(contactNumber)) return 'Enter a valid contact number with 10–15 digits.'
+  if (!/^(09\d{9}|\+?639\d{9})$/.test(contactNumber)) return 'Enter a Philippine mobile number, like 09171234567.'
 }
+
+// For names that may hold digits, such as "Barangay 1" or "Bread flour 25kg",
+// but must not be only digits or symbols.
+export const hasLetter = (value) => /\p{L}/u.test(value)
+
+// A GCash reference number, with formatting spaces dropped: digits only.
+export const referencePattern = /^[0-9]{6,40}$/
+export const referenceMessage = 'Enter the 6-40 digit reference number shown in GCash.'
+export const normalizeReference = (value) => normalize(value).replace(/\s+/g, '')
 
 export function validatePasswordField(password, { username, email }) {
   if (Buffer.byteLength(password, 'utf8') > 72) return 'Password is too long. Use 72 bytes or fewer.'

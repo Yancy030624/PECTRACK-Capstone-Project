@@ -11,7 +11,7 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
-import { normalize, parseId, parseQuantity } from '../lib/validation.js'
+import { hasLetter, normalize, parseId, parseQuantity } from '../lib/validation.js'
 
 const router = express.Router()
 
@@ -63,6 +63,7 @@ function validateIngredientFields(body, { partial }) {
   if (has('name')) {
     const name = normalize(body.name)
     if (!name || name.length > 150) errors.name = 'Enter an ingredient name (1-150 characters).'
+    else if (!hasLetter(name)) errors.name = 'An ingredient name needs letters, not only numbers or symbols.'
     else values.name = name
   }
   if (has('unit')) {

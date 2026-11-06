@@ -10,6 +10,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { digitsOnly } from '../../lib/phone.js'
+import { nameOnly } from '../../lib/inputFilters.js'
 
 // Stage 1's proof screen (RULES-PLANS/UI_AUDIT.md — "Stage 1: The
 // primitive kit"). Smallest table in the dashboard, so it's the cheapest
@@ -147,10 +148,10 @@ export function CustomerManagement({ user, embedded = false }) {
                       <p className="text-xs text-ink-500">Editing {customer.username}</p>
                       <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         <Field label="First name" error={editErrors.firstName}>
-                          <Input value={editForm.firstName} onChange={(event) => setEditForm({ ...editForm, firstName: event.target.value })} />
+                          <Input value={editForm.firstName} onChange={(event) => setEditForm({ ...editForm, firstName: nameOnly(event.target.value) })} />
                         </Field>
                         <Field label="Last name" error={editErrors.lastName}>
-                          <Input value={editForm.lastName} onChange={(event) => setEditForm({ ...editForm, lastName: event.target.value })} />
+                          <Input value={editForm.lastName} onChange={(event) => setEditForm({ ...editForm, lastName: nameOnly(event.target.value) })} />
                         </Field>
                         <Field label="Contact number" error={editErrors.contactNumber}>
                           <Input value={editForm.contactNumber} onChange={(event) => setEditForm({ ...editForm, contactNumber: digitsOnly(event.target.value) })} inputMode="numeric" maxLength={11} />

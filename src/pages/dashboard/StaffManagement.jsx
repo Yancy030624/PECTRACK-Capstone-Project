@@ -12,6 +12,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { digitsOnly } from '../../lib/phone.js'
+import { nameOnly } from '../../lib/inputFilters.js'
 
 const emptyForm = { role: 'CASHIER', name: '', username: '', email: '', contactNumber: '', password: '', confirmPassword: '' }
 const roleLabels = { CASHIER: 'Cashier', DELIVERY_PERSONNEL: 'Delivery Personnel' }
@@ -243,7 +244,7 @@ export function StaffManagement({ embedded = false } = {}) {
                         <p className="text-xs text-ink-500">Editing {person.username} · {roleLabels[person.role] ?? person.role}</p>
                         <div className="mt-2 grid gap-3 sm:grid-cols-3">
                           <Field label="Name" error={editErrors.name}>
-                            <Input value={editForm.name} onChange={(event) => updateEditField('name', event.target.value)} />
+                            <Input value={editForm.name} onChange={(event) => updateEditField('name', nameOnly(event.target.value))} />
                           </Field>
                           <Field label="Contact number" error={editErrors.contactNumber}>
                             <Input value={editForm.contactNumber} onChange={(event) => updateEditField('contactNumber', digitsOnly(event.target.value))} inputMode="numeric" maxLength={11} />
@@ -318,7 +319,7 @@ export function StaffManagement({ embedded = false } = {}) {
               </Select>
             </Field>
             <Field label="Full name" error={errors.name}>
-              <Input value={form.name} onChange={(event) => updateField('name', event.target.value)} autoComplete="name" placeholder="Full name" />
+              <Input value={form.name} onChange={(event) => updateField('name', nameOnly(event.target.value))} autoComplete="name" placeholder="Full name" />
             </Field>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">

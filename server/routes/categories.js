@@ -7,7 +7,7 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { optionalAuth, requireAuth, requireRole } from '../lib/auth.js'
-import { normalize, parseId } from '../lib/validation.js'
+import { hasLetter, normalize, parseId } from '../lib/validation.js'
 
 const router = express.Router()
 
@@ -16,6 +16,7 @@ const mapCategoryRow = (row) => ({ id: row.category_id, name: row.category_name 
 function validateCategoryName(body) {
   const name = normalize(body.name)
   if (!name || name.length > 100) return { error: 'Enter a category name (1-100 characters).' }
+  if (!hasLetter(name)) return { error: 'A category name needs letters, not only numbers or symbols.' }
   return { name }
 }
 

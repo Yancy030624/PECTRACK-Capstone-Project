@@ -13,6 +13,7 @@ import { checkPicked, toRequestedTime } from '../../lib/orderHours.js'
 import { usePhoneVerification } from '../../lib/usePhoneVerification.js'
 import { digitsOnly } from '../../lib/phone.js'
 import { PrintThisButton } from '../../components/PrintReport.jsx'
+import { decimalNumber, nameOnly, wholeNumber } from '../../lib/inputFilters.js'
 
 // The cashier's Walk-in page (the adviser, 2026-10-16): the customer is
 // standing at the counter, so the page asks only what to sell and, if it
@@ -297,7 +298,7 @@ export function WalkInOrderForm({ onCreated }) {
           {isReserve && (
             <div className="mt-3">
               <Field label="Name *" error={errors.customerName}>
-                <Input value={customer.name} onChange={(event) => setCustomerField('name', event.target.value)} placeholder="Customer's name" autoComplete="off" />
+                <Input value={customer.name} onChange={(event) => setCustomerField('name', nameOnly(event.target.value))} placeholder="Customer's name" autoComplete="off" />
               </Field>
             </div>
           )}
@@ -454,14 +455,14 @@ export function WalkInOrderForm({ onCreated }) {
               {method === 'CASH' ? (
                 <div className="mt-3">
                   <Field label="Cash received" error={errors.cashReceived}>
-                    <Input value={cashReceived} onChange={(event) => setCashReceived(event.target.value)} inputMode="decimal" placeholder={subtotal.toFixed(2)} />
+                    <Input value={cashReceived} onChange={(event) => setCashReceived(decimalNumber(event.target.value))} inputMode="decimal" placeholder={subtotal.toFixed(2)} />
                   </Field>
                   {change != null && change >= 0 && <p className="mt-1 text-sm font-semibold text-ink-900">Change: <span className="tabular-nums">{formatPeso(change)}</span></p>}
                 </div>
               ) : (
                 <div className="mt-3">
                   <Field label="Reference number" error={errors.gatewayReference}>
-                    <Input value={gcashReference} onChange={(event) => setGcashReference(event.target.value)} placeholder="From the customer's payment app" />
+                    <Input value={gcashReference} onChange={(event) => setGcashReference(wholeNumber(event.target.value, 40))} placeholder="From the customer's payment app" />
                   </Field>
                 </div>
               )}
