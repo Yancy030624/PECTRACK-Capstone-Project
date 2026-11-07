@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiPost } from '../api/client.js'
 import logoMark from '../assets/logo-mark.png'
-import { bakery, telHref } from '../lib/bakery.js'
 import { PasswordToggle } from './PasswordToggle.jsx'
 
 // Each door wears its own colours, so nobody has to read a label to know
@@ -255,9 +254,6 @@ export function LoginForm({ mode = 'customer', onModeChange = () => {}, onLogin,
           </form>
         </>
       )}
-      <p className="mt-6 border-t border-stone-200 pt-4 text-center text-[11px] text-stone-500">
-        Trouble logging in? Call <a href={telHref(bakery.phones[0])} className={`font-bold hover:underline ${theme.link}`}>{bakery.phones[0]}</a>
-      </p>
     </div>
   )
 }
