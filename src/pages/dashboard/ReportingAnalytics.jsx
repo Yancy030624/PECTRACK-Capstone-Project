@@ -7,7 +7,6 @@ import { ModuleHeader } from '../../components/ui/ModuleHeader.jsx'
 import { Card } from '../../components/ui/Card.jsx'
 import { Field } from '../../components/ui/Field.jsx'
 import { Input } from '../../components/ui/Input.jsx'
-import { Select } from '../../components/ui/Select.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
@@ -22,6 +21,7 @@ import { wholeNumber } from '../../lib/inputFilters.js'
 
 const logsLimit = 20
 const inventoryPageSize = 10
+const salesGroupBy = 'day'
 // Why these figures need not match each other, on screen and on paper.
 const revenueNote = 'Revenue counts orders placed in this range that were not cancelled, including cash not yet paid. Sales counts money received, by payment date, so the two can differ.'
 const inventorySoldNote = 'Sold follows the date stock moved, and a cancelled order is returned on the day it was cancelled, so this can differ from the Products report.'
@@ -72,7 +72,6 @@ export function ReportingAnalytics({ user }) {
 
   const [fromInput, setFromInput] = useState(() => manilaDateFromToday(-29))
   const [toInput, setToInput] = useState(() => manilaDate())
-  const [groupBy, setGroupBy] = useState('day')
   const [productLimit, setProductLimit] = useState('10')
   // Products tab (REPORTS_UI_PLAN.md U4): which bread type, and what ranks
   // the list — pieces sold by default, since the bakery plans in pieces.
@@ -103,7 +102,7 @@ export function ReportingAnalytics({ user }) {
     try {
       const range = { from: fromInput, to: toInput }
       const [salesData, productsData, inventoryData] = await Promise.all([
-        apiGet(`/api/reports/sales?${new URLSearchParams({ ...range, groupBy, ...demoParam })}`),
+        apiGet(`/api/reports/sales?${new URLSearchParams({ ...range, groupBy: salesGroupBy, ...demoParam })}`),
         apiGet(`/api/reports/products?${productsQuery(range)}`),
         apiGet(`/api/reports/inventory?${new URLSearchParams({ ...range, ...demoParam })}`),
       ])
@@ -111,7 +110,7 @@ export function ReportingAnalytics({ user }) {
       setProducts(productsData)
       setInventory(inventoryData)
       setInventoryPage(1)
-      setAppliedRange({ from: fromInput, to: toInput, groupBy, includeDemo })
+      setAppliedRange({ from: fromInput, to: toInput, groupBy: salesGroupBy, includeDemo })
     } catch (error) {
       setErrors(error.errors ?? {})
       setMessage(error.message)
@@ -215,8 +214,7 @@ export function ReportingAnalytics({ user }) {
   }, [user.role, activeTab, logsOffset])
 
   const rangeChanged = appliedRange && (
-    fromInput !== appliedRange.from || toInput !== appliedRange.to ||
-    (activeTab === 'Sales' && groupBy !== appliedRange.groupBy)
+    fromInput !== appliedRange.from || toInput !== appliedRange.to
   )
 
   const csvHref = appliedRange ? `/api/reports/sales?${new URLSearchParams({ from: appliedRange.from, to: appliedRange.to, groupBy: appliedRange.groupBy, ...(appliedRange.includeDemo && { includeDemo: 'true' }), format: 'csv' })}` : null
@@ -264,15 +262,6 @@ export function ReportingAnalytics({ user }) {
             </Field>
             {/* Each tab shows only the controls that change it
                 (REPORTS_UI_PLAN.md U1). */}
-            {activeTab === 'Sales' && (
-              <Field label="Group by" error={errors.groupBy}>
-                <Select value={groupBy} onChange={(event) => setGroupBy(event.target.value)} className="w-auto">
-                  <option value="day">Day</option>
-                  <option value="week">Week</option>
-                  <option value="month">Month</option>
-                </Select>
-              </Field>
-            )}
             {activeTab === 'Products' && (
               <Field label="Top products" help={Number(productLimit) > 50 ? 'Capped at 50.' : undefined}>
                 <Input value={productLimit} onChange={(event) => setProductLimit(wholeNumber(event.target.value, 3))} inputMode="numeric" className="w-20" />
@@ -302,7 +291,7 @@ export function ReportingAnalytics({ user }) {
         {appliedRange && (
           <div role="status" className="mt-4 rounded-control border border-line-200 bg-surface px-4 py-3 text-sm text-ink-700">
             <p>Showing {formatDate(`${appliedRange.from}T00:00:00`)} – {formatDate(`${appliedRange.to}T00:00:00`)}{activeTab === 'Sales' ? ` · Grouped by ${appliedRange.groupBy}` : ''}</p>
-            {rangeChanged && <p className="mt-1 font-semibold text-status-wait-fg">Date or grouping changes are not applied yet. Select Generate report to update the results.</p>}
+            {rangeChanged && <p className="mt-1 font-semibold text-status-wait-fg">Date changes are not applied yet. Select Generate report to update the results.</p>}
           </div>
         )}
         {appliedRange?.includeDemo && (
