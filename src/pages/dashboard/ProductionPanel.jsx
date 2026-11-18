@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { showForecast } from '../../lib/features.js'
 import { apiGet } from '../../api/client.js'
 import { PrintThisButton } from '../../components/PrintReport.jsx'
 import { Card } from '../../components/ui/Card.jsx'
@@ -66,7 +67,7 @@ export function ProductionPanel({ user }) {
             {data.boosts.soft.reason && <>Soft breads: <strong>{data.boosts.soft.reason}</strong>.</>}
           </p>
         )}
-        {data?.forecastShortCount > 0 && (
+        {showForecast && data?.forecastShortCount > 0 && (
           <p className="mt-2 rounded-panel bg-amber-50 px-3 py-2 text-sm text-ink-900">
             Forecast says bake more: <strong>{data.forecastShortCount} product{data.forecastShortCount === 1 ? '' : 's'}</strong>. See the Forecast column.
             {data.forecastAssumed && <> This forecast uses <strong>practice data (assumed)</strong>, not the bakery&apos;s actual sales.</>}
@@ -89,7 +90,7 @@ export function ProductionPanel({ user }) {
                       <Th align="right" priority="md">On shelf now</Th>
                       <Th align="right" priority="md">Advanced orders</Th>
                       <Th align="right">To bake</Th>
-                      <Th align="right" priority="lg">Forecast</Th>
+                      {showForecast && <Th align="right" priority="lg">Forecast</Th>}
                     </Tr>
                   </Thead>
                   <Tbody>
@@ -100,7 +101,7 @@ export function ProductionPanel({ user }) {
                         <Td numeric priority="md">{item.onHand}</Td>
                         <Td numeric priority="md">{item.advanced || '—'}</Td>
                         <Td numeric className="font-semibold text-ink-900">{item.toBake}</Td>
-                        <Td numeric priority="lg"><ForecastCell item={item} /></Td>
+                        {showForecast && <Td numeric priority="lg"><ForecastCell item={item} /></Td>}
                       </Tr>
                     ))}
                   </Tbody>
@@ -119,7 +120,7 @@ export function ProductionPanel({ user }) {
                       <Th align="right" priority="md">Produce at</Th>
                       <Th align="right" priority="md">Make up to</Th>
                       <Th align="right">To bake</Th>
-                      <Th align="right" priority="lg">Forecast</Th>
+                      {showForecast && <Th align="right" priority="lg">Forecast</Th>}
                     </Tr>
                   </Thead>
                   <Tbody>
@@ -130,14 +131,14 @@ export function ProductionPanel({ user }) {
                         <Td numeric priority="md">{item.minStockLevel}</Td>
                         <Td numeric priority="md">{item.targetStock || '—'}{item.boost && <span className="block text-[11px] font-semibold text-amber-700">{item.boost}</span>}</Td>
                         <Td numeric className={item.needed ? 'font-semibold text-ink-900' : 'text-ink-500'}>{item.needed ? item.toBake : 'Not needed'}</Td>
-                        <Td numeric priority="lg"><ForecastCell item={item} /></Td>
+                        {showForecast && <Td numeric priority="lg"><ForecastCell item={item} /></Td>}
                       </Tr>
                     ))}
                   </Tbody>
                 </Table>
               </div>
             )}
-            <p className="mt-4 text-xs text-ink-500">Soft "To bake" uses what is on the shelf now; it is smaller if more sells today. Advanced orders for soft breads are baked on their pickup day, outside the shelf stock. Hard breads are built up to their stop level × 2 from Thursday for the weekend, and × the event's multiplier from a week before an event. Forecast is the latest forecast's expected sales for the day; "+N" means it expects N more than the plan will have.{data.forecastAssumed && ' It uses practice data (assumed) until 56 days of actual sales are recorded.'}</p>
+            <p className="mt-4 text-xs text-ink-500">Soft "To bake" uses what is on the shelf now; it is smaller if more sells today. Advanced orders for soft breads are baked on their pickup day, outside the shelf stock. Hard breads are built up to their stop level × 2 from Thursday for the weekend, and × the event's multiplier from a week before an event. {showForecast && <> Forecast is the latest forecast's expected sales for the day; "+N" means it expects N more than the plan will have.{data.forecastAssumed && ' It uses practice data (assumed) until 56 days of actual sales are recorded.'}</>}</p>
           </>
         )}
       </Card>

@@ -8,6 +8,7 @@ import { deliveryFee, isDeliverable } from '../../lib/bakery.js'
 import { NeededByFields } from '../../components/NeededByFields.jsx'
 import { checkPicked, toRequestedTime } from '../../lib/orderHours.js'
 import { useLiveStock } from '../../lib/useLiveStock.js'
+import { UnpaidOrderNotice } from '../../components/storefront/UnpaidOrderNotice.jsx'
 
 export function CheckoutPage({ user }) {
   // Migration 016 — the server refuses an order from an unconfirmed email
@@ -113,13 +114,18 @@ export function CheckoutPage({ user }) {
       const data = await apiPost('/api/orders', body)
       setLeaving(true)
       clear()
-      navigate(`/receipt/${data.order.id}`)
+      // replace: Back from the payment page returns to the cart, not to
+      // this page emptied by clear(). The order itself stays in My Orders
+      // and on the cart as "waiting for your payment" (the panel, final
+      // defense 2026-11-18; FINAL_DEFENSE_REVISIONS_PLAN.md C1).
+      navigate(`/receipt/${data.order.id}`, { replace: true })
     } catch (error) {
       setLeaving(false)
       // A 409 is usually stock; one about the payment mode is the "one
       // cash order at a time" rule and is shown as it is.
       if (!error.errors?.paymentMode && (error.status === 409 || (error.status === 422 && error.errors?.items))) {
-        setMessage('Some items in your cart are no longer available, or do not have enough stock right now. Please review the quantities below and try again.')
+        // The server names the product and how many are left.
+        setMessage(error.message || 'Some items in your cart are no longer available, or do not have enough stock right now. Please review the quantities below and try again.')
         setMessageFailed(true)
         apiGet('/api/products').then((data) => setProducts(data.products)).catch(() => {})
       } else {
@@ -157,6 +163,7 @@ export function CheckoutPage({ user }) {
       <section className="mx-auto max-w-4xl px-4 py-14 sm:px-7">
         <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-crust-600">CHECKOUT</p>
         <h1 className="mt-1 font-display text-4xl font-bold text-cocoa-900 sm:text-5xl">Your cart is empty</h1>
+        <UnpaidOrderNotice className="mt-6" />
         <Link to="/menu" className="mt-6 inline-block rounded-full bg-crust-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-crust-700">Browse the menu</Link>
       </section>
     )

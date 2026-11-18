@@ -24,7 +24,7 @@ describe('security event logging', () => {
 
   const admin = { username: `evtadmin_${runId}`, password: 'Admin-Event-Password-9!' }
   const customer = {
-    name: 'Event Customer', firstName: 'Event', lastName: 'Customer', agree: true,
+    name: 'Event Customer', firstName: 'Event', lastName: 'Customer', agree: true, addressLine1: 'Rizal Street', barangay: 'Ayuti',
     username: `evtcust_${runId}`,
     email: `evtcust_${runId}@example.com`,
     contactNumber: randomContactNumber(),

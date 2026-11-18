@@ -34,7 +34,7 @@ describe('QR Ph payments', () => {
 
   const admin = { username: `qrtest_admin_${runId}`, password: 'Admin-Only-Password-9!' }
   const cashier = { role: 'CASHIER', name: 'QR Test Cashier', username: `qrtest_cash_${runId}`, email: `qrtest_cash_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
-  const makeCustomer = (tag) => ({ name: `QR Test ${tag}`, firstName: 'QR Test', lastName: tag, agree: true, username: `qrtest_${tag}_${runId}`, email: `qrtest_${tag}_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' })
+  const makeCustomer = (tag) => ({ name: `QR Test ${tag}`, firstName: 'QR Test', lastName: tag, agree: true, addressLine1: 'Rizal Street', barangay: 'Ayuti', username: `qrtest_${tag}_${runId}`, email: `qrtest_${tag}_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' })
 
   const json = (method, path, cookie, body) => fetch(`${baseUrl}${path}`, { method, headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: body === undefined ? undefined : JSON.stringify(body) })
   const upload = (path, cookie, bytes, type = 'image/png', method = 'POST') => fetch(`${baseUrl}${path}`, { method, headers: { 'Content-Type': type, Cookie: cookie }, body: bytes })

@@ -15,9 +15,11 @@ import crypto from 'node:crypto'
 import { pool } from '../db.js'
 import { sendSms } from './sms.js'
 
-export const codeMinutes = 10
+// 5 minutes, like every other code (the panel asked for at least 3; final
+// defense 2026-11-18, FINAL_DEFENSE_REVISIONS_PLAN.md C3).
+export const codeMinutes = 5
 const maxAttempts = 5
-const resendSeconds = 60
+export const resendSeconds = 60
 const verifiedMinutes = 30
 
 const sha256 = (value) => crypto.createHash('sha256').update(String(value)).digest('hex')

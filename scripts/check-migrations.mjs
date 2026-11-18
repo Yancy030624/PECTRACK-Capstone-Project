@@ -36,6 +36,7 @@ const checks = [
   ['042_minor_revisions', async () => !(await exists(`SELECT 1 FROM users WHERE user_type = 'DELIVERY_PERSONNEL' AND is_active`))],
   ['043_qrph', () => table('app_settings')],
   ['044_first_login_setup', () => column('users', 'must_set_credentials')],
+  ['045_password_codes', () => enumValue('security_event_type', 'PASSWORD_CHANGE_CODE_SENT')],
 ]
 
 const missing = []

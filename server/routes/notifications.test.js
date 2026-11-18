@@ -51,7 +51,7 @@ describe('notification feed', () => {
 
   const admin = { username: `notifadmin_${runId}`, password: 'Admin-Only-Password-9!' }
   const cashier = { role: 'CASHIER', name: 'Notif Cashier', username: `notifcash_${runId}`, email: `notifcash_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
-  const customer = { name: 'Notif Customer', firstName: 'Notif', lastName: 'Customer', agree: true, username: `notifcust_${runId}`, email: `notifcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const customer = { name: 'Notif Customer', firstName: 'Notif', lastName: 'Customer', agree: true, addressLine1: 'Rizal Street', barangay: 'Ayuti', username: `notifcust_${runId}`, email: `notifcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
 
   const json = (method, path, cookie, body) => fetch(`${baseUrl}${path}`, {
     method,
@@ -121,7 +121,7 @@ describe('notification feed', () => {
     customerCookie = await login(customer.username, customer.password)
     addressId = (await pool.query(
       `INSERT INTO customer_addresses (customer_id, recipient_name, contact_num, address_line_1, barangay, municipality, is_default)
-       VALUES ($1, 'Notif Recipient', $2, '1 Bell St', 'Ayuti', 'Lucban', TRUE) RETURNING address_id`,
+       VALUES ($1, 'Notif Recipient', $2, '1 Bell St', 'Ayuti', 'Lucban', FALSE) RETURNING address_id`,
       [customerRow.rows[0].customer_id, randomContactNumber()],
     )).rows[0].address_id
 

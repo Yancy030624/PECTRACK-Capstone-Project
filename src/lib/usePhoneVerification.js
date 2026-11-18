@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiGet, apiPost } from '../api/client.js'
+import { codeTimes } from '../components/CodeTimer.jsx'
 
 // The texted-code steps for proving a phone number
 // (RULES-PLANS/RESERVE_SMS_PLAN.md), shared by the sign-up form and the
@@ -16,6 +17,9 @@ export function usePhoneVerification(purpose) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
+  // When the code stops working and when a new one may be asked for, for
+  // the countdown (CodeTimer; final defense 2026-11-18).
+  const [times, setTimes] = useState({ expiresAt: null, resendAt: null })
 
   useEffect(() => {
     apiGet('/api/phone-verification/status').then((data) => setRequired(Boolean(data.required))).catch(() => setRequired(false))
@@ -28,6 +32,7 @@ export function usePhoneVerification(purpose) {
     try {
       const data = await apiPost('/api/phone-verification/send', { phone, purpose })
       setToken(data.verificationToken)
+      setTimes(codeTimes(data))
       setVerifiedPhone(null)
       // Test mode (no SMS service yet): the server returns the code, and
       // the message says so — the code box is filled in for the tester.
@@ -62,7 +67,8 @@ export function usePhoneVerification(purpose) {
     setCode('')
     setError('')
     setInfo('')
+    setTimes({ expiresAt: null, resendAt: null })
   }
 
-  return { required, token, verified: Boolean(verifiedPhone), verifiedPhone, code, setCode, busy, error, info, send, check, reset }
+  return { required, token, verified: Boolean(verifiedPhone), verifiedPhone, code, setCode, busy, error, info, send, check, reset, expiresAt: times.expiresAt, resendAt: times.resendAt }
 }

@@ -29,6 +29,21 @@ async function deleteTestUser(userId) {
   await pool.query('DELETE FROM users WHERE user_id = $1', [userId])
 }
 
+// Runs `action` and returns the six-digit code from the email it printed.
+// With no SMTP configured, lib/mail.js prints each email to the console.
+// Password reset and change use codes since the final defense (2026-11-18).
+async function captureEmailedCode(action) {
+  const printed = []
+  const original = console.log
+  console.log = (...args) => printed.push(args.join(' '))
+  try {
+    await action()
+  } finally {
+    console.log = original
+  }
+  return printed.join('\n').match(/Your code is (\d{6})/)?.[1] ?? null
+}
+
 describe('customer registration and session lifecycle', () => {
   // The rate limiter (lib/security.js) counts by client IP, and every
   // request in this suite comes from the same one — so without a reset
@@ -46,7 +61,7 @@ describe('customer registration and session lifecycle', () => {
     name: 'Test Customer',
     firstName: 'Test',
     lastName: 'Customer',
-    agree: true,
+    agree: true, addressLine1: 'Rizal Street', barangay: 'Ayuti',
     username: `testcust_${runId}`,
     email: `testcust_${runId}@example.com`,
     contactNumber: randomContactNumber(),
@@ -99,6 +114,22 @@ describe('customer registration and session lifecycle', () => {
     assert.equal(errors.password, 'Enter a password.')
     assert.equal(errors.confirmPassword, 'Enter your password again.')
     assert.ok(errors.agree)
+    // The address is asked for at sign-up (final defense, 2026-11-18).
+    assert.equal(errors.addressLine1, 'Enter the street address.')
+    assert.equal(errors.barangay, 'Enter the barangay.')
+  })
+
+  test('POST /api/auth/register without an address creates nothing', async () => {
+    const { addressLine1: _street, ...noStreet } = customer
+    const response = await fetch(`${baseUrl}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...noStreet, confirmPassword: customer.password }),
+    })
+    assert.equal(response.status, 422)
+    assert.ok((await response.json()).errors.addressLine1)
+    const { rows } = await pool.query('SELECT 1 FROM users WHERE username = $1', [customer.username])
+    assert.equal(rows.length, 0, 'no account was created')
   })
 
   test('POST /api/auth/register refuses the old single full name without the two parts', async () => {
@@ -130,6 +161,13 @@ describe('customer registration and session lifecycle', () => {
 
     const saved = await pool.query('SELECT name, first_name, last_name FROM customers WHERE user_id = $1', [createdUserId])
     assert.deepEqual(saved.rows[0], { name: 'Test Customer', first_name: 'Test', last_name: 'Customer' }, 'the two parts are saved, and the full name is built from them')
+
+    const address = await pool.query(
+      `SELECT a.label, a.recipient_name, a.address_line_1, a.barangay, a.municipality, a.province, a.is_default, a.is_active
+         FROM customer_addresses a JOIN customers c ON c.customer_id = a.customer_id WHERE c.user_id = $1`,
+      [createdUserId],
+    )
+    assert.deepEqual(address.rows, [{ label: 'Home', recipient_name: 'Test Customer', address_line_1: 'Rizal Street', barangay: 'Ayuti', municipality: 'Lucban', province: 'Quezon', is_default: true, is_active: true }], 'the sign-up address is the default address')
   })
 
   test('POST /api/auth/register rejects a duplicate username', async () => {
@@ -290,6 +328,48 @@ describe('customer registration and session lifecycle', () => {
   describe('changing your own password', () => {
     const changePassword = (body, cookie = sessionCookie) =>
       fetch(`${baseUrl}/api/auth/password`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(body) })
+    // A fresh emailed code for the signed-in account (final defense, 2026-11-18).
+    const changeCode = async (cookie = sessionCookie) => {
+      await pool.query(`UPDATE password_reset_tokens SET created_at = created_at - INTERVAL '2 minutes' WHERE user_id = (SELECT user_id FROM users WHERE username = $1)`, [customer.username])
+      return captureEmailedCode(() => fetch(`${baseUrl}/api/auth/password/code`, { method: 'POST', headers: { Cookie: cookie } }))
+    }
+
+    test('sending a change code requires authentication', async () => {
+      const response = await fetch(`${baseUrl}/api/auth/password/code`, { method: 'POST' })
+      assert.equal(response.status, 401)
+    })
+
+    test('refuses a change with no code, a wrong code, or a forgot-password code', async () => {
+      const newPassword = 'Brand-New-Password-1!'
+      const noCode = await changePassword({ currentPassword: customer.password, newPassword, confirmPassword: newPassword })
+      assert.equal(noCode.status, 422)
+      assert.ok((await noCode.json()).errors.code)
+
+      const code = await changeCode()
+      assert.match(code, /^\d{6}$/, 'the code is emailed')
+      const wrong = await changePassword({ currentPassword: customer.password, newPassword, confirmPassword: newPassword, code: code === '000000' ? '111111' : '000000' })
+      assert.equal(wrong.status, 422)
+      assert.ok((await wrong.json()).errors.code)
+
+      // A RESET code is for forgot password only.
+      await pool.query(`UPDATE password_reset_tokens SET created_at = created_at - INTERVAL '2 minutes' WHERE user_id = (SELECT user_id FROM users WHERE username = $1)`, [customer.username])
+      const resetCode = await captureEmailedCode(() => fetch(`${baseUrl}/api/auth/forgot-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: customer.email }) }))
+      assert.match(resetCode, /^\d{6}$/)
+      await pool.query(`UPDATE password_reset_tokens SET consumed_at = CURRENT_TIMESTAMP WHERE purpose = 'CHANGE' AND user_id = (SELECT user_id FROM users WHERE username = $1)`, [customer.username])
+      const crossed = await changePassword({ currentPassword: customer.password, newPassword, confirmPassword: newPassword, code: resetCode })
+      assert.equal(crossed.status, 422, 'a forgot-password code cannot change the password')
+      await pool.query(`UPDATE password_reset_tokens SET consumed_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT user_id FROM users WHERE username = $1)`, [customer.username])
+    })
+
+    test('a code expires after 5 minutes', async () => {
+      const code = await changeCode()
+      await pool.query(`UPDATE password_reset_tokens SET expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE consumed_at IS NULL AND user_id = (SELECT user_id FROM users WHERE username = $1)`, [customer.username])
+      const response = await changePassword({ currentPassword: customer.password, newPassword: 'Brand-New-Password-1!', confirmPassword: 'Brand-New-Password-1!', code })
+      assert.equal(response.status, 422)
+      assert.ok((await response.json()).errors.code)
+      const row = await pool.query(`SELECT expires_at - created_at AS lifetime FROM password_reset_tokens WHERE purpose = 'CHANGE' AND user_id = (SELECT user_id FROM users WHERE username = $1) ORDER BY token_id DESC LIMIT 1`, [customer.username])
+      assert.ok(row.rows.length === 1)
+    })
 
     test('requires authentication', async () => {
       const response = await fetch(`${baseUrl}/api/auth/password`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ currentPassword: 'x', newPassword: 'y', confirmPassword: 'y' }) })
@@ -335,7 +415,8 @@ describe('customer registration and session lifecycle', () => {
       assert.equal((await fetch(`${baseUrl}/api/auth/me`, { headers: { Cookie: otherCookie } })).status, 200)
 
       const newPassword = 'Rotated-Password-9!'
-      const response = await changePassword({ currentPassword: customer.password, newPassword, confirmPassword: newPassword })
+      const code = await changeCode()
+      const response = await changePassword({ currentPassword: customer.password, newPassword, confirmPassword: newPassword, code })
       assert.equal(response.status, 200)
       assert.ok((await response.json()).otherSessionsEnded >= 1)
 
@@ -432,63 +513,54 @@ describe('customer registration and session lifecycle', () => {
     assert.equal(me.status, 200)
   })
 
-  // Email password recovery (migration 010). The token never leaves the
-  // server except inside the email, so the test reads the stored hash's
-  // row only to prove it exists — and gets the token itself by capturing
-  // what lib/mail.js prints when SMTP is not configured.
-  test('forgot-password answers identically for known and unknown emails, and the emailed link resets the password once', async () => {
+  // Password recovery by emailed code (migration 045; the final defense,
+  // 2026-11-18). The code never leaves the server except inside the
+  // email, which lib/mail.js prints when SMTP is not configured.
+  test('forgot-password answers identically for known and unknown emails, and the emailed code resets the password once', async () => {
     const unknown = await fetch(`${baseUrl}/api/auth/forgot-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: `nobody_${runId}@example.com` }) })
     assert.equal(unknown.status, 200)
     const unknownBody = await unknown.json()
+    assert.equal(unknownBody.expiresInSeconds, 300, 'a code lives 5 minutes')
 
-    const printed = []
-    const originalLog = console.log
-    console.log = (...args) => printed.push(args.join(' '))
     let known
-    try {
+    const code = await captureEmailedCode(async () => {
       known = await fetch(`${baseUrl}/api/auth/forgot-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: customer.email.toUpperCase() }) })
-    } finally {
-      console.log = originalLog
-    }
+    })
     assert.equal(known.status, 200)
     assert.deepEqual(await known.json(), unknownBody, 'the response must not reveal whether the email is on file')
+    assert.match(code, /^\d{6}$/, 'a six-digit code is emailed')
 
-    const mail = printed.find((line) => line.includes('[mail not configured]'))
-    assert.ok(mail, 'with no SMTP configured the email is printed to the console')
-    // The token rides in the URL FRAGMENT now, not the query string — a
-    // fragment is never sent in a Referer header or to the server hosting
-    // the page (RULES-PLANS/SECURITY_REVIEW.md item 7).
-    const token = mail.match(/reset-password#token=([A-Za-z0-9_-]+)/)[1]
-
-    // Cooldown: a second request straight away sends nothing and issues
-    // no second token — but still answers exactly the same 200.
-    const printedAgain = []
-    console.log = (...args) => printedAgain.push(args.join(' '))
+    // Cooldown: a second request straight away sends nothing — but still
+    // answers exactly the same 200, and the first code keeps working.
     let again
-    try {
+    const secondCode = await captureEmailedCode(async () => {
       again = await fetch(`${baseUrl}/api/auth/forgot-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: customer.email }) })
-    } finally {
-      console.log = originalLog
-    }
+    })
     assert.equal(again.status, 200)
     assert.deepEqual(await again.json(), unknownBody)
-    assert.ok(!printedAgain.some((line) => line.includes('[mail not configured]')), 'no second email inside the cooldown')
-    assert.equal((await pool.query('SELECT COUNT(*)::int AS n FROM password_reset_tokens WHERE user_id = $1', [createdUserId])).rows[0].n, 1)
-    const stored = await pool.query('SELECT consumed_at FROM password_reset_tokens WHERE user_id = $1', [createdUserId])
+    assert.equal(secondCode, null, 'no second email inside the cooldown')
+    const stored = await pool.query(`SELECT consumed_at, code_hash, expires_at - created_at AS lifetime FROM password_reset_tokens WHERE user_id = $1 AND purpose = 'RESET' AND consumed_at IS NULL`, [createdUserId])
     assert.equal(stored.rows.length, 1)
-    assert.equal(stored.rows[0].consumed_at, null)
+    assert.notEqual(stored.rows[0].code_hash, code, 'only a hash is stored')
+    assert.equal(stored.rows[0].lifetime.minutes, 5)
 
-    const weak = await fetch(`${baseUrl}/api/auth/reset-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, newPassword: 'short', confirmPassword: 'short' }) })
+    const body = (extra) => JSON.stringify({ email: customer.email, newPassword: 'Brand-New-Password-7!', confirmPassword: 'Brand-New-Password-7!', ...extra })
+    const reset = (extra) => fetch(`${baseUrl}/api/auth/reset-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body(extra) })
+
+    const weak = await reset({ code, newPassword: 'short', confirmPassword: 'short' })
     assert.equal(weak.status, 422)
-    const wrongToken = await fetch(`${baseUrl}/api/auth/reset-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: 'not-a-real-token', newPassword: 'Brand-New-Password-7!', confirmPassword: 'Brand-New-Password-7!' }) })
-    assert.equal(wrongToken.status, 400)
+    const wrongCode = await reset({ code: code === '000000' ? '111111' : '000000' })
+    assert.equal(wrongCode.status, 400)
+    const unknownEmail = await reset({ code, email: `nobody_${runId}@example.com` })
+    assert.equal(unknownEmail.status, 400)
+    assert.deepEqual(await unknownEmail.json(), await wrongCode.json(), 'an unknown email and a wrong code look the same')
 
     // An open session exists from the rememberMe test above; the reset must end it.
     const before = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: customer.username, password: customer.password }) })
     const liveCookie = before.headers.get('set-cookie').split(';')[0]
 
-    const reset = await fetch(`${baseUrl}/api/auth/reset-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, newPassword: 'Brand-New-Password-7!', confirmPassword: 'Brand-New-Password-7!' }) })
-    assert.equal(reset.status, 200)
+    const done = await reset({ code })
+    assert.equal(done.status, 200)
     assert.equal((await fetch(`${baseUrl}/api/auth/me`, { headers: { Cookie: liveCookie } })).status, 401, 'existing sessions are ended')
 
     const oldPassword = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: customer.username, password: customer.password }) })
@@ -497,8 +569,22 @@ describe('customer registration and session lifecycle', () => {
     assert.equal(newPassword.status, 200)
     customer.password = 'Brand-New-Password-7!'
 
-    const reuse = await fetch(`${baseUrl}/api/auth/reset-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, newPassword: 'Another-Password-8!', confirmPassword: 'Another-Password-8!' }) })
-    assert.equal(reuse.status, 400, 'a consumed token is dead')
+    const reuse = await reset({ code, newPassword: 'Another-Password-8!', confirmPassword: 'Another-Password-8!' })
+    assert.equal(reuse.status, 400, 'a used code is dead')
+  })
+
+  test('five wrong reset codes end the code, and an expired code fails', async () => {
+    await pool.query(`UPDATE password_reset_tokens SET created_at = created_at - INTERVAL '2 minutes' WHERE user_id = $1`, [createdUserId])
+    const code = await captureEmailedCode(() => fetch(`${baseUrl}/api/auth/forgot-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: customer.email }) }))
+    const wrong = code === '000000' ? '111111' : '000000'
+    const reset = (typed) => fetch(`${baseUrl}/api/auth/reset-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: customer.email, code: typed, newPassword: 'Fifth-Try-Password-6!', confirmPassword: 'Fifth-Try-Password-6!' }) })
+    for (let attempt = 0; attempt < 5; attempt += 1) assert.equal((await reset(wrong)).status, 400)
+    assert.equal((await reset(code)).status, 400, 'the right code no longer works after five wrong ones')
+
+    await pool.query(`UPDATE password_reset_tokens SET created_at = created_at - INTERVAL '2 minutes' WHERE user_id = $1`, [createdUserId])
+    const fresh = await captureEmailedCode(() => fetch(`${baseUrl}/api/auth/forgot-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: customer.email }) }))
+    await pool.query(`UPDATE password_reset_tokens SET expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE user_id = $1 AND consumed_at IS NULL`, [createdUserId])
+    assert.equal((await reset(fresh)).status, 400, 'an expired code fails')
   })
 })
 
@@ -911,9 +997,10 @@ describe('admin login and the email OTP second factor', () => {
     const signedIn = await loginFrom(trusted)
     const session = cookieFrom(signedIn, 'pectrack_sid').split(';')[0]
     const newPassword = 'Admin-New-Password-8!'
+    const code = await captureEmailedCode(() => fetch(`${baseUrl}/api/auth/password/code`, { method: 'POST', headers: { Cookie: session } }))
     const changed = await fetch(`${baseUrl}/api/auth/password`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: session },
-      body: JSON.stringify({ currentPassword: admin.password, newPassword, confirmPassword: newPassword }),
+      body: JSON.stringify({ currentPassword: admin.password, newPassword, confirmPassword: newPassword, code }),
     })
     assert.equal(changed.status, 200, await changed.clone().text())
     admin.password = newPassword
@@ -943,7 +1030,7 @@ describe('account lockout cannot be extended indefinitely', () => {
     name: 'Lockout Victim',
     firstName: 'Lockout',
     lastName: 'Victim',
-    agree: true,
+    agree: true, addressLine1: 'Rizal Street', barangay: 'Ayuti',
     username: `lockout_${runId}`,
     email: `lockout_${runId}@example.com`,
     contactNumber: randomContactNumber(),
@@ -1070,7 +1157,7 @@ describe('customer email verification', () => {
     name: 'Verify Customer',
     firstName: 'Verify',
     lastName: 'Customer',
-    agree: true,
+    agree: true, addressLine1: 'Rizal Street', barangay: 'Ayuti',
     username: `verifycust_${runId}`,
     email: `verifycust_${runId}@example.com`,
     contactNumber: randomContactNumber(),
@@ -1331,43 +1418,29 @@ describe('customer email verification', () => {
     await pool.query('UPDATE customers SET email_verified_at = NULL WHERE user_id = $1', [userId])
     const current = (await pool.query('SELECT email FROM customers WHERE user_id = $1', [userId])).rows[0].email
 
-    const printed = []
-    const original = console.log
-    console.log = (...args) => printed.push(args.join(' '))
-    try {
-      await post('/api/auth/forgot-password', { email: current })
-    } finally {
-      console.log = original
-    }
-    const resetToken = printed.find((line) => line.includes('/reset-password#token='))?.match(/reset-password#token=([A-Za-z0-9_-]+)/)?.[1]
-    assert.ok(resetToken)
+    await pool.query(`UPDATE password_reset_tokens SET created_at = created_at - INTERVAL '2 minutes' WHERE user_id = $1`, [userId])
+    const resetCode = await captureEmailedCode(() => post('/api/auth/forgot-password', { email: current }))
+    assert.ok(resetCode)
 
-    const reset = await post('/api/auth/reset-password', { token: resetToken, newPassword: 'Another-Strong-Pass-7!', confirmPassword: 'Another-Strong-Pass-7!' })
+    const reset = await post('/api/auth/reset-password', { email: current, code: resetCode, newPassword: 'Another-Strong-Pass-7!', confirmPassword: 'Another-Strong-Pass-7!' })
     assert.equal(reset.status, 200)
     const row = await pool.query('SELECT email_verified_at FROM customers WHERE user_id = $1', [userId])
     assert.ok(row.rows[0].email_verified_at, 'owning the mailbox is exactly what confirmation proves')
   })
 
-  test('a reset link from BEFORE an email change does not confirm the new address', async () => {
+  test('a reset code from BEFORE an email change does not confirm the new address', async () => {
     await pool.query(`UPDATE password_reset_tokens SET created_at = created_at - INTERVAL '10 minutes' WHERE user_id = $1`, [userId])
     await pool.query('UPDATE customers SET email_verified_at = NULL WHERE user_id = $1', [userId])
     const current = (await pool.query('SELECT email FROM customers WHERE user_id = $1', [userId])).rows[0].email
 
-    const printed = []
-    const original = console.log
-    console.log = (...args) => printed.push(args.join(' '))
-    try {
-      await post('/api/auth/forgot-password', { email: current })
-    } finally {
-      console.log = original
-    }
-    const resetToken = printed.find((line) => line.includes('/reset-password#token='))?.match(/reset-password#token=([A-Za-z0-9_-]+)/)?.[1]
-    assert.ok(resetToken)
+    await pool.query(`UPDATE password_reset_tokens SET created_at = created_at - INTERVAL '2 minutes' WHERE user_id = $1`, [userId])
+    const resetCode = await captureEmailedCode(() => post('/api/auth/forgot-password', { email: current }))
+    assert.ok(resetCode)
 
-    // The address changes after the link went out.
+    // The address changes after the code went out.
     await pool.query('UPDATE customers SET email = $2 WHERE user_id = $1', [userId, `verifycust_later_${runId}@example.com`])
 
-    const reset = await post('/api/auth/reset-password', { token: resetToken, newPassword: 'Yet-Another-Pass-8!', confirmPassword: 'Yet-Another-Pass-8!' })
+    const reset = await post('/api/auth/reset-password', { email: `verifycust_later_${runId}@example.com`, code: resetCode, newPassword: 'Yet-Another-Pass-8!', confirmPassword: 'Yet-Another-Pass-8!' })
     assert.equal(reset.status, 200, 'the password reset itself still works')
     const row = await pool.query('SELECT email_verified_at FROM customers WHERE user_id = $1', [userId])
     assert.equal(row.rows[0].email_verified_at, null, 'but it proves the OLD address, not the new one')

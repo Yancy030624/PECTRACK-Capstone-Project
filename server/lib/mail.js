@@ -49,6 +49,27 @@ export async function sendOtpEmail({ to, code, minutes }) {
   })
 }
 
+// Forgot password (RESET) and signed-in password change (CHANGE) — six
+// digits by email instead of a link (final defense 2026-11-18, migration 045).
+export async function sendPasswordCodeEmail({ to, name, code, minutes, purpose }) {
+  const asked = purpose === 'CHANGE' ? 'change the password of' : 'reset the password for'
+  return sendMail({
+    to,
+    subject: purpose === 'CHANGE' ? 'Your PECTRACK password change code' : 'Your PECTRACK password reset code',
+    text: [
+      `Hello ${name ?? 'there'},`,
+      '',
+      `Someone asked to ${asked} your PECTRACK account.`,
+      '',
+      `Your code is ${code}. It expires in ${minutes} minutes and can be used once.`,
+      '',
+      purpose === 'CHANGE'
+        ? 'If you did not ask for this, someone may be using your signed-in account. Sign out on every device and change your password.'
+        : 'If you did not ask for this, you can ignore this email; your password stays as it is.',
+    ].join('\n'),
+  })
+}
+
 // Customer email verification (migration 016). A link rather than a
 // code: the customer clicks once in their inbox instead of copying six
 // digits between tabs. It carries the token in the URL fragment, for the

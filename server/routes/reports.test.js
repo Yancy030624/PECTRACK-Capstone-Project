@@ -54,7 +54,7 @@ describe('reporting & analytics', () => {
 
   const admin = { username: `repadmin_${runId}`, password: 'Admin-Only-Password-9!' }
   const cashier = { role: 'CASHIER', name: 'Report Cashier', username: `repcash_${runId}`, email: `repcash_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
-  const customer = { name: 'Report Customer', firstName: 'Report', lastName: 'Customer', agree: true, username: `repcust_${runId}`, email: `repcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const customer = { name: 'Report Customer', firstName: 'Report', lastName: 'Customer', agree: true, addressLine1: 'Rizal Street', barangay: 'Ayuti', username: `repcust_${runId}`, email: `repcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
   const driver = { role: 'DELIVERY_PERSONNEL', name: 'Report Driver', username: `repdrv_${runId}`, email: `repdrv_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Driver-Password-9!' }
 
   // Places a ₱100.00 order (1 unit of the fixed-price test product) as the
@@ -156,7 +156,7 @@ describe('reporting & analytics', () => {
     const customerRowForAddress = await pool.query('SELECT customer_id FROM customers WHERE user_id = $1', [customerRow.rows[0].user_id])
     const addressResult = await pool.query(
       `INSERT INTO customer_addresses (customer_id, recipient_name, contact_num, address_line_1, is_default)
-       VALUES ($1, 'Report Test Recipient', $2, '1 Report St', TRUE) RETURNING address_id`,
+       VALUES ($1, 'Report Test Recipient', $2, '1 Report St', FALSE) RETURNING address_id`,
       [customerRowForAddress.rows[0].customer_id, randomContactNumber()],
     )
     customerAddressId = addressResult.rows[0].address_id

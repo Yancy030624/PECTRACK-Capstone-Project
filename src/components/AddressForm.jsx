@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { apiPost } from '../api/client.js'
+import { apiPatch, apiPost } from '../api/client.js'
 import { deliveryTown } from '../lib/bakery.js'
 import { digitsOnly } from '../lib/phone.js'
 import { nameOnly, wholeNumber } from '../lib/inputFilters.js'
@@ -25,9 +25,16 @@ const dashboardClasses = {
   cancel: 'inline-flex h-9 items-center rounded-control border border-line-200 bg-surface px-4 text-sm font-medium text-ink-700 transition hover:bg-surface-sunk',
 }
 
-export function AddressForm({ onSaved, onCancel, submitLabel = 'Save address', customerId, variant = 'storefront' }) {
+const editableFields = Object.keys(emptyAddressForm)
+const formFromAddress = (address) => Object.fromEntries(editableFields.map((field) => [field, address[field] ?? '']))
+
+// With `address`, the form edits that saved address (the panel, final
+// defense 2026-11-18; FINAL_DEFENSE_REVISIONS_PLAN.md C2) and sends only the
+// fields that changed. An address already used on an order is saved by the
+// server as a new address, so past orders keep where they went.
+export function AddressForm({ onSaved, onCancel, submitLabel = 'Save address', customerId, variant = 'storefront', address = null }) {
   const cls = variant === 'dashboard' ? dashboardClasses : storefrontClasses
-  const [form, setForm] = useState(emptyAddressForm)
+  const [form, setForm] = useState(() => (address ? formFromAddress(address) : emptyAddressForm))
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
 
@@ -39,6 +46,17 @@ export function AddressForm({ onSaved, onCancel, submitLabel = 'Save address', c
     setSubmitting(true)
     setErrors({})
     try {
+      if (address) {
+        const original = formFromAddress(address)
+        const changes = Object.fromEntries(editableFields.filter((field) => form[field] !== original[field]).map((field) => [field, form[field]]))
+        if (Object.keys(changes).length === 0) {
+          onCancel?.()
+          return
+        }
+        const data = await apiPatch(`/api/addresses/${address.id}`, changes)
+        onSaved?.(data.address)
+        return
+      }
       const body = { label: form.label, recipientName: form.recipientName, contactNumber: form.contactNumber, addressLine1: form.addressLine1 }
       // Municipality and province are never sent: the bakery delivers in
       // Lucban, Quezon only (SENIOR_CONSULT_PLAN.md, S2), and the columns

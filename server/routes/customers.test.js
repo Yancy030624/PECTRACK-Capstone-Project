@@ -30,8 +30,8 @@ describe('customer record management', () => {
 
   const admin = { username: `custadmin_${runId}`, password: 'Admin-Only-Password-9!' }
   const cashier = { role: 'CASHIER', name: 'Test Cashier', username: `custcash_${runId}`, email: `custcash_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
-  const targetCustomer = { name: 'Findable Customer', firstName: 'Findable', lastName: 'Customer', agree: true, username: `findme_${runId}`, email: `findme_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
-  const otherCustomer = { name: 'Other Customer', firstName: 'Other', lastName: 'Customer', agree: true, username: `other_${runId}`, email: `other_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const targetCustomer = { name: 'Findable Customer', firstName: 'Findable', lastName: 'Customer', agree: true, addressLine1: 'Rizal Street', barangay: 'Ayuti', username: `findme_${runId}`, email: `findme_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const otherCustomer = { name: 'Other Customer', firstName: 'Other', lastName: 'Customer', agree: true, addressLine1: 'Rizal Street', barangay: 'Ayuti', username: `other_${runId}`, email: `other_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
 
   before(async () => {
     server = app.listen(0)

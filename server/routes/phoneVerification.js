@@ -4,7 +4,7 @@ import express from 'express'
 import { config } from '../config.js'
 import { pool } from '../db.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
-import { PhoneVerificationError, checkPhoneCode, codeMinutes, startPhoneVerification } from '../lib/phoneVerification.js'
+import { PhoneVerificationError, checkPhoneCode, codeMinutes, resendSeconds, startPhoneVerification } from '../lib/phoneVerification.js'
 import { authLimiter, smsCodeLimiter } from '../lib/security.js'
 import { normalizePhone } from '../lib/sms.js'
 
@@ -43,6 +43,9 @@ router.post('/send', smsCodeLimiter, staffForReserve, async (request, response) 
       verificationToken,
       phone,
       minutes: codeMinutes,
+      // For the countdown on the code screen.
+      expiresInSeconds: codeMinutes * 60,
+      resendInSeconds: resendSeconds,
       ...(showCode && { testCode: code }),
       message: sent ? `We texted a code to ${phone}.` : showCode ? `Test mode — no SMS is sent yet. The code for ${phone} is ${code}.` : `Code created for ${phone}. Texting is not set up here, so the code is in the server log.`,
     })

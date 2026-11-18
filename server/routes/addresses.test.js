@@ -33,8 +33,8 @@ describe('customer address management', () => {
 
   const admin = { username: `addrtest_admin_${runId}`, password: 'Admin-Only-Password-9!' }
   const cashier = { role: 'CASHIER', name: 'Addr Test Cashier', username: `addrtest_cash_${runId}`, email: `addrtest_cash_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
-  const customer = { name: 'Addr Test Customer', firstName: 'Addr Test', lastName: 'Customer', agree: true, username: `addrtest_cust_${runId}`, email: `addrtest_cust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
-  const secondCustomer = { name: 'Second Addr Customer', firstName: 'Second Addr', lastName: 'Customer', agree: true, username: `addrtest_cust2_${runId}`, email: `addrtest_cust2_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const customer = { name: 'Addr Test Customer', firstName: 'Addr Test', lastName: 'Customer', agree: true, addressLine1: 'Rizal Street', barangay: 'Ayuti', username: `addrtest_cust_${runId}`, email: `addrtest_cust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const secondCustomer = { name: 'Second Addr Customer', firstName: 'Second Addr', lastName: 'Customer', agree: true, addressLine1: 'Rizal Street', barangay: 'Ayuti', username: `addrtest_cust2_${runId}`, email: `addrtest_cust2_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
 
   const validAddress = () => ({
     recipientName: 'Juan Dela Cruz',
@@ -89,6 +89,10 @@ describe('customer address management', () => {
     secondCustomerId = secondCustomerRow.rows[0].customer_id
     const secondCustomerLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: secondCustomer.username, password: secondCustomer.password }) })
     secondCustomerCookie = secondCustomerLogin.headers.get('set-cookie').split(';')[0]
+    // Sign-up now saves a first address (final defense, 2026-11-18). This
+    // suite tests the address book from empty, as for an account made
+    // before then, so the sign-up addresses are removed here.
+    await pool.query('DELETE FROM customer_addresses WHERE customer_id = ANY($1)', [[customerId, secondCustomerId]])
   })
 
   after(async () => {
@@ -230,24 +234,45 @@ describe('customer address management', () => {
   })
 
   // orders.address_id points at the row itself, so editing where it goes
-  // would rewrite every past receipt that used it. Once ordered against,
-  // the destination fields freeze; label/notes/default/active stay open.
-  test('an address used on an order can no longer change where it points, but can still be relabelled or retired', async () => {
-    const created = await fetch(`${baseUrl}/api/addresses`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ recipientName: 'Frozen Recipient', contactNumber: '09171234567', addressLine1: '1 Frozen St' }) })
+  // would rewrite every past receipt that used it. Since the final defense
+  // (2026-11-18) the edit is still allowed: it is saved as a new row and
+  // the old row, still linked to its order, is retired.
+  test('editing an address used on an order saves a new address and leaves the address on the order unchanged', async () => {
+    const created = await fetch(`${baseUrl}/api/addresses`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ recipientName: 'Frozen Recipient', contactNumber: '09171234567', addressLine1: '1 Frozen St', isDefault: true }) })
     const address = (await created.json()).address
     const orderId = (await pool.query(`INSERT INTO orders (customer_id, order_type, address_id) VALUES ((SELECT customer_id FROM customer_addresses WHERE address_id = $1), 'DELIVERY', $1) RETURNING order_id`, [address.id])).rows[0].order_id
     try {
-      const frozen = await fetch(`${baseUrl}/api/addresses/${address.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ addressLine1: '2 Moved St' }) })
-      assert.equal(frozen.status, 409)
-      const unchanged = await pool.query('SELECT address_line_1 FROM customer_addresses WHERE address_id = $1', [address.id])
-      assert.equal(unchanged.rows[0].address_line_1, '1 Frozen St')
+      const edited = await fetch(`${baseUrl}/api/addresses/${address.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ addressLine1: '2 Moved St' }) })
+      assert.equal(edited.status, 200)
+      const body = await edited.json()
+      assert.notEqual(body.address.id, address.id, 'a new address row')
+      assert.equal(body.replacedAddressId, address.id)
+      assert.equal(body.address.addressLine1, '2 Moved St')
+      assert.equal(body.address.recipientName, 'Frozen Recipient', 'unchanged fields are copied')
+      assert.equal(body.address.isDefault, true, 'the default moves to the new row')
+      assert.equal(body.address.isActive, true)
 
-      const relabelled = await fetch(`${baseUrl}/api/addresses/${address.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ label: 'Old flat', isActive: false }) })
+      const old = await pool.query('SELECT address_line_1, is_active, is_default FROM customer_addresses WHERE address_id = $1', [address.id])
+      assert.deepEqual(old.rows[0], { address_line_1: '1 Frozen St', is_active: false, is_default: false }, 'the old row keeps the destination of the order and is retired')
+      const order = await pool.query('SELECT address_id FROM orders WHERE order_id = $1', [orderId])
+      assert.equal(String(order.rows[0].address_id), String(address.id), 'the order still points at the old row')
+
+      const defaults = await pool.query('SELECT COUNT(*)::int AS n FROM customer_addresses WHERE customer_id = $1 AND is_default AND is_active', [customerId])
+      assert.equal(defaults.rows[0].n, 1, 'still exactly one default')
+
+      const relabelled = await fetch(`${baseUrl}/api/addresses/${body.address.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ label: 'Old flat' }) })
       assert.equal(relabelled.status, 200)
-      assert.equal((await relabelled.json()).address.label, 'Old flat')
+      assert.equal((await relabelled.json()).address.id, body.address.id, 'an unused address is edited in place')
     } finally {
       await pool.query('DELETE FROM orders WHERE order_id = $1', [orderId])
     }
+  })
+
+  test('another customer cannot edit an address used on an order', async () => {
+    const created = await fetch(`${baseUrl}/api/addresses`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: customerCookie }, body: JSON.stringify({ recipientName: 'Owner Only', contactNumber: '09171234567', addressLine1: '3 Owner St' }) })
+    const address = (await created.json()).address
+    const response = await fetch(`${baseUrl}/api/addresses/${address.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: secondCustomerCookie }, body: JSON.stringify({ addressLine1: '4 Thief St' }) })
+    assert.equal(response.status, 404)
   })
 
   // The partial unique index is `WHERE is_default AND is_active`, so a row
@@ -314,7 +339,7 @@ describe('customer address management', () => {
   // inventory.test.js uses for "the database itself refuses a second
   // pending row".
   test('the database itself refuses a second default address, even when the route\'s own lock is bypassed', async () => {
-    const thirdCustomer = { name: 'Third Addr Customer', firstName: 'Third Addr', lastName: 'Customer', agree: true, username: `addrtest_cust3_${runId}`, email: `addrtest_cust3_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+    const thirdCustomer = { name: 'Third Addr Customer', firstName: 'Third Addr', lastName: 'Customer', agree: true, addressLine1: 'Rizal Street', barangay: 'Ayuti', username: `addrtest_cust3_${runId}`, email: `addrtest_cust3_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
     await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...thirdCustomer, confirmPassword: thirdCustomer.password }) })
     // Fixture: confirm the email the way clicking the emailed link would
     // (migration 016). This suite is not testing verification — auth.test.js
@@ -323,6 +348,7 @@ describe('customer address management', () => {
     const thirdRow = await pool.query('SELECT user_id, (SELECT customer_id FROM customers WHERE user_id = users.user_id) AS customer_id FROM users WHERE username = $1', [thirdCustomer.username])
     createdUserIds.push(thirdRow.rows[0].user_id)
     const thirdCustomerId = thirdRow.rows[0].customer_id
+    await pool.query('DELETE FROM customer_addresses WHERE customer_id = $1', [thirdCustomerId])
 
     const insertDefault = (client, label) => client.query(
       `INSERT INTO customer_addresses (customer_id, label, recipient_name, contact_num, address_line_1, is_default)

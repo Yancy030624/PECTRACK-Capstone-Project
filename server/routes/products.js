@@ -52,9 +52,13 @@ const mapProductRow = (row) => ({
   // is left before ordering. Only the count — the levels and the ledger
   // stay private to routes/inventory.js.
   stockLeft: row.stock_left,
+  // SOFT or HARD. The cashier's advanced-order screen needs it: a soft
+  // bread ordered ahead is baked on its pickup day, so today's stock does
+  // not cap it (DAILY_STOCK_PLAN.md).
+  stockType: row.stock_type,
 })
 
-const productSelectQuery = `SELECT p.product_id, p.category_id, c.category_name, p.product_name, p.description, p.price, p.variant, p.availability_status, p.image_key,
+const productSelectQuery = `SELECT p.product_id, p.category_id, c.category_name, p.product_name, p.description, p.price, p.variant, p.availability_status, p.image_key, p.stock_type,
             COALESCE(i.stock_quantity, 0) > 0 AS in_stock, COALESCE(i.stock_quantity, 0) AS stock_left
      FROM products p
      JOIN categories c ON c.category_id = p.category_id

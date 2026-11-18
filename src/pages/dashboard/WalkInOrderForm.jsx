@@ -11,6 +11,7 @@ import { bakery, bakeryAddress } from '../../lib/bakery.js'
 import { NeededByFields } from '../../components/NeededByFields.jsx'
 import { checkPicked, toRequestedTime } from '../../lib/orderHours.js'
 import { usePhoneVerification } from '../../lib/usePhoneVerification.js'
+import { CodeTimer } from '../../components/CodeTimer.jsx'
 import { digitsOnly } from '../../lib/phone.js'
 import { PrintThisButton } from '../../components/PrintReport.jsx'
 import { decimalNumber, nameOnly, wholeNumber } from '../../lib/inputFilters.js'
@@ -114,6 +115,18 @@ export function WalkInOrderForm({ onCreated }) {
   }
   const settleQuantity = (productId) => setLines((current) => current.map((line) => (line.productId === productId && !(line.quantity > 0) ? { ...line, quantity: 1 } : line)))
   const quantityOf = (line) => Number(line.quantity) || 0
+  // The pieces left when a line asks for more than that, else null (the
+  // panel, final defense 2026-11-18: typing 99 with less in stock must say
+  // so at once; FINAL_DEFENSE_REVISIONS_PLAN.md C4). A soft bread on an
+  // advanced order is baked on its pickup day, so today's stock does not
+  // cap it.
+  const piecesLeftIfShort = (line) => {
+    const product = productsById.get(line.productId)
+    if (!product || (isReserve && product.stockType === 'SOFT')) return null
+    const left = Number(product.stockLeft ?? 0)
+    return quantityOf(line) > left ? left : null
+  }
+  const shortLines = lines.filter((line) => piecesLeftIfShort(line) !== null)
 
   const subtotal = lines.reduce((total, line) => {
     const product = productsById.get(line.productId)
@@ -145,6 +158,10 @@ export function WalkInOrderForm({ onCreated }) {
     }
     if (lines.some((line) => !(quantityOf(line) > 0))) {
       setMessage('Enter a quantity for every item.')
+      return
+    }
+    if (shortLines.length > 0) {
+      setMessage('Some quantities are more than the stock left. Lower the quantities marked below.')
       return
     }
     const customerErrors = {}
@@ -205,7 +222,8 @@ export function WalkInOrderForm({ onCreated }) {
       else setReceipt(placed)
     } catch (error) {
       if (error.status === 409 || (error.status === 422 && error.errors?.items)) {
-        setMessage('One or more items no longer have enough stock, or are no longer available. Review the order below and try again.')
+        // The server names the product and the pieces left.
+        setMessage(error.message || 'One or more items no longer have enough stock, or are no longer available. Review the order below and try again.')
         apiGet('/api/products').then((data) => setProducts(data.products)).catch(() => {})
       } else {
         setErrors(error.errors ?? {})
@@ -320,6 +338,7 @@ export function WalkInOrderForm({ onCreated }) {
                   <Input value={phone.code} onChange={(event) => phone.setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" placeholder="6-digit code" aria-label="Code from the text" className="w-36" />
                   <Button type="button" size="sm" className="h-9" onClick={phone.check} disabled={phone.busy || phone.code.length !== 6}>Verify</Button>
                   <span className="text-xs text-ink-500">Ask the customer for the code we texted.</span>
+                  <CodeTimer className="basis-full" expiresAt={phone.expiresAt} linkClass="font-semibold text-brand-700 hover:underline" />
                 </div>
               )}
               {phone.info && <p className="mt-1 text-xs text-ink-500">{phone.info}</p>}
@@ -389,6 +408,11 @@ export function WalkInOrderForm({ onCreated }) {
                     <button type="button" onClick={() => removeLine(line.productId)} className="shrink-0 rounded-full px-2 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-50">
                       Remove
                     </button>
+                    {piecesLeftIfShort(line) !== null && (
+                      <p role="alert" className="basis-full text-xs font-semibold text-red-700">
+                        {piecesLeftIfShort(line) === 0 ? `${product.name} is sold out. Remove it from the order.` : `Only ${piecesLeftIfShort(line)} ${product.name} left. Lower the quantity to ${piecesLeftIfShort(line)} or fewer.`}
+                      </p>
+                    )}
                   </li>
                 )
               })}
@@ -469,7 +493,7 @@ export function WalkInOrderForm({ onCreated }) {
             </div>
           </>
         )}
-        <Button type="button" size="touch" className="mt-4 w-full" onClick={handleSubmit} disabled={submitting || lines.length === 0}>
+        <Button type="button" size="touch" className="mt-4 w-full" onClick={handleSubmit} disabled={submitting || lines.length === 0 || shortLines.length > 0}>
           {submitting ? 'Placing order…' : 'Place Order'}
         </Button>
       </div>

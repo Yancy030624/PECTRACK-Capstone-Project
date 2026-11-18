@@ -65,7 +65,10 @@ const addressSelectQuery = `SELECT address_id, customer_id, label, recipient_nam
 // { errors, values } / has(field) shape routes/products.js's
 // validateProductFields uses, for the same reason: one function serves
 // both full creation (partial: false) and a partial PATCH.
-function validateAddressFields(body, { partial }) {
+// Exported for registration, which saves the customer's first address in
+// the same transaction as the account (final defense 2026-11-18;
+// FINAL_DEFENSE_REVISIONS_PLAN.md C2).
+export function validateAddressFields(body, { partial }) {
   const errors = {}
   const values = {}
   const has = (field) => !partial || field in body
@@ -303,11 +306,16 @@ router.patch('/:id', async (request, response) => {
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
   if (Object.keys(values).length === 0) return response.status(422).json({ message: 'Provide at least one field to update.' })
 
+  // An address already used on an order is not changed in place: its
+  // orders must keep saying where they went. Editing it saves the changes
+  // as a NEW address row and retires the old one, in one transaction, so
+  // to the customer it is simply the same address, edited (the panel,
+  // final defense 2026-11-18: addresses must be editable in the profile;
+  // FINAL_DEFENSE_REVISIONS_PLAN.md C2). This replaced a 409.
+  let copyOnEdit = false
   if (frozenOnceOrderedFields.some((field) => field in values)) {
     const used = await pool.query('SELECT 1 FROM orders WHERE address_id = $1 LIMIT 1', [addressId])
-    if (used.rowCount > 0) {
-      return response.status(409).json({ message: 'This address has already been used on an order, so its details can no longer be changed. Deactivate it and add a new address instead.' })
-    }
+    copyOnEdit = used.rowCount > 0
   }
 
   // Deactivating an address also clears is_default — an inactive default
@@ -332,6 +340,8 @@ router.patch('/:id', async (request, response) => {
   if (values.isDefault === true && !willBeActive) {
     return response.status(422).json({ message: 'A deactivated address cannot be the default one.', errors: { isDefault: 'Reactivate this address before making it the default.' } })
   }
+
+  if (copyOnEdit) return replaceUsedAddress(response, { addressId, customerId: current.customer_id, values })
 
   const client = await pool.connect()
   try {
@@ -388,5 +398,45 @@ router.patch('/:id', async (request, response) => {
   const updated = await pool.query(`${addressSelectQuery} WHERE address_id = $1`, [addressId])
   return response.json({ address: mapAddressRow(updated.rows[0]) })
 })
+
+// The copy-on-edit half of PATCH /:id (see the comment there). The
+// customer row is locked first, the same lock POST / and the default swap
+// take, so two edits of one customer's addresses run one after the other.
+// The old row is retired before the new one is inserted, so the partial
+// unique index on (is_default AND is_active) never sees two defaults.
+async function replaceUsedAddress(response, { addressId, customerId, values }) {
+  const client = await pool.connect()
+  let newId
+  try {
+    await client.query('BEGIN')
+    await client.query('SELECT customer_id FROM customers WHERE customer_id = $1 FOR UPDATE', [customerId])
+    const locked = await client.query(`${addressSelectQuery} WHERE address_id = $1 FOR UPDATE`, [addressId])
+    const old = mapAddressRow(locked.rows[0])
+    const merged = { ...old, ...values }
+    const isActive = merged.isActive
+    const isDefault = isActive && merged.isDefault
+
+    await client.query('UPDATE customer_addresses SET is_default = FALSE, is_active = FALSE WHERE address_id = $1', [addressId])
+    if (isDefault) await client.query('UPDATE customer_addresses SET is_default = FALSE WHERE customer_id = $1 AND is_default = TRUE', [customerId])
+    const inserted = await client.query(
+      `INSERT INTO customer_addresses (customer_id, label, recipient_name, contact_num, address_line_1, address_line_2, barangay, municipality, province, postal_code, delivery_notes, is_default, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       RETURNING address_id`,
+      [customerId, merged.label, merged.recipientName, merged.contactNumber, merged.addressLine1, merged.addressLine2, merged.barangay, merged.municipality, merged.province, merged.postalCode, merged.deliveryNotes, isDefault, isActive],
+    )
+    newId = inserted.rows[0].address_id
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    if (error.code === '23505' && error.constraint === 'customer_addresses_one_default_per_customer') {
+      return response.status(409).json({ message: 'Another address was just set as default — try again.' })
+    }
+    throw error
+  } finally {
+    client.release()
+  }
+  const saved = await pool.query(`${addressSelectQuery} WHERE address_id = $1`, [newId])
+  return response.json({ address: mapAddressRow(saved.rows[0]), replacedAddressId: addressId })
+}
 
 export default router

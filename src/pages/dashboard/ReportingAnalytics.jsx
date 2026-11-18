@@ -11,6 +11,7 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
 import { ForecastPanel } from './ForecastPanel.jsx'
+import { showForecast } from '../../lib/features.js'
 import { PeakPeriods } from './PeakPeriods.jsx'
 import { InventoryPrintSummary, ProductsPrintSummary, SalesPrintSummary } from './ReportPrintSummary.jsx'
 import { PrintButton, PrintHeader } from '../../components/PrintReport.jsx'
@@ -44,7 +45,8 @@ const inventorySoldNote = 'Sold follows the date stock moved, and a cancelled or
 // payments as Payment & Billing's Payment log, which now exports the PDF.
 // Report History is now the Export history (REPORTS_UI_PLAN.md U2): only
 // reports that left the system, by admin or cashier.
-const tabsFor = (role) => (role === 'ADMIN' ? ['Sales', 'Products', 'Inventory', 'Forecast', 'Export history'] : ['Sales', 'Products', 'Inventory', 'Forecast'])
+// The Forecast tab is hidden while showForecast is off (lib/features.js).
+const tabsFor = (role) => (role === 'ADMIN' ? ['Sales', 'Products', 'Inventory', 'Forecast', 'Export history'] : ['Sales', 'Products', 'Inventory', 'Forecast']).filter((tab) => showForecast || tab !== 'Forecast')
 // The PDF each tab's print is recorded as.
 const printTypes = { Sales: 'SALES_PDF', Products: 'PRODUCTS_PDF', Inventory: 'INVENTORY_PDF', Forecast: 'FORECAST_PDF' }
 
@@ -230,7 +232,7 @@ export function ReportingAnalytics({ user }) {
         subtitle={appliedRange && activeTab !== 'Forecast' && activeTab !== 'Export history' ? `${formatDate(`${appliedRange.from}T00:00:00`)} – ${formatDate(`${appliedRange.to}T00:00:00`)}${appliedRange.includeDemo ? ' · includes demo data' : ''}` : activeTab === 'Forecast' ? 'Next seven days' : undefined}
         user={user}
       />
-      <ModuleHeader role={user.role} title="Reporting & Analytics" description="Pick a date range for the sales, product and inventory reports, or see the next 7 days' forecast. Payments are listed in Payment & Billing." className="print:hidden" />
+      <ModuleHeader role={user.role} title="Reporting & Analytics" description={showForecast ? "Pick a date range for the sales, product and inventory reports, or see the next 7 days' forecast. Payments are listed in Payment & Billing." : "Pick a date range for the sales, product and inventory reports. Payments are listed in Payment & Billing."} className="print:hidden" />
 
       <div className="staff-tabs mt-6 flex flex-wrap items-center gap-2 print:hidden" role="group" aria-label="Report sections">
         {tabs.map((tab) => (
@@ -465,9 +467,11 @@ export function ReportingAnalytics({ user }) {
         ) : <p className="mt-6 text-sm text-ink-500">Loading inventory activity…</p>}
         </div>
       </div>
-      <div hidden={activeTab !== 'Forecast'}>
-        <ForecastPanel user={user} active={activeTab === 'Forecast'} />
-      </div>
+      {showForecast && (
+        <div hidden={activeTab !== 'Forecast'}>
+          <ForecastPanel user={user} active={activeTab === 'Forecast'} />
+        </div>
+      )}
 
       {user.role === 'ADMIN' && (
         <div hidden={activeTab !== 'Export history'}>

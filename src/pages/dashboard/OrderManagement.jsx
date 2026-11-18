@@ -23,7 +23,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { NotPaidTag, PaymentModeLine } from '../../components/ui/PaymentStatus.jsx'
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../components/ui/Table.jsx'
 import { LoadingRows } from '../../components/ui/Skeleton.jsx'
-import { formatDate, formatDateTime, formatPeso } from '../../lib/format.js'
+import { formatDate, formatDateTime, formatPeso, formatTime } from '../../lib/format.js'
 import { matchesOrderSearch, orderLabel } from '../../lib/orderNumber.js'
 import { useMediaQuery } from '../../lib/useMediaQuery.js'
 import { WalkInOrderForm } from './WalkInOrderForm.jsx'
@@ -113,6 +113,14 @@ function DetailPanel({ open, onClose, labelledBy, children }) {
 
 // The compact per-order row used by the customer list, and by the staff
 // list below `md` where a five-column table cannot fit.
+// A customer's own checkout hold that still waits for their GCash payment
+// (no reference sent yet). The panel, final defense 2026-11-18: going back
+// from the payment page must not lose the order, so My Orders lists it with
+// a way back to the payment page (FINAL_DEFENSE_REVISIONS_PLAN.md C1).
+const waitingForCustomerPayment = (order) =>
+  order.status === 'AWAITING_PAYMENT' && !(order.referenceSent ?? order.payment?.payments?.some((payment) => payment.method === 'QRPH' && payment.status === 'PENDING'))
+const holdStatusLabel = (order) => (order.status === 'AWAITING_PAYMENT' ? (waitingForCustomerPayment(order) ? 'Waiting for your payment' : 'Checking payment') : undefined)
+
 function OrderCardList({ orders, selectedOrderId, onOpen, showCustomer }) {
   return (
     <ul className="divide-y divide-line-100">
@@ -130,7 +138,7 @@ function OrderCardList({ orders, selectedOrderId, onOpen, showCustomer }) {
                 {showCustomer && <span className="font-normal text-ink-500"> · {order.customerName ?? 'Walk-in'}</span>}
                 {order.isReservation && <span className="ml-1.5 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700">Advanced order</span>}
               </span>
-              <span className="flex items-center gap-1.5"><NotPaidTag order={order} /><StatusBadge status={order.status} /></span>
+              <span className="flex items-center gap-1.5"><NotPaidTag order={order} /><StatusBadge status={order.status} label={holdStatusLabel(order)} /></span>
             </div>
             <div className="mt-1 flex items-center justify-between text-xs text-ink-500">
               <span>
@@ -140,6 +148,12 @@ function OrderCardList({ orders, selectedOrderId, onOpen, showCustomer }) {
               <span className="font-medium text-ink-700 tabular-nums">{formatPeso(order.totalAmount)}</span>
             </div>
           </button>
+          {waitingForCustomerPayment(order) && (
+            <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-3 text-xs text-ink-500">
+              <span>Held until {formatTime(order.holdExpiresAt)}. Pay before then or the order is released.</span>
+              <Link to={`/receipt/${order.id}`} className="inline-flex h-8 items-center rounded-control bg-brand-600 px-3 text-xs font-semibold text-white transition hover:bg-brand-700">Pay now</Link>
+            </div>
+          )}
         </li>
       ))}
     </ul>
@@ -598,15 +612,16 @@ function CustomerOrders({ user }) {
             <p className="text-xs text-ink-500">
               <strong className="text-ink-900">Order {orderLabel(orderDetail)}</strong> · {orderDetail.orderType} · placed {formatDate(orderDetail.orderDate)}
             </p>
-            <StatusBadge status={orderDetail.status} label={orderDetail.status === 'AWAITING_PAYMENT' ? 'Checking payment' : undefined} />
+            <StatusBadge status={orderDetail.status} label={holdStatusLabel(orderDetail)} />
           </div>
           <PaymentModeLine order={orderDetail} />
           {/* QR Ph (QRPH_PLAN.md, Q12): the customer's own order waits while
-              the bakery checks the reference, or was not accepted. */}
+              the bakery checks the reference, or was not accepted. A hold
+              with no reference yet waits for the customer to pay. */}
           {orderDetail.status === 'AWAITING_PAYMENT' && (
             <p className="rounded-panel bg-surface-warm p-3 text-sm text-ink-700">
-              The bakery is checking your GCash payment.{' '}
-              <Link to={`/receipt/${orderDetail.id}`} className="font-semibold text-brand-700 hover:underline">Open order</Link>
+              {waitingForCustomerPayment(orderDetail) ? 'This order is waiting for your GCash payment.' : 'The bakery is checking your GCash payment.'}{' '}
+              <Link to={`/receipt/${orderDetail.id}`} className="font-semibold text-brand-700 hover:underline">{waitingForCustomerPayment(orderDetail) ? 'Pay now' : 'Open order'}</Link>
             </p>
           )}
           {orderDetail.status === 'CANCELLED' && orderDetail.payment?.payments?.some((payment) => payment.rejectedReason) && (

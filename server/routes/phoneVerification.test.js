@@ -152,7 +152,7 @@ describe('phone codes and reservations', () => {
 
   test('sign-up needs the number verified, and marks it verified', async () => {
     const phone = randomMobile()
-    const account = { firstName: 'Phone', lastName: 'Tester', agree: true, username: `smsreg_${runId}`, email: `smsreg_${runId}@example.com`, contactNumber: phone, password: 'Correct-Horse-Battery-9!', confirmPassword: 'Correct-Horse-Battery-9!' }
+    const account = { firstName: 'Phone', lastName: 'Tester', agree: true, addressLine1: 'Rizal Street', barangay: 'Ayuti', username: `smsreg_${runId}`, email: `smsreg_${runId}@example.com`, contactNumber: phone, password: 'Correct-Horse-Battery-9!', confirmPassword: 'Correct-Horse-Battery-9!' }
 
     const unverified = await post('/api/auth/register', account)
     assert.equal(unverified.status, 422)

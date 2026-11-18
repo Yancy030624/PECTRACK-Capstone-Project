@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { apiPost } from '../api/client.js'
 import logoMark from '../assets/logo-mark.png'
 import { PasswordToggle } from './PasswordToggle.jsx'
+import { CodeTimer, codeTimes } from './CodeTimer.jsx'
 
 // Each door wears its own colours, so nobody has to read a label to know
 // which one is open: customer is the storefront's warm crust, staff the
@@ -94,7 +95,7 @@ export function LoginForm({ mode = 'customer', onModeChange = () => {}, onLogin,
       setWrongDoor(null)
       // Admin accounts don't get a session yet — the server wants a
       // verification code first. Everyone else is signed in immediately.
-      if (data.otpRequired) setPendingOtp({ username: data.username, challengeToken: data.challengeToken })
+      if (data.otpRequired) setPendingOtp({ username: data.username, challengeToken: data.challengeToken, ...codeTimes(data) })
       else onLogin(data.user)
     } catch (error) {
       // 403 with an `audience` is the wrong-door refusal: right password,
@@ -181,7 +182,8 @@ export function LoginForm({ mode = 'customer', onModeChange = () => {}, onLogin,
           <div>
             <label htmlFor="otp-code" className="mb-1.5 block text-xs font-bold">Verification code</label>
             <input id="otp-code" value={otpCode} onChange={(event) => setOtpCode(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" autoFocus className={`${fieldClass} px-4 py-3 text-center text-2xl font-bold tracking-[0.5em]`} />
-            <p className="mt-1 text-[11px] text-stone-500">The code works for 5 minutes. Check spam if it is not in your inbox.</p>
+            <p className="mt-1 text-[11px] text-stone-500">Check spam if it is not in your inbox. For a new code, go back and log in again.</p>
+            <CodeTimer className="mt-1" expiresAt={pendingOtp.expiresAt} />
           </div>
           <label className="flex cursor-pointer items-start gap-2 text-xs font-bold">
             <input type="checkbox" checked={trustDevice} onChange={(event) => setTrustDevice(event.target.checked)} className={`mt-0.5 h-4 w-4 shrink-0 ${theme.accent}`} />

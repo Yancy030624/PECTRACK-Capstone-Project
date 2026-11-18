@@ -32,7 +32,7 @@ describe('product catalog management', () => {
 
   const admin = { username: `prodadmin_${runId}`, password: 'Admin-Only-Password-9!' }
   const cashier = { role: 'CASHIER', name: 'Test Cashier', username: `prodcash_${runId}`, email: `prodcash_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
-  const customer = { name: 'Test Customer', firstName: 'Test', lastName: 'Customer', agree: true, username: `prodcust_${runId}`, email: `prodcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const customer = { name: 'Test Customer', firstName: 'Test', lastName: 'Customer', agree: true, addressLine1: 'Rizal Street', barangay: 'Ayuti', username: `prodcust_${runId}`, email: `prodcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
 
   before(async () => {
     server = app.listen(0)
@@ -308,7 +308,7 @@ describe('product catalog management', () => {
     // private.
     test('the public response carries the count left, but no level or cost field, by name', async () => {
       const { product } = await (await fetch(`${baseUrl}/api/products/${publicAvailableId}`)).json()
-      assert.deepEqual(Object.keys(product).sort(), ['availabilityStatus', 'categoryId', 'categoryName', 'description', 'id', 'imageUrl', 'inStock', 'name', 'price', 'stockLeft', 'variant'])
+      assert.deepEqual(Object.keys(product).sort(), ['availabilityStatus', 'categoryId', 'categoryName', 'description', 'id', 'imageUrl', 'inStock', 'name', 'price', 'stockLeft', 'stockType', 'variant'])
       assert.equal(typeof product.inStock, 'boolean')
       assert.equal(typeof product.stockLeft, 'number')
       for (const forbidden of ['stockQuantity', 'stock_quantity', 'cost', 'minStockLevel', 'min_stock_level']) {

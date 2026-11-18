@@ -36,7 +36,7 @@ describe('delivery management', () => {
 
   const admin = { username: `delivadmin_${runId}`, password: 'Admin-Only-Password-9!' }
   const cashier = { role: 'CASHIER', name: 'Deliv Cashier', username: `delivcash_${runId}`, email: `delivcash_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
-  const customer = { name: 'Deliv Customer', firstName: 'Deliv', lastName: 'Customer', agree: true, username: `delivcust_${runId}`, email: `delivcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const customer = { name: 'Deliv Customer', firstName: 'Deliv', lastName: 'Customer', agree: true, addressLine1: 'Rizal Street', barangay: 'Ayuti', username: `delivcust_${runId}`, email: `delivcust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
 
   // Places a fresh DELIVERY order as the test customer and returns its id
   // — every workflow test below needs its own order at PENDING_ASSIGNMENT
@@ -119,7 +119,7 @@ describe('delivery management', () => {
 
     const address = await pool.query(
       `INSERT INTO customer_addresses (customer_id, recipient_name, contact_num, address_line_1, is_default)
-       VALUES ($1, 'Deliv Test Customer', $2, '1 Bell Ave', TRUE) RETURNING address_id`,
+       VALUES ($1, 'Deliv Test Customer', $2, '1 Bell Ave', FALSE) RETURNING address_id`,
       [customerId, randomContactNumber()],
     )
     addressId = address.rows[0].address_id

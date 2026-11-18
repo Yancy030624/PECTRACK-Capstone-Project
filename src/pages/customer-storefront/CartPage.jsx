@@ -4,6 +4,7 @@ import { apiGet } from '../../api/client.js'
 import { useCart } from '../../cart/CartContext.jsx'
 import { formatPeso } from '../../lib/format.js'
 import { useLiveStock } from '../../lib/useLiveStock.js'
+import { UnpaidOrderNotice } from '../../components/storefront/UnpaidOrderNotice.jsx'
 
 export function CartPage() {
   const { lines, setQuantity, removeItem } = useCart()
@@ -36,6 +37,8 @@ export function CartPage() {
     .filter(({ product }) => product && product.availabilityStatus)
 
   const subtotal = validLines.reduce((total, { line, product }) => total + Number(product.price) * line.quantity, 0)
+  // Stock can drop below a cart line while the page is open (live stock).
+  const overStock = validLines.some(({ line, product }) => Number.isInteger(product.stockLeft) && line.quantity > product.stockLeft)
 
   return (
     <section className="mx-auto max-w-4xl px-4 py-14 sm:px-7">
@@ -43,6 +46,8 @@ export function CartPage() {
       <h1 className="mt-1 font-display text-4xl font-bold text-cocoa-900 sm:text-5xl">Review your order</h1>
 
       {message && <p role="alert" className="mt-6 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{message}</p>}
+
+      <UnpaidOrderNotice className="mt-6" />
 
       {loading ? (
         <div className="mt-10 space-y-3">
@@ -81,7 +86,11 @@ export function CartPage() {
             </div>
             <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
               <Link to="/menu" className="inline-flex min-h-11 items-center justify-center text-sm font-bold text-crust-700 hover:underline">Continue shopping</Link>
-              <Link to="/checkout" className="inline-flex min-h-11 items-center justify-center rounded-full bg-crust-600 px-6 py-3 text-sm font-bold text-white shadow-md transition hover:bg-crust-700">Proceed to checkout</Link>
+              {overStock ? (
+                <span role="alert" className="text-xs font-semibold text-red-700">Lower the amounts marked in red to continue.</span>
+              ) : (
+                <Link to="/checkout" className="inline-flex min-h-11 items-center justify-center rounded-full bg-crust-600 px-6 py-3 text-sm font-bold text-white shadow-md transition hover:bg-crust-700">Proceed to checkout</Link>
+              )}
             </div>
           </div>
         </>
@@ -95,8 +104,13 @@ export function CartPage() {
 // amount is kept to 1 up to the stock left, and is applied when the box is
 // left or Enter is pressed — not on every keystroke, so clearing the box to
 // type "12" does not remove the line on the way.
+//
+// A typed amount above the stock is not changed silently: the box says how
+// many are left (the panel, final defense 2026-11-18: typing 99 with less
+// in stock must show an error; FINAL_DEFENSE_REVISIONS_PLAN.md C4).
 function QuantityBox({ quantity, max, name, onChange }) {
   const [draft, setDraft] = useState(String(quantity))
+  const [tooMany, setTooMany] = useState('')
   useEffect(() => setDraft(String(quantity)), [quantity])
   const limit = Number.isInteger(max) && max > 0 ? max : Infinity
 
@@ -106,13 +120,15 @@ function QuantityBox({ quantity, max, name, onChange }) {
       setDraft(String(quantity))
       return
     }
+    setTooMany(typed > limit ? `You asked for ${typed}, but only ${limit} ${name} ${limit === 1 ? 'is' : 'are'} left. We set it to ${limit}.` : '')
     const next = Math.min(typed, limit)
     setDraft(String(next))
     if (next !== quantity) onChange(next)
   }
 
   return (
-    <div className="col-span-2 flex shrink-0 items-center justify-self-start rounded-full border border-cream-200">
+    <div className="col-span-2 justify-self-start">
+    <div className="flex shrink-0 items-center rounded-full border border-cream-200">
       <button type="button" onClick={() => onChange(quantity - 1)} aria-label={`Fewer ${name}`} className="grid h-11 w-11 place-items-center text-base font-bold text-crust-700">−</button>
       <input
         value={draft}
@@ -124,6 +140,10 @@ function QuantityBox({ quantity, max, name, onChange }) {
         className="h-11 w-12 rounded-md bg-transparent text-center text-sm font-bold outline-none focus:bg-cream-100"
       />
       <button type="button" onClick={() => onChange(Math.min(quantity + 1, limit))} disabled={quantity >= limit} aria-label={`More ${name}`} className="grid h-11 w-11 place-items-center text-base font-bold text-crust-700 disabled:opacity-40">+</button>
+    </div>
+    {tooMany && <p role="alert" className="mt-1 max-w-56 text-xs font-semibold text-red-700">{tooMany}</p>}
+    {!tooMany && quantity === limit && <p className="mt-1 text-xs text-cocoa-500">Only {limit} left.</p>}
+    {quantity > limit && <p role="alert" className="mt-1 max-w-56 text-xs font-semibold text-red-700">Only {limit} left now. Lower the amount.</p>}
     </div>
   )
 }

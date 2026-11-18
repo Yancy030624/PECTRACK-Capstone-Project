@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { apiPost } from '../api/client.js'
 import logoMark from '../assets/logo-mark.png'
 import { PasswordToggle } from './PasswordToggle.jsx'
+import { CodeTimer } from './CodeTimer.jsx'
 import { passwordHint as describePassword, strongPasswordHint } from '../lib/password.js'
 import { usePhoneVerification } from '../lib/usePhoneVerification.js'
 import { digitsOnly } from '../lib/phone.js'
@@ -20,13 +21,18 @@ import { nameOnly, noCopy, noPaste } from '../lib/inputFilters.js'
 // field is named under itself before anything is sent. The server checks
 // the same fields again (lib/validation.js validateCustomerRegistration),
 // so a request sent straight to it cannot skip one.
-const emptyForm = { firstName: '', lastName: '', username: '', email: '', contactNumber: '', password: '', confirmPassword: '', agree: false }
+// The delivery address is asked for here too (the panel, final defense
+// 2026-11-18; RULES-PLANS/FINAL_DEFENSE_REVISIONS_PLAN.md C2). It becomes
+// the customer's default address; the bakery delivers in Lucban only.
+const emptyForm = { firstName: '', lastName: '', username: '', email: '', contactNumber: '', addressLine1: '', addressLine2: '', barangay: '', deliveryNotes: '', password: '', confirmPassword: '', agree: false }
 const requiredMessages = {
   firstName: 'Enter your first name.',
   lastName: 'Enter your last name.',
   username: 'Enter a username.',
   contactNumber: 'Enter your contact number.',
   email: 'Enter your email address.',
+  addressLine1: 'Enter the street address.',
+  barangay: 'Enter the barangay.',
   password: 'Enter a password.',
   confirmPassword: 'Enter your password again.',
 }
@@ -218,6 +224,31 @@ export function RegisterForm({ onSwitchToLogin }) {
               <input id="register-email" type="email" value={form.email} onChange={(event) => updateField('email', event.target.value)} autoComplete="email" placeholder="you@example.com" className={fieldClass('email')} {...fieldProps('email')} />
               <FieldError id="email-error" message={errors.email} />
             </div>
+            <fieldset className="space-y-3 rounded-2xl border border-stone-200 bg-white/60 p-3">
+              <legend className="px-1 text-xs font-bold text-cocoa-900">Address</legend>
+              <div>
+                <RequiredLabel htmlFor="register-street">House no. and street</RequiredLabel>
+                <input id="register-street" value={form.addressLine1} onChange={(event) => updateField('addressLine1', event.target.value)} autoComplete="address-line1" placeholder="e.g. 12 Rizal Street" className={fieldClass('addressLine1')} {...fieldProps('addressLine1')} />
+                <FieldError id="addressLine1-error" message={errors.addressLine1} />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <RequiredLabel htmlFor="register-barangay">Barangay</RequiredLabel>
+                  <input id="register-barangay" value={form.barangay} onChange={(event) => updateField('barangay', event.target.value)} placeholder="e.g. Ayuti" className={fieldClass('barangay')} {...fieldProps('barangay')} />
+                  <FieldError id="barangay-error" message={errors.barangay} />
+                </div>
+                <div>
+                  <label htmlFor="register-town" className="mb-1.5 block text-xs font-bold">Town and province</label>
+                  <input id="register-town" value="Lucban, Quezon" readOnly aria-describedby="register-town-help" className="w-full min-w-0 cursor-not-allowed rounded-2xl border border-stone-200 bg-stone-100 px-4 py-2.5 text-sm text-stone-500" />
+                </div>
+              </div>
+              <div>
+                <label htmlFor="register-landmark" className="mb-1.5 block text-xs font-bold">Landmark or delivery notes (optional)</label>
+                <input id="register-landmark" value={form.deliveryNotes} onChange={(event) => updateField('deliveryNotes', event.target.value)} placeholder="e.g. Blue gate near the chapel" className={fieldClass('deliveryNotes')} />
+                <FieldError id="deliveryNotes-error" message={errors.deliveryNotes} />
+              </div>
+              <p id="register-town-help" className="text-[11px] text-stone-500">We deliver within Lucban, Quezon only. You can edit or add addresses later in My Profile.</p>
+            </fieldset>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <RequiredLabel htmlFor="register-password">Password</RequiredLabel>
@@ -263,16 +294,15 @@ export function RegisterForm({ onSwitchToLogin }) {
 // "0917 ••• 4567": enough to recognise the number, not to read it out.
 const maskNumber = (number) => (number.length >= 7 ? `${number.slice(0, 4)} ••• ${number.slice(-4)}` : number)
 const codeLength = 6
-const resendAfterSeconds = 30
 
 // The texted code (MINOR_REVISIONS_PLAN.md M4, restyled 2026-10-28): six
 // boxes, one digit each, as sign-ups usually ask. Typing moves to the next
 // box, Backspace to the previous, and a pasted code fills them all. The
 // code is checked as soon as the sixth digit is in, and a correct one
-// creates the account. "Resend" waits 30 seconds after each text.
+// creates the account. The code works for 5 minutes, shown as a countdown,
+// and "Resend" waits out the server's one-minute cooldown (CodeTimer).
 function VerifyCodeDialog({ phone, number, creating, onResend, onCancel }) {
   const boxes = useRef([])
-  const [secondsLeft, setSecondsLeft] = useState(resendAfterSeconds)
   const triedCode = useRef('')
   const digits = Array.from({ length: codeLength }, (_, index) => phone.code[index] ?? '')
 
@@ -281,12 +311,6 @@ function VerifyCodeDialog({ phone, number, creating, onResend, onCancel }) {
     // Focus once, on open; later moves are made by the handlers below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  useEffect(() => {
-    if (secondsLeft <= 0) return undefined
-    const timer = window.setTimeout(() => setSecondsLeft((left) => left - 1), 1000)
-    return () => window.clearTimeout(timer)
-  }, [secondsLeft])
 
   // A full code is checked at once — but the same wrong code only once, so
   // a mistake waits for the customer to change it.
@@ -325,7 +349,6 @@ function VerifyCodeDialog({ phone, number, creating, onResend, onCancel }) {
   }
   const resend = () => {
     triedCode.current = ''
-    setSecondsLeft(resendAfterSeconds)
     onResend()
     boxes.current[0]?.focus()
   }
@@ -379,12 +402,7 @@ function VerifyCodeDialog({ phone, number, creating, onResend, onCancel }) {
           {creating ? 'Creating account…' : 'Verify'}
         </button>
 
-        <p className="mt-4 text-xs text-stone-500">
-          Didn't get a code?{' '}
-          {secondsLeft > 0
-            ? <span className="font-semibold tabular-nums text-stone-400">Resend in 0:{String(secondsLeft).padStart(2, '0')}</span>
-            : <button type="button" onClick={resend} disabled={phone.busy || creating} className="font-bold text-crust-600 hover:underline disabled:opacity-60">Resend code</button>}
-        </p>
+        <CodeTimer className="mt-4" expiresAt={phone.verified ? null : phone.expiresAt} resendAt={phone.resendAt} onResend={resend} busy={phone.busy || creating} />
         <button type="button" onClick={onCancel} disabled={creating} className="mt-2 text-xs font-semibold text-stone-500 hover:text-stone-800 hover:underline disabled:opacity-40">Change number</button>
       </div>
     </div>

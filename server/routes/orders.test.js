@@ -44,9 +44,9 @@ describe('order management', () => {
 
   const admin = { username: `orderadmin_${runId}`, password: 'Admin-Only-Password-9!' }
   const cashier = { role: 'CASHIER', name: 'Order Cashier', username: `ordercash_${runId}`, email: `ordercash_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Cashier-Password-9!' }
-  const customer = { name: 'Order Customer', firstName: 'Order', lastName: 'Customer', agree: true, username: `ordercust_${runId}`, email: `ordercust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
-  const secondCustomer = { name: 'Second Customer', firstName: 'Second', lastName: 'Customer', agree: true, username: `ordercust2_${runId}`, email: `ordercust2_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
-  const walkInCustomer = { name: 'Walkin Target', firstName: 'Walkin', lastName: 'Target', agree: true, username: `orderwalkin_${runId}`, email: `orderwalkin_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const customer = { name: 'Order Customer', firstName: 'Order', lastName: 'Customer', agree: true, addressLine1: 'Rizal Street', barangay: 'Ayuti', username: `ordercust_${runId}`, email: `ordercust_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const secondCustomer = { name: 'Second Customer', firstName: 'Second', lastName: 'Customer', agree: true, addressLine1: 'Rizal Street', barangay: 'Ayuti', username: `ordercust2_${runId}`, email: `ordercust2_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
+  const walkInCustomer = { name: 'Walkin Target', firstName: 'Walkin', lastName: 'Target', agree: true, addressLine1: 'Rizal Street', barangay: 'Ayuti', username: `orderwalkin_${runId}`, email: `orderwalkin_${runId}@example.com`, contactNumber: randomContactNumber(), password: 'Correct-Horse-Battery-9!' }
 
   before(async () => {
     server = app.listen(0)
@@ -104,13 +104,13 @@ describe('order management', () => {
     // a fixture.
     const customerAddress = await pool.query(
       `INSERT INTO customer_addresses (customer_id, recipient_name, contact_num, address_line_1, is_default)
-       VALUES ($1, 'Order Test Customer', $2, '1 Delivery St', TRUE) RETURNING address_id`,
+       VALUES ($1, 'Order Test Customer', $2, '1 Delivery St', FALSE) RETURNING address_id`,
       [customerId, randomContactNumber()],
     )
     customerAddressId = customerAddress.rows[0].address_id
     const secondCustomerAddress = await pool.query(
       `INSERT INTO customer_addresses (customer_id, recipient_name, contact_num, address_line_1, is_default)
-       VALUES ($1, 'Second Order Test Customer', $2, '2 Delivery St', TRUE) RETURNING address_id`,
+       VALUES ($1, 'Second Order Test Customer', $2, '2 Delivery St', FALSE) RETURNING address_id`,
       [secondCustomerId, randomContactNumber()],
     )
     secondCustomerAddressId = secondCustomerAddress.rows[0].address_id
@@ -658,7 +658,20 @@ describe('order management', () => {
     // Held orders are hidden from every list until paid.
     const staffList = await (await fetch(`${baseUrl}/api/orders`, { headers: { Cookie: cashierCookie } })).json()
     assert.ok(!staffList.orders.some((order) => order.id === customerOrderId), 'not shown to staff while unpaid')
+    // ...but the customer keeps it in My Orders, waiting for their payment
+    // (final defense 2026-11-18: Back on the payment page must not lose it).
+    const ownList = await (await fetch(`${baseUrl}/api/orders`, { headers: { Cookie: customerCookie } })).json()
+    const held = ownList.orders.find((order) => order.id === customerOrderId)
+    assert.ok(held, 'the customer sees their own held order')
+    assert.equal(held.status, 'AWAITING_PAYMENT')
+    assert.equal(held.referenceSent, false)
+    const holdMs = new Date(held.holdExpiresAt).getTime() - new Date(held.orderDate).getTime()
+    assert.equal(holdMs, 15 * 60_000, 'held for 15 minutes from placing')
+    const otherList = await (await fetch(`${baseUrl}/api/orders`, { headers: { Cookie: secondCustomerCookie } })).json()
+    assert.ok(!otherList.orders.some((order) => order.id === customerOrderId), 'another customer does not see it')
     await payInFull(customerOrderId)
+    const paidList = await (await fetch(`${baseUrl}/api/orders`, { headers: { Cookie: customerCookie } })).json()
+    assert.equal(paidList.orders.find((order) => order.id === customerOrderId).holdExpiresAt, undefined, 'no hold fields once paid')
   })
 
   test('GET /api/orders/:id returns the full detail with items and status history', async () => {

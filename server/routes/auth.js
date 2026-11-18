@@ -14,8 +14,10 @@ import { issueEmailVerification, redeemEmailVerification } from '../lib/emailVer
 import { recordSecurityEvent } from '../lib/securityEvents.js'
 import { consumeVerifiedPhone } from '../lib/phoneVerification.js'
 import { normalizePhone } from '../lib/sms.js'
+import { validateAddressFields } from './addresses.js'
 import { forgetTrustedDevices, isTrustedDevice, trustDevice, trustedDeviceCookieName, trustedDeviceCookieOptions } from '../lib/trustedDevices.js'
-import { sendEmailChangedNotice, sendMail, sendOtpEmail } from '../lib/mail.js'
+import { sendEmailChangedNotice, sendOtpEmail, sendPasswordCodeEmail } from '../lib/mail.js'
+import { checkPasswordCode, consumePasswordCode, issuePasswordCode, passwordCodeMinutes, passwordCodeResendSeconds, passwordCodeSentRecently } from '../lib/passwordCodes.js'
 import { normalize, normalizeEmail, validateContactNumberField, validateCustomerRegistration, validateEmailField, validateName, validatePasswordField, validatePersonName, validateUsername } from '../lib/validation.js'
 
 const router = express.Router()
@@ -27,20 +29,10 @@ const lockAfterAttempts = 5
 const lockDurationMinutes = 15
 const otpCodeDurationMs = 5 * 60 * 1000
 const otpMaxAttempts = 5
-// A reset link lives 30 minutes — long enough to find the email, short
-// enough that a forgotten inbox is not a standing way in.
-const passwordResetDurationMs = 30 * 60 * 1000
-// One reset email per account per this window. Without it a known address
-// can be flooded — every request sends a mail — and the SMTP quota burned.
-// Still a 200 either way: the cooldown must not become an oracle for
-// which addresses exist any more than a miss does.
-const passwordResetCooldownMinutes = 2
-
-// The reset token is hashed the same way an OTP code is: the table holds
-// only a digest, the token itself exists once, in the email.
-function hashResetToken(token) {
-  return crypto.createHash('sha256').update(token).digest('hex')
-}
+// Forgot password and change password use six-digit email codes
+// (lib/passwordCodes.js, migration 045; the panel, final defense
+// 2026-11-18). These are what the browser is told, for its countdown.
+const passwordCodeTimes = { expiresInSeconds: passwordCodeMinutes * 60, resendInSeconds: passwordCodeResendSeconds }
 
 // A real bcrypt hash of a value no one can submit, used only to give
 // /login something to compare against when there's no account. See the
@@ -90,6 +82,20 @@ async function createOtpCode(userId) {
 
 router.post('/register', registerLimiter, async (request, response) => {
   const { errors, values } = validateCustomerRegistration(request.body)
+  // The delivery address is asked for at sign-up (the panel, final defense
+  // 2026-11-18; FINAL_DEFENSE_REVISIONS_PLAN.md C2). It is saved as the
+  // customer's first, default address in Lucban, Quezon; the recipient and
+  // number are the customer's own, so the form does not ask for them twice.
+  const addressFieldsAtSignUp = ['addressLine1', 'addressLine2', 'barangay', 'deliveryNotes']
+  const address = validateAddressFields({
+    label: 'Home',
+    recipientName: `${normalize(request.body.firstName)} ${normalize(request.body.lastName)}`.trim(),
+    contactNumber: request.body.contactNumber ?? '',
+    ...Object.fromEntries(addressFieldsAtSignUp.map((field) => [field, request.body[field] ?? ''])),
+    postalCode: '',
+  }, { partial: false })
+  for (const field of addressFieldsAtSignUp) if (address.errors[field]) errors[field] = address.errors[field]
+  if (!address.errors.barangay && !address.values.barangay) errors.barangay = 'Enter the barangay.'
   // The contact number is proven with a texted code when codes are on
   // (config.sms.verifyPhones, RULES-PLANS/RESERVE_SMS_PLAN.md): it must
   // then be a Philippine mobile number, and the form must have verified it.
@@ -129,10 +135,17 @@ router.post('/register', registerLimiter, async (request, response) => {
     // given, with no confirmation link (the panel, 2026-10-26;
     // MINOR_REVISIONS_PLAN.md M1): the contact number's texted code is the
     // one check at sign-up, so the account can order at once.
-    await client.query(
+    const customerResult = await client.query(
       `INSERT INTO customers (user_id, first_name, last_name, contact_num, email, email_verified_at)
-       VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)`,
+       VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+       RETURNING customer_id`,
       [user.user_id, values.firstName, values.lastName, values.contactNumber, values.email],
+    )
+    const a = address.values
+    await client.query(
+      `INSERT INTO customer_addresses (customer_id, label, recipient_name, contact_num, address_line_1, address_line_2, barangay, delivery_notes, is_default, is_active)
+       VALUES ($1, 'Home', $2, $3, $4, $5, $6, $7, TRUE, TRUE)`,
+      [customerResult.rows[0].customer_id, `${values.firstName} ${values.lastName}`, values.contactNumber, a.addressLine1, a.addressLine2, a.barangay, a.deliveryNotes],
     )
     if (config.sms.verifyPhones) {
       const proven = await consumeVerifiedPhone(client, { verificationToken: request.body.phoneVerificationToken, phone: verifiedPhone, purpose: 'REGISTER' })
@@ -326,7 +339,7 @@ router.post('/login', authLimiter, loginAccountLimiter, async (request, response
     }
     // The code itself is never logged — only that one was issued.
     recordSecurityEvent({ request, type: 'OTP_ISSUED', userId: user.user_id, username: user.username })
-    return response.json({ otpRequired: true, username: user.username, challengeToken })
+    return response.json({ otpRequired: true, username: user.username, challengeToken, expiresInSeconds: Math.round(otpCodeDurationMs / 1000) })
   }
 
   const { sessionId, endedSessions } = await createSession(user.user_id)
@@ -339,19 +352,18 @@ router.post('/login', authLimiter, loginAccountLimiter, async (request, response
   return response.json({ user: toPublicUser(user) })
 })
 
-// POST /api/auth/forgot-password — step one of email password recovery.
-// ALWAYS answers 200 with the same message, whether or not the email is
-// on file: the response must not become a way to test which addresses
-// have accounts (the same reasoning /login's timing fix makes for
-// usernames). Any role may use it — the email is looked up across every
-// role table the way /login already does.
+// POST /api/auth/forgot-password — step one of password recovery: a
+// six-digit code by email, valid for 5 minutes (final defense 2026-11-18;
+// FINAL_DEFENSE_REVISIONS_PLAN.md C3). It replaced the emailed link.
 //
-// A new request replaces any earlier unconsumed token for the account,
-// so at most one live link exists per user, and the link goes to the
-// email ON FILE, never to an address supplied in the request.
+// ALWAYS answers 200 with the same body, whether or not the email is on
+// file, so the response cannot be used to test which addresses have
+// accounts. Any role may use it. A new request within a minute of the last
+// one sends nothing (still the same 200), so a known address cannot be
+// flooded; the code from the first email keeps working.
 router.post('/forgot-password', passwordResetLimiter, async (request, response) => {
   const email = normalizeEmail(request.body.email)
-  const genericResponse = { message: 'If that email belongs to an account, a reset link has been sent to it.' }
+  const genericResponse = { message: 'If that email belongs to an account, we sent a 6-digit code to it. Enter it below within 5 minutes.', ...passwordCodeTimes }
   if (validateEmailField(email)) return response.status(422).json({ message: 'Enter a valid email address.', errors: { email: 'Enter a valid email address.' } })
 
   const result = await pool.query(
@@ -364,106 +376,76 @@ router.post('/forgot-password', passwordResetLimiter, async (request, response) 
   )
   const user = result.rows[0]
   if (!user || !user.is_active) return response.json(genericResponse)
+  if (await passwordCodeSentRecently({ userId: user.user_id, purpose: 'RESET' })) return response.json(genericResponse)
 
-  const recent = await pool.query(
-    `SELECT 1 FROM password_reset_tokens WHERE user_id = $1 AND consumed_at IS NULL AND created_at > CURRENT_TIMESTAMP - ($2 * INTERVAL '1 minute')`,
-    [user.user_id, passwordResetCooldownMinutes],
-  )
-  if (recent.rowCount > 0) return response.json(genericResponse)
-
-  const token = crypto.randomBytes(32).toString('base64url')
-  const expiresAt = new Date(Date.now() + passwordResetDurationMs)
-  const client = await pool.connect()
-  try {
-    await client.query('BEGIN')
-    await client.query('DELETE FROM password_reset_tokens WHERE user_id = $1 AND consumed_at IS NULL', [user.user_id])
-    await client.query('INSERT INTO password_reset_tokens (user_id, token_hash, expires_at, email) VALUES ($1, $2, $3, $4)', [user.user_id, hashResetToken(token), expiresAt, email])
-    await client.query('COMMIT')
-  } catch (error) {
-    await client.query('ROLLBACK')
-    throw error
-  } finally {
-    client.release()
-  }
-
-  // The token rides in the URL FRAGMENT, not the query string — item 7
-  // of RULES-PLANS/SECURITY_REVIEW.md. A fragment is never transmitted:
-  // not in a Referer header when the page links onward, and not to the
-  // server hosting the front end, so it cannot land in that host's access
-  // logs either. The Referrer-Policy header added in 6d7b0c2 mitigates
-  // the first of those; this removes the whole class instead.
-  const resetUrl = `${config.clientOrigin}/reset-password#token=${token}`
+  const code = await issuePasswordCode({ userId: user.user_id, email, purpose: 'RESET' })
   try {
     recordSecurityEvent({ request, type: 'PASSWORD_RESET_REQUESTED', userId: user.user_id, username: user.username })
-    await sendMail({
-      to: email,
-      subject: 'Reset your PECTRACK password',
-      text: `Hello ${user.name},\n\nSomeone asked to reset the password for your PECTRACK account. If that was you, open this link within 30 minutes:\n\n${resetUrl}\n\nIf you did not ask for this, you can ignore this email — your password stays as it is.`,
-    })
+    await sendPasswordCodeEmail({ to: email, name: user.name, code, minutes: passwordCodeMinutes, purpose: 'RESET' })
   } catch (error) {
-    // The token is already stored, so a mail failure is logged, not
+    // The code is already stored, so a mail failure is logged, not
     // surfaced: surfacing it would tell the caller the address exists.
-    console.error('Could not send a password reset email:', error)
+    console.error('Could not send a password reset code:', error)
   }
   return response.json(genericResponse)
 })
 
-// POST /api/auth/reset-password — step two. The token from the email plus
-// a new password. Single use, time-bounded, and it ends every existing
-// session for the account — the same reasoning PATCH /password gives:
-// someone resetting a password after a compromise needs the intruder's
-// session gone too, and here there is no "own session" to spare.
+// POST /api/auth/reset-password — step two: { email, code, newPassword,
+// confirmPassword }. The code is single use and time-bounded, and the
+// reset ends every existing session for the account — someone resetting a
+// password after a compromise needs the intruder's session gone too.
+// An unknown email, a wrong code, and an expired one all get the same
+// answer.
 router.post('/reset-password', authLimiter, async (request, response) => {
-  const token = normalize(request.body.token)
+  const email = normalizeEmail(request.body.email)
   const newPassword = String(request.body.newPassword ?? '')
   const confirmPassword = String(request.body.confirmPassword ?? '')
-  const invalidTokenResponse = { message: 'This reset link is invalid or has expired. Request a new one.' }
-  // Captured inside the transaction so the audit event below can name who
-  // the reset was for without a second lookup.
-  let resetUserId = null
-  let resetUsername = null
-  if (!token) return response.status(400).json(invalidTokenResponse)
+  const invalidCode = { message: 'That code is wrong or has expired. Check the email, or send a new code.', errors: { code: 'That code is wrong or has expired.' } }
+  if (validateEmailField(email)) return response.status(422).json({ message: 'Enter a valid email address.', errors: { email: 'Enter a valid email address.' } })
 
-  const tokenResult = await pool.query(
-    `SELECT t.token_id, t.email AS token_email, u.user_id, u.username, u.user_type, u.is_active, ${profileColumnsSql}
-       FROM password_reset_tokens t
-       JOIN users u ON u.user_id = t.user_id
+  const userResult = await pool.query(
+    `SELECT u.user_id, u.username, u.user_type, u.is_active, ${profileColumnsSql}
+       FROM users u
        ${profileJoinsSql}
-      WHERE t.token_hash = $1 AND t.consumed_at IS NULL AND t.expires_at > CURRENT_TIMESTAMP`,
-    [hashResetToken(token)],
+      WHERE ${profileEmailMatchesSql('$1')}
+      LIMIT 1`,
+    [email],
   )
-  const row = tokenResult.rows[0]
-  if (!row || !row.is_active) return response.status(400).json(invalidTokenResponse)
+  const row = userResult.rows[0]
+  if (!row || !row.is_active) return response.status(400).json(invalidCode)
 
+  // The password rules first: a weak password must not use up a try.
   const errors = {}
   const passwordError = validatePasswordField(newPassword, { username: row.username, email: row.email })
   if (passwordError) errors.newPassword = passwordError
   if (newPassword !== confirmPassword) errors.confirmPassword = 'Passwords do not match.'
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
 
+  const matched = await checkPasswordCode({ userId: row.user_id, purpose: 'RESET', code: request.body.code })
+  if (!matched) {
+    recordSecurityEvent({ request, type: 'PASSWORD_RESET_FAILED', userId: row.user_id, username: row.username, detail: 'wrong or expired code' })
+    return response.status(400).json(invalidCode)
+  }
+
   const passwordHash = await bcrypt.hash(newPassword, bcryptRounds)
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    // Consuming the token is conditional, so two submissions of the same
-    // link cannot both get through: the second finds it consumed.
-    const consumed = await client.query('UPDATE password_reset_tokens SET consumed_at = CURRENT_TIMESTAMP WHERE token_id = $1 AND consumed_at IS NULL RETURNING token_id', [row.token_id])
-    if (consumed.rowCount === 0) {
+    // Spending the code is conditional, so two submissions of the same
+    // code cannot both get through: the second finds it spent.
+    if (!(await consumePasswordCode(client, matched.tokenId))) {
       await client.query('ROLLBACK')
-      return response.status(400).json(invalidTokenResponse)
+      return response.status(400).json(invalidCode)
     }
     // A reset also clears a lockout: the person proving they own the
     // email is exactly who the lockout was protecting.
-    resetUserId = row.user_id
-    resetUsername = row.username ?? null
     await client.query('UPDATE users SET password_hash = $1, failed_login_attempts = 0, locked_until = NULL WHERE user_id = $2', [passwordHash, row.user_id])
     await client.query('DELETE FROM sessions WHERE user_id = $1', [row.user_id])
     await forgetTrustedDevices(client, row.user_id)
-    // Opening this link proved the mailbox, so for a customer it also
-    // confirms their email (migration 017) — but only if the link went to
-    // the address the account holds NOW. A link from before an email
-    // change proves the old address, not the new one.
-    if (row.user_type === 'CUSTOMER' && row.token_email && row.email && row.token_email.toLowerCase() === row.email.toLowerCase()) {
+    // The code proved the mailbox, so for a customer it also confirms the
+    // email (migration 017), but only if it went to the address the
+    // account holds now.
+    if (row.user_type === 'CUSTOMER' && matched.email && row.email && matched.email.toLowerCase() === row.email.toLowerCase()) {
       await client.query('UPDATE customers SET email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP) WHERE user_id = $1', [row.user_id])
     }
     await client.query('COMMIT')
@@ -473,7 +455,7 @@ router.post('/reset-password', authLimiter, async (request, response) => {
   } finally {
     client.release()
   }
-  recordSecurityEvent({ request, type: 'PASSWORD_RESET_COMPLETED', userId: resetUserId, username: resetUsername, detail: 'all sessions ended' })
+  recordSecurityEvent({ request, type: 'PASSWORD_RESET_COMPLETED', userId: row.user_id, username: row.username, detail: 'all sessions ended' })
   return response.json({ message: 'Password updated. You can now sign in with your new password.' })
 })
 
@@ -617,6 +599,27 @@ router.post('/setup-credentials', authLimiter, requireAuth, async (request, resp
 // created by an admin who chooses the initial password, and until now there
 // was no way for that staff member to ever change it — so every admin
 // permanently knew every cashier's and driver's password.
+// POST /api/auth/password/code — the first step of a password change: a
+// six-digit code to the account's own email, valid for 5 minutes (the
+// panel, final defense 2026-11-18; FINAL_DEFENSE_REVISIONS_PLAN.md C3).
+// A signed-in browser plus the current password is then not enough on its
+// own to change the password: the mailbox has to agree.
+router.post('/password/code', passwordResetLimiter, requireAuth, async (request, response) => {
+  if (await passwordCodeSentRecently({ userId: request.user.id, purpose: 'CHANGE' })) {
+    return response.status(429).json({ message: 'A code was sent less than a minute ago. Check your email, or wait a moment before asking again.', ...passwordCodeTimes })
+  }
+  const email = request.user.email
+  const code = await issuePasswordCode({ userId: request.user.id, email, purpose: 'CHANGE' })
+  try {
+    await sendPasswordCodeEmail({ to: email, name: request.user.name, code, minutes: passwordCodeMinutes, purpose: 'CHANGE' })
+  } catch (error) {
+    console.error('Could not send a password change code:', error)
+    return response.status(502).json({ message: 'The code could not be emailed right now. Try again in a moment.' })
+  }
+  recordSecurityEvent({ request, type: 'PASSWORD_CHANGE_CODE_SENT', userId: request.user.id, username: request.user.username })
+  return response.json({ message: `We sent a 6-digit code to ${email}. Enter it within 5 minutes.`, ...passwordCodeTimes })
+})
+
 router.patch('/password', requireAuth, async (request, response) => {
   const currentPassword = String(request.body.currentPassword ?? '')
   const newPassword = String(request.body.newPassword ?? '')
@@ -641,11 +644,32 @@ router.patch('/password', requireAuth, async (request, response) => {
   if (passwordError) errors.newPassword = passwordError
   else if (newPassword === currentPassword) errors.newPassword = 'Enter a new password that is different from your current one.'
   if (newPassword !== confirmPassword) errors.confirmPassword = 'Passwords do not match.'
+  if (!String(request.body.code ?? '').trim()) errors.code = 'Enter the 6-digit code we emailed you.'
   if (Object.keys(errors).length) return response.status(422).json({ message: 'Please correct the highlighted fields.', errors })
 
+  // The emailed code (POST /password/code). Only a CHANGE code works here:
+  // a forgot-password code cannot be used, and the other way round.
+  const wrongCode = { message: 'That code is wrong or has expired. Send a new code and try again.', errors: { code: 'That code is wrong or has expired.' } }
+  const matched = await checkPasswordCode({ userId: user.user_id, purpose: 'CHANGE', code: request.body.code })
+  if (!matched) return response.status(422).json(wrongCode)
+
   const passwordHash = await bcrypt.hash(newPassword, bcryptRounds)
-  await pool.query('UPDATE users SET password_hash = $1 WHERE user_id = $2', [passwordHash, user.user_id])
-  await forgetTrustedDevices(pool, user.user_id)
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    if (!(await consumePasswordCode(client, matched.tokenId))) {
+      await client.query('ROLLBACK')
+      return response.status(422).json(wrongCode)
+    }
+    await client.query('UPDATE users SET password_hash = $1 WHERE user_id = $2', [passwordHash, user.user_id])
+    await forgetTrustedDevices(client, user.user_id)
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
 
   // Sign out everywhere else. Sessions are independent of the password —
   // they're rows keyed by a random id — so without this, changing a

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { apiGet, apiPatch } from '../../api/client.js'
+import { apiGet, apiPatch, apiPost } from '../../api/client.js'
+import { CodeTimer, codeTimes } from '../../components/CodeTimer.jsx'
 import { AddressForm } from '../../components/AddressForm.jsx'
 import { Alert } from '../../components/ui/Alert.jsx'
 import { Button } from '../../components/ui/Button.jsx'
@@ -13,7 +14,7 @@ import { LoadingRows } from '../../components/ui/Skeleton.jsx'
 import { digitsOnly } from '../../lib/phone.js'
 import { nameOnly, noCopy, noPaste } from '../../lib/inputFilters.js'
 
-const emptyPasswordForm = { currentPassword: '', newPassword: '', confirmPassword: '' }
+const emptyPasswordForm = { currentPassword: '', newPassword: '', confirmPassword: '', code: '' }
 
 // Stage 5.5 (RULES-PLANS/UI_AUDIT.md) — MyProfile is granted to every role
 // (modules.js), so it was the one screen every user landed on still in the
@@ -172,6 +173,28 @@ function PasswordTab({ unified = false }) {
   const [passwordSubmitting, setPasswordSubmitting] = useState(false)
 
   const updatePasswordField = (field, value) => setPasswordForm({ ...passwordForm, [field]: value })
+  // A six-digit code to the account's email is needed too (the panel,
+  // final defense 2026-11-18; FINAL_DEFENSE_REVISIONS_PLAN.md C3).
+  const [codeTimesState, setCodeTimesState] = useState({ expiresAt: null, resendAt: null })
+  const [codeSent, setCodeSent] = useState(false)
+  const [sendingCode, setSendingCode] = useState(false)
+  const sendCode = async () => {
+    setSendingCode(true)
+    setPasswordMessage('')
+    setPasswordFailed(false)
+    try {
+      const data = await apiPost('/api/auth/password/code', {})
+      setCodeTimesState(codeTimes(data))
+      setCodeSent(true)
+      setPasswordMessage(data.message)
+    } catch (error) {
+      if (error.status === 429) setCodeSent(true)
+      setPasswordMessage(error.message)
+      setPasswordFailed(true)
+    } finally {
+      setSendingCode(false)
+    }
+  }
 
   const handlePasswordSubmit = async (event) => {
     event.preventDefault()
@@ -182,6 +205,8 @@ function PasswordTab({ unified = false }) {
     try {
       const data = await apiPatch('/api/auth/password', passwordForm)
       setPasswordForm(emptyPasswordForm)
+      setCodeSent(false)
+      setCodeTimesState({ expiresAt: null, resendAt: null })
       setPasswordMessage(data.otherSessionsEnded > 0
         ? `Password updated. You were signed out on ${data.otherSessionsEnded} other device${data.otherSessionsEnded === 1 ? '' : 's'}.`
         : 'Password updated.')
@@ -210,8 +235,15 @@ function PasswordTab({ unified = false }) {
             <PasswordInput {...noCopy} {...noPaste} value={passwordForm.confirmPassword} onChange={(event) => updatePasswordField('confirmPassword', event.target.value)} autoComplete="new-password" />
           </Field>
           <p className="text-xs text-ink-500">At least 12 characters, with an uppercase letter, a lowercase letter, a number, and a symbol.</p>
+          <Field label="Code from your email" error={passwordErrors.code}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input value={passwordForm.code} onChange={(event) => updatePasswordField('code', event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" className="w-36" />
+              {!codeSent && <Button type="button" size="sm" variant="secondary" onClick={sendCode} disabled={sendingCode}>{sendingCode ? 'Sending…' : 'Send code'}</Button>}
+            </div>
+          </Field>
+          {codeSent && <CodeTimer expiresAt={codeTimesState.expiresAt} resendAt={codeTimesState.resendAt} onResend={sendCode} busy={sendingCode} linkClass="font-semibold text-brand-700 hover:underline" />}
           {passwordMessage && <Alert variant={passwordFailed ? 'error' : 'success'}>{passwordMessage}</Alert>}
-          <Button type="submit" size="sm" disabled={passwordSubmitting}>{passwordSubmitting ? 'Updating…' : 'Update password'}</Button>
+          <Button type="submit" size="sm" disabled={passwordSubmitting || passwordForm.code.length !== 6}>{passwordSubmitting ? 'Updating…' : 'Update password'}</Button>
         </form>
       </Card>
     </>
@@ -228,6 +260,8 @@ function AddressesTab() {
 
   const [showForm, setShowForm] = useState(false)
   const [actingOnId, setActingOnId] = useState(null)
+  // The address being edited, if any (final defense 2026-11-18).
+  const [editingId, setEditingId] = useState(null)
 
   const loadAddresses = async () => {
     setLoading(true)
@@ -248,6 +282,7 @@ function AddressesTab() {
 
   const handleAddressSaved = async () => {
     setShowForm(false)
+    setEditingId(null)
     setMessage('Address saved.')
     setMessageFailed(false)
     await loadAddresses()
@@ -297,7 +332,7 @@ function AddressesTab() {
             <input type="checkbox" checked={includeInactive} onChange={(event) => setIncludeInactive(event.target.checked)} />
             Show deactivated
           </label>
-          <Button type="button" size="sm" variant="secondary" onClick={() => setShowForm(!showForm)}>{showForm ? 'Cancel' : 'Add address'}</Button>
+          <Button type="button" size="sm" variant="secondary" onClick={() => { setShowForm(!showForm); setEditingId(null) }}>{showForm ? 'Cancel' : 'Add address'}</Button>
         </div>
       </div>
 
@@ -316,6 +351,12 @@ function AddressesTab() {
           <ul className="divide-y divide-line-100">
             {addresses.map((address) => (
               <li key={address.id} className="py-3 text-sm">
+                {editingId === address.id ? (
+                  <div>
+                    <p className="mb-3 font-semibold text-ink-900">Edit {address.label}</p>
+                    <AddressForm variant="storefront" address={address} submitLabel="Save changes" onSaved={handleAddressSaved} onCancel={() => setEditingId(null)} />
+                  </div>
+                ) : (
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0 flex-1 [overflow-wrap:anywhere]">
                     <p className="font-semibold text-ink-900">
@@ -332,6 +373,9 @@ function AddressesTab() {
                     {address.deliveryNotes && <p className="mt-0.5 text-xs text-ink-500">"{address.deliveryNotes}"</p>}
                   </div>
                   <div className="customer-address-actions flex flex-wrap gap-2">
+                    {address.isActive && (
+                      <Button type="button" size="sm" variant="secondary" onClick={() => { setEditingId(address.id); setShowForm(false); setMessage('') }} disabled={actingOnId === address.id}>Edit</Button>
+                    )}
                     {address.isActive && !address.isDefault && (
                       <Button type="button" size="sm" variant="secondary" onClick={() => handleSetDefault(address.id)} disabled={actingOnId === address.id}>Set as default</Button>
                     )}
@@ -342,6 +386,7 @@ function AddressesTab() {
                     )}
                   </div>
                 </div>
+                )}
               </li>
             ))}
           </ul>

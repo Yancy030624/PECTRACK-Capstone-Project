@@ -46,6 +46,7 @@ CREATE TYPE security_event_type AS ENUM (
   'LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGIN_LOCKED_OUT', 'LOGOUT',
   'OTP_ISSUED', 'OTP_SUCCESS', 'OTP_FAILURE',
   'PASSWORD_RESET_REQUESTED', 'PASSWORD_RESET_COMPLETED', 'PASSWORD_CHANGED',
+  'PASSWORD_RESET_FAILED', 'PASSWORD_CHANGE_CODE_SENT',
   'ACCOUNT_CREATED', 'ACCOUNT_DEACTIVATED', 'ACCOUNT_REACTIVATED', 'STAFF_PASSWORD_RESET',
   'EMAIL_VERIFICATION_SENT', 'EMAIL_VERIFIED', 'EMAIL_CHANGED',
   'SESSION_EXPIRED'
@@ -126,7 +127,13 @@ CREATE INDEX otp_codes_user_id_idx ON otp_codes (user_id);
 CREATE TABLE password_reset_tokens (
   token_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-  token_hash TEXT NOT NULL UNIQUE,
+  -- Migration 045: links were replaced by six-digit codes, so token_hash is
+  -- NULL on new rows and code_hash holds the code's SHA-256 instead.
+  token_hash TEXT UNIQUE,
+  code_hash TEXT,
+  attempt_count SMALLINT NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+  -- RESET: forgot password. CHANGE: a signed-in password change.
+  purpose VARCHAR(10) NOT NULL DEFAULT 'RESET' CHECK (purpose IN ('RESET', 'CHANGE')),
   -- Migration 017: the address the link was mailed to. Completing a reset
   -- confirms a customer's email only when this matches the current one.
   email VARCHAR(254),
@@ -136,6 +143,7 @@ CREATE TABLE password_reset_tokens (
 );
 
 CREATE INDEX password_reset_tokens_user_id_idx ON password_reset_tokens (user_id);
+CREATE INDEX password_reset_tokens_live_idx ON password_reset_tokens (user_id, purpose) WHERE consumed_at IS NULL;
 
 -- Migration 016. Same shape as password_reset_tokens — a SHA-256 hash,
 -- single-use, time-limited — plus the address the link was mailed to, so

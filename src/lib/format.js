@@ -20,6 +20,12 @@ export function formatDateTime(value) {
   return new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
+// A clock time only, e.g. "10:42 AM" — for a checkout hold's deadline.
+export function formatTime(value) {
+  if (!value) return ''
+  return new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+}
+
 export function formatDate(value) {
   if (!value) return ''
   return new Date(value).toLocaleDateString(undefined, { dateStyle: 'medium' })

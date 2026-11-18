@@ -25,6 +25,7 @@ import { normalize, normalizeEmail, normalizeReference, parseId, referenceMessag
 import { consumeVerifiedPhone } from '../lib/phoneVerification.js'
 import { normalizePhone } from '../lib/sms.js'
 import { sendReservationNotices } from '../lib/reservationNotices.js'
+import { holdMinutes } from '../lib/staleOrders.js'
 
 const router = express.Router()
 
@@ -112,6 +113,15 @@ const mapOrderSummary = (row) => ({
   totalAmount: row.total_amount,
   orderDate: row.order_date,
   requestedFulfillmentTime: row.requested_fulfillment_time,
+  // A checkout hold (AWAITING_PAYMENT): whether the customer already sent
+  // a GCash reference, and when an unpaid hold is released. My Orders,
+  // the cart, and checkout use these to offer "Pay now" (the panel, final
+  // defense 2026-11-18: going back from the payment page must not lose the
+  // order; FINAL_DEFENSE_REVISIONS_PLAN.md C1).
+  ...(row.status === 'AWAITING_PAYMENT' && {
+    referenceSent: row.reference_sent === true,
+    holdExpiresAt: new Date(new Date(row.order_date).getTime() + holdMinutes * 60_000).toISOString(),
+  }),
   // Phase 6: what this order still owes, carried on the LIST as well as
   // the detail. Without it, the only way to answer "which orders still owe
   // money" — the question the Payment & Billing screen exists to answer —
@@ -125,6 +135,9 @@ const mapOrderSummary = (row) => ({
 })
 
 const orderSummarySelectQuery = `SELECT o.order_id, o.daily_number, o.order_day, o.customer_id, COALESCE(c.name, o.guest_name) AS customer_name, o.order_type, o.status, o.total_amount, o.order_date, o.requested_fulfillment_time, o.is_reservation, o.payment_mode, o.delivery_fee,
+            CASE WHEN o.status = 'AWAITING_PAYMENT'
+                 THEN EXISTS (SELECT 1 FROM payments rp WHERE rp.order_id = o.order_id AND rp.payment_method = 'QRPH' AND rp.status = 'PENDING')
+            END AS reference_sent,
             ${billingListSql.columns}
      FROM orders o
      LEFT JOIN customers c ON c.customer_id = o.customer_id
@@ -149,9 +162,14 @@ router.use(requireAuth, requireRole('CUSTOMER', 'CASHIER', 'ADMIN'))
 const visibleOrderSql = `o.data_source = 'RECORDED' AND o.status <> 'AWAITING_PAYMENT' AND (o.status <> 'CANCELLED' OR COALESCE(paid.amount, 0) > 0)`
 // The customer also sees their own orders whose QR Ph payment the bakery
 // is still checking, or rejected (QRPH_PLAN.md, Q9 and Q12): they paid, or
-// say they did, so the order must not vanish from My Orders.
+// say they did, so the order must not vanish from My Orders. Their own
+// live checkout hold is listed too, still waiting for their payment: the
+// panel found that pressing Back on the payment page made the order seem
+// to disappear (final defense, 2026-11-18). A hold that runs out becomes
+// CANCELLED with nothing paid, so it drops out of the list by itself.
 const customerVisibleOrderSql = `o.data_source = 'RECORDED' AND (
-  (o.status <> 'AWAITING_PAYMENT' AND (o.status <> 'CANCELLED' OR COALESCE(paid.amount, 0) > 0))
+  o.status = 'AWAITING_PAYMENT'
+  OR (o.status <> 'CANCELLED' OR COALESCE(paid.amount, 0) > 0)
   OR EXISTS (SELECT 1 FROM payments qp WHERE qp.order_id = o.order_id AND qp.payment_method = 'QRPH' AND qp.status IN ('PENDING', 'FAILED')))`
 
 router.get('/', async (request, response) => {
